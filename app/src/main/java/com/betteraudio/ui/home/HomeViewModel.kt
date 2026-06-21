@@ -44,7 +44,10 @@ enum class SortOption(val label: String) {
     TITLE("Title"),
     AUTHOR("Author"),
     DATE_ADDED("Date Added"),
-    DURATION("Duration")
+    DURATION("Duration"),
+    LAST_PLAYED("Last Played"),
+    PROGRESS("Progress"),
+    SERIES("Series")
 }
 
 enum class SortDirection { ASC, DESC }
@@ -56,17 +59,19 @@ data class SortFilter(
 
 /** Items shown in the home library grid */
 sealed class HomeGridItem {
+    abstract val lastPlayedMs: Long
+
     /** A single book */
     data class SingleBook(
         val bwp: BookWithProgress,
-        val lastPlayedMs: Long
+        override val lastPlayedMs: Long
     ) : HomeGridItem()
 
     /** A user-created joined group */
     data class Group(
         val group: BookGroup,
         val books: List<Book>,
-        val lastPlayedMs: Long
+        override val lastPlayedMs: Long
     ) : HomeGridItem()
 }
 
@@ -160,20 +165,59 @@ class HomeViewModel @Inject constructor(
             result.add(HomeGridItem.SingleBook(bwp, bwp.lastPlayedMs))
         }
 
-        // Sort by last played descending, then by title
-        return result.sortedWith(
-            compareByDescending<HomeGridItem> { item ->
-                when (item) {
-                    is HomeGridItem.SingleBook -> item.lastPlayedMs
-                    is HomeGridItem.Group -> item.lastPlayedMs
-                }
-            }.thenBy { item ->
-                when (item) {
-                    is HomeGridItem.SingleBook -> item.bwp.book.title.lowercase()
-                    is HomeGridItem.Group -> item.group.name.lowercase()
-                }
+        // Sort using the user-selected SortFilter
+        fun numericKey(item: HomeGridItem): Double = when (sf.option) {
+            SortOption.DATE_ADDED -> when (item) {
+                is HomeGridItem.SingleBook -> item.bwp.book.addedDateMs.toDouble()
+                is HomeGridItem.Group -> item.group.createdAtMs.toDouble()
             }
+            SortOption.DURATION -> when (item) {
+                is HomeGridItem.SingleBook -> item.bwp.book.totalDurationMs.toDouble()
+                is HomeGridItem.Group -> item.books.sumOf { it.totalDurationMs }.toDouble()
+            }
+            SortOption.LAST_PLAYED -> item.lastPlayedMs.toDouble()
+            SortOption.PROGRESS -> when (item) {
+                is HomeGridItem.SingleBook -> item.bwp.progressFraction.toDouble()
+                is HomeGridItem.Group -> item.books
+                    .mapNotNull { b -> bwpList.find { it.book.id == b.id }?.progressFraction?.toDouble() }
+                    .maxOrNull() ?: 0.0
+            }
+            else -> 0.0
+        }
+        fun textKey(item: HomeGridItem): String = when (sf.option) {
+            SortOption.AUTHOR -> when (item) {
+                is HomeGridItem.SingleBook -> item.bwp.book.author.lowercase()
+                is HomeGridItem.Group -> item.books.firstOrNull()?.author?.lowercase() ?: ""
+            }
+            SortOption.SERIES -> when (item) {
+                is HomeGridItem.SingleBook -> {
+                    val s = item.bwp.book.seriesName?.lowercase() ?: "￿"
+                    val o = item.bwp.book.seriesOrder ?: Float.MAX_VALUE
+                    "$s${o.toString().padStart(10, '0')}"
+                }
+                is HomeGridItem.Group -> item.group.name.lowercase()
+            }
+            else -> when (item) { // TITLE and numeric fallback secondary key
+                is HomeGridItem.SingleBook -> item.bwp.book.title.lowercase()
+                is HomeGridItem.Group -> item.group.name.lowercase()
+            }
+        }
+
+        val useNumeric = sf.option in setOf(
+            SortOption.DATE_ADDED, SortOption.DURATION, SortOption.LAST_PLAYED, SortOption.PROGRESS
         )
+        val comparator: Comparator<HomeGridItem> = if (useNumeric) {
+            if (sf.direction == SortDirection.DESC)
+                compareByDescending<HomeGridItem> { numericKey(it) }.thenBy { textKey(it) }
+            else
+                compareBy<HomeGridItem> { numericKey(it) }.thenBy { textKey(it) }
+        } else {
+            if (sf.direction == SortDirection.DESC)
+                compareByDescending<HomeGridItem> { textKey(it) }
+            else
+                compareBy<HomeGridItem> { textKey(it) }
+        }
+        return result.sortedWith(comparator)
     }
 
     // ── Currently playing book (for hero card) ────────────────────────────────

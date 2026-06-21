@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,6 +123,12 @@ fun HomeScreen(
                     onOpenSearch = onOpenSearch
                 )
             } else {
+                val isGridRefreshing = scan.status == ScanStatus.Running
+                PullToRefreshBox(
+                    isRefreshing = isGridRefreshing,
+                    onRefresh = { if (savedFolder.isNotBlank()) viewModel.startScan(savedFolder) },
+                    modifier = Modifier.fillMaxSize()
+                ) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(
@@ -224,6 +231,7 @@ fun HomeScreen(
                         }
                     }
                 }
+                } // end PullToRefreshBox
             }
 
             // ── Floating bottom chrome ─────────────────────────────────────
@@ -333,8 +341,6 @@ private fun HomeHeader(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        CircleIconButton(Icons.Default.Search, "Search", onSearch)
-        Spacer(Modifier.width(8.dp))
         CircleIconButton(Icons.Default.CreateNewFolder, "Scan folder", onScan)
     }
 }

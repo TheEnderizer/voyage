@@ -34,9 +34,9 @@ class SynopsisService @Inject constructor(
 
             try {
                 val prompt = if (author.isNotBlank())
-                    "In 2-3 sentences, write an engaging synopsis for the audiobook \"$title\" by $author. Be factual and concise."
+                    "Write a 2-3 sentence synopsis of \"$title\" by $author in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
                 else
-                    "In 2-3 sentences, write an engaging synopsis for the audiobook \"$title\". Be factual and concise."
+                    "Write a 2-3 sentence synopsis of \"$title\" in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
 
                 val body = JSONObject()
                     .put("contents", JSONArray().put(

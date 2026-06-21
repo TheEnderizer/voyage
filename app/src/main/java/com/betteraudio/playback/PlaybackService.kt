@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
 import android.util.Log
+import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -209,6 +210,29 @@ class PlaybackService : MediaSessionService() {
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        }
+
+        override fun onMediaButtonEvent(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            intent: Intent
+        ): Boolean {
+            @Suppress("DEPRECATION")
+            val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
+            if (event.action != KeyEvent.ACTION_DOWN) return false
+            return when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+                KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                    session.player.seekTo(session.player.currentPosition + settings.currentSkipForwardMs)
+                    true
+                }
+                KeyEvent.KEYCODE_MEDIA_REWIND,
+                KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                    session.player.seekTo(maxOf(0L, session.player.currentPosition - settings.currentSkipBackMs))
+                    true
+                }
+                else -> false
+            }
         }
 
         override fun onAddMediaItems(
