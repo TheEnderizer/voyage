@@ -62,7 +62,10 @@ class UpdateChecker @Inject constructor(
                 if (!response.isSuccessful) return@withContext null
                 val body = response.body ?: return@withContext null
                 val total = body.contentLength()
+                // Always write to a fresh file so a stale/partial prior download can never be
+                // reinstalled. Delete any leftover from a previous attempt first.
                 val file = File(context.externalCacheDir, "voyage-update.apk")
+                file.delete()
                 var downloaded = 0L
                 body.byteStream().use { input ->
                     file.outputStream().use { output ->
@@ -73,7 +76,22 @@ class UpdateChecker @Inject constructor(
                             downloaded += read
                             if (total > 0) onProgress((downloaded * 100 / total).toInt())
                         }
+                        output.flush()
                     }
+                }
+                // Reject truncated downloads (e.g. an HTML error page or a dropped connection):
+                // installing a partial APK would silently fail and leave the old version in place.
+                if (total > 0 && downloaded != total) {
+                    file.delete()
+                    return@withContext null
+                }
+                // Sanity check: a real APK is a ZIP and starts with "PK". If the bytes aren't a
+                // ZIP, we downloaded something wrong — don't hand it to the installer.
+                val header = ByteArray(2)
+                file.inputStream().use { it.read(header) }
+                if (header[0] != 'P'.code.toByte() || header[1] != 'K'.code.toByte()) {
+                    file.delete()
+                    return@withContext null
                 }
                 file
             } catch (_: Exception) { null }

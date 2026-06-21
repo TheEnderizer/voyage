@@ -86,6 +86,7 @@ class SettingsViewModel @Inject constructor(
     val whatsNew: StateFlow<WhatsNewState> = _whatsNew.asStateFlow()
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME
+    val currentVersionCode: Int get() = BuildConfig.VERSION_CODE
 
     fun setLibraryFolder(path: String) = viewModelScope.launch { settings.setLibraryFolder(path) }
     fun setSkipForward(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }

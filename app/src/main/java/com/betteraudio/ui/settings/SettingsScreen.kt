@@ -408,7 +408,7 @@ fun SettingsScreen(
                     icon = Icons.Default.MusicNote,
                     iconTint = MaterialTheme.colorScheme.primary,
                     title = "Voyage",
-                    subtitle = "Version ${viewModel.currentVersion}"
+                    subtitle = "Version ${viewModel.currentVersion} (build ${viewModel.currentVersionCode})"
                 )
             }
         }
