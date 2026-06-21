@@ -94,11 +94,11 @@ fun PlayerScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = 20.dp)
             ) {
                 // ── Top row (fixed) ─────────────────────────────────────
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     PlayerCircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
@@ -136,14 +136,14 @@ fun PlayerScreen(
                         .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(2.dp))
 
                     // Cover art
                     Box(
                         Modifier
-                            .fillMaxWidth(0.74f)
+                            .fillMaxWidth(0.56f)
                             .aspectRatio(1f)
-                            .clip(RoundedCornerShape(32.dp))
+                            .clip(RoundedCornerShape(24.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                             .combinedClickable(
                                 onClick = {},
@@ -158,12 +158,12 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(12.dp))
 
                     // Title & author
                     Text(
                         text = book?.title ?: "",
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = MaterialTheme.typography.headlineSmall,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth()
@@ -178,7 +178,7 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     // ── Metadata chips ──────────────────────────────────
                     val infoChips = buildList {
@@ -301,7 +301,7 @@ fun PlayerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(6.dp))
                         BookProgressBar(
                             positionMs = bookPos,
                             totalMs = bookTotal,
@@ -322,7 +322,7 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(4.dp))
 
                     // ── Transport controls ──────────────────────────────
                     Row(
@@ -341,7 +341,7 @@ fun PlayerScreen(
 
                         Box(
                             Modifier
-                                .size(76.dp)
+                                .size(66.dp)
                                 .clip(Pill)
                                 .background(MaterialTheme.colorScheme.primary)
                                 .clickable { viewModel.togglePlayPause() },
@@ -350,7 +350,7 @@ fun PlayerScreen(
                             Icon(
                                 imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (state.isPlaying) "Pause" else "Play",
-                                modifier = Modifier.size(44.dp),
+                                modifier = Modifier.size(38.dp),
                                 tint = MaterialTheme.colorScheme.onPrimary
                             )
                         }
@@ -365,7 +365,7 @@ fun PlayerScreen(
                         ) { Icon(Icons.Default.SkipNext, "Next part", Modifier.size(28.dp)) }
                     }
 
-                    Spacer(Modifier.height(16.dp))
+                    Spacer(Modifier.height(10.dp))
 
                     // ── Speed control ───────────────────────────────────
                     var sliderSpeed by remember(state.speed) { mutableFloatStateOf(state.speed) }
@@ -381,7 +381,7 @@ fun PlayerScreen(
                         )
                     }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     // ── Volume amplifier ────────────────────────────────
                     var boost by remember(viewModel.currentBoostDb) { mutableIntStateOf(viewModel.currentBoostDb) }
@@ -407,7 +407,7 @@ fun PlayerScreen(
                         }
                     }
 
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(14.dp))
                 }
             }
         }

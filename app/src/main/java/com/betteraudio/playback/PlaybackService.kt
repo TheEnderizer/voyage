@@ -1,9 +1,12 @@
 package com.betteraudio.playback
 
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Bundle
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -41,6 +44,7 @@ class PlaybackService : MediaSessionService() {
     // Volume amplifier — must live on the real ExoPlayer's audio session, not on a
     // remote MediaController (which never receives onAudioSessionIdChanged).
     private var loudnessEnhancer: LoudnessEnhancer? = null
+    private var attachedSessionId = C.AUDIO_SESSION_ID_UNSET
     private var boostMb = 0  // millibels; 100 mb = 1 dB
 
     companion object {
@@ -64,6 +68,19 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        // Assign a known audio session up front so the LoudnessEnhancer can attach
+        // immediately and reliably, rather than depending only on the callback (which can
+        // fire late, with an unset id, or be missed entirely on some devices).
+        val sid = try {
+            (getSystemService(Context.AUDIO_SERVICE) as AudioManager).generateAudioSessionId()
+        } catch (_: Exception) { AudioManager.ERROR }
+        if (sid != AudioManager.ERROR && sid != C.AUDIO_SESSION_ID_UNSET) {
+            try { player.setAudioSessionId(sid) } catch (e: Exception) {
+                Log.e("PlaybackService", "setAudioSessionId failed", e)
+            }
+            attachLoudnessEnhancer(sid)
+        }
+
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 attachLoudnessEnhancer(audioSessionId)
@@ -77,22 +94,35 @@ class PlaybackService : MediaSessionService() {
 
     private fun attachLoudnessEnhancer(audioSessionId: Int) {
         if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
+        if (attachedSessionId == audioSessionId && loudnessEnhancer != null) return
         loudnessEnhancer?.release()
         loudnessEnhancer = try {
             LoudnessEnhancer(audioSessionId).apply {
                 setTargetGain(boostMb)
                 enabled = boostMb > 0
-            }
-        } catch (_: Exception) { null }
+            }.also { attachedSessionId = audioSessionId }
+        } catch (e: Exception) {
+            Log.e("PlaybackService", "LoudnessEnhancer attach failed for session $audioSessionId", e)
+            attachedSessionId = C.AUDIO_SESSION_ID_UNSET
+            null
+        }
     }
 
     private fun applyBoost(mb: Int) {
         boostMb = mb.coerceIn(0, 2400)
+        // The enhancer may not be attached yet (audio session not initialized). Try to
+        // attach now using the player's live session id before applying the gain.
+        if (loudnessEnhancer == null) {
+            val sid = (mediaSession?.player as? ExoPlayer)?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET
+            attachLoudnessEnhancer(sid)
+        }
         loudnessEnhancer?.let {
             try {
                 it.setTargetGain(boostMb)
                 it.enabled = boostMb > 0
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.e("PlaybackService", "applyBoost($boostMb) failed", e)
+            }
         }
     }
 
@@ -131,6 +161,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         loudnessEnhancer?.release()
         loudnessEnhancer = null
+        attachedSessionId = C.AUDIO_SESSION_ID_UNSET
         mediaSession?.run {
             player.release()
             release()
