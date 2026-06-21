@@ -29,7 +29,7 @@ class UpdateChecker @Inject constructor(
         .build()
 
     companion object {
-        const val GITHUB_REPO = "hajmousa2002/voyage"
+        const val GITHUB_REPO = "TheEnderizer/voyage"
         private const val RELEASES_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     }
 
