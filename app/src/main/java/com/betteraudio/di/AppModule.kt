@@ -6,6 +6,7 @@ import com.betteraudio.data.db.AppDatabase
 import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookGroupDao
+import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import dagger.Module
@@ -31,4 +32,5 @@ object AppModule {
     @Provides fun providePlaybackProgressDao(db: AppDatabase): PlaybackProgressDao = db.playbackProgressDao()
     @Provides fun provideBookGroupDao(db: AppDatabase): BookGroupDao = db.bookGroupDao()
     @Provides fun provideChapterDao(db: AppDatabase): ChapterDao = db.chapterDao()
+    @Provides fun provideBookmarkDao(db: AppDatabase): BookmarkDao = db.bookmarkDao()
 }

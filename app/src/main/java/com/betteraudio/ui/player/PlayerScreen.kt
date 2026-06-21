@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,14 +45,20 @@ fun PlayerScreen(
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
-    val bwp   by viewModel.bookWithProgress.collectAsStateWithLifecycle()
-    val state by viewModel.playbackState.collectAsStateWithLifecycle()
-    val chapters by viewModel.chapters.collectAsStateWithLifecycle()
-    val book  = bwp?.book
+    val bwp               by viewModel.bookWithProgress.collectAsStateWithLifecycle()
+    val state             by viewModel.playbackState.collectAsStateWithLifecycle()
+    val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
+    val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val synopsisGenerating by viewModel.synopsisGenerating.collectAsStateWithLifecycle()
+    val preJumpPositionMs by viewModel.preJumpPositionMs.collectAsStateWithLifecycle()
+    val book = bwp?.book
 
-    var showChapters     by remember { mutableStateOf(false) }
-    var showBookSettings by remember { mutableStateOf(false) }
-    var showSleepTimer   by remember { mutableStateOf(false) }
+    var showChapters      by remember { mutableStateOf(false) }
+    var showBookSettings  by remember { mutableStateOf(false) }
+    var showSleepTimer    by remember { mutableStateOf(false) }
+    var showBookmarks     by remember { mutableStateOf(false) }
+    var showAddBookmark   by remember { mutableStateOf(false) }
+    var bookmarkComment   by remember { mutableStateOf("") }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -99,10 +106,19 @@ fun PlayerScreen(
                         PlayerCircleButton(Icons.Default.Bedtime, "Sleep timer") { showSleepTimer = true }
                     }
                     Spacer(Modifier.width(8.dp))
+                    // "Return to previous position" — visible after a bookmark jump
+                    if (preJumpPositionMs != null) {
+                        PlayerCircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Return to previous position") {
+                            viewModel.returnFromJump()
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     if (chapters.hasChapters) {
                         PlayerCircleButton(Icons.AutoMirrored.Filled.List, "Chapters") { showChapters = true }
                         Spacer(Modifier.width(8.dp))
                     }
+                    PlayerCircleButton(Icons.Default.Bookmark, "Bookmarks") { showBookmarks = true }
+                    Spacer(Modifier.width(8.dp))
                     PlayerCircleButton(Icons.Default.MoreVert, "Book settings") { showBookSettings = true }
                 }
 
@@ -181,14 +197,31 @@ fun PlayerScreen(
                     // Description / synopsis
                     val blurb = book?.description?.takeIf { it.isNotBlank() }
                         ?: book?.synopsis?.takeIf { it.isNotBlank() }
-                    if (blurb != null) {
-                        Text(
-                            blurb,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(12.dp))
+                    when {
+                        blurb != null -> {
+                            Text(
+                                blurb,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        synopsisGenerating -> {
+                            Row(
+                                Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Text(
+                                    "Generating synopsis…",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.height(12.dp))
+                        }
                     }
 
                     // ── Progress: chapter (main) + collapsible book bar ─────
@@ -339,6 +372,49 @@ fun PlayerScreen(
                     Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+
+        if (showBookmarks) {
+            val bookTotal = if (state.bookTotalDurationMs > 0) state.bookTotalDurationMs else state.durationMs
+            BookmarkSheet(
+                bookmarks = bookmarks,
+                currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
+                totalDurationMs = bookTotal,
+                onJump = { viewModel.jumpToBookmark(it) },
+                onDelete = { viewModel.deleteBookmark(it) },
+                onAddHere = { showAddBookmark = true },
+                onDismiss = { showBookmarks = false }
+            )
+        }
+
+        if (showAddBookmark) {
+            AlertDialog(
+                onDismissRequest = { showAddBookmark = false; bookmarkComment = "" },
+                title = { Text("Add bookmark") },
+                text = {
+                    OutlinedTextField(
+                        value = bookmarkComment,
+                        onValueChange = { bookmarkComment = it },
+                        label = { Text("Note (optional)") },
+                        placeholder = { Text("e.g. 'Interesting part'") },
+                        singleLine = false,
+                        maxLines = 3,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.addBookmark(bookmarkComment)
+                        bookmarkComment = ""
+                        showAddBookmark = false
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAddBookmark = false; bookmarkComment = "" }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         if (showChapters && chapters.rows.isNotEmpty()) {

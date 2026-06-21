@@ -2,11 +2,13 @@ package com.betteraudio.data.repository
 
 import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.BookDao
+import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
+import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.model.BookWithProgress
@@ -19,7 +21,8 @@ class AudiobookRepository @Inject constructor(
     private val bookDao: BookDao,
     private val audioFileDao: AudioFileDao,
     private val progressDao: PlaybackProgressDao,
-    private val chapterDao: ChapterDao
+    private val chapterDao: ChapterDao,
+    private val bookmarkDao: BookmarkDao
 ) {
 
     fun getBooksInProgress(): Flow<List<BookWithProgress>> = bookDao.getBooksInProgress()
@@ -95,4 +98,9 @@ class AudiobookRepository @Inject constructor(
 
     suspend fun getBooksByIds(ids: List<Long>): List<Book> = bookDao.getBooksByIds(ids)
     suspend fun getAllUngroupedOnce(): List<Book> = bookDao.getAllUngroupedOnce()
+
+    // ── Bookmarks ────────────────────────────────────────────────────────────
+    fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>> = bookmarkDao.getForBook(bookId)
+    suspend fun addBookmark(bookmark: Bookmark): Long = bookmarkDao.insert(bookmark)
+    suspend fun deleteBookmark(id: Long) = bookmarkDao.deleteById(id)
 }

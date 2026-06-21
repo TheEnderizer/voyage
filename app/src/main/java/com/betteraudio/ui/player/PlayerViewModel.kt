@@ -6,6 +6,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.BookStatus
+import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.repository.AudiobookRepository
@@ -17,13 +18,18 @@ import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -35,7 +41,7 @@ sealed class ChapterRow {
     data class BookHeader(val title: String) : ChapterRow()
     data class Item(
         val title: String,
-        val absStartMs: Long,   // position within the currently-loaded timeline
+        val absStartMs: Long,
         val durationMs: Long,
         val key: Long
     ) : ChapterRow()
@@ -65,10 +71,22 @@ class PlayerViewModel @Inject constructor(
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
     val currentBoostDb: Int get() = playerController.currentVolumeBoostDb
-
     fun setVolumeBoost(db: Int) = playerController.setVolumeBoost(db)
 
-    // ── Chapters (per-file fallback or embedded; grouped per book for joined groups) ──
+    // ── Synopsis loading state ───────────────────────────────────────────────
+    private val _synopsisGenerating = MutableStateFlow(false)
+    val synopsisGenerating: StateFlow<Boolean> = _synopsisGenerating.asStateFlow()
+
+    // ── Bookmarks ────────────────────────────────────────────────────────────
+    val bookmarks: StateFlow<List<Bookmark>> =
+        repository.getBookmarksForBook(bookId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Position saved just before a bookmark jump — used for "Return" button
+    private val _preJumpPositionMs = MutableStateFlow<Long?>(null)
+    val preJumpPositionMs: StateFlow<Long?> = _preJumpPositionMs.asStateFlow()
+
+    // ── Chapters ─────────────────────────────────────────────────────────────
     @OptIn(ExperimentalCoroutinesApi::class)
     val chapters: StateFlow<ChapterUiState> =
         playbackState
@@ -102,7 +120,6 @@ class PlayerViewModel @Inject constructor(
     private suspend fun buildGroupChapters(groupId: Long): ChapterUiState {
         val books = groupRepository.getBooksForGroupOnce(groupId)
         val filesPerBook = groupRepository.getAudioFilesForBooks(books.map { it.id })
-        // Global cumulative offsets across every file in group order
         val ordered = books.flatMap { b -> (filesPerBook[b.id] ?: emptyList()) }
         val cum = cumulativeStarts(ordered.map { it.id to it.durationMs })
         val rows = mutableListOf<ChapterRow>()
@@ -129,39 +146,80 @@ class PlayerViewModel @Inject constructor(
         return map
     }
 
-    private var synopsisGenerating = false
-
     init {
+        // Periodic progress save
         viewModelScope.launch {
             while (isActive) {
                 delay(5_000)
                 saveProgressIfActive()
             }
         }
-        // Generate synopsis on first open if API key is set and synopsis is missing
-        viewModelScope.launch {
-            bookWithProgress.collect { bwp ->
-                val book = bwp?.book ?: return@collect
-                if (book.synopsis == null && !synopsisGenerating && settings.currentGeminiApiKey.isNotBlank()) {
-                    synopsisGenerating = true
-                    val text = synopsisService.generateSynopsis(book.title, book.author)
-                    if (text != null) repository.updateSynopsis(book.id, text)
-                }
+
+        // Synopsis generation — combine book + Gemini key so we wait for both to be ready.
+        // This fixes the race where the key loads asynchronously after the first book emission.
+        combine(bookWithProgress, settings.geminiApiKey) { bwp, key -> Pair(bwp, key) }
+            .filter { (bwp, key) -> bwp?.book?.synopsis == null && key.isNotBlank() }
+            .onEach { (bwp, _) ->
+                val book = bwp?.book ?: return@onEach
+                if (_synopsisGenerating.value) return@onEach
+                _synopsisGenerating.value = true
+                val text = synopsisService.generateSynopsis(book.title, book.author)
+                if (text != null) repository.updateSynopsis(book.id, text)
+                _synopsisGenerating.value = false
             }
+            .launchIn(viewModelScope)
+    }
+
+    // ── Bookmark actions ─────────────────────────────────────────────────────
+
+    fun addBookmark(comment: String) {
+        val state = playbackState.value
+        val bwp = bookWithProgress.value ?: return
+        val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+        val currentFile = files.getOrNull(state.currentFileIndex) ?: return
+        val absPos = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs
+        viewModelScope.launch {
+            repository.addBookmark(
+                Bookmark(
+                    bookId = bookId,
+                    fileId = currentFile.id,
+                    positionInFileMs = state.currentPositionMs,
+                    absolutePositionMs = absPos,
+                    comment = comment.trim()
+                )
+            )
         }
     }
+
+    fun jumpToBookmark(bookmark: Bookmark) {
+        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
+            playbackState.value.bookPositionMs
+        else
+            playbackState.value.currentPositionMs
+        _preJumpPositionMs.value = currentAbsPos
+        playerController.bookSeekTo(bookmark.absolutePositionMs)
+    }
+
+    fun returnFromJump() {
+        val returnPos = _preJumpPositionMs.value ?: return
+        _preJumpPositionMs.value = null
+        playerController.bookSeekTo(returnPos)
+    }
+
+    fun deleteBookmark(id: Long) {
+        viewModelScope.launch { repository.deleteBookmark(id) }
+    }
+
+    // ── Playback actions ─────────────────────────────────────────────────────
 
     fun play() {
         viewModelScope.launch {
             val bwp = bookWithProgress.value ?: return@launch
-            val files = bwp.audioFiles.sortedWith(
-                compareBy({ it.trackNumber }, { it.fileName })
-            )
+            val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
             val progress = bwp.progress
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
             val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-            // Use book's saved speed, falling back to global default
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
         }
