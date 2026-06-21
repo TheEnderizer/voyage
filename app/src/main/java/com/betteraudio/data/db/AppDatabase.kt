@@ -3,6 +3,8 @@ package com.betteraudio.data.db
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookGroupDao
@@ -31,4 +33,24 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookGroupDao(): BookGroupDao
     abstract fun chapterDao(): ChapterDao
     abstract fun bookmarkDao(): BookmarkDao
+
+    companion object {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `bookmarks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `bookId` INTEGER NOT NULL,
+                        `fileId` INTEGER NOT NULL,
+                        `positionInFileMs` INTEGER NOT NULL,
+                        `absolutePositionMs` INTEGER NOT NULL,
+                        `comment` TEXT NOT NULL,
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`bookId`) REFERENCES `Book`(`id`) ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
+            }
+        }
+    }
 }
