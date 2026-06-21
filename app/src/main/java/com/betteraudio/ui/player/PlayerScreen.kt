@@ -3,6 +3,7 @@ package com.betteraudio.ui.player
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -24,7 +25,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -200,11 +206,19 @@ fun PlayerScreen(
                         ?: book?.synopsis?.takeIf { it.isNotBlank() }
                     when {
                         blurb != null -> {
+                            // Collapsed: 1 line + a fading 2nd line. Tap to expand / collapse.
+                            var synopsisExpanded by remember(blurb) { mutableStateOf(false) }
                             Text(
                                 blurb,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth()
+                                maxLines = if (synopsisExpanded) Int.MAX_VALUE else 2,
+                                overflow = TextOverflow.Clip,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { synopsisExpanded = !synopsisExpanded }
+                                    .animateContentSize()
+                                    .then(if (synopsisExpanded) Modifier else Modifier.bottomFade())
                             )
                             Spacer(Modifier.height(12.dp))
                         }
@@ -472,6 +486,21 @@ fun PlayerScreen(
         }
     }
 }
+
+/** Fades the bottom of a composable to transparent — used so the collapsed synopsis' 2nd line trails off. */
+private fun Modifier.bottomFade(): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawRect(
+            brush = Brush.verticalGradient(
+                0f to Color.Black,
+                0.55f to Color.Black,
+                1f to Color.Transparent
+            ),
+            blendMode = BlendMode.DstIn
+        )
+    }
 
 private data class ChapterBounds(val title: String, val startMs: Long, val endMs: Long, val index: Int)
 
