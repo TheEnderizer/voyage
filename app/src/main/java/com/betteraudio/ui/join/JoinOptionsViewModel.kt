@@ -17,6 +17,8 @@ import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 
+enum class MetadataSource { FIRST_BOOK, MANUAL }
+
 @HiltViewModel
 class JoinOptionsViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
@@ -44,9 +46,13 @@ class JoinOptionsViewModel @Inject constructor(
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
+    private val _metadataSource = MutableStateFlow(MetadataSource.FIRST_BOOK)
+    val metadataSource: StateFlow<MetadataSource> = _metadataSource.asStateFlow()
+
     init {
         viewModelScope.launch {
             if (editGroupId != -1L) {
+                _metadataSource.value = MetadataSource.MANUAL
                 val group = groupRepository.getGroupById(editGroupId)
                 if (group != null) {
                     _name.value = group.name
@@ -57,20 +63,35 @@ class JoinOptionsViewModel @Inject constructor(
             } else {
                 val ids = bookIdsArg.split(",").mapNotNull { it.trim().toLongOrNull() }
                 val loaded = repository.getBooksByIds(ids)
-                // Preserve the original selection order
                 val idOrder = ids.withIndex().associate { (i, id) -> id to i }
                 _books.value = loaded.sortedBy { idOrder[it.id] ?: Int.MAX_VALUE }
-                _name.value = _books.value.firstOrNull()?.title ?: "Joined Book"
-                _coverArtPath.value = _books.value.firstOrNull()?.coverArtPath
+                syncFromFirstBook()
             }
         }
     }
 
-    fun setName(n: String) { _name.value = n }
+    private fun syncFromFirstBook() {
+        val first = _books.value.firstOrNull() ?: return
+        _name.value = first.title
+        _coverArtPath.value = first.coverArtPath
+    }
+
+    fun setMetadataSource(src: MetadataSource) {
+        _metadataSource.value = src
+        if (src == MetadataSource.FIRST_BOOK) syncFromFirstBook()
+    }
+
+    fun setName(n: String) {
+        if (n != _name.value) _metadataSource.value = MetadataSource.MANUAL
+        _name.value = n
+    }
     fun setSpeed(s: Float) { _speed.value = s }
     fun setCoverArt(path: String?) { _coverArtPath.value = path }
 
-    fun reorder(newOrder: List<Book>) { _books.value = newOrder }
+    fun reorder(newOrder: List<Book>) {
+        _books.value = newOrder
+        if (_metadataSource.value == MetadataSource.FIRST_BOOK) syncFromFirstBook()
+    }
 
     fun sortAlphabetically() {
         _books.value = _books.value.sortedBy { it.title.lowercase() }
@@ -84,6 +105,7 @@ class JoinOptionsViewModel @Inject constructor(
                 context.contentResolver.openInputStream(uri)?.use { input ->
                     dest.outputStream().use { input.copyTo(it) }
                 }
+                _metadataSource.value = MetadataSource.MANUAL
                 _coverArtPath.value = dest.absolutePath
             } catch (_: Exception) {}
         }

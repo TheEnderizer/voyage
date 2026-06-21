@@ -30,7 +30,7 @@ class AudioFileScanner @Inject constructor(
         val root = File(rootPath)
         if (!root.exists() || !root.isDirectory) return@withContext 0
         val count = scanFolder(root, seriesName = null, seriesOrder = null)
-        if (autoJoin) autoJoiner.run()
+        if (autoJoin) autoJoiner.run(rootPath)
         count
     }
 

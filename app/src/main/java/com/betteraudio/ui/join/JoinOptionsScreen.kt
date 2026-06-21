@@ -44,6 +44,7 @@ fun JoinOptionsScreen(
     val coverArtPath by viewModel.coverArtPath.collectAsStateWithLifecycle()
     val speed by viewModel.speed.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
+    val metadataSource by viewModel.metadataSource.collectAsStateWithLifecycle()
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -148,6 +149,27 @@ fun JoinOptionsScreen(
             }
 
             HorizontalDivider()
+
+            // Metadata source — only relevant when creating a new joined group
+            if (!viewModel.isEditing) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Metadata source", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        MetadataSource.entries.forEachIndexed { i, src ->
+                            SegmentedButton(
+                                selected = metadataSource == src,
+                                onClick = { viewModel.setMetadataSource(src) },
+                                shape = SegmentedButtonDefaults.itemShape(i, MetadataSource.entries.size),
+                                label = {
+                                    Text(if (src == MetadataSource.FIRST_BOOK) "Inherit from first book" else "Manual")
+                                }
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider()
+            }
 
             Text(
                 "Book Order",

@@ -4,6 +4,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.BookGroupRepository
 import com.betteraudio.data.settings.SettingsStore
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,35 +31,49 @@ class AutoJoiner @Inject constructor(
     private val settings: SettingsStore
 ) {
 
-    suspend fun run() {
+    suspend fun run(rootPath: String) {
         val books = repository.getAllUngroupedOnce()
         if (books.size < 2) return
         val used = HashSet<Long>()
 
-        // 1) Numbered-title stem
-        groupByKey(books) { seriesStem(it.title) }.forEach { grp ->
-            val ordered = grp.sortedWith(compareBy({ bookNumber(it) ?: Int.MAX_VALUE }, { it.title.lowercase() }))
-            join(displayName(seriesStem(ordered.first().title) ?: ordered.first().title), ordered, used)
-        }
+        // Only merge books that share the same immediate parent directory so that books in
+        // different folders (e.g. Fantasy/ vs SciFi/) are never accidentally joined.
+        val byParent = books.groupBy { parentBucketKey(it.folderPath) }
 
-        // 2) Same series name AND single shared author
-        groupByKey(books.filter { it.id !in used }) { it.seriesName?.lowercase()?.trim()?.ifBlank { null } }
-            .forEach { grp ->
-                val authors = grp.mapNotNull { it.author.trim().lowercase().ifBlank { null } }.toSet()
-                if (authors.size != 1) return@forEach   // mixed/empty authors → not a real series
-                val ordered = grp.sortedWith(compareBy({ it.seriesOrder ?: Float.MAX_VALUE }, { it.title.lowercase() }))
-                join(ordered.first().seriesName ?: ordered.first().title, ordered, used)
+        byParent.values.forEach { bucket ->
+            if (bucket.size < 2) return@forEach
+
+            // 1) Numbered-title stem
+            groupByKey(bucket) { seriesStem(it.title) }.forEach { grp ->
+                val ordered = grp.sortedWith(compareBy({ bookNumber(it) ?: Int.MAX_VALUE }, { it.title.lowercase() }))
+                join(displayName(seriesStem(ordered.first().title) ?: ordered.first().title), ordered, used)
             }
 
-        // 3) Sequential track numbering among same-author books
-        val remaining = books.filter { it.id !in used && it.author.isNotBlank() }
-        remaining.groupBy { it.author.trim().lowercase() }.values.forEach { grp ->
-            if (grp.size < 2) return@forEach
-            val ranged = grp.mapNotNull { b -> trackRange(b)?.let { b to it } }
-            sequentialChains(ranged).forEach { chain ->
-                join(chain.first().title, chain, used)
+            // 2) Same series name AND single shared author
+            groupByKey(bucket.filter { it.id !in used }) { it.seriesName?.lowercase()?.trim()?.ifBlank { null } }
+                .forEach { grp ->
+                    val authors = grp.mapNotNull { it.author.trim().lowercase().ifBlank { null } }.toSet()
+                    if (authors.size != 1) return@forEach   // mixed/empty authors → not a real series
+                    val ordered = grp.sortedWith(compareBy({ it.seriesOrder ?: Float.MAX_VALUE }, { it.title.lowercase() }))
+                    join(ordered.first().seriesName ?: ordered.first().title, ordered, used)
+                }
+
+            // 3) Sequential track numbering among same-author books
+            val remaining = bucket.filter { it.id !in used && it.author.isNotBlank() }
+            remaining.groupBy { it.author.trim().lowercase() }.values.forEach { grp ->
+                if (grp.size < 2) return@forEach
+                val ranged = grp.mapNotNull { b -> trackRange(b)?.let { b to it } }
+                sequentialChains(ranged).forEach { chain ->
+                    join(chain.first().title, chain, used)
+                }
             }
         }
+    }
+
+    /** Absolute path of a book's parent directory — used as the bucket key for directory guard. */
+    private fun parentBucketKey(folderPath: String): String {
+        val dir = folderPath.substringBefore("::") // strip synthetic ::stem suffix for multi-book folders
+        return File(dir).parentFile?.absolutePath ?: dir
     }
 
     private inline fun groupByKey(books: List<Book>, key: (Book) -> String?): List<List<Book>> {
