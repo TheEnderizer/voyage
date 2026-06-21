@@ -12,6 +12,7 @@ import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.BookGroupRepository
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.data.synopsis.SynopsisResult
 import com.betteraudio.data.synopsis.SynopsisService
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
@@ -73,9 +74,12 @@ class PlayerViewModel @Inject constructor(
     val currentBoostDb: Int get() = playerController.currentVolumeBoostDb
     fun setVolumeBoost(db: Int) = playerController.setVolumeBoost(db)
 
-    // ── Synopsis loading state ───────────────────────────────────────────────
+    // ── Synopsis state ───────────────────────────────────────────────────────
     private val _synopsisGenerating = MutableStateFlow(false)
     val synopsisGenerating: StateFlow<Boolean> = _synopsisGenerating.asStateFlow()
+
+    private val _synopsisError = MutableStateFlow<String?>(null)
+    val synopsisError: StateFlow<String?> = _synopsisError.asStateFlow()
 
     // ── Bookmarks ────────────────────────────────────────────────────────────
     val bookmarks: StateFlow<List<Bookmark>> =
@@ -155,19 +159,33 @@ class PlayerViewModel @Inject constructor(
             }
         }
 
-        // Synopsis generation — combine book + Gemini key so we wait for both to be ready.
-        // This fixes the race where the key loads asynchronously after the first book emission.
+        // Wait for both book data and Gemini key before attempting generation.
         combine(bookWithProgress, settings.geminiApiKey) { bwp, key -> Pair(bwp, key) }
             .filter { (bwp, key) -> bwp?.book?.synopsis == null && key.isNotBlank() }
             .onEach { (bwp, _) ->
                 val book = bwp?.book ?: return@onEach
                 if (_synopsisGenerating.value) return@onEach
-                _synopsisGenerating.value = true
-                val text = synopsisService.generateSynopsis(book.title, book.author)
-                if (text != null) repository.updateSynopsis(book.id, text)
-                _synopsisGenerating.value = false
+                runSynopsisGeneration(book.id, book.title, book.author)
             }
             .launchIn(viewModelScope)
+    }
+
+    // ── Synopsis actions ─────────────────────────────────────────────────────
+
+    private suspend fun runSynopsisGeneration(bookId: Long, title: String, author: String) {
+        _synopsisGenerating.value = true
+        _synopsisError.value = null
+        when (val result = synopsisService.generateSynopsis(title, author)) {
+            is SynopsisResult.Success -> repository.updateSynopsis(bookId, result.text)
+            is SynopsisResult.Error   -> _synopsisError.value = result.message
+        }
+        _synopsisGenerating.value = false
+    }
+
+    fun retrySynopsis() {
+        if (_synopsisGenerating.value) return
+        val book = bookWithProgress.value?.book ?: return
+        viewModelScope.launch { runSynopsisGeneration(book.id, book.title, book.author) }
     }
 
     // ── Bookmark actions ─────────────────────────────────────────────────────

@@ -50,6 +50,7 @@ fun PlayerScreen(
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val synopsisGenerating by viewModel.synopsisGenerating.collectAsStateWithLifecycle()
+    val synopsisError      by viewModel.synopsisError.collectAsStateWithLifecycle()
     val preJumpPositionMs by viewModel.preJumpPositionMs.collectAsStateWithLifecycle()
     val book = bwp?.book
 
@@ -219,6 +220,29 @@ fun PlayerScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                            Spacer(Modifier.height(12.dp))
+                        }
+                        synopsisError != null -> {
+                            Surface(
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Synopsis: $synopsisError",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { viewModel.retrySynopsis() }) {
+                                        Text("Retry", style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
                             }
                             Spacer(Modifier.height(12.dp))
                         }
