@@ -57,7 +57,7 @@ fun PlayerScreen(
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val synopsisGenerating by viewModel.synopsisGenerating.collectAsStateWithLifecycle()
     val synopsisError      by viewModel.synopsisError.collectAsStateWithLifecycle()
-    val preJumpPositionMs by viewModel.preJumpPositionMs.collectAsStateWithLifecycle()
+    val positionStack by viewModel.positionStack.collectAsStateWithLifecycle()
     val book = bwp?.book
 
     var showChapters      by remember { mutableStateOf(false) }
@@ -66,6 +66,7 @@ fun PlayerScreen(
     var showBookmarks     by remember { mutableStateOf(false) }
     var showAddBookmark   by remember { mutableStateOf(false) }
     var bookmarkComment   by remember { mutableStateOf("") }
+    var showReturnMenu    by remember { mutableStateOf(false) }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -113,10 +114,29 @@ fun PlayerScreen(
                         PlayerCircleButton(Icons.Default.Bedtime, "Sleep timer") { showSleepTimer = true }
                     }
                     Spacer(Modifier.width(8.dp))
-                    // "Return to previous position" — visible after a bookmark jump
-                    if (preJumpPositionMs != null) {
-                        PlayerCircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Return to previous position") {
-                            viewModel.returnFromJump()
+                    // Return / Confirm — visible when position history stack is non-empty
+                    if (positionStack.isNotEmpty()) {
+                        Box {
+                            PlayerCircleButton(Icons.AutoMirrored.Filled.ArrowBack, "Return to previous position") {
+                                if (positionStack.size > 1) showReturnMenu = true
+                                else viewModel.returnFromJump()
+                            }
+                            DropdownMenu(expanded = showReturnMenu, onDismissRequest = { showReturnMenu = false }) {
+                                positionStack.reversed().forEachIndexed { displayIdx, posMs ->
+                                    val stackIdx = positionStack.size - 1 - displayIdx
+                                    DropdownMenuItem(
+                                        text = { Text(formatDuration(posMs)) },
+                                        onClick = {
+                                            showReturnMenu = false
+                                            viewModel.returnToIndex(stackIdx)
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        PlayerCircleButton(Icons.Default.Check, "Confirm position here") {
+                            viewModel.confirmPosition()
                         }
                         Spacer(Modifier.width(8.dp))
                     }
@@ -269,6 +289,12 @@ fun PlayerScreen(
                     val items = chapters.rows.filterIsInstance<ChapterRow.Item>()
                     val cur = currentChapter(items, bookPos, bookTotal)
 
+                    // Capture pre-drag position for history push on large scrubber jumps
+                    var chapterScrubStartMs by remember { mutableStateOf(-1L) }
+                    var chapterScrubCurrentMs by remember { mutableStateOf(-1L) }
+                    var bookScrubStartMs by remember { mutableStateOf(-1L) }
+                    var bookScrubCurrentMs by remember { mutableStateOf(-1L) }
+
                     if (chapters.hasChapters && cur != null) {
                         // Current chapter title + index
                         Text(
@@ -291,7 +317,19 @@ fun PlayerScreen(
                         val chPos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                         Slider(
                             value = (chPos.toFloat() / chDur).coerceIn(0f, 1f),
-                            onValueChange = { f -> viewModel.bookSeekTo(cur.startMs + (f * chDur).toLong()) },
+                            onValueChange = { f ->
+                                val target = cur.startMs + (f * chDur).toLong()
+                                if (chapterScrubStartMs < 0L) chapterScrubStartMs = bookPos
+                                chapterScrubCurrentMs = target
+                                viewModel.bookSeekTo(target)
+                            },
+                            onValueChangeFinished = {
+                                if (chapterScrubStartMs >= 0L) {
+                                    viewModel.pushPositionIfLargeJump(chapterScrubStartMs, chapterScrubCurrentMs)
+                                    chapterScrubStartMs = -1L
+                                    chapterScrubCurrentMs = -1L
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -311,7 +349,19 @@ fun PlayerScreen(
                         // Single-chapter / no-chapter fallback: one book-level scrubber
                         Slider(
                             value = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f,
-                            onValueChange = { f -> viewModel.bookSeekTo((f * bookTotal).toLong()) },
+                            onValueChange = { f ->
+                                val target = (f * bookTotal).toLong()
+                                if (bookScrubStartMs < 0L) bookScrubStartMs = bookPos
+                                bookScrubCurrentMs = target
+                                viewModel.bookSeekTo(target)
+                            },
+                            onValueChangeFinished = {
+                                if (bookScrubStartMs >= 0L) {
+                                    viewModel.pushPositionIfLargeJump(bookScrubStartMs, bookScrubCurrentMs)
+                                    bookScrubStartMs = -1L
+                                    bookScrubCurrentMs = -1L
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -459,7 +509,7 @@ fun PlayerScreen(
             ChapterSheet(
                 rows = chapters.rows,
                 currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
-                onSeek = { viewModel.bookSeekTo(it) },
+                onSeek = { viewModel.seekToChapter(it) },
                 onDismiss = { showChapters = false }
             )
         }

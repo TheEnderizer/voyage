@@ -18,6 +18,7 @@ import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
@@ -86,9 +88,37 @@ class PlayerViewModel @Inject constructor(
         repository.getBookmarksForBook(bookId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    // Position saved just before a bookmark jump — used for "Return" button
-    private val _preJumpPositionMs = MutableStateFlow<Long?>(null)
-    val preJumpPositionMs: StateFlow<Long?> = _preJumpPositionMs.asStateFlow()
+    // Position history stack — pushed before jumps; pop to return, auto-clears after 10 min of uninterrupted playback
+    private val _positionStack = MutableStateFlow<List<Long>>(emptyList())
+    val positionStack: StateFlow<List<Long>> = _positionStack.asStateFlow()
+    private var autoCommitJob: Job? = null
+
+    private fun pushPosition(absMs: Long) {
+        _positionStack.update { stack ->
+            val limited = if (stack.size >= 20) stack.drop(1) else stack
+            limited + absMs
+        }
+        restartAutoCommit()
+    }
+
+    private fun restartAutoCommit() {
+        autoCommitJob?.cancel()
+        autoCommitJob = viewModelScope.launch {
+            var continuousPlayMs = 0L
+            while (isActive) {
+                delay(1_000)
+                if (playbackState.value.isPlaying) {
+                    continuousPlayMs += 1_000
+                    if (continuousPlayMs >= 10 * 60_000L) {
+                        confirmPosition()
+                        break
+                    }
+                } else {
+                    continuousPlayMs = 0L
+                }
+            }
+        }
+    }
 
     // ── Chapters ─────────────────────────────────────────────────────────────
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -214,14 +244,45 @@ class PlayerViewModel @Inject constructor(
             playbackState.value.bookPositionMs
         else
             playbackState.value.currentPositionMs
-        _preJumpPositionMs.value = currentAbsPos
+        pushPosition(currentAbsPos)
         playerController.bookSeekTo(bookmark.absolutePositionMs)
     }
 
     fun returnFromJump() {
-        val returnPos = _preJumpPositionMs.value ?: return
-        _preJumpPositionMs.value = null
-        playerController.bookSeekTo(returnPos)
+        returnToIndex(_positionStack.value.size - 1)
+    }
+
+    fun returnToIndex(index: Int) {
+        val stack = _positionStack.value
+        if (index < 0 || index >= stack.size) return
+        val targetMs = stack[index]
+        _positionStack.update { it.subList(0, index) }
+        if (_positionStack.value.isEmpty()) {
+            autoCommitJob?.cancel()
+            autoCommitJob = null
+        }
+        playerController.bookSeekTo(targetMs)
+    }
+
+    fun confirmPosition() {
+        _positionStack.value = emptyList()
+        autoCommitJob?.cancel()
+        autoCommitJob = null
+    }
+
+    fun seekToChapter(absMs: Long) {
+        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
+            playbackState.value.bookPositionMs
+        else
+            playbackState.value.currentPositionMs
+        pushPosition(currentAbsPos)
+        playerController.bookSeekTo(absMs)
+    }
+
+    fun pushPositionIfLargeJump(beforeMs: Long, afterMs: Long) {
+        if (kotlin.math.abs(afterMs - beforeMs) > 5 * 60_000L) {
+            pushPosition(beforeMs)
+        }
     }
 
     fun deleteBookmark(id: Long) {
