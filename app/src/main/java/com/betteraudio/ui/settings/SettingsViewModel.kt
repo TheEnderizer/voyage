@@ -23,6 +23,15 @@ import javax.inject.Inject
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 
+sealed class SettingsSection {
+    object Root : SettingsSection()
+    object Library : SettingsSection()
+    object Playback : SettingsSection()
+    object AI : SettingsSection()
+    object Updates : SettingsSection()
+    object About : SettingsSection()
+}
+
 data class UpdateUiState(
     val checking: Boolean = false,
     val available: ReleaseInfo? = null,
@@ -87,6 +96,10 @@ class SettingsViewModel @Inject constructor(
 
     val currentVersion: String get() = BuildConfig.VERSION_NAME
     val currentVersionCode: Int get() = BuildConfig.VERSION_CODE
+
+    private val _section = MutableStateFlow<SettingsSection>(SettingsSection.Root)
+    val currentSection: StateFlow<SettingsSection> = _section.asStateFlow()
+    fun navigateTo(s: SettingsSection) { _section.value = s }
 
     fun setLibraryFolder(path: String) = viewModelScope.launch { settings.setLibraryFolder(path) }
     fun setSkipForward(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }
