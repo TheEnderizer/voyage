@@ -245,11 +245,19 @@ class HomeViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             val folder = settings.libraryFolder.first()
-            if (folder.isNotBlank()) {
+            // Only rescan on launch if we actually have file access. Scanning before the
+            // user grants "All files access" imports nothing useful and can surface stale
+            // restored state (see allowBackup=false). The home screen drives a manual scan
+            // once permission is granted.
+            if (folder.isNotBlank() && hasFileAccess()) {
                 try { scanner.scanDirectory(folder) } catch (_: Exception) {}
             }
         }
     }
+
+    private fun hasFileAccess(): Boolean =
+        android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R ||
+            android.os.Environment.isExternalStorageManager()
 
     fun startScan(path: String) {
         viewModelScope.launch { settings.setLibraryFolder(path) }
