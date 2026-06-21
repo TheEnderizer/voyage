@@ -47,7 +47,7 @@ class SynopsisService @Inject constructor(
                     .toString()
 
                 val request = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=$apiKey")
+                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
                     .header("Content-Type", "application/json")
                     .post(body.toRequestBody("application/json".toMediaType()))
                     .build()
