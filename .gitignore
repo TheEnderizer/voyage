@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+app/build/
+gradle-app.setting
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+
+# Local config
+local.properties
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Build outputs
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Kotlin incremental
+.kotlin/
+
+# Logs / temp
+build_out.txt

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="72dp"
+    android:height="72dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <path
+        android:fillColor="#272320"
+        android:pathData="M0,0h72v72H0z" />
+    <!-- Headphones icon silhouette -->
+    <path
+        android:fillColor="#FFA552"
+        android:pathData="M36,18 C26.06,18 18,26.06 18,36 v12 h6 v-12 c0,-6.63 5.37,-12 12,-12 s12,5.37 12,12 v12 h6 V36 C54,26.06 45.94,18 36,18 z" />
+    <path
+        android:fillColor="#FFA552"
+        android:pathData="M22,42 h-4 c-2.21,0-4,1.79-4,4 v4 c0,2.21 1.79,4 4,4 h4 V42 z" />
+    <path
+        android:fillColor="#FFA552"
+        android:pathData="M58,42 h-4 v12 h4 c2.21,0 4,-1.79 4,-4 v-4 C62,43.79 60.21,42 58,42 z" />
+</vector>

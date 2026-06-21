@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Check Setup (prerequisites)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\check-setup.bat"],
+      "port": null
+    },
+    {
+      "name": "Build Debug APK",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "gradlew.bat :app:assembleDebug"],
+      "port": null
+    },
+    {
+      "name": "Deploy to USB Device",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\deploy-device.bat"],
+      "port": null
+    },
+    {
+      "name": "Run on Emulator",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\run-emulator.bat"],
+      "port": null
+    },
+    {
+      "name": "Logcat (live app logs)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "scripts\\logcat.bat"],
+      "port": null
+    }
+  ]
+}

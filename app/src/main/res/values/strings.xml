@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Voyage</string>
+    <string name="widget_description">Shows the currently playing audiobook with playback controls</string>
+    <string name="widget_no_book">No book playing</string>
+    <string name="cover_art">Cover art</string>
+    <string name="skip_back">Skip back 15 seconds</string>
+    <string name="play_pause">Play or pause</string>
+    <string name="skip_forward">Skip forward 30 seconds</string>
+    <string name="notification_channel_name">Playback</string>
+    <string name="notification_channel_description">Audiobook playback controls</string>
+    <string name="scan_channel_name">Library Scan</string>
+</resources>
