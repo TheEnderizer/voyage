@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Base theme — Compose handles the UI; manifest just needs a valid theme -->
-    <style name="Theme.BetterAudio" parent="android:Theme.DeviceDefault.NoActionBar">
+    <style name="Theme.Voyage" parent="android:Theme.DeviceDefault.NoActionBar">
         <item name="android:windowBackground">@android:color/white</item>
     </style>
 </resources>

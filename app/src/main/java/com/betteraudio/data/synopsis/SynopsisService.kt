@@ -23,7 +23,7 @@ class SynopsisService @Inject constructor(
         .build()
 
     suspend fun generateSynopsis(title: String, author: String): String? = withContext(Dispatchers.IO) {
-        val apiKey = settings.currentAnthropicApiKey
+        val apiKey = settings.currentGeminiApiKey
         if (apiKey.isBlank()) return@withContext null
 
         try {
@@ -33,18 +33,16 @@ class SynopsisService @Inject constructor(
                 "In 2-3 sentences, write an engaging synopsis for the audiobook \"$title\". Be factual and concise."
 
             val body = JSONObject()
-                .put("model", "claude-haiku-4-5-20251001")
-                .put("max_tokens", 200)
-                .put("messages", JSONArray().put(
-                    JSONObject().put("role", "user").put("content", prompt)
+                .put("contents", JSONArray().put(
+                    JSONObject().put("parts", JSONArray().put(
+                        JSONObject().put("text", prompt)
+                    ))
                 ))
                 .toString()
 
             val request = Request.Builder()
-                .url("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", apiKey)
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
+                .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=$apiKey")
+                .header("Content-Type", "application/json")
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -52,7 +50,13 @@ class SynopsisService @Inject constructor(
             if (!response.isSuccessful) return@withContext null
 
             val json = JSONObject(response.body?.string() ?: return@withContext null)
-            json.getJSONArray("content").getJSONObject(0).getString("text").trim()
+            json.getJSONArray("candidates")
+                .getJSONObject(0)
+                .getJSONObject("content")
+                .getJSONArray("parts")
+                .getJSONObject(0)
+                .getString("text")
+                .trim()
         } catch (_: Exception) { null }
     }
 }

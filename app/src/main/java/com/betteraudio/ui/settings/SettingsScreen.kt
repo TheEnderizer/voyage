@@ -53,7 +53,7 @@ fun SettingsScreen(
     val defaultSpeed    by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val bookCount       by viewModel.bookCount.collectAsStateWithLifecycle()
     val rescanRunning   by viewModel.rescanRunning.collectAsStateWithLifecycle()
-    val anthropicApiKey by viewModel.anthropicApiKey.collectAsStateWithLifecycle()
+    val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
     val updateState     by viewModel.updateState.collectAsStateWithLifecycle()
     val whatsNew        by viewModel.whatsNew.collectAsStateWithLifecycle()
 
@@ -193,30 +193,35 @@ fun SettingsScreen(
                             IconBadge(Icons.Default.AutoAwesome, MaterialTheme.colorScheme.tertiary)
                             Spacer(Modifier.width(12.dp))
                             Column {
-                                Text("AI-generated synopses", style = MaterialTheme.typography.titleSmall)
+                                Text("Gemini AI synopses", style = MaterialTheme.typography.titleSmall)
                                 Text(
-                                    "Created when a book is first opened",
+                                    "Generated when a book is first opened",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
-                        var apiKeyInput by remember(anthropicApiKey) { mutableStateOf(anthropicApiKey) }
+                        var apiKeyInput by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
                         OutlinedTextField(
                             value = apiKeyInput,
                             onValueChange = { apiKeyInput = it },
-                            label = { Text("Anthropic API Key") },
-                            placeholder = { Text("sk-ant-api03-...") },
+                            label = { Text("Google AI API Key") },
+                            placeholder = { Text("AIza...") },
                             singleLine = true,
                             shape = MaterialTheme.shapes.medium,
                             trailingIcon = {
-                                if (apiKeyInput != anthropicApiKey) {
-                                    TextButton(onClick = { viewModel.setAnthropicApiKey(apiKeyInput) }) {
+                                if (apiKeyInput != geminiApiKey) {
+                                    TextButton(onClick = { viewModel.setGeminiApiKey(apiKeyInput) }) {
                                         Text("Save")
                                     }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            "Get a free key at aistudio.google.com",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

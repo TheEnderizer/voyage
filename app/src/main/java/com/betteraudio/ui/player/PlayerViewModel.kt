@@ -142,7 +142,7 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             bookWithProgress.collect { bwp ->
                 val book = bwp?.book ?: return@collect
-                if (book.synopsis == null && !synopsisGenerating && settings.currentAnthropicApiKey.isNotBlank()) {
+                if (book.synopsis == null && !synopsisGenerating && settings.currentGeminiApiKey.isNotBlank()) {
                     synopsisGenerating = true
                     val text = synopsisService.generateSynopsis(book.title, book.author)
                     if (text != null) repository.updateSynopsis(book.id, text)

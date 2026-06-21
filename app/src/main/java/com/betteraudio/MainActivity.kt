@@ -26,7 +26,7 @@ import com.betteraudio.ui.player.PlayerScreen
 import com.betteraudio.ui.search.SearchScreen
 import com.betteraudio.ui.series.SeriesDetailScreen
 import com.betteraudio.ui.settings.SettingsScreen
-import com.betteraudio.ui.theme.BetterAudioTheme
+import com.betteraudio.ui.theme.VoyageTheme
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
             val coverPath = playbackState.coverArtUri
                 ?.removePrefix("file://")
                 ?.takeIf { playbackState.bookId != -1L && it.isNotBlank() }
-            BetterAudioTheme(coverArtPath = coverPath) {
+            VoyageTheme(coverArtPath = coverPath) {
                 val navController = rememberNavController()
                 NavHost(navController = navController, startDestination = "home") {
 

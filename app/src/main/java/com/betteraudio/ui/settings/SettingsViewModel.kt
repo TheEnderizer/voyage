@@ -76,8 +76,8 @@ class SettingsViewModel @Inject constructor(
     private val _rescanRunning = MutableStateFlow(false)
     val rescanRunning: StateFlow<Boolean> = _rescanRunning.asStateFlow()
 
-    val anthropicApiKey: StateFlow<String> =
-        settings.anthropicApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val geminiApiKey: StateFlow<String> =
+        settings.geminiApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 
     private val _updateState = MutableStateFlow(UpdateUiState())
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
@@ -91,7 +91,7 @@ class SettingsViewModel @Inject constructor(
     fun setSkipForward(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }
     fun setSkipBack(ms: Long) = viewModelScope.launch { settings.setSkipBackMs(ms) }
     fun setDefaultSpeed(speed: Float) = viewModelScope.launch { settings.setDefaultSpeed(speed) }
-    fun setAnthropicApiKey(key: String) = viewModelScope.launch { settings.setAnthropicApiKey(key) }
+    fun setGeminiApiKey(key: String) = viewModelScope.launch { settings.setGeminiApiKey(key) }
 
     fun rescan() {
         val path = libraryFolder.value

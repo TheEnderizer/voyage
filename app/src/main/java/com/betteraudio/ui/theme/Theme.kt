@@ -84,7 +84,7 @@ private val LightColors = lightColorScheme(
 )
 
 @Composable
-fun BetterAudioTheme(
+fun VoyageTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     // Brand palette is the identity — dynamic color is opt-in only.
     dynamicColor: Boolean = false,
