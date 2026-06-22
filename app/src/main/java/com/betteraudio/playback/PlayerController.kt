@@ -75,6 +75,30 @@ class PlayerController @Inject constructor(
     private var sleepTimerJob: Job? = null
     private var sleepTimerRemainingMs: Long = 0L
 
+    // Position ticker — updates the seek bar while playback is active
+    private var positionTickerJob: Job? = null
+
+    private fun startPositionTicker() {
+        if (positionTickerJob?.isActive == true) return
+        positionTickerJob = scope.launch {
+            while (isActive) {
+                delay(500)
+                val ctrl = controller ?: break
+                if (ctrl.isPlaying) syncStateOnMainThread()
+            }
+        }
+    }
+
+    private fun stopPositionTicker() {
+        positionTickerJob?.cancel()
+        positionTickerJob = null
+    }
+
+    private fun syncStateOnMainThread() {
+        // syncState() reads MediaController which must be called on the main thread
+        scope.launch(kotlinx.coroutines.Dispatchers.Main) { playerListener.triggerSync() }
+    }
+
     // Volume boost — the LoudnessEnhancer itself lives in PlaybackService; this is just
     // the last value we sent, kept so the UI can show the current level.
     private var currentBoostMb: Int = 0  // millibels (100 mb = 1 dB)
@@ -317,7 +341,10 @@ class PlayerController @Inject constructor(
     }
 
     private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) { syncState() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) startPositionTicker() else stopPositionTicker()
+            syncState()
+        }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
 
@@ -328,6 +355,8 @@ class PlayerController @Inject constructor(
             }
             syncState()
         }
+
+        fun triggerSync() = syncState()
 
         private fun syncState() {
             val ctrl = controller ?: return
