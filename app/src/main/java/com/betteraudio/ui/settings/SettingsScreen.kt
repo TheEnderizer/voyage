@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -258,6 +259,15 @@ private fun LazyListScope.playbackSection(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+    }
+    item {
+        CardContainer {
+            NavRow(
+                icon = Icons.Default.Tune,
+                label = "Audio Presets — open via Tune button in player",
+                onClick = {}
+            )
         }
     }
 }

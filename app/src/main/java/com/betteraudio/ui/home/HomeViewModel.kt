@@ -131,7 +131,10 @@ class HomeViewModel @Inject constructor(
 
     private val _sortFilter = MutableStateFlow(SortFilter())
     val sortFilter: StateFlow<SortFilter> = _sortFilter.asStateFlow()
-    fun setSortFilter(sf: SortFilter) { _sortFilter.value = sf }
+    fun setSortFilter(sf: SortFilter) {
+        _sortFilter.value = sf
+        viewModelScope.launch { settings.setSort(sf.option.name, sf.direction.name) }
+    }
 
     val gridItems: StateFlow<List<HomeGridItem>> =
         combine(
@@ -149,13 +152,12 @@ class HomeViewModel @Inject constructor(
     ): List<HomeGridItem> {
         val result = mutableListOf<HomeGridItem>()
 
-        // Joined groups
+        // Joined groups — read member progress directly (grouped books are not in bwpList,
+        // which only contains ungrouped books), so last-played stays accurate for groups too.
         for (group in groups) {
             val memberBooks = groupRepository.getBooksForGroupOnce(group.id)
             val lastPlayed = memberBooks
-                .mapNotNull { book ->
-                    bwpList.find { it.book.id == book.id }?.progress?.lastPlayedMs
-                }
+                .mapNotNull { book -> repository.getProgressForBookOnce(book.id)?.lastPlayedMs }
                 .maxOrNull() ?: group.createdAtMs
             result.add(HomeGridItem.Group(group, memberBooks, lastPlayed))
         }
@@ -243,6 +245,13 @@ class HomeViewModel @Inject constructor(
     val scan: StateFlow<ScanResult> = _scan.asStateFlow()
 
     init {
+        // Restore the persisted sort order so the library opens the way the user left it.
+        viewModelScope.launch {
+            val opt = runCatching { SortOption.valueOf(settings.sortOption.first()) }.getOrDefault(SortOption.TITLE)
+            val dir = runCatching { SortDirection.valueOf(settings.sortDirection.first()) }.getOrDefault(SortDirection.ASC)
+            _sortFilter.value = SortFilter(opt, dir)
+        }
+
         viewModelScope.launch {
             val folder = settings.libraryFolder.first()
             // Only rescan on launch if we actually have file access. Scanning before the
@@ -325,6 +334,8 @@ class HomeViewModel @Inject constructor(
                 startPositionMs = startPos,
                 speed = group.playbackSpeed
             )
+            // Bump the resume member's last-played so the group rises to the top right away.
+            repository.touchLastPlayed(resumeBook.id)
         }
     }
 }

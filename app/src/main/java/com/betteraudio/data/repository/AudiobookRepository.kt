@@ -1,11 +1,13 @@
 package com.betteraudio.data.repository
 
 import com.betteraudio.data.db.dao.AudioFileDao
+import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.db.entities.AudioFile
+import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
@@ -22,7 +24,8 @@ class AudiobookRepository @Inject constructor(
     private val audioFileDao: AudioFileDao,
     private val progressDao: PlaybackProgressDao,
     private val chapterDao: ChapterDao,
-    private val bookmarkDao: BookmarkDao
+    private val bookmarkDao: BookmarkDao,
+    private val audioPresetDao: AudioPresetDao
 ) {
 
     fun getBooksInProgress(): Flow<List<BookWithProgress>> = bookDao.getBooksInProgress()
@@ -89,6 +92,24 @@ class AudiobookRepository @Inject constructor(
         }
     }
 
+    suspend fun updateBoostDb(bookId: Long, boostDb: Int) {
+        val existing = progressDao.getProgressForBookOnce(bookId)
+        if (existing == null) {
+            progressDao.upsert(PlaybackProgress(bookId = bookId, boostDb = boostDb))
+        } else {
+            progressDao.updateBoostDb(bookId, boostDb)
+        }
+    }
+
+    /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */
+    suspend fun touchLastPlayed(bookId: Long) {
+        val now = System.currentTimeMillis()
+        if (progressDao.touchLastPlayed(bookId, now) == 0) {
+            progressDao.upsert(PlaybackProgress(bookId = bookId, lastPlayedMs = now))
+        }
+        bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
+    }
+
     suspend fun markBookFinished(bookId: Long) {
         progressDao.markCompleted(bookId, System.currentTimeMillis())
         bookDao.updateStatus(bookId, BookStatus.FINISHED)
@@ -103,4 +124,16 @@ class AudiobookRepository @Inject constructor(
     fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>> = bookmarkDao.getForBook(bookId)
     suspend fun addBookmark(bookmark: Bookmark): Long = bookmarkDao.insert(bookmark)
     suspend fun deleteBookmark(id: Long) = bookmarkDao.deleteById(id)
+
+    // ── Audio presets ─────────────────────────────────────────────────────────
+    fun getAllAudioPresets(): Flow<List<AudioPreset>> = audioPresetDao.getAll()
+    suspend fun insertAudioPreset(preset: AudioPreset): Long = audioPresetDao.insert(preset)
+    suspend fun updateAudioPreset(preset: AudioPreset) = audioPresetDao.update(preset)
+    suspend fun deleteAudioPreset(id: Long) = audioPresetDao.deleteById(id)
+    suspend fun setDefaultAudioPreset(id: Long) {
+        audioPresetDao.clearDefault()
+        audioPresetDao.setDefault(id)
+    }
+    suspend fun getProgressForBookOnce(bookId: Long): PlaybackProgress? =
+        progressDao.getProgressForBookOnce(bookId)
 }

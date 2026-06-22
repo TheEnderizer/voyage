@@ -60,13 +60,14 @@ fun PlayerScreen(
     val positionStack by viewModel.positionStack.collectAsStateWithLifecycle()
     val book = bwp?.book
 
-    var showChapters      by remember { mutableStateOf(false) }
-    var showBookSettings  by remember { mutableStateOf(false) }
-    var showSleepTimer    by remember { mutableStateOf(false) }
-    var showBookmarks     by remember { mutableStateOf(false) }
-    var showAddBookmark   by remember { mutableStateOf(false) }
-    var bookmarkComment   by remember { mutableStateOf("") }
-    var showReturnMenu    by remember { mutableStateOf(false) }
+    var showChapters       by remember { mutableStateOf(false) }
+    var showBookSettings   by remember { mutableStateOf(false) }
+    var showSleepTimer     by remember { mutableStateOf(false) }
+    var showBookmarks      by remember { mutableStateOf(false) }
+    var showAddBookmark    by remember { mutableStateOf(false) }
+    var bookmarkComment    by remember { mutableStateOf("") }
+    var showReturnMenu     by remember { mutableStateOf(false) }
+    var showAudioSettings  by remember { mutableStateOf(false) }
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -145,6 +146,8 @@ fun PlayerScreen(
                         Spacer(Modifier.width(8.dp))
                     }
                     PlayerCircleButton(Icons.Default.Bookmark, "Bookmarks") { showBookmarks = true }
+                    Spacer(Modifier.width(8.dp))
+                    PlayerCircleButton(Icons.Default.Tune, "Audio settings") { showAudioSettings = true }
                     Spacer(Modifier.width(8.dp))
                     PlayerCircleButton(Icons.Default.MoreVert, "Book settings") { showBookSettings = true }
                 }
@@ -289,11 +292,13 @@ fun PlayerScreen(
                     val items = chapters.rows.filterIsInstance<ChapterRow.Item>()
                     val cur = currentChapter(items, bookPos, bookTotal)
 
-                    // Capture pre-drag position for history push on large scrubber jumps
+                    // Scrubber drag state. While dragging, the thumb follows the finger but
+                    // playback keeps running from the original spot; the seek happens only on
+                    // release (onValueChangeFinished). dragFrac != null means a drag is active.
                     var chapterScrubStartMs by remember { mutableStateOf(-1L) }
-                    var chapterScrubCurrentMs by remember { mutableStateOf(-1L) }
+                    var chapterDragFrac by remember { mutableStateOf<Float?>(null) }
                     var bookScrubStartMs by remember { mutableStateOf(-1L) }
-                    var bookScrubCurrentMs by remember { mutableStateOf(-1L) }
+                    var bookDragFrac by remember { mutableStateOf<Float?>(null) }
 
                     if (chapters.hasChapters && cur != null) {
                         // Current chapter title + index
@@ -314,28 +319,32 @@ fun PlayerScreen(
                         Spacer(Modifier.height(4.dp))
 
                         val chDur = (cur.endMs - cur.startMs).coerceAtLeast(1L)
-                        val chPos = (bookPos - cur.startMs).coerceIn(0L, chDur)
+                        val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
+                        val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
+                        val chDisplayPos = (chDisplayFrac * chDur).toLong()
                         Slider(
-                            value = (chPos.toFloat() / chDur).coerceIn(0f, 1f),
+                            value = chDisplayFrac,
                             onValueChange = { f ->
-                                val target = cur.startMs + (f * chDur).toLong()
-                                if (chapterScrubStartMs < 0L) chapterScrubStartMs = bookPos
-                                chapterScrubCurrentMs = target
-                                viewModel.bookSeekTo(target)
+                                if (chapterDragFrac == null) chapterScrubStartMs = bookPos
+                                chapterDragFrac = f
                             },
                             onValueChangeFinished = {
-                                if (chapterScrubStartMs >= 0L) {
-                                    viewModel.pushPositionIfLargeJump(chapterScrubStartMs, chapterScrubCurrentMs)
-                                    chapterScrubStartMs = -1L
-                                    chapterScrubCurrentMs = -1L
+                                val f = chapterDragFrac
+                                if (f != null) {
+                                    val target = cur.startMs + (f * chDur).toLong()
+                                    viewModel.bookSeekTo(target)
+                                    if (chapterScrubStartMs >= 0L)
+                                        viewModel.pushPositionIfLargeJump(chapterScrubStartMs, target)
                                 }
+                                chapterScrubStartMs = -1L
+                                chapterDragFrac = null
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatDuration(chPos), style = MaterialTheme.typography.labelMedium,
+                            Text(formatDuration(chDisplayPos), style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("-${formatDuration(chDur - chPos)}", style = MaterialTheme.typography.labelMedium,
+                            Text("-${formatDuration(chDur - chDisplayPos)}", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
 
@@ -347,25 +356,30 @@ fun PlayerScreen(
                         )
                     } else {
                         // Single-chapter / no-chapter fallback: one book-level scrubber
+                        val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
+                        val bookDisplayFrac = bookDragFrac ?: liveFrac
+                        val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
                         Slider(
-                            value = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f,
+                            value = bookDisplayFrac,
                             onValueChange = { f ->
-                                val target = (f * bookTotal).toLong()
-                                if (bookScrubStartMs < 0L) bookScrubStartMs = bookPos
-                                bookScrubCurrentMs = target
-                                viewModel.bookSeekTo(target)
+                                if (bookDragFrac == null) bookScrubStartMs = bookPos
+                                bookDragFrac = f
                             },
                             onValueChangeFinished = {
-                                if (bookScrubStartMs >= 0L) {
-                                    viewModel.pushPositionIfLargeJump(bookScrubStartMs, bookScrubCurrentMs)
-                                    bookScrubStartMs = -1L
-                                    bookScrubCurrentMs = -1L
+                                val f = bookDragFrac
+                                if (f != null) {
+                                    val target = (f * bookTotal).toLong()
+                                    viewModel.bookSeekTo(target)
+                                    if (bookScrubStartMs >= 0L)
+                                        viewModel.pushPositionIfLargeJump(bookScrubStartMs, target)
                                 }
+                                bookScrubStartMs = -1L
+                                bookDragFrac = null
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatDuration(bookPos), style = MaterialTheme.typography.labelMedium,
+                            Text(formatDuration(bookDisplayPos), style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(formatDuration(bookTotal), style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -413,48 +427,6 @@ fun PlayerScreen(
                             onClick = { viewModel.playerController.nextFile() },
                             enabled = state.totalFiles > 1 && state.currentFileIndex < state.totalFiles - 1
                         ) { Icon(Icons.Default.SkipNext, "Next part", Modifier.size(28.dp)) }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // ── Speed control ───────────────────────────────────
-                    var sliderSpeed by remember(state.speed) { mutableFloatStateOf(state.speed) }
-                    ControlCard(icon = Icons.Default.Speed, label = "Speed",
-                        value = "${"%.2f".format(sliderSpeed)}×") {
-                        Slider(
-                            value = sliderSpeed,
-                            onValueChange = { raw -> sliderSpeed = (raw / 0.05f).roundToInt() * 0.05f },
-                            onValueChangeFinished = { viewModel.setSpeed(sliderSpeed) },
-                            valueRange = 0.5f..3.0f,
-                            steps = 49,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-
-                    // ── Volume amplifier ────────────────────────────────
-                    var boost by remember(viewModel.currentBoostDb) { mutableIntStateOf(viewModel.currentBoostDb) }
-                    ControlCard(
-                        icon = Icons.Default.VolumeUp,
-                        label = "Volume boost",
-                        value = if (boost == 0) "Off" else "+$boost dB"
-                    ) {
-                        Slider(
-                            value = boost.toFloat(),
-                            onValueChange = { boost = it.roundToInt() },
-                            onValueChangeFinished = { viewModel.setVolumeBoost(boost) },
-                            valueRange = 0f..24f,
-                            steps = 23,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (boost > 12) {
-                            Text(
-                                "High boost may distort audio",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error
-                            )
-                        }
                     }
 
                     Spacer(Modifier.height(14.dp))
@@ -534,6 +506,13 @@ fun PlayerScreen(
                 onDismiss = { showSleepTimer = false }
             )
         }
+
+        if (showAudioSettings) {
+            AudioSettingsSheet(
+                viewModel = viewModel,
+                onDismiss = { showAudioSettings = false }
+            )
+        }
     }
 }
 
@@ -610,15 +589,23 @@ private fun BookProgressBar(positionMs: Long, totalMs: Long, onSeek: (Long) -> U
             }
             if (expanded) {
                 Spacer(Modifier.height(4.dp))
+                // Seek only on release; keep playing from the current spot while dragging.
+                var dragFrac by remember { mutableStateOf<Float?>(null) }
+                val displayFrac = dragFrac ?: frac
+                val displayPos = (displayFrac * totalMs).toLong()
                 Slider(
-                    value = frac,
-                    onValueChange = { f -> onSeek((f * totalMs).toLong()) },
+                    value = displayFrac,
+                    onValueChange = { dragFrac = it },
+                    onValueChangeFinished = {
+                        dragFrac?.let { onSeek((it * totalMs).toLong()) }
+                        dragFrac = null
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatDuration(positionMs), style = MaterialTheme.typography.labelSmall,
+                    Text(formatDuration(displayPos), style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("-${formatDuration((totalMs - positionMs).coerceAtLeast(0))} left",
+                    Text("-${formatDuration((totalMs - displayPos).coerceAtLeast(0))} left",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

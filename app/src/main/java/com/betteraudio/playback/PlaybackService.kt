@@ -4,12 +4,15 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import org.json.JSONArray
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -40,21 +43,29 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var settings: SettingsStore
 
     private var mediaSession: MediaSession? = null
+    // The real ExoPlayer (the MediaSession is fed a ForwardingPlayer wrapping it). Audio
+    // effects and the audio-session id come from this, not from mediaSession.player.
+    private var exoPlayer: ExoPlayer? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // Volume amplifier — must live on the real ExoPlayer's audio session, not on a
+    // Audio effects — must live on the real ExoPlayer's audio session, not on a
     // remote MediaController (which never receives onAudioSessionIdChanged).
     private var loudnessEnhancer: LoudnessEnhancer? = null
-    private var attachedSessionId = C.AUDIO_SESSION_ID_UNSET
-    private var boostMb = 0  // millibels; 100 mb = 1 dB
+    private var equalizer: Equalizer? = null
+    private var attachedSessionId   = C.AUDIO_SESSION_ID_UNSET
+    private var attachedEqSessionId = C.AUDIO_SESSION_ID_UNSET
+    private var boostMb = 0      // millibels; 100 mb = 1 dB
+    private var eqBandsJson: String? = null  // null = flat / bypass
 
     companion object {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.betteraudio.action.WIDGET_PLAY_PAUSE"
         const val ACTION_SKIP_FORWARD      = "com.betteraudio.action.WIDGET_SKIP_FORWARD"
         const val ACTION_SKIP_BACK         = "com.betteraudio.action.WIDGET_SKIP_BACK"
 
-        const val CMD_SET_BOOST = "com.betteraudio.command.SET_BOOST"
-        const val KEY_BOOST_MB  = "boost_mb"
+        const val CMD_SET_BOOST      = "com.betteraudio.command.SET_BOOST"
+        const val KEY_BOOST_MB       = "boost_mb"
+        const val CMD_SET_EQ         = "com.betteraudio.command.SET_EQ"
+        const val KEY_EQ_BANDS_JSON  = "eq_bands_json"  // "" = flat/bypass
     }
 
     override fun onCreate() {
@@ -68,6 +79,7 @@ class PlaybackService : MediaSessionService() {
             .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .setHandleAudioBecomingNoisy(true)
             .build()
+        exoPlayer = player
 
         // Assign a known audio session up front so the LoudnessEnhancer can attach
         // immediately and reliably, rather than depending only on the callback (which can
@@ -80,15 +92,44 @@ class PlaybackService : MediaSessionService() {
                 Log.e("PlaybackService", "setAudioSessionId failed", e)
             }
             attachLoudnessEnhancer(sid)
+            attachEqualizer(sid)
         }
 
         player.addListener(object : Player.Listener {
             override fun onAudioSessionIdChanged(audioSessionId: Int) {
                 attachLoudnessEnhancer(audioSessionId)
+                attachEqualizer(audioSessionId)
             }
         })
 
-        mediaSession = MediaSession.Builder(this, player)
+        // External transport controls (headphones, Bluetooth, lock screen, notification) drive
+        // the session's seek-to-next/previous commands, which by default jump whole audio files
+        // (acting like chapter skip). Wrap the player so those commands become time-based skips
+        // instead. The in-app "next/previous part" buttons use seekTo(index) directly, so they
+        // bypass this and still change files.
+        val skippingPlayer = object : ForwardingPlayer(player) {
+            private fun skipBy(deltaMs: Long) {
+                val target = (player.currentPosition + deltaMs).coerceAtLeast(0L)
+                player.seekTo(target)
+            }
+            override fun seekToNext()              = skipBy(settings.currentSkipForwardMs)
+            override fun seekToNextMediaItem()     = skipBy(settings.currentSkipForwardMs)
+            override fun seekForward()             = skipBy(settings.currentSkipForwardMs)
+            override fun seekToPrevious()          = skipBy(-settings.currentSkipBackMs)
+            override fun seekToPreviousMediaItem() = skipBy(-settings.currentSkipBackMs)
+            override fun seekBack()                = skipBy(-settings.currentSkipBackMs)
+            override fun getAvailableCommands(): Player.Commands =
+                super.getAvailableCommands().buildUpon()
+                    .add(Player.COMMAND_SEEK_TO_NEXT)
+                    .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                    .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                    .add(Player.COMMAND_SEEK_BACK)
+                    .add(Player.COMMAND_SEEK_FORWARD)
+                    .build()
+        }
+
+        mediaSession = MediaSession.Builder(this, skippingPlayer)
             .setCallback(SessionCallback())
             .build()
     }
@@ -109,12 +150,53 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private fun attachEqualizer(audioSessionId: Int) {
+        if (audioSessionId == C.AUDIO_SESSION_ID_UNSET) return
+        if (attachedEqSessionId == audioSessionId && equalizer != null) return
+        equalizer?.release()
+        equalizer = try {
+            Equalizer(0, audioSessionId).apply {
+                applyEqBands(this, eqBandsJson)
+            }.also { attachedEqSessionId = audioSessionId }
+        } catch (e: Exception) {
+            Log.e("PlaybackService", "Equalizer attach failed for session $audioSessionId", e)
+            attachedEqSessionId = C.AUDIO_SESSION_ID_UNSET
+            null
+        }
+    }
+
+    private fun applyEq(bandsJson: String?) {
+        eqBandsJson = bandsJson?.takeIf { it.isNotEmpty() }
+        if (equalizer == null) {
+            val sid = exoPlayer?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET
+            attachEqualizer(sid)
+        }
+        equalizer?.let { applyEqBands(it, eqBandsJson) }
+    }
+
+    private fun applyEqBands(eq: Equalizer, bandsJson: String?) {
+        try {
+            if (bandsJson.isNullOrEmpty()) {
+                for (i in 0 until eq.numberOfBands) eq.setBandLevel(i.toShort(), 0)
+                eq.enabled = false
+                return
+            }
+            val arr = JSONArray(bandsJson)
+            for (i in 0 until minOf(arr.length(), eq.numberOfBands.toInt())) {
+                eq.setBandLevel(i.toShort(), arr.getInt(i).toShort())
+            }
+            eq.enabled = true
+        } catch (e: Exception) {
+            Log.e("PlaybackService", "applyEqBands failed", e)
+        }
+    }
+
     private fun applyBoost(mb: Int) {
         boostMb = mb.coerceIn(0, 2400)
         // The enhancer may not be attached yet (audio session not initialized). Try to
         // attach now using the player's live session id before applying the gain.
         if (loudnessEnhancer == null) {
-            val sid = (mediaSession?.player as? ExoPlayer)?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET
+            val sid = exoPlayer?.audioSessionId ?: C.AUDIO_SESSION_ID_UNSET
             attachLoudnessEnhancer(sid)
         }
         loudnessEnhancer?.let {
@@ -163,11 +245,15 @@ class PlaybackService : MediaSessionService() {
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         attachedSessionId = C.AUDIO_SESSION_ID_UNSET
+        equalizer?.release()
+        equalizer = null
+        attachedEqSessionId = C.AUDIO_SESSION_ID_UNSET
         mediaSession?.run {
-            player.release()
+            player.release()   // ForwardingPlayer.release() releases the wrapped ExoPlayer
             release()
             mediaSession = null
         }
+        exoPlayer = null
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -193,6 +279,7 @@ class PlaybackService : MediaSessionService() {
             val sessionCommands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS
                 .buildUpon()
                 .add(SessionCommand(CMD_SET_BOOST, Bundle.EMPTY))
+                .add(SessionCommand(CMD_SET_EQ, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -205,9 +292,15 @@ class PlaybackService : MediaSessionService() {
             customCommand: SessionCommand,
             args: Bundle
         ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == CMD_SET_BOOST) {
-                applyBoost(args.getInt(KEY_BOOST_MB, 0))
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            when (customCommand.customAction) {
+                CMD_SET_BOOST -> {
+                    applyBoost(args.getInt(KEY_BOOST_MB, 0))
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+                CMD_SET_EQ -> {
+                    applyEq(args.getString(KEY_EQ_BANDS_JSON)?.takeIf { it.isNotEmpty() })
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.betteraudio.data.db.AppDatabase
 import com.betteraudio.data.db.dao.AudioFileDao
+import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookGroupDao
 import com.betteraudio.data.db.dao.BookmarkDao
@@ -24,7 +25,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "betteraudio.db")
-            .addMigrations(AppDatabase.MIGRATION_3_4)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -34,4 +35,5 @@ object AppModule {
     @Provides fun provideBookGroupDao(db: AppDatabase): BookGroupDao = db.bookGroupDao()
     @Provides fun provideChapterDao(db: AppDatabase): ChapterDao = db.chapterDao()
     @Provides fun provideBookmarkDao(db: AppDatabase): BookmarkDao = db.bookmarkDao()
+    @Provides fun provideAudioPresetDao(db: AppDatabase): AudioPresetDao = db.audioPresetDao()
 }

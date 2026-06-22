@@ -9,16 +9,20 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavType
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.join.JoinOptionsScreen
@@ -35,6 +39,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity() {
 
     @Inject lateinit var playerController: PlayerController
+    @Inject lateinit var settings: SettingsStore
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -45,6 +50,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         playerController.connect()
         requestInitialPermissions()
+        // Captured before composition so the restore effect reads it before the route-tracking
+        // effect (which writes -1 for the initial "home" route) can overwrite it.
+        val initialBookId = runBlocking { settings.lastOpenBookId.first() }
         setContent {
             val playbackState by playerController.playbackState.collectAsStateWithLifecycle()
             val coverPath = playbackState.coverArtUri
@@ -52,6 +60,23 @@ class MainActivity : ComponentActivity() {
                 ?.takeIf { playbackState.bookId != -1L && it.isNotBlank() }
             VoyageTheme(coverArtPath = coverPath) {
                 val navController = rememberNavController()
+
+                // Restore the player the user last had open (set in onCreate before composition).
+                LaunchedEffect(Unit) {
+                    if (initialBookId != -1L) navController.navigate("player/$initialBookId")
+                }
+
+                // Remember which book the player is showing (or -1 elsewhere) so we can restore it
+                // after the app is closed and reopened.
+                val currentEntry by navController.currentBackStackEntryAsState()
+                LaunchedEffect(currentEntry) {
+                    val route = currentEntry?.destination?.route
+                    val id = if (route == "player/{bookId}")
+                        currentEntry?.arguments?.getLong("bookId") ?: -1L
+                    else -1L
+                    settings.setLastOpenBookId(id)
+                }
+
                 NavHost(navController = navController, startDestination = "home") {
 
                     composable("home") {

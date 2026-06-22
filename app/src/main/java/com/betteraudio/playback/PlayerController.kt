@@ -113,6 +113,12 @@ class PlayerController @Inject constructor(
 
     val currentVolumeBoostDb: Int get() = currentBoostMb / 100
 
+    fun setEqBands(bandsJson: String?) {
+        val ctrl = controller ?: return
+        val args = Bundle().apply { putString(PlaybackService.KEY_EQ_BANDS_JSON, bandsJson ?: "") }
+        ctrl.sendCustomCommand(SessionCommand(PlaybackService.CMD_SET_EQ, Bundle.EMPTY), args)
+    }
+
     fun playBook(
         book: Book,
         files: List<AudioFile>,
@@ -239,8 +245,18 @@ class PlayerController @Inject constructor(
         controller?.let { it.seekTo(maxOf(0L, it.currentPosition - settings.currentSkipBackMs)) }
     }
 
-    fun nextFile() { controller?.seekToNextMediaItem() }
-    fun prevFile() { controller?.seekToPreviousMediaItem() }
+    // Use explicit index seeks (not seekToNext/PreviousMediaItem) so the in-app "part" buttons
+    // change files even though the service wraps the player to turn next/previous into time skips.
+    fun nextFile() {
+        controller?.let { c ->
+            if (c.currentMediaItemIndex < c.mediaItemCount - 1) c.seekTo(c.currentMediaItemIndex + 1, 0L)
+        }
+    }
+    fun prevFile() {
+        controller?.let { c ->
+            if (c.currentMediaItemIndex > 0) c.seekTo(c.currentMediaItemIndex - 1, 0L)
+        }
+    }
     fun jumpToFile(index: Int) { controller?.seekTo(index, 0L) }
 
     fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }

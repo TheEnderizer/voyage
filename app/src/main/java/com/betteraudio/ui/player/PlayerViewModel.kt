@@ -5,10 +5,12 @@ import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.model.BookWithProgress
+import org.json.JSONArray
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.BookGroupRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -73,8 +75,62 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
+    // ── Audio presets ────────────────────────────────────────────────────────
+    val audioPresets: StateFlow<List<AudioPreset>> =
+        repository.getAllAudioPresets()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _eqBandsMillibels = MutableStateFlow<IntArray?>(null)  // null = flat/bypass
+    val eqBandsMillibels: StateFlow<IntArray?> = _eqBandsMillibels.asStateFlow()
+
     val currentBoostDb: Int get() = playerController.currentVolumeBoostDb
-    fun setVolumeBoost(db: Int) = playerController.setVolumeBoost(db)
+
+    fun setVolumeBoost(db: Int) {
+        playerController.setVolumeBoost(db)
+        viewModelScope.launch { repository.updateBoostDb(bookId, db) }
+    }
+
+    fun setEqBands(bands: IntArray?) {
+        _eqBandsMillibels.value = bands
+        val json = bands?.let { JSONArray(it.toList()).toString() }
+        playerController.setEqBands(json)
+    }
+
+    fun saveAudioPreset(name: String) {
+        val eqJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() }
+        val preset = AudioPreset(
+            name = name.trim(),
+            speedMult = playbackState.value.speed,
+            boostDb = playerController.currentVolumeBoostDb,
+            eqBandsJson = eqJson
+        )
+        viewModelScope.launch { repository.insertAudioPreset(preset) }
+    }
+
+    fun loadAudioPreset(preset: AudioPreset) {
+        setSpeed(preset.speedMult)
+        playerController.setVolumeBoost(preset.boostDb)
+        viewModelScope.launch { repository.updateBoostDb(bookId, preset.boostDb) }
+        val bands = preset.eqBandsJson?.let { json ->
+            try {
+                val arr = JSONArray(json)
+                IntArray(arr.length()) { i -> arr.getInt(i) }
+            } catch (_: Exception) { null }
+        }
+        _eqBandsMillibels.value = bands
+        playerController.setEqBands(preset.eqBandsJson?.takeIf { it.isNotEmpty() })
+    }
+
+    fun deleteAudioPreset(id: Long) {
+        viewModelScope.launch { repository.deleteAudioPreset(id) }
+    }
+
+    fun setAsDefaultPreset(id: Long) {
+        viewModelScope.launch {
+            repository.setDefaultAudioPreset(id)
+            settings.setDefaultAudioPresetId(id)
+        }
+    }
 
     // ── Synopsis state ───────────────────────────────────────────────────────
     private val _synopsisGenerating = MutableStateFlow(false)
@@ -301,6 +357,10 @@ class PlayerViewModel @Inject constructor(
             val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+            // Restore per-book boost
+            playerController.setVolumeBoost(progress?.boostDb ?: 0)
+            // Mark as just-played now so last-played sorting moves it to the top immediately.
+            repository.touchLastPlayed(bwp.book.id)
         }
     }
 

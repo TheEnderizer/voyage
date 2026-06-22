@@ -29,6 +29,7 @@ data class PlaybackProgress(
     val positionMs: Long = 0,
     val lastPlayedMs: Long = System.currentTimeMillis(),
     val playbackSpeed: Float = 1.0f,
+    val boostDb: Int = 0,
     val isCompleted: Boolean = false,
     val completedDateMs: Long? = null
 )

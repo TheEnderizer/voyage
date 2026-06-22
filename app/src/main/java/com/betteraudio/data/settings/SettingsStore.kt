@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -29,7 +30,11 @@ class SettingsStore @Inject constructor(
         val SKIP_FORWARD_MS  = longPreferencesKey("skip_forward_ms")
         val SKIP_BACK_MS     = longPreferencesKey("skip_back_ms")
         val DEFAULT_SPEED    = floatPreferencesKey("default_speed")
-        val GEMINI_API_KEY   = stringPreferencesKey("gemini_api_key")
+        val GEMINI_API_KEY          = stringPreferencesKey("gemini_api_key")
+        val DEFAULT_AUDIO_PRESET_ID = longPreferencesKey("default_audio_preset_id")
+        val SORT_OPTION             = stringPreferencesKey("sort_option")
+        val SORT_DIRECTION          = stringPreferencesKey("sort_direction")
+        val LAST_OPEN_BOOK_ID       = longPreferencesKey("last_open_book_id")
         // Legacy key kept so old Anthropic keys are silently ignored on next read
         val ANTHROPIC_API_KEY = stringPreferencesKey("anthropic_api_key")
     }
@@ -44,20 +49,26 @@ class SettingsStore @Inject constructor(
     val skipForwardMs: Flow<Long>    = context.dataStore.data.map { it[Keys.SKIP_FORWARD_MS] ?: DEFAULT_SKIP_FORWARD_MS }
     val skipBackMs: Flow<Long>       = context.dataStore.data.map { it[Keys.SKIP_BACK_MS]    ?: DEFAULT_SKIP_BACK_MS }
     val defaultSpeed: Flow<Float>    = context.dataStore.data.map { it[Keys.DEFAULT_SPEED]   ?: DEFAULT_SPEED }
-    val geminiApiKey: Flow<String>   = context.dataStore.data.map { it[Keys.GEMINI_API_KEY]  ?: "" }
+    val geminiApiKey: Flow<String>          = context.dataStore.data.map { it[Keys.GEMINI_API_KEY]          ?: "" }
+    val defaultAudioPresetId: Flow<Long>    = context.dataStore.data.map { it[Keys.DEFAULT_AUDIO_PRESET_ID] ?: -1L }
+    val sortOption: Flow<String>            = context.dataStore.data.map { it[Keys.SORT_OPTION]    ?: "TITLE" }
+    val sortDirection: Flow<String>         = context.dataStore.data.map { it[Keys.SORT_DIRECTION] ?: "ASC" }
+    val lastOpenBookId: Flow<Long>          = context.dataStore.data.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }
 
-    @Volatile var currentSkipForwardMs  = DEFAULT_SKIP_FORWARD_MS; private set
-    @Volatile var currentSkipBackMs     = DEFAULT_SKIP_BACK_MS;    private set
-    @Volatile var currentDefaultSpeed   = DEFAULT_SPEED;            private set
-    @Volatile var currentLibraryFolder  = "";                       private set
-    @Volatile var currentGeminiApiKey   = "";                       private set
+    @Volatile var currentSkipForwardMs       = DEFAULT_SKIP_FORWARD_MS; private set
+    @Volatile var currentSkipBackMs          = DEFAULT_SKIP_BACK_MS;    private set
+    @Volatile var currentDefaultSpeed        = DEFAULT_SPEED;            private set
+    @Volatile var currentLibraryFolder       = "";                       private set
+    @Volatile var currentGeminiApiKey        = "";                       private set
+    @Volatile var currentDefaultAudioPresetId = -1L;                     private set
 
     init {
-        scope.launch { skipForwardMs.collect { currentSkipForwardMs = it } }
-        scope.launch { skipBackMs.collect    { currentSkipBackMs    = it } }
-        scope.launch { defaultSpeed.collect  { currentDefaultSpeed  = it } }
-        scope.launch { libraryFolder.collect { currentLibraryFolder = it } }
-        scope.launch { geminiApiKey.collect  { currentGeminiApiKey  = it } }
+        scope.launch { skipForwardMs.collect          { currentSkipForwardMs        = it } }
+        scope.launch { skipBackMs.collect             { currentSkipBackMs           = it } }
+        scope.launch { defaultSpeed.collect           { currentDefaultSpeed         = it } }
+        scope.launch { libraryFolder.collect          { currentLibraryFolder        = it } }
+        scope.launch { geminiApiKey.collect           { currentGeminiApiKey         = it } }
+        scope.launch { defaultAudioPresetId.collect   { currentDefaultAudioPresetId = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -69,5 +80,14 @@ class SettingsStore @Inject constructor(
     suspend fun setDefaultSpeed(speed: Float) =
         context.dataStore.edit { it[Keys.DEFAULT_SPEED]   = speed }.let { }
     suspend fun setGeminiApiKey(key: String) =
-        context.dataStore.edit { it[Keys.GEMINI_API_KEY]  = key }.let { }
+        context.dataStore.edit { it[Keys.GEMINI_API_KEY]          = key }.let { }
+    suspend fun setDefaultAudioPresetId(id: Long) =
+        context.dataStore.edit { it[Keys.DEFAULT_AUDIO_PRESET_ID] = id }.let { }
+    suspend fun setSort(option: String, direction: String) =
+        context.dataStore.edit {
+            it[Keys.SORT_OPTION]    = option
+            it[Keys.SORT_DIRECTION] = direction
+        }.let { }
+    suspend fun setLastOpenBookId(id: Long) =
+        context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }.let { }
 }
