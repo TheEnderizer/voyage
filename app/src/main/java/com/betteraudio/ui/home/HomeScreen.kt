@@ -118,9 +118,11 @@ fun HomeScreen(
     val nowPlaying = playbackState.bookId != -1L && playbackState.bookTitle.isNotBlank()
     val showResumeCard = !nowPlaying && resumeBook != null
 
-    // Auto-open folder picker on first launch (no library folder set yet)
+    // Auto-open folder picker on first launch. savedFolder is null until DataStore emits,
+    // so we only act once the real value arrives — avoids a false trigger on the "" default.
     LaunchedEffect(savedFolder) {
-        if (savedFolder.isBlank() && !showScanSheet) {
+        val folder = savedFolder
+        if (folder != null && folder.isBlank() && !showScanSheet) {
             onScanClick()
         }
     }
@@ -139,7 +141,7 @@ fun HomeScreen(
                 val isGridRefreshing = scan.status == ScanStatus.Running
                 PullToRefreshBox(
                     isRefreshing = isGridRefreshing,
-                    onRefresh = { if (savedFolder.isNotBlank()) viewModel.startScan(savedFolder) },
+                    onRefresh = { savedFolder?.takeIf { it.isNotBlank() }?.let { viewModel.startScan(it) } },
                     modifier = Modifier.fillMaxSize()
                 ) {
                 LazyVerticalGrid(
@@ -314,7 +316,7 @@ fun HomeScreen(
 
     if (showScanSheet) {
         ScanBottomSheet(
-            startPath = savedFolder,
+            startPath = savedFolder ?: "",
             onDismiss = { showScanSheet = false; viewModel.resetScanState() },
             onScan = { path -> viewModel.startScan(path) },
             onOpenStorageSettings = { storageSettingsLauncher.launch(allFilesAccessIntent(context)) },

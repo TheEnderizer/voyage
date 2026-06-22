@@ -282,9 +282,10 @@ class HomeViewModel @Inject constructor(
 
     // ── Scan ─────────────────────────────────────────────────────────────────
 
-    val savedFolder: StateFlow<String> =
+    // null = DataStore not yet loaded; "" = loaded but not set; non-blank = folder chosen
+    val savedFolder: StateFlow<String?> =
         settings.libraryFolder
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _scan = MutableStateFlow(ScanResult())
     val scan: StateFlow<ScanResult> = _scan.asStateFlow()
