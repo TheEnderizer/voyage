@@ -3,6 +3,11 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.2.5b] - 2026-06-22
+
+### Fixed
+- Crash on playback start caused by accessing MediaController on the wrong thread in the position ticker
+
 ## [1.2.4b] - 2026-06-22
 
 ### Fixed

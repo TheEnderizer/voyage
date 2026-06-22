@@ -80,11 +80,11 @@ class PlayerController @Inject constructor(
 
     private fun startPositionTicker() {
         if (positionTickerJob?.isActive == true) return
-        positionTickerJob = scope.launch {
+        // Must run on Main — MediaController properties are main-thread only
+        positionTickerJob = scope.launch(kotlinx.coroutines.Dispatchers.Main) {
             while (isActive) {
                 delay(500)
-                val ctrl = controller ?: break
-                if (ctrl.isPlaying) syncStateOnMainThread()
+                playerListener.triggerSync()
             }
         }
     }
@@ -92,11 +92,6 @@ class PlayerController @Inject constructor(
     private fun stopPositionTicker() {
         positionTickerJob?.cancel()
         positionTickerJob = null
-    }
-
-    private fun syncStateOnMainThread() {
-        // syncState() reads MediaController which must be called on the main thread
-        scope.launch(kotlinx.coroutines.Dispatchers.Main) { playerListener.triggerSync() }
     }
 
     // Volume boost — the LoudnessEnhancer itself lives in PlaybackService; this is just
