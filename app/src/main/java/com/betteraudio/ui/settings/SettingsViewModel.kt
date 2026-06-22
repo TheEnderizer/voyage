@@ -2,6 +2,7 @@ package com.betteraudio.ui.settings
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.content.FileProvider
 import com.betteraudio.BuildConfig
 import com.betteraudio.data.repository.AudiobookRepository
@@ -94,8 +95,21 @@ class SettingsViewModel @Inject constructor(
     private val _whatsNew = MutableStateFlow(WhatsNewState())
     val whatsNew: StateFlow<WhatsNewState> = _whatsNew.asStateFlow()
 
-    val currentVersion: String get() = BuildConfig.VERSION_NAME
-    val currentVersionCode: Int get() = BuildConfig.VERSION_CODE
+    // Read the version from the installed package at runtime, NOT from BuildConfig. BuildConfig
+    // constants are inlined at compile time, so a version bump that doesn't force a recompile of
+    // this file leaves a stale value baked in (manifest updates, but this string wouldn't). The
+    // PackageManager always reflects the actually-installed APK — the same source the system
+    // App-info screen uses. BuildConfig stays only as a defensive fallback.
+    private val packageInfo get() = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+
+    val currentVersion: String
+        get() = runCatching { packageInfo.versionName }.getOrNull() ?: BuildConfig.VERSION_NAME
+
+    val currentVersionCode: Int
+        get() = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode.toInt()
+            else @Suppress("DEPRECATION") packageInfo.versionCode
+        }.getOrNull() ?: BuildConfig.VERSION_CODE
 
     private val _section = MutableStateFlow<SettingsSection>(SettingsSection.Root)
     val currentSection: StateFlow<SettingsSection> = _section.asStateFlow()

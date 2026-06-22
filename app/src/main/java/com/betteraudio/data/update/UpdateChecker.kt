@@ -33,12 +33,19 @@ class UpdateChecker @Inject constructor(
         private const val RELEASES_URL = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
     }
 
+    // Installed version from the package manager (always matches the running APK). BuildConfig is
+    // a compile-time inlined constant and can go stale across version bumps, which would make the
+    // updater offer a version that's already installed — so read the real value at runtime.
+    private fun installedVersionName(): String = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName
+    }.getOrNull() ?: BuildConfig.VERSION_NAME
+
     suspend fun checkForUpdate(): ReleaseInfo? = withContext(Dispatchers.IO) {
         try {
             val json = fetchLatestRelease() ?: return@withContext null
             val tagName = json.optString("tag_name", "")
             val remoteVersion = tagName.trimStart('v')
-            if (!isNewerVersion(remoteVersion, BuildConfig.VERSION_NAME)) return@withContext null
+            if (!isNewerVersion(remoteVersion, installedVersionName())) return@withContext null
             val notes = json.optString("body", "")
             val apkUrl = findApkAssetUrl(json) ?: return@withContext null
             ReleaseInfo(remoteVersion, notes, apkUrl)
