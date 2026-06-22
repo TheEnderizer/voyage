@@ -63,6 +63,7 @@ fun SettingsScreen(
     val skipBackMs      by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val defaultSpeed    by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val bookCount       by viewModel.bookCount.collectAsStateWithLifecycle()
+    val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
     val rescanRunning   by viewModel.rescanRunning.collectAsStateWithLifecycle()
     val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
     val updateState     by viewModel.updateState.collectAsStateWithLifecycle()
@@ -139,14 +140,14 @@ fun SettingsScreen(
                     SettingsSection.Root -> rootSection(viewModel)
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        storageSettingsLauncher, { showBrowser = true }, viewModel
+                        ignoredBooks, storageSettingsLauncher, { showBrowser = true }, viewModel
                     )
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed, viewModel
                     )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
-                    SettingsSection.About -> aboutSection(viewModel)
+                    SettingsSection.About -> aboutSection(updateState, viewModel)
                 }
             }
         }
@@ -160,7 +161,6 @@ private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
         Triple(Icons.Default.Folder, "Library", SettingsSection.Library),
         Triple(Icons.Default.Speed, "Playback", SettingsSection.Playback),
         Triple(Icons.Default.AutoAwesome, "AI Synopsis", SettingsSection.AI),
-        Triple(Icons.Default.SystemUpdateAlt, "Updates", SettingsSection.Updates),
         Triple(Icons.Default.Info, "About", SettingsSection.About),
     )
     item { Spacer(Modifier.height(4.dp)) }
@@ -177,6 +177,7 @@ private fun LazyListScope.librarySection(
     libraryFolder: String,
     bookCount: Int,
     rescanRunning: Boolean,
+    ignoredBooks: List<com.betteraudio.data.db.entities.Book>,
     storageSettingsLauncher: androidx.activity.result.ActivityResultLauncher<Intent>,
     onBrowse: () -> Unit,
     viewModel: SettingsViewModel
@@ -218,6 +219,34 @@ private fun LazyListScope.librarySection(
                 if (rescanRunning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }
         )
+    }
+
+    if (ignoredBooks.isNotEmpty()) {
+        item { SectionHeader("Hidden Books") }
+        item {
+            CardContainer {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ignoredBooks.forEach { book ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(book.displayTitle, style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                if (book.displayAuthor.isNotBlank()) {
+                                    Text(book.displayAuthor, style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                            TextButton(onClick = { viewModel.restoreBook(book.id) }) { Text("Restore") }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -446,7 +475,7 @@ private fun LazyListScope.updatesSection(
     }
 }
 
-private fun LazyListScope.aboutSection(viewModel: SettingsViewModel) {
+private fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: SettingsViewModel) {
     item {
         SettingsCard(
             icon = Icons.Default.MusicNote,
@@ -455,6 +484,95 @@ private fun LazyListScope.aboutSection(viewModel: SettingsViewModel) {
             subtitle = "Version ${viewModel.currentVersion} (build ${viewModel.currentVersionCode})"
         )
     }
+
+    // Update check — moved here from the Updates sub-page
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconBadge(Icons.Default.SystemUpdateAlt, MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Text("Updates", style = MaterialTheme.typography.titleSmall)
+                    }
+                    if (!updateState.downloading) {
+                        Button(
+                            onClick = { viewModel.checkForUpdate() },
+                            enabled = !updateState.checking,
+                            shape = Pill,
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            if (updateState.checking) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.onPrimary)
+                            } else { Text("Check") }
+                        }
+                    }
+                }
+                when {
+                    updateState.upToDate && !updateState.checking -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.tertiary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("You're up to date", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.tertiary)
+                        }
+                    }
+                    updateState.available != null -> {
+                        Surface(shape = MaterialTheme.shapes.medium,
+                            color = MaterialTheme.colorScheme.primaryContainer) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("v${updateState.available!!.versionName} available",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                if (updateState.downloading) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        LinearProgressIndicator(
+                                            progress = { updateState.downloadProgress / 100f },
+                                            modifier = Modifier.fillMaxWidth())
+                                        Text("Downloading… ${updateState.downloadProgress}%",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
+                                    }
+                                } else {
+                                    Button(onClick = { viewModel.downloadAndInstall() },
+                                        modifier = Modifier.fillMaxWidth(), shape = Pill) {
+                                        Text("Download & Install")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    updateState.error != null -> {
+                        Text(updateState.error!!, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+
+    // Changelog for this channel
+    if (viewModel.changelog.isNotBlank()) {
+        item { SectionHeader("What's new in this build") }
+        item {
+            CardContainer {
+                Text(
+                    viewModel.changelog,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp)
+                )
+            }
+        }
+    }
+
     item { SectionHeader("Expected Folder Structure") }
     item {
         CardContainer {

@@ -233,6 +233,9 @@ class AudioFileScanner @Inject constructor(
             val art = retriever.embeddedPicture ?: return
             val coverFile = File(folder, coverName)
             coverFile.writeBytes(art)
+            // Keep cover art out of the phone gallery
+            val nomedia = File(folder, ".nomedia")
+            if (!nomedia.exists()) nomedia.createNewFile()
             repository.updateCoverArt(bookId, coverFile.absolutePath)
         } catch (_: Exception) {
         } finally {

@@ -55,7 +55,7 @@ class SettingsViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val scanner: AudioFileScanner,
     private val updateChecker: UpdateChecker,
-    repository: AudiobookRepository
+    private val repository: AudiobookRepository
 ) : ViewModel() {
 
     val libraryFolder: StateFlow<String> =
@@ -83,6 +83,14 @@ class SettingsViewModel @Inject constructor(
         repository.getAllBooks().map { it.size }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
+    val ignoredBooks: StateFlow<List<com.betteraudio.data.db.entities.Book>> =
+        repository.getAllIgnoredBooks()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun restoreBook(bookId: Long) {
+        viewModelScope.launch { repository.setBookIgnored(bookId, false) }
+    }
+
     private val _rescanRunning = MutableStateFlow(false)
     val rescanRunning: StateFlow<Boolean> = _rescanRunning.asStateFlow()
 
@@ -94,6 +102,13 @@ class SettingsViewModel @Inject constructor(
 
     private val _whatsNew = MutableStateFlow(WhatsNewState())
     val whatsNew: StateFlow<WhatsNewState> = _whatsNew.asStateFlow()
+
+    // Changelog bundled as a raw resource — channel determined by the "b" version suffix.
+    val changelog: String by lazy {
+        val isBeta = runCatching { currentVersion.endsWith("b") }.getOrDefault(false)
+        val resId = if (isBeta) com.betteraudio.R.raw.changelog_beta else com.betteraudio.R.raw.changelog_stable
+        runCatching { appContext.resources.openRawResource(resId).bufferedReader().readText() }.getOrDefault("")
+    }
 
     // Read the version from the installed package at runtime, NOT from BuildConfig. BuildConfig
     // constants are inlined at compile time, so a version bump that doesn't force a recompile of

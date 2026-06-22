@@ -35,6 +35,7 @@ class SettingsStore @Inject constructor(
         val SORT_OPTION             = stringPreferencesKey("sort_option")
         val SORT_DIRECTION          = stringPreferencesKey("sort_direction")
         val LAST_OPEN_BOOK_ID       = longPreferencesKey("last_open_book_id")
+        val LAST_PLAYED_BOOK_ID     = longPreferencesKey("last_played_book_id")
         // Legacy key kept so old Anthropic keys are silently ignored on next read
         val ANTHROPIC_API_KEY = stringPreferencesKey("anthropic_api_key")
     }
@@ -54,6 +55,7 @@ class SettingsStore @Inject constructor(
     val sortOption: Flow<String>            = context.dataStore.data.map { it[Keys.SORT_OPTION]    ?: "TITLE" }
     val sortDirection: Flow<String>         = context.dataStore.data.map { it[Keys.SORT_DIRECTION] ?: "ASC" }
     val lastOpenBookId: Flow<Long>          = context.dataStore.data.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }
+    val lastPlayedBookId: Flow<Long>        = context.dataStore.data.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }
 
     @Volatile var currentSkipForwardMs       = DEFAULT_SKIP_FORWARD_MS; private set
     @Volatile var currentSkipBackMs          = DEFAULT_SKIP_BACK_MS;    private set
@@ -90,4 +92,6 @@ class SettingsStore @Inject constructor(
         }.let { }
     suspend fun setLastOpenBookId(id: Long) =
         context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }.let { }
+    suspend fun setLastPlayedBookId(id: Long) =
+        context.dataStore.edit { it[Keys.LAST_PLAYED_BOOK_ID] = id }.let { }
 }

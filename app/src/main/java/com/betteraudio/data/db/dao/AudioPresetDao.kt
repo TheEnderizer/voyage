@@ -9,6 +9,9 @@ interface AudioPresetDao {
     @Query("SELECT * FROM audio_presets ORDER BY id ASC")
     fun getAll(): Flow<List<AudioPreset>>
 
+    @Query("SELECT * FROM audio_presets WHERE type = :type ORDER BY id ASC")
+    fun getByType(type: String): Flow<List<AudioPreset>>
+
     @Query("SELECT * FROM audio_presets WHERE isDefault = 1 LIMIT 1")
     suspend fun getDefault(): AudioPreset?
 

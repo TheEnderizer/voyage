@@ -75,9 +75,17 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
-    // ── Audio presets ────────────────────────────────────────────────────────
-    val audioPresets: StateFlow<List<AudioPreset>> =
-        repository.getAllAudioPresets()
+    // ── Audio presets (type-specific) ────────────────────────────────────────
+    val speedPresets: StateFlow<List<AudioPreset>> =
+        repository.getAudioPresetsByType(AudioPreset.TYPE_SPEED)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val boostPresets: StateFlow<List<AudioPreset>> =
+        repository.getAudioPresetsByType(AudioPreset.TYPE_BOOST)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val eqPresets: StateFlow<List<AudioPreset>> =
+        repository.getAudioPresetsByType(AudioPreset.TYPE_EQ)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _eqBandsMillibels = MutableStateFlow<IntArray?>(null)  // null = flat/bypass
@@ -94,31 +102,46 @@ class PlayerViewModel @Inject constructor(
         _eqBandsMillibels.value = bands
         val json = bands?.let { JSONArray(it.toList()).toString() }
         playerController.setEqBands(json)
+        viewModelScope.launch { repository.updateEqBands(bookId, json) }
     }
 
-    fun saveAudioPreset(name: String) {
-        val eqJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() }
-        val preset = AudioPreset(
-            name = name.trim(),
-            speedMult = playbackState.value.speed,
-            boostDb = playerController.currentVolumeBoostDb,
-            eqBandsJson = eqJson
-        )
+    fun saveAudioPreset(name: String, type: String) {
+        val preset = when (type) {
+            AudioPreset.TYPE_SPEED -> AudioPreset(name = name.trim(), type = type, speedMult = playbackState.value.speed)
+            AudioPreset.TYPE_BOOST -> AudioPreset(name = name.trim(), type = type, boostDb = playerController.currentVolumeBoostDb)
+            AudioPreset.TYPE_EQ   -> AudioPreset(name = name.trim(), type = type, eqBandsJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() })
+            else -> return
+        }
         viewModelScope.launch { repository.insertAudioPreset(preset) }
     }
 
     fun loadAudioPreset(preset: AudioPreset) {
-        setSpeed(preset.speedMult)
-        playerController.setVolumeBoost(preset.boostDb)
-        viewModelScope.launch { repository.updateBoostDb(bookId, preset.boostDb) }
-        val bands = preset.eqBandsJson?.let { json ->
-            try {
-                val arr = JSONArray(json)
-                IntArray(arr.length()) { i -> arr.getInt(i) }
-            } catch (_: Exception) { null }
+        when (preset.type) {
+            AudioPreset.TYPE_SPEED -> setSpeed(preset.speedMult)
+            AudioPreset.TYPE_BOOST -> {
+                playerController.setVolumeBoost(preset.boostDb)
+                viewModelScope.launch { repository.updateBoostDb(bookId, preset.boostDb) }
+            }
+            AudioPreset.TYPE_EQ -> {
+                val bands = preset.eqBandsJson?.let { json ->
+                    try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
+                    catch (_: Exception) { null }
+                }
+                _eqBandsMillibels.value = bands
+                playerController.setEqBands(preset.eqBandsJson?.takeIf { it.isNotEmpty() })
+                viewModelScope.launch { repository.updateEqBands(bookId, preset.eqBandsJson) }
+            }
         }
-        _eqBandsMillibels.value = bands
-        playerController.setEqBands(preset.eqBandsJson?.takeIf { it.isNotEmpty() })
+    }
+
+    fun overwritePreset(preset: AudioPreset) {
+        val updated = when (preset.type) {
+            AudioPreset.TYPE_SPEED -> preset.copy(speedMult = playbackState.value.speed)
+            AudioPreset.TYPE_BOOST -> preset.copy(boostDb = playerController.currentVolumeBoostDb)
+            AudioPreset.TYPE_EQ   -> preset.copy(eqBandsJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() })
+            else -> return
+        }
+        viewModelScope.launch { repository.updateAudioPreset(updated) }
     }
 
     fun deleteAudioPreset(id: Long) {
@@ -357,10 +380,17 @@ class PlayerViewModel @Inject constructor(
             val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
-            // Restore per-book boost
+            // Restore per-book boost and EQ so they don't bleed from other books
             playerController.setVolumeBoost(progress?.boostDb ?: 0)
+            val savedEq = progress?.eqBandsJson
+            _eqBandsMillibels.value = savedEq?.let { json ->
+                try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
+                catch (_: Exception) { null }
+            }
+            playerController.setEqBands(savedEq)
             // Mark as just-played now so last-played sorting moves it to the top immediately.
             repository.touchLastPlayed(bwp.book.id)
+            settings.setLastPlayedBookId(bwp.book.id)
         }
     }
 

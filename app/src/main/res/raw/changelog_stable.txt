@@ -1,0 +1,21 @@
+## v1.2.3
+- Per-book audio settings: boost and EQ no longer carry over between books
+- Audio presets are now tab-specific (Speed / Boost / EQ)
+- Long-press a preset chip to update its value to the current slider
+- Home screen shows last-played book as a resume card after app restart
+- Long hold a book (1.5 s) to open Book Options: edit title/author, hide from library, or delete permanently
+- Hidden Books list in Settings → Library — restore ignored books from there
+- Book cover art is now hidden from the phone gallery
+- First launch automatically prompts for root audio directory
+- Scan button removed from nav bar; scanning happens on launch and pull-to-refresh
+- Update check button moved to Settings → About
+- Changelog shown in Settings → About
+- Removed header text from home screen
+
+## v1.2.2
+- Audio settings with EQ, speed, and volume boost presets
+- Headphone / Bluetooth controls skip by time instead of changing chapters
+- App state restored on relaunch (last open book + sort order)
+- Dynamic sorting: recently played books rise to the top in real time
+- Seek bar only jumps to position on release
+- Version number reads from the installed package (no more stale display)

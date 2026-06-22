@@ -30,6 +30,7 @@ data class PlaybackProgress(
     val lastPlayedMs: Long = System.currentTimeMillis(),
     val playbackSpeed: Float = 1.0f,
     val boostDb: Int = 0,
+    val eqBandsJson: String? = null,
     val isCompleted: Boolean = false,
     val completedDateMs: Long? = null
 )

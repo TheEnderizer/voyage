@@ -85,6 +85,26 @@ class HomeViewModel @Inject constructor(
     val playerController: PlayerController
 ) : ViewModel() {
 
+    // ── Book options sheet ─────────────────────────────────────────────────
+
+    private val _bookOptionsTarget = MutableStateFlow<Long?>(null)
+    val bookOptionsTarget: StateFlow<Long?> = _bookOptionsTarget.asStateFlow()
+
+    fun openBookOptions(bookId: Long) { _bookOptionsTarget.value = bookId }
+    fun closeBookOptions() { _bookOptionsTarget.value = null }
+
+    fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) {
+        viewModelScope.launch { repository.updateBookMetadata(bookId, titleOverride, authorOverride) }
+    }
+
+    fun ignoreBook(bookId: Long) {
+        viewModelScope.launch { repository.setBookIgnored(bookId, true) }
+    }
+
+    fun deleteBook(bookId: Long, deleteFiles: Boolean) {
+        viewModelScope.launch { repository.deleteBook(bookId, deleteFiles) }
+    }
+
     // ── Selection mode ──────────────────────────────────────────────────────
 
     private val _selectedBookIds = MutableStateFlow<Set<Long>>(emptySet())
@@ -234,6 +254,31 @@ class HomeViewModel @Inject constructor(
                 else repository.getBookById(state.bookId)
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    // Last-played book — shown as resume card when nothing is actively playing
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val resumeBook: StateFlow<BookWithProgress?> =
+        settings.lastPlayedBookId
+            .flatMapLatest { id ->
+                if (id == -1L) flowOf(null)
+                else repository.getBookWithProgress(id)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun playResumeBook(bwp: BookWithProgress) {
+        viewModelScope.launch {
+            val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+            if (files.isEmpty()) return@launch
+            val progress = bwp.progress
+            val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
+            val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+            playerController.setVolumeBoost(progress?.boostDb ?: 0)
+            repository.touchLastPlayed(bwp.book.id)
+            settings.setLastPlayedBookId(bwp.book.id)
+        }
+    }
 
     // ── Scan ─────────────────────────────────────────────────────────────────
 

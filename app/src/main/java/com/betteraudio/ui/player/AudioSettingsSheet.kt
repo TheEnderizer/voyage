@@ -1,5 +1,7 @@
 package com.betteraudio.ui.player
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -13,13 +15,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.data.db.entities.AudioPreset
 import kotlin.math.roundToInt
 
-private val SPEED_PRESETS = listOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
-private val BOOST_PRESETS = listOf(0, 3, 6, 9, 12)
 private val EQ_BAND_LABELS = listOf("60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz")
 private const val EQ_MIN_MB = -1500
 private const val EQ_MAX_MB = 1500
@@ -31,7 +33,9 @@ fun AudioSettingsSheet(
     onDismiss: () -> Unit
 ) {
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
-    val audioPresets by viewModel.audioPresets.collectAsStateWithLifecycle()
+    val speedPresets by viewModel.speedPresets.collectAsStateWithLifecycle()
+    val boostPresets by viewModel.boostPresets.collectAsStateWithLifecycle()
+    val eqPresets by viewModel.eqPresets.collectAsStateWithLifecycle()
     val eqBands by viewModel.eqBandsMillibels.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -91,7 +95,13 @@ fun AudioSettingsSheet(
 
             HorizontalDivider()
 
-            // Preset section
+            // Preset section — only shows presets for the active tab type
+            val activePresets = when (selectedTab) {
+                0 -> speedPresets
+                1 -> boostPresets
+                else -> eqPresets
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -105,9 +115,9 @@ fun AudioSettingsSheet(
                 }
             }
 
-            if (audioPresets.isEmpty()) {
+            if (activePresets.isEmpty()) {
                 Text(
-                    "No saved presets",
+                    "No saved presets — tap + to save the current value",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -118,10 +128,11 @@ fun AudioSettingsSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(bottom = 12.dp)
                 ) {
-                    items(audioPresets, key = { it.id }) { preset ->
+                    items(activePresets, key = { it.id }) { preset ->
                         PresetChip(
                             preset = preset,
                             onLoad = { viewModel.loadAudioPreset(preset) },
+                            onOverwrite = { viewModel.overwritePreset(preset) },
                             onDelete = { viewModel.deleteAudioPreset(preset.id) },
                             onSetDefault = { viewModel.setAsDefaultPreset(preset.id) }
                         )
@@ -134,6 +145,11 @@ fun AudioSettingsSheet(
     }
 
     if (showSaveDialog) {
+        val tabType = when (selectedTab) {
+            0 -> AudioPreset.TYPE_SPEED
+            1 -> AudioPreset.TYPE_BOOST
+            else -> AudioPreset.TYPE_EQ
+        }
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save preset") },
@@ -149,7 +165,7 @@ fun AudioSettingsSheet(
                 TextButton(
                     onClick = {
                         if (presetName.isNotBlank()) {
-                            viewModel.saveAudioPreset(presetName)
+                            viewModel.saveAudioPreset(presetName, tabType)
                         }
                         showSaveDialog = false
                     }
@@ -186,18 +202,6 @@ private fun SpeedTab(
             steps = 49,
             modifier = Modifier.fillMaxWidth()
         )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(SPEED_PRESETS) { preset ->
-                FilterChip(
-                    selected = kotlin.math.abs(speedValue - preset) < 0.01f,
-                    onClick = { onSpeedChange(preset); onSpeedCommit(preset) },
-                    label = { Text("${preset}×") }
-                )
-            }
-        }
     }
 }
 
@@ -223,18 +227,6 @@ private fun BoostTab(
             steps = 23,
             modifier = Modifier.fillMaxWidth()
         )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            items(BOOST_PRESETS) { preset ->
-                FilterChip(
-                    selected = boostValue == preset,
-                    onClick = { onBoostChange(preset) },
-                    label = { Text(if (preset == 0) "Off" else "+${preset} dB") }
-                )
-            }
-        }
     }
 }
 
@@ -289,21 +281,31 @@ private fun EqTab(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PresetChip(
     preset: AudioPreset,
     onLoad: () -> Unit,
+    onOverwrite: () -> Unit,
     onDelete: () -> Unit,
     onSetDefault: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val haptic = LocalHapticFeedback.current
     Box {
         AssistChip(
             onClick = onLoad,
             label = { Text(preset.name) },
             leadingIcon = if (preset.isDefault) {
                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-            } else null
+            } else null,
+            modifier = Modifier.combinedClickable(
+                onClick = onLoad,
+                onLongClick = {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onOverwrite()
+                }
+            )
         )
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
             DropdownMenuItem(text = { Text("Load") }, onClick = { showMenu = false; onLoad() })

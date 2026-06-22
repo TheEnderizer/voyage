@@ -19,6 +19,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -76,12 +79,14 @@ fun HomeScreen(
 
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val currentBook by viewModel.currentlyPlayingBook.collectAsStateWithLifecycle()
+    val resumeBook by viewModel.resumeBook.collectAsStateWithLifecycle()
     val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
     val scan by viewModel.scan.collectAsStateWithLifecycle()
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selectedBookIds by viewModel.selectedBookIds.collectAsStateWithLifecycle()
     val selectedGroupId by viewModel.selectedGroupId.collectAsStateWithLifecycle()
+    val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedBookIds.isNotEmpty() || selectedGroupId != null
 
@@ -111,12 +116,20 @@ fun HomeScreen(
     }
 
     val nowPlaying = playbackState.bookId != -1L && playbackState.bookTitle.isNotBlank()
+    val showResumeCard = !nowPlaying && resumeBook != null
+
+    // Auto-open folder picker on first launch (no library folder set yet)
+    LaunchedEffect(savedFolder) {
+        if (savedFolder.isBlank() && !showScanSheet) {
+            onScanClick()
+        }
+    }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
 
             // ── Scrolling library ──────────────────────────────────────────
-            if (gridItems.isEmpty() && !nowPlaying) {
+            if (gridItems.isEmpty() && !nowPlaying && !showResumeCard) {
                 EmptyLibrary(
                     onScan = ::onScanClick,
                     onOpenSettings = onOpenSettings,
@@ -162,13 +175,12 @@ fun HomeScreen(
                             HomeHeader(
                                 scanning = scan.status == ScanStatus.Running,
                                 onSearch = onOpenSearch,
-                                onScan = ::onScanClick,
                                 onSettings = onOpenSettings
                             )
                         }
                     }
 
-                    // Featured now-playing card
+                    // Featured now-playing card (active) or resume card (last played, after restart)
                     if (nowPlaying) {
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             FeaturedNowPlaying(
@@ -180,6 +192,15 @@ fun HomeScreen(
                                     val id = playbackState.bookId
                                     if (id != -1L) onOpenBook(id)
                                 }
+                            )
+                        }
+                    } else if (showResumeCard) {
+                        val bwp = resumeBook!!
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            ResumeCard(
+                                bwp = bwp,
+                                onPlay = { viewModel.playResumeBook(bwp) },
+                                onExpand = { onOpenBook(bwp.book.id) }
                             )
                         }
                     }
@@ -208,7 +229,11 @@ fun HomeScreen(
                                                 viewModel.toggleBookSelection(gridItem.bwp.book.id)
                                             else onOpenBook(gridItem.bwp.book.id)
                                         },
-                                        onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) }
+                                        onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) },
+                                        onLongHold = {
+                                            viewModel.clearSelection()
+                                            viewModel.openBookOptions(gridItem.bwp.book.id)
+                                        }
                                     )
                                 }
                             }
@@ -262,7 +287,6 @@ fun HomeScreen(
                 }
                 FloatingNavBar(
                     onSearch = onOpenSearch,
-                    onScan = ::onScanClick,
                     onSort = { showSortFilter = true },
                     onSettings = onOpenSettings
                 )
@@ -305,6 +329,27 @@ fun HomeScreen(
             onDismiss = { showSortFilter = false }
         )
     }
+
+    // Book options sheet (long hold — 1500 ms)
+    if (bookOptionsTarget != null) {
+        val optionsBwp = gridItems
+            .filterIsInstance<HomeGridItem.SingleBook>()
+            .firstOrNull { it.bwp.book.id == bookOptionsTarget }
+            ?.bwp
+        if (optionsBwp != null) {
+            BookOptionsSheet(
+                bwp = optionsBwp,
+                onDismiss = { viewModel.closeBookOptions() },
+                onUpdateMetadata = { title, author ->
+                    viewModel.updateBookMetadata(optionsBwp.book.id, title, author)
+                },
+                onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
+                onDeletePermanently = { deleteFiles ->
+                    viewModel.deleteBook(optionsBwp.book.id, deleteFiles)
+                }
+            )
+        }
+    }
 }
 
 // ─── Home header ──────────────────────────────────────────────────────────────
@@ -313,35 +358,22 @@ fun HomeScreen(
 private fun HomeHeader(
     scanning: Boolean,
     onSearch: () -> Unit,
-    onScan: () -> Unit,
     onSettings: () -> Unit
 ) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                "Better Audio",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                "Your audiobook shelf",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (scanning) {
+    if (scanning) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End
+        ) {
             CircularProgressIndicator(
-                Modifier.size(22.dp).padding(end = 6.dp),
+                Modifier.size(22.dp),
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        CircleIconButton(Icons.Default.CreateNewFolder, "Scan folder", onScan)
     }
 }
 
@@ -588,12 +620,110 @@ private fun NowPlayingPill(
     }
 }
 
+// ─── Resume card (last played book, shown after app restart when not playing) ──
+
+@Composable
+private fun ResumeCard(
+    bwp: BookWithProgress,
+    onPlay: () -> Unit,
+    onExpand: () -> Unit
+) {
+    val progress = bwp.progressFraction.coerceIn(0f, 1f)
+    val timeLeft = ((1f - progress) * bwp.book.totalDurationMs).toLong()
+
+    Surface(
+        onClick = onExpand,
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row {
+                Box(
+                    Modifier
+                        .size(108.dp)
+                        .clip(MaterialTheme.shapes.large)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                ) {
+                    AsyncImage(
+                        model = bwp.book.coverArtPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f).padding(top = 4.dp)) {
+                    Text(
+                        bwp.book.displayTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (bwp.book.displayAuthor.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            bwp.book.displayAuthor,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    "${(progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (bwp.book.totalDurationMs > 0) {
+                    Text(
+                        "${formatDurationHero(timeLeft)} left",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onPlay,
+                    shape = Pill,
+                    modifier = Modifier.weight(1f).height(50.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Resume")
+                }
+                FilledTonalIconButton(
+                    onClick = onExpand,
+                    shape = Pill,
+                    modifier = Modifier.size(50.dp)
+                ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
+            }
+        }
+    }
+}
+
 // ─── Floating nav bar ─────────────────────────────────────────────────────────
 
 @Composable
 private fun FloatingNavBar(
     onSearch: () -> Unit,
-    onScan: () -> Unit,
     onSort: () -> Unit,
     onSettings: () -> Unit
 ) {
@@ -629,7 +759,6 @@ private fun FloatingNavBar(
                 }
             }
             NavIcon(Icons.Default.Search, "Search", onSearch)
-            NavIcon(Icons.Default.CreateNewFolder, "Scan folder", onScan)
             NavIcon(Icons.AutoMirrored.Filled.Sort, "Sort & filter", onSort)
             NavIcon(Icons.Default.Settings, "Settings", onSettings)
         }
@@ -659,7 +788,8 @@ private fun BookGridCard(
     isSelectionMode: Boolean,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onLongHold: (() -> Unit)? = null
 ) {
     val book = bwp.book
     val borderColor by animateColorAsState(
@@ -683,6 +813,17 @@ private fun BookGridCard(
             )
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .then(if (onLongHold != null) Modifier.pointerInput(onLongHold) {
+                while (true) {
+                    var pressTimeMs = 0L
+                    awaitPointerEventScope {
+                        awaitFirstDown(requireUnconsumed = false)
+                        pressTimeMs = System.currentTimeMillis()
+                    }
+                    awaitPointerEventScope { waitForUpOrCancellation() }
+                    if (System.currentTimeMillis() - pressTimeMs >= 1500L) onLongHold()
+                }
+            } else Modifier)
     ) {
         AsyncImage(
             model = book.coverArtPath?.let { File(it) },
@@ -705,15 +846,15 @@ private fun BookGridCard(
         ) {
             Column {
                 Text(
-                    book.title,
+                    book.displayTitle,
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (book.author.isNotBlank()) {
+                if (book.displayAuthor.isNotBlank()) {
                     Text(
-                        book.author,
+                        book.displayAuthor,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White.copy(alpha = 0.8f),
                         maxLines = 1
@@ -885,7 +1026,7 @@ private fun EmptyLibrary(
     onOpenSearch: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        HomeHeader(scanning = false, onSearch = onOpenSearch, onScan = onScan, onSettings = onOpenSettings)
+        HomeHeader(scanning = false, onSearch = onOpenSearch, onSettings = onOpenSettings)
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(

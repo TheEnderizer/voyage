@@ -91,6 +91,18 @@ interface BookDao {
     suspend fun getAllUngroupedOnce(): List<Book>
 
     @Transaction
-    @Query("SELECT * FROM books WHERE groupId IS NULL ORDER BY addedDateMs DESC")
+    @Query("SELECT * FROM books WHERE groupId IS NULL AND isIgnored = 0 ORDER BY addedDateMs DESC")
     fun getAllBooksWithProgressUngrouped(): Flow<List<com.betteraudio.data.model.BookWithProgress>>
+
+    @Query("SELECT * FROM books WHERE isIgnored = 1 ORDER BY title ASC")
+    fun getAllIgnoredBooks(): Flow<List<Book>>
+
+    @Query("UPDATE books SET isIgnored = :ignored WHERE id = :id")
+    suspend fun setIgnored(id: Long, ignored: Boolean)
+
+    @Query("UPDATE books SET titleOverride = :titleOverride, authorOverride = :authorOverride WHERE id = :id")
+    suspend fun updateMetadata(id: Long, titleOverride: String?, authorOverride: String?)
+
+    @Query("DELETE FROM books WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

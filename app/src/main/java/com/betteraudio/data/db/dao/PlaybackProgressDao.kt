@@ -32,6 +32,9 @@ interface PlaybackProgressDao {
     @Query("UPDATE playback_progress SET boostDb = :boostDb WHERE bookId = :bookId")
     suspend fun updateBoostDb(bookId: Long, boostDb: Int)
 
+    @Query("UPDATE playback_progress SET eqBandsJson = :json WHERE bookId = :bookId")
+    suspend fun updateEqBands(bookId: Long, json: String?)
+
     @Query("UPDATE playback_progress SET lastPlayedMs = :ts WHERE bookId = :bookId")
     suspend fun touchLastPlayed(bookId: Long, ts: Long): Int
 

@@ -1,0 +1,10 @@
+## v1.2.2b
+- Per-book audio settings: boost and EQ no longer carry over between books
+- Audio presets are now tab-specific (speed / boost / EQ)
+- Long-press a preset chip to update its value to the current slider
+- Home screen shows last-played book as a resume card after app restart
+- Scan folder button removed from nav; scanning happens automatically on first launch and pull-to-refresh
+- First launch automatically prompts for root audio directory
+- Removed header text from home screen
+- Beta version marker (version ends with "b")
+- DB migration v5 → v6: per-book EQ storage, metadata overrides, ignored-books flag, typed presets

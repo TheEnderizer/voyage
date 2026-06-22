@@ -25,5 +25,12 @@ data class Book(
     val genre: String? = null,
     val year: Int? = null,
     val album: String? = null,
-    val description: String? = null // embedded comment / description tag
-)
+    val description: String? = null, // embedded comment / description tag
+    // ── User-editable overrides (scanner never writes here) ─────────────────
+    val titleOverride: String? = null,
+    val authorOverride: String? = null,
+    val isIgnored: Boolean = false
+) {
+    val displayTitle: String get() = titleOverride ?: title
+    val displayAuthor: String get() = authorOverride ?: author
+}

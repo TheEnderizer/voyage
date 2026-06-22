@@ -15,6 +15,7 @@ import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.model.BookWithProgress
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -61,7 +62,15 @@ class AudiobookRepository @Inject constructor(
     suspend fun getAudioFilesOnce(bookId: Long): List<AudioFile> = audioFileDao.getFilesForBookOnce(bookId)
     suspend fun saveProgress(progress: PlaybackProgress) = progressDao.upsert(progress)
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
-    suspend fun updateCoverArt(bookId: Long, path: String) = bookDao.updateCoverArt(bookId, path)
+    suspend fun updateCoverArt(bookId: Long, path: String) {
+        bookDao.updateCoverArt(bookId, path)
+        // Keep cover art out of the phone gallery
+        val folder = java.io.File(path).parentFile
+        if (folder != null) {
+            val nomedia = java.io.File(folder, ".nomedia")
+            if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
+        }
+    }
     suspend fun updateBookStatus(bookId: Long, status: BookStatus) = bookDao.updateStatus(bookId, status)
     suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) =
         bookDao.updateSeriesInfo(bookId, seriesName, seriesOrder)
@@ -101,6 +110,33 @@ class AudiobookRepository @Inject constructor(
         }
     }
 
+    suspend fun updateEqBands(bookId: Long, json: String?) {
+        val existing = progressDao.getProgressForBookOnce(bookId)
+        if (existing == null) {
+            progressDao.upsert(PlaybackProgress(bookId = bookId, eqBandsJson = json))
+        } else {
+            progressDao.updateEqBands(bookId, json)
+        }
+    }
+
+    suspend fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) =
+        bookDao.updateMetadata(bookId, titleOverride?.takeIf { it.isNotBlank() }, authorOverride?.takeIf { it.isNotBlank() })
+
+    suspend fun setBookIgnored(bookId: Long, ignored: Boolean) = bookDao.setIgnored(bookId, ignored)
+
+    fun getAllIgnoredBooks(): Flow<List<Book>> = bookDao.getAllIgnoredBooks()
+
+    suspend fun deleteBook(bookId: Long, deleteFiles: Boolean) {
+        if (deleteFiles) {
+            val book = bookDao.getBookById(bookId).firstOrNull()
+            if (book != null) {
+                val folder = java.io.File(book.folderPath)
+                if (folder.exists() && folder.isDirectory) folder.deleteRecursively()
+            }
+        }
+        bookDao.deleteById(bookId)
+    }
+
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */
     suspend fun touchLastPlayed(bookId: Long) {
         val now = System.currentTimeMillis()
@@ -127,6 +163,7 @@ class AudiobookRepository @Inject constructor(
 
     // ── Audio presets ─────────────────────────────────────────────────────────
     fun getAllAudioPresets(): Flow<List<AudioPreset>> = audioPresetDao.getAll()
+    fun getAudioPresetsByType(type: String): Flow<List<AudioPreset>> = audioPresetDao.getByType(type)
     suspend fun insertAudioPreset(preset: AudioPreset): Long = audioPresetDao.insert(preset)
     suspend fun updateAudioPreset(preset: AudioPreset) = audioPresetDao.update(preset)
     suspend fun deleteAudioPreset(id: Long) = audioPresetDao.deleteById(id)
