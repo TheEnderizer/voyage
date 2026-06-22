@@ -1,21 +1,43 @@
-## v1.2.3
-- Per-book audio settings: boost and EQ no longer carry over between books
-- Audio presets are now tab-specific (Speed / Boost / EQ)
-- Long-press a preset chip to update its value to the current slider
-- Home screen shows last-played book as a resume card after app restart
-- Long hold a book (1.5 s) to open Book Options: edit title/author, hide from library, or delete permanently
-- Hidden Books list in Settings → Library — restore ignored books from there
-- Book cover art is now hidden from the phone gallery
-- First launch automatically prompts for root audio directory
-- Scan button removed from nav bar; scanning happens on launch and pull-to-refresh
-- Update check button moved to Settings → About
-- Changelog shown in Settings → About
-- Removed header text from home screen
+# Changelog
 
-## v1.2.2
-- Audio settings with EQ, speed, and volume boost presets
-- Headphone / Bluetooth controls skip by time instead of changing chapters
-- App state restored on relaunch (last open book + sort order)
-- Dynamic sorting: recently played books rise to the top in real time
-- Seek bar only jumps to position on release
-- Version number reads from the installed package (no more stale display)
+All notable changes to Voyage are documented here.
+Format follows https://keepachangelog.com/en/1.1.0/
+
+## [1.2.3] - 2026-06-22
+
+### Added
+- Per-book audio settings: EQ and boost are saved per book and restored on playback — settings no longer carry over between books
+- Audio presets are now tab-specific: Speed, Boost, and EQ tabs each show and save their own presets
+- Long-press a named preset chip to overwrite its stored value with the current slider position (with haptic feedback)
+- Home screen shows last-played book as a resume card after app restart, in the same paused-state UI as an active session
+- Long hold a book card (1.5 s) opens Book Options: edit title and author, hide from library, or delete permanently
+- Hidden books list in Settings → Library — restore ignored books individually
+- Changelog shown in Settings → About
+- Update check button moved to Settings → About
+
+### Changed
+- Scan folder button removed from nav bar — scanning now happens automatically on first launch and via pull-to-refresh
+- First launch automatically prompts for root audio directory
+- Header text removed from home screen
+
+### Fixed
+- Volume boost no longer bleeds between books
+- Seek bar and position time now update continuously during playback
+
+### Security
+- Cover art files are now hidden from the phone gallery via `.nomedia`
+
+## [1.2.2] - 2026-06-01
+
+### Added
+- Audio settings sheet with Speed, Volume Boost, and 5-band EQ tabs
+- Named presets for audio settings
+- Headphone and Bluetooth controls now skip by time instead of changing tracks
+
+### Changed
+- App state (last open book, sort order) is restored on relaunch
+- Recently played books rise to the top of the library in real time when sorted by Last Played
+- Seek bar only commits the new position on release — no interruption while dragging
+
+### Fixed
+- Version number now reads from the installed package — no more stale display after a version bump

@@ -1,10 +1,38 @@
-## v1.2.2b
-- Per-book audio settings: boost and EQ no longer carry over between books
-- Audio presets are now tab-specific (speed / boost / EQ)
-- Long-press a preset chip to update its value to the current slider
-- Home screen shows last-played book as a resume card after app restart
-- Scan folder button removed from nav; scanning happens automatically on first launch and pull-to-refresh
+# Changelog (Beta)
+
+All notable changes to the beta channel are documented here.
+Format follows https://keepachangelog.com/en/1.1.0/
+
+## [1.2.4b] - 2026-06-22
+
+### Fixed
+- Seek bar and position time now update continuously during playback — previously only refreshed on pause/resume
+
+## [1.2.3b] - 2026-06-22
+
+### Fixed
+- Scan-audiobooks sheet no longer opens on every app launch — only appears on first launch when no folder is set
+- Beta builds now check for pre-release updates only; stable builds check for stable releases only (channels no longer cross-notify)
+
+## [1.2.2b] - 2026-06-22
+
+### Added
+- Per-book audio settings: EQ and boost are saved per book and restored on playback — settings no longer carry over between books
+- Audio presets are now tab-specific: Speed, Boost, and EQ tabs each show and save their own presets
+- Long-press a named preset chip to overwrite its stored value with the current slider position (with haptic feedback)
+- Home screen shows last-played book as a resume card after app restart, in the same paused-state UI as an active session
+- Long hold a book card (1.5 s) opens Book Options: edit title and author, hide from library, or delete permanently
+- Hidden books list in Settings → Library — restore ignored books individually
+- Changelog shown in Settings → About, per channel
+- Update check button moved to Settings → About
+
+### Changed
+- Scan folder button removed from nav bar — scanning now happens automatically on first launch and via pull-to-refresh
 - First launch automatically prompts for root audio directory
-- Removed header text from home screen
-- Beta version marker (version ends with "b")
-- DB migration v5 → v6: per-book EQ storage, metadata overrides, ignored-books flag, typed presets
+- Header text removed from home screen
+
+### Fixed
+- Volume boost no longer bleeds between books (was only saving EQ per-book before)
+
+### Security
+- Cover art files are now hidden from the phone gallery via `.nomedia`
