@@ -4,8 +4,10 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.betteraudio.data.covers.CoverSearchService
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookGroup
+import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.BookGroupRepository
@@ -24,6 +26,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -57,6 +60,14 @@ data class SortFilter(
     val direction: SortDirection = SortDirection.ASC
 )
 
+/** Status sections shown as tabs above the library grid. */
+enum class LibraryTab(val label: String) {
+    ALL("All"),
+    LISTENING("Listening"),
+    NOT_STARTED("Not started"),
+    FINISHED("Finished")
+}
+
 /** Items shown in the home library grid */
 sealed class HomeGridItem {
     abstract val lastPlayedMs: Long
@@ -82,6 +93,7 @@ class HomeViewModel @Inject constructor(
     private val groupRepository: BookGroupRepository,
     private val scanner: AudioFileScanner,
     private val settings: SettingsStore,
+    private val coverSearchService: CoverSearchService,
     val playerController: PlayerController
 ) : ViewModel() {
 
@@ -97,12 +109,41 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { repository.updateBookMetadata(bookId, titleOverride, authorOverride) }
     }
 
+    fun updateBookSeries(bookId: Long, seriesName: String?, seriesOrder: Float?) {
+        viewModelScope.launch { repository.updateSeriesInfo(bookId, seriesName, seriesOrder) }
+    }
+
+    fun updateBookStatus(bookId: Long, status: BookStatus) {
+        viewModelScope.launch { repository.updateBookStatus(bookId, status) }
+    }
+
     fun ignoreBook(bookId: Long) {
         viewModelScope.launch { repository.setBookIgnored(bookId, true) }
     }
 
     fun deleteBook(bookId: Long, deleteFiles: Boolean) {
         viewModelScope.launch { repository.deleteBook(bookId, deleteFiles) }
+    }
+
+    // ── Online cover search ────────────────────────────────────────────────
+
+    private val _coverSearchTargetId = MutableStateFlow<Long?>(null)
+    val coverSearchTargetId: StateFlow<Long?> = _coverSearchTargetId.asStateFlow()
+
+    fun openCoverSearch(bookId: Long) {
+        _bookOptionsTarget.value = null
+        _coverSearchTargetId.value = bookId
+    }
+    fun closeCoverSearch() { _coverSearchTargetId.value = null }
+
+    suspend fun searchCovers(query: String): List<String> = coverSearchService.search(query)
+
+    fun setBookCoverFromUrl(bookId: Long, imageUrl: String) {
+        viewModelScope.launch {
+            val path = coverSearchService.download(imageUrl, bookId)
+            if (path != null) repository.updateCoverArt(bookId, path)
+            closeCoverSearch()
+        }
     }
 
     // ── Selection mode ──────────────────────────────────────────────────────
@@ -164,6 +205,46 @@ class HomeViewModel @Inject constructor(
         ) { bwpList, groups, sf ->
             buildGridItems(bwpList, groups, sf)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── Library status tabs ──────────────────────────────────────────────────
+
+    private val _libraryTab = MutableStateFlow(LibraryTab.ALL)
+    val libraryTab: StateFlow<LibraryTab> = _libraryTab.asStateFlow()
+    fun setLibraryTab(tab: LibraryTab) { _libraryTab.value = tab }
+
+    /** Grid items filtered to the selected status tab. */
+    val visibleGridItems: StateFlow<List<HomeGridItem>> =
+        combine(gridItems, _libraryTab) { items, tab ->
+            if (tab == LibraryTab.ALL) items else items.filter { statusOf(it) == tab }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Per-tab counts for the tab labels. */
+    val tabCounts: StateFlow<Map<LibraryTab, Int>> =
+        gridItems.map { items: List<HomeGridItem> ->
+            LibraryTab.entries.associateWith { tab ->
+                if (tab == LibraryTab.ALL) items.size else items.count { statusOf(it) == tab }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<LibraryTab, Int>())
+
+    private fun statusOf(item: HomeGridItem): LibraryTab = when (item) {
+        is HomeGridItem.SingleBook -> tabFor(item.bwp.book.status)
+        is HomeGridItem.Group -> {
+            val statuses = item.books.map { it.status }
+            when {
+                statuses.any { it == BookStatus.IN_PROGRESS } -> LibraryTab.LISTENING
+                statuses.isNotEmpty() && statuses.all { it == BookStatus.FINISHED } -> LibraryTab.FINISHED
+                statuses.all { it == BookStatus.NOT_STARTED } -> LibraryTab.NOT_STARTED
+                // mix of finished + not-started, nothing in progress → treat as in progress overall
+                else -> LibraryTab.LISTENING
+            }
+        }
+    }
+
+    private fun tabFor(status: BookStatus): LibraryTab = when (status) {
+        BookStatus.IN_PROGRESS -> LibraryTab.LISTENING
+        BookStatus.FINISHED -> LibraryTab.FINISHED
+        BookStatus.NOT_STARTED -> LibraryTab.NOT_STARTED
+    }
 
     private suspend fun buildGridItems(
         bwpList: List<BookWithProgress>,

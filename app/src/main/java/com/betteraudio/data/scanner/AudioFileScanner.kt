@@ -15,6 +15,10 @@ import javax.inject.Singleton
 
 private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus", "wav")
 
+// Files longer than this with no embedded chapters get sliced into logical chapters.
+private const val SYNTHETIC_CHAPTER_MIN_FILE_MS  = 20 * 60_000L   // 20 minutes
+private const val SYNTHETIC_CHAPTER_INTERVAL_MS  = 10 * 60_000L   // ~10-minute chapters
+
 @Singleton
 class AudioFileScanner @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -41,7 +45,7 @@ class AudioFileScanner @Inject constructor(
         var count = 0
 
         if (directAudio.isNotEmpty()) {
-            val clusters = clusterBySimilarName(directAudio)
+            val clusters = groupFilesIntoBooks(directAudio)
             val multiBook = clusters.size > 1
             clusters.forEach { (stem, files) ->
                 val folderKey = if (multiBook) "${dir.absolutePath}::$stem" else dir.absolutePath
@@ -185,41 +189,67 @@ class AudioFileScanner @Inject constructor(
         }
     }
 
-    /** Build Chapter rows for a book: embedded markers where present, else one per file. */
+    /**
+     * Build Chapter rows for a book: embedded markers where present; otherwise one row per file,
+     * except for long chapterless files which are sliced into fixed-interval "logical" chapters so
+     * a single-file (or few-file) book still gets a usable table of contents.
+     */
     private suspend fun buildChapters(bookId: Long, embeddedByPath: Map<String, List<RawChapter>>) {
         val storedFiles = repository.getAudioFilesOnce(bookId) // sorted by track/name
         val chapters = mutableListOf<Chapter>()
         var order = 0
         storedFiles.forEach { file ->
             val embedded = embeddedByPath[file.filePath].orEmpty()
-            if (embedded.isNotEmpty()) {
-                embedded.forEachIndexed { i, raw ->
-                    val nextStart = embedded.getOrNull(i + 1)?.startMs ?: file.durationMs
+            when {
+                embedded.isNotEmpty() -> {
+                    embedded.forEachIndexed { i, raw ->
+                        val nextStart = embedded.getOrNull(i + 1)?.startMs ?: file.durationMs
+                        chapters.add(
+                            Chapter(
+                                bookId = bookId,
+                                fileId = file.id,
+                                title = raw.title,
+                                startInFileMs = raw.startMs.coerceIn(0, file.durationMs),
+                                durationMs = (nextStart - raw.startMs).coerceAtLeast(0),
+                                orderIndex = order++,
+                                source = "embedded"
+                            )
+                        )
+                    }
+                }
+                // Long file with no chapter metadata → synthesize evenly-spaced chapters.
+                file.durationMs > SYNTHETIC_CHAPTER_MIN_FILE_MS -> {
+                    var start = 0L
+                    while (start < file.durationMs) {
+                        val end = minOf(start + SYNTHETIC_CHAPTER_INTERVAL_MS, file.durationMs)
+                        chapters.add(
+                            Chapter(
+                                bookId = bookId,
+                                fileId = file.id,
+                                title = "Chapter ${order + 1}",
+                                startInFileMs = start,
+                                durationMs = (end - start).coerceAtLeast(0),
+                                orderIndex = order++,
+                                source = "synthetic"
+                            )
+                        )
+                        start = end
+                    }
+                }
+                else -> {
                     chapters.add(
                         Chapter(
                             bookId = bookId,
                             fileId = file.id,
-                            title = raw.title,
-                            startInFileMs = raw.startMs.coerceIn(0, file.durationMs),
-                            durationMs = (nextStart - raw.startMs).coerceAtLeast(0),
+                            title = file.chapterTitle?.takeIf { it.isNotBlank() }
+                                ?: file.fileName.substringBeforeLast('.'),
+                            startInFileMs = 0,
+                            durationMs = file.durationMs,
                             orderIndex = order++,
-                            source = "embedded"
+                            source = "per_file"
                         )
                     )
                 }
-            } else {
-                chapters.add(
-                    Chapter(
-                        bookId = bookId,
-                        fileId = file.id,
-                        title = file.chapterTitle?.takeIf { it.isNotBlank() }
-                            ?: file.fileName.substringBeforeLast('.'),
-                        startInFileMs = 0,
-                        durationMs = file.durationMs,
-                        orderIndex = order++,
-                        source = "per_file"
-                    )
-                )
             }
         }
         repository.replaceChapters(bookId, chapters)
@@ -240,6 +270,49 @@ class AudioFileScanner @Inject constructor(
         } catch (_: Exception) {
         } finally {
             retriever.release()
+        }
+    }
+
+    // ── Book grouping within a folder ─────────────────────────────────────────
+
+    /**
+     * Decide how a folder's loose audio files split into books. Embedded ALBUM tags are the
+     * most reliable signal, so they take priority:
+     *  - every file tagged and ≥2 distinct albums → one book per album (loose multi-book folder)
+     *  - every file tagged with a single album    → exactly one book (never shatter it)
+     *  - otherwise (untagged / mixed)             → fall back to the filename-stem heuristic
+     */
+    private fun groupFilesIntoBooks(files: List<File>): List<Pair<String, List<File>>> {
+        val albumOf = HashMap<File, String>()
+        val retriever = MediaMetadataRetriever()
+        try {
+            files.forEach { f ->
+                val album = try {
+                    retriever.setDataSource(f.absolutePath)
+                    retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.trim().orEmpty()
+                } catch (_: Exception) { "" }
+                albumOf[f] = album
+            }
+        } finally {
+            retriever.release()
+        }
+
+        val allTagged = files.all { albumOf[it]!!.isNotBlank() }
+        val distinctAlbums = files.mapNotNull { albumOf[it]?.takeIf { a -> a.isNotBlank() } }
+            .map { it.lowercase() }.toSet()
+
+        return when {
+            allTagged && distinctAlbums.size >= 2 ->
+                files.groupBy { albumOf[it]!! }
+                    .entries
+                    .sortedBy { e -> e.value.minOf { extractTrackNumber(it.nameWithoutExtension) } }
+                    .map { (album, fs) ->
+                        album to fs.sortedWith(compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
+                    }
+            allTagged && distinctAlbums.size == 1 ->
+                listOf("" to files)   // single tagged album → one book
+            else ->
+                clusterBySimilarName(files)
         }
     }
 

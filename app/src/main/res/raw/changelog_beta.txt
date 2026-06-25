@@ -3,6 +3,23 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.2.6b] - 2026-06-25
+
+### Added
+- Redesigned full-bleed player: cover fills the screen with controls over a scrim, chapter context line, and return/confirm jump-history pills
+- Library status tabs on the home screen — All / Listening / Not started / Finished, with live counts
+- Online cover search (Google Books with OpenLibrary fallback) from a book's options
+- Series name + position and reading-status editing in a book's options sheet
+- Logical chapters: long files with no embedded chapters are sliced into ~10-minute chapters for a usable table of contents
+- Fine-adjust − / + buttons on the speed and volume-boost sliders
+
+### Changed
+- Skip buttons now show the actual configured seconds instead of a fixed number
+- Tap-and-hold on a book now only selects; the selection bar floats over the top without pushing the grid down, and a 3-dot menu opens book options when one book is selected
+- Tapping a home-screen widget opens the active player, not just the app
+- The cover-driven theme now carries across the whole app even while idle, using the last-played book's colours
+- Folder scanning uses embedded album tags to split loose multi-book folders and to avoid shattering a single tagged book
+
 ## [1.2.5b] - 2026-06-22
 
 ### Fixed

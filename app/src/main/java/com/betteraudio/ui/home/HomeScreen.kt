@@ -19,12 +19,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -81,12 +80,16 @@ fun HomeScreen(
     val currentBook by viewModel.currentlyPlayingBook.collectAsStateWithLifecycle()
     val resumeBook by viewModel.resumeBook.collectAsStateWithLifecycle()
     val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
+    val visibleItems by viewModel.visibleGridItems.collectAsStateWithLifecycle()
+    val libraryTab by viewModel.libraryTab.collectAsStateWithLifecycle()
+    val tabCounts by viewModel.tabCounts.collectAsStateWithLifecycle()
     val scan by viewModel.scan.collectAsStateWithLifecycle()
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selectedBookIds by viewModel.selectedBookIds.collectAsStateWithLifecycle()
     val selectedGroupId by viewModel.selectedGroupId.collectAsStateWithLifecycle()
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
+    val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
 
     val isSelectionMode = selectedBookIds.isNotEmpty() || selectedGroupId != null
 
@@ -153,33 +156,13 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Header
+                    // Header — stays put; the selection bar floats over it as an overlay
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        if (isSelectionMode) {
-                            SelectionHeader(
-                                selectedCount = selectedBookIds.size + (if (selectedGroupId != null) 1 else 0),
-                                showSplit = selectedGroupId != null && selectedBookIds.isEmpty(),
-                                showJoin = selectedBookIds.size >= 2,
-                                onClear = viewModel::clearSelection,
-                                onJoin = {
-                                    val ids = selectedBookIds.joinToString(",")
-                                    viewModel.clearSelection()
-                                    onJoinBooks(ids)
-                                },
-                                onSplit = { viewModel.splitSelectedGroup { } },
-                                onEditGroup = {
-                                    val gid = selectedGroupId ?: return@SelectionHeader
-                                    viewModel.clearSelection()
-                                    onEditGroup(gid)
-                                }
-                            )
-                        } else {
-                            HomeHeader(
-                                scanning = scan.status == ScanStatus.Running,
-                                onSearch = onOpenSearch,
-                                onSettings = onOpenSettings
-                            )
-                        }
+                        HomeHeader(
+                            scanning = scan.status == ScanStatus.Running,
+                            onSearch = onOpenSearch,
+                            onSettings = onOpenSettings
+                        )
                     }
 
                     // Featured now-playing card (active) or resume card (last played, after restart)
@@ -207,17 +190,32 @@ fun HomeScreen(
                         }
                     }
 
-                    // Library section label
+                    // Library status tabs
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text(
-                            "Your library",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                        LibraryTabRow(
+                            selected = libraryTab,
+                            counts = tabCounts,
+                            onSelect = { viewModel.setLibraryTab(it) }
                         )
                     }
 
-                    gridItems.forEach { gridItem ->
+                    if (visibleItems.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Text(
+                                when (libraryTab) {
+                                    LibraryTab.LISTENING -> "Nothing in progress yet"
+                                    LibraryTab.NOT_STARTED -> "No unstarted books"
+                                    LibraryTab.FINISHED -> "No finished books yet"
+                                    LibraryTab.ALL -> "Your library is empty"
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 24.dp)
+                            )
+                        }
+                    }
+
+                    visibleItems.forEach { gridItem ->
                         when (gridItem) {
                             is HomeGridItem.SingleBook -> {
                                 item(key = "book_${gridItem.bwp.book.id}") {
@@ -231,11 +229,7 @@ fun HomeScreen(
                                                 viewModel.toggleBookSelection(gridItem.bwp.book.id)
                                             else onOpenBook(gridItem.bwp.book.id)
                                         },
-                                        onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) },
-                                        onLongHold = {
-                                            viewModel.clearSelection()
-                                            viewModel.openBookOptions(gridItem.bwp.book.id)
-                                        }
+                                        onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) }
                                     )
                                 }
                             }
@@ -293,6 +287,34 @@ fun HomeScreen(
                     onSettings = onOpenSettings
                 )
             }
+
+            // ── Selection bar — floats over the top, doesn't push content down ──
+            AnimatedVisibility(
+                visible = isSelectionMode,
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp)
+            ) {
+                SelectionHeader(
+                    selectedCount = selectedBookIds.size + (if (selectedGroupId != null) 1 else 0),
+                    showSplit = selectedGroupId != null && selectedBookIds.isEmpty(),
+                    showJoin = selectedBookIds.size >= 2,
+                    showOptions = selectedBookIds.size == 1 && selectedGroupId == null,
+                    onClear = viewModel::clearSelection,
+                    onJoin = {
+                        val ids = selectedBookIds.joinToString(",")
+                        viewModel.clearSelection()
+                        onJoinBooks(ids)
+                    },
+                    onSplit = { viewModel.splitSelectedGroup { } },
+                    onEditGroup = {
+                        val gid = selectedGroupId ?: return@SelectionHeader
+                        viewModel.clearSelection()
+                        onEditGroup(gid)
+                    },
+                    onOptions = { selectedBookIds.firstOrNull()?.let { viewModel.openBookOptions(it) } }
+                )
+            }
         }
     }
 
@@ -345,12 +367,38 @@ fun HomeScreen(
                 onUpdateMetadata = { title, author ->
                     viewModel.updateBookMetadata(optionsBwp.book.id, title, author)
                 },
+                onUpdateSeries = { name, order ->
+                    viewModel.updateBookSeries(optionsBwp.book.id, name, order)
+                },
+                onUpdateStatus = { status ->
+                    viewModel.updateBookStatus(optionsBwp.book.id, status)
+                },
+                onSearchOnlineCover = { viewModel.openCoverSearch(optionsBwp.book.id) },
                 onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
                 onDeletePermanently = { deleteFiles ->
                     viewModel.deleteBook(optionsBwp.book.id, deleteFiles)
                 }
             )
         }
+    }
+
+    // Online cover search sheet
+    if (coverSearchTargetId != null) {
+        val targetBwp = gridItems
+            .filterIsInstance<HomeGridItem.SingleBook>()
+            .firstOrNull { it.bwp.book.id == coverSearchTargetId }
+            ?.bwp
+        val book = targetBwp?.book
+        CoverSearchSheet(
+            initialQuery = book?.let {
+                listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
+            } ?: "",
+            onSearch = { query -> viewModel.searchCovers(query) },
+            onPick = { url ->
+                coverSearchTargetId?.let { viewModel.setBookCoverFromUrl(it, url) }
+            },
+            onDismiss = { viewModel.closeCoverSearch() }
+        )
     }
 }
 
@@ -382,18 +430,46 @@ private fun HomeHeader(
 // ─── Selection header ─────────────────────────────────────────────────────────
 
 @Composable
+private fun LibraryTabRow(
+    selected: LibraryTab,
+    counts: Map<LibraryTab, Int>,
+    onSelect: (LibraryTab) -> Unit
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(top = 4.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        LibraryTab.entries.forEach { tab ->
+            val count = counts[tab] ?: 0
+            FilterChip(
+                selected = selected == tab,
+                onClick = { onSelect(tab) },
+                label = { Text(if (count > 0) "${tab.label} · $count" else tab.label) }
+            )
+        }
+    }
+}
+
+@Composable
 private fun SelectionHeader(
     selectedCount: Int,
     showSplit: Boolean,
     showJoin: Boolean,
+    showOptions: Boolean,
     onClear: () -> Unit,
     onJoin: () -> Unit,
     onSplit: () -> Unit,
-    onEditGroup: () -> Unit
+    onEditGroup: () -> Unit,
+    onOptions: () -> Unit
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 3.dp,
+        shadowElevation = 6.dp,
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 12.dp)
@@ -417,6 +493,10 @@ private fun SelectionHeader(
             }
             if (showJoin) {
                 Button(onClick = onJoin, shape = Pill) { Text("Join") }
+            }
+            // Single-book selection → overflow menu with that book's options
+            if (showOptions) {
+                IconButton(onClick = onOptions) { Icon(Icons.Default.MoreVert, "Book options") }
             }
         }
     }
@@ -790,8 +870,7 @@ private fun BookGridCard(
     isSelectionMode: Boolean,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onLongHold: (() -> Unit)? = null
+    onLongClick: () -> Unit
 ) {
     val book = bwp.book
     val borderColor by animateColorAsState(
@@ -815,17 +894,6 @@ private fun BookGridCard(
             )
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .then(if (onLongHold != null) Modifier.pointerInput(onLongHold) {
-                while (true) {
-                    var pressTimeMs = 0L
-                    awaitPointerEventScope {
-                        awaitFirstDown(requireUnconsumed = false)
-                        pressTimeMs = System.currentTimeMillis()
-                    }
-                    awaitPointerEventScope { waitForUpOrCancellation() }
-                    if (System.currentTimeMillis() - pressTimeMs >= 1500L) onLongHold()
-                }
-            } else Modifier)
     ) {
         AsyncImage(
             model = book.coverArtPath?.let { File(it) },

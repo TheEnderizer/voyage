@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -178,6 +179,10 @@ fun AudioSettingsSheet(
     }
 }
 
+private const val SPEED_MIN = 0.5f
+private const val SPEED_MAX = 3.0f
+private const val SPEED_STEP = 0.05f
+
 @Composable
 private fun SpeedTab(
     speedValue: Float,
@@ -194,14 +199,24 @@ private fun SpeedTab(
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
-        Slider(
-            value = speedValue,
-            onValueChange = onSpeedChange,
-            onValueChangeFinished = { onSpeedCommit(speedValue) },
-            valueRange = 0.5f..3.0f,
-            steps = 49,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AdjustButton(Icons.Default.Remove, "Slower") {
+                val v = (((speedValue - SPEED_STEP) / SPEED_STEP).roundToInt() * SPEED_STEP).coerceIn(SPEED_MIN, SPEED_MAX)
+                onSpeedChange(v); onSpeedCommit(v)
+            }
+            Slider(
+                value = speedValue,
+                onValueChange = onSpeedChange,
+                onValueChangeFinished = { onSpeedCommit(speedValue) },
+                valueRange = SPEED_MIN..SPEED_MAX,
+                steps = 49,
+                modifier = Modifier.weight(1f)
+            )
+            AdjustButton(Icons.Default.Add, "Faster") {
+                val v = (((speedValue + SPEED_STEP) / SPEED_STEP).roundToInt() * SPEED_STEP).coerceIn(SPEED_MIN, SPEED_MAX)
+                onSpeedChange(v); onSpeedCommit(v)
+            }
+        }
     }
 }
 
@@ -220,13 +235,28 @@ private fun BoostTab(
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
-        Slider(
-            value = boostValue.toFloat(),
-            onValueChange = { onBoostChange(it.roundToInt()) },
-            valueRange = 0f..24f,
-            steps = 23,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AdjustButton(Icons.Default.Remove, "Less boost") {
+                onBoostChange((boostValue - 1).coerceIn(0, 24))
+            }
+            Slider(
+                value = boostValue.toFloat(),
+                onValueChange = { onBoostChange(it.roundToInt()) },
+                valueRange = 0f..24f,
+                steps = 23,
+                modifier = Modifier.weight(1f)
+            )
+            AdjustButton(Icons.Default.Add, "More boost") {
+                onBoostChange((boostValue + 1).coerceIn(0, 24))
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdjustButton(icon: androidx.compose.ui.graphics.vector.ImageVector, cd: String, onClick: () -> Unit) {
+    FilledTonalIconButton(onClick = onClick, modifier = Modifier.size(40.dp)) {
+        Icon(icon, cd, Modifier.size(20.dp))
     }
 }
 

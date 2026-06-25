@@ -39,6 +39,7 @@ object WidgetRender {
     const val EXTRA_BOOK_AUTHOR    = "extra_book_author"
     const val EXTRA_IS_PLAYING     = "extra_is_playing"
     const val EXTRA_COVER_ART_URI  = "extra_cover_art_uri"
+    const val EXTRA_OPEN_PLAYER    = "extra_open_player"
 
     private const val DEFAULT_ACCENT = 0xFFFFA552.toInt()
 
@@ -60,6 +61,7 @@ object WidgetRender {
     fun openAppIntent(context: Context): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_OPEN_PLAYER, true)
         }
         return PendingIntent.getActivity(
             context, 0, intent,

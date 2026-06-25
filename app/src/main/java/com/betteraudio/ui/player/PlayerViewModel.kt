@@ -75,6 +75,12 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
+    // Configured skip intervals — surfaced so the transport buttons can show the real seconds.
+    val skipForwardMs: StateFlow<Long> =
+        settings.skipForwardMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_FORWARD_MS)
+    val skipBackMs: StateFlow<Long> =
+        settings.skipBackMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_BACK_MS)
+
     // ── Audio presets (type-specific) ────────────────────────────────────────
     val speedPresets: StateFlow<List<AudioPreset>> =
         repository.getAudioPresetsByType(AudioPreset.TYPE_SPEED)
