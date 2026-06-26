@@ -1,12 +1,12 @@
 package com.betteraudio.ui.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +26,13 @@ import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
 
+/**
+ * Same full-bleed frame as [com.betteraudio.ui.player.PlayerScreen] — black
+ * background, the identical [ReflectedProgressiveBlurCover] behind a matching
+ * progressive scrim, a top bar, and a bottom-anchored content block. The only
+ * difference is the bottom block: book info (status / progress / synopsis /
+ * resume) instead of playback transport controls.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookInfoScreen(
@@ -36,206 +43,200 @@ fun BookInfoScreen(
     val bwp by viewModel.bookWithProgress.collectAsStateWithLifecycle()
     val book = bwp?.book
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        // ── Full-bleed cover background (same composable as PlayerScreen) ──────
-        Box(Modifier.fillMaxSize().clipToBounds()) {
-            ReflectedProgressiveBlurCover(
-                coverPath = book?.coverArtPath,
-                modifier  = Modifier.fillMaxWidth()
-            )
-        }
-
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (book == null) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color    = Color.White
             )
-        } else {
-            // ── Scrollable content overlay ──────────────────────────────────────
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .statusBarsPadding()
-                    .navigationBarsPadding()
-            ) {
-                // Transparent spacer — lets the cover show through at the top
-                Spacer(Modifier.height(200.dp))
+            return@Box
+        }
 
-                // Metadata sits on a gradient fade from transparent → black
-                // so text is always readable regardless of cover colour.
+        val onScrim      = Color.White
+        val onScrimMuted = Color.White.copy(alpha = 0.62f)
+        val accent       = MaterialTheme.colorScheme.primary
+
+        // ── Cover + reflection background (identical to PlayerScreen) ──────────
+        Box(Modifier.fillMaxSize().clipToBounds()) {
+            ReflectedProgressiveBlurCover(
+                coverPath = book.coverArtPath,
+                modifier  = Modifier.fillMaxWidth()
+            )
+        }
+        // Progressive scrim: clear over the cover, dark over the info block.
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    0f    to Color.Black.copy(alpha = 0.15f),
+                    0.38f to Color.Black.copy(alpha = 0.04f),
+                    0.54f to Color.Black.copy(alpha = 0.52f),
+                    0.75f to Color.Black.copy(alpha = 0.86f),
+                    1f    to Color.Black.copy(alpha = 0.97f)
+                )
+            )
+        )
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+        ) {
+            // ── Top bar ────────────────────────────────────────────────────────
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = onBack)
+                Spacer(Modifier.weight(1f))
+                book.seriesName?.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = onScrimMuted,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                // Spacer to balance the back button so the series label stays centred.
+                Spacer(Modifier.size(42.dp))
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // ── Bottom info block (replaces the player's controls) ──────────────
+            book.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+                val label = if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
+                Text(
+                    label.uppercase(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = accent,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+            }
+
+            Text(
+                text = book.displayTitle,
+                style = MaterialTheme.typography.headlineSmall,
+                color = onScrim,
+                fontWeight = FontWeight.Bold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (book.displayAuthor.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = book.displayAuthor,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = onScrimMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (!book.narrator.isNullOrBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "Narrated by ${book.narrator}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onScrimMuted
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Status chip
+            val statusLabel = when (book.status) {
+                BookStatus.NOT_STARTED -> "Not started"
+                BookStatus.IN_PROGRESS -> "In progress"
+                BookStatus.FINISHED    -> "Finished"
+            }
+            SuggestionChip(onClick = {}, label = { Text(statusLabel) })
+
+            // Progress
+            val prog    = bwp?.progressFraction ?: 0f
+            val totalMs = book.totalDurationMs
+            if (totalMs > 0) {
+                Spacer(Modifier.height(14.dp))
+                val remainingMs = ((1f - prog) * totalMs).toLong().coerceAtLeast(0L)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("${(prog * 100).toInt()}% complete",
+                        style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
+                    Text("${formatDurationHuman(remainingMs)} remaining",
+                        style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
+                }
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { prog },
+                    modifier = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
+                    color = accent,
+                    trackColor = Color.White.copy(alpha = 0.22f)
+                )
+            }
+
+            // Synopsis / description — capped scroll so a long blurb never
+            // pushes the resume button off-screen.
+            val about = book.synopsis?.takeIf { it.isNotBlank() }
+                ?: book.description?.takeIf { it.isNotBlank() }
+            if (about != null) {
+                Spacer(Modifier.height(16.dp))
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                0.00f to Color.Transparent,
-                                0.06f to Color.Black.copy(alpha = 0.75f),
-                                0.15f to Color.Black.copy(alpha = 0.92f),
-                                1.00f to Color.Black,
-                            )
-                        )
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 28.dp, bottom = 32.dp)
+                        .heightIn(max = 180.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    // Series
-                    book.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
-                        val label = if (book.seriesOrder != null)
-                            "$series · #${book.seriesOrder}" else series
-                        Text(
-                            label.uppercase(),
-                            style  = MaterialTheme.typography.labelMedium,
-                            color  = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 4.dp)
-                        )
-                    }
-
                     Text(
-                        book.displayTitle,
-                        style      = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        color      = Color.White,
-                        maxLines   = 3,
-                        overflow   = TextOverflow.Ellipsis
+                        about,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = onScrimMuted
                     )
-
-                    if (book.displayAuthor.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            book.displayAuthor,
-                            style = MaterialTheme.typography.titleMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-
-                    if (!book.narrator.isNullOrBlank()) {
-                        Spacer(Modifier.height(2.dp))
-                        Text(
-                            "Narrated by ${book.narrator}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.60f)
-                        )
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    // Status chip
-                    val statusLabel = when (book.status) {
-                        BookStatus.NOT_STARTED -> "Not started"
-                        BookStatus.IN_PROGRESS -> "In progress"
-                        BookStatus.FINISHED    -> "Finished"
-                    }
-                    SuggestionChip(
-                        onClick = {},
-                        label   = { Text(statusLabel) }
-                    )
-
-                    // Progress
-                    val prog    = bwp?.progressFraction ?: 0f
-                    val totalMs = book.totalDurationMs
-                    if (totalMs > 0) {
-                        Spacer(Modifier.height(16.dp))
-                        val remainingMs = ((1f - prog) * totalMs).toLong().coerceAtLeast(0L)
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                "${(prog * 100).toInt()}% complete",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.60f)
-                            )
-                            Text(
-                                "${formatDurationHuman(remainingMs)} remaining",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.60f)
-                            )
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        LinearProgressIndicator(
-                            progress    = { prog },
-                            modifier    = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
-                            color       = MaterialTheme.colorScheme.primary,
-                            trackColor  = Color.White.copy(alpha = 0.20f)
-                        )
-                    }
-
-                    Spacer(Modifier.height(20.dp))
-
-                    // Resume / Start button
-                    val buttonLabel = when {
-                        prog <= 0f                           -> "Start"
-                        bwp?.progress?.isCompleted == true  -> "Play again"
-                        else                                 -> "Resume"
-                    }
-                    Button(
-                        onClick  = { onOpenBook(book.id) },
-                        modifier = Modifier.fillMaxWidth().height(52.dp),
-                        shape    = Pill
-                    ) {
-                        Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(buttonLabel, style = MaterialTheme.typography.titleMedium)
-                    }
-
-                    // Synopsis
-                    book.synopsis?.takeIf { it.isNotBlank() }?.let { synopsis ->
-                        Spacer(Modifier.height(24.dp))
-                        Text(
-                            "About",
-                            style      = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color      = Color.White
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            synopsis,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-
-                    // Description from tags (if no AI synopsis)
-                    if (book.description?.isNotBlank() == true &&
-                        book.synopsis?.isNotBlank() != true) {
-                        Spacer(Modifier.height(24.dp))
-                        Text(
-                            "Description",
-                            style      = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color      = Color.White
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            book.description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-
-                    Spacer(Modifier.height(32.dp))
                 }
             }
-        }
 
-        // ── Back button (fixed overlay at top-left) ─────────────────────────────
-        IconButton(
-            onClick  = onBack,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding()
-                .padding(4.dp)
-        ) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back",
-                tint               = Color.White
-            )
+            Spacer(Modifier.height(18.dp))
+
+            // Resume / Start button (replaces the transport row)
+            val buttonLabel = when {
+                prog <= 0f                          -> "Start"
+                bwp?.progress?.isCompleted == true  -> "Play again"
+                else                                -> "Resume"
+            }
+            Button(
+                onClick  = { onOpenBook(book.id) },
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape    = Pill
+            ) {
+                Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(buttonLabel, style = MaterialTheme.typography.titleMedium)
+            }
+
+            Spacer(Modifier.height(18.dp))
         }
+    }
+}
+
+/** Matches PlayerScreen's translucent round scrim button. */
+@Composable
+private fun ScrimButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    cd: String,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier.size(42.dp).clip(Pill).background(Color.Black.copy(alpha = 0.32f)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, cd, Modifier.size(22.dp), tint = Color.White)
     }
 }
 
