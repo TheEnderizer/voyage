@@ -1,6 +1,5 @@
 package com.betteraudio.ui.home
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,18 +12,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.BookStatus
+import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.theme.Pill
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -66,27 +62,11 @@ fun BookInfoScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(padding)
         ) {
-            // ── Cover ─────────────────────────────────────────────────────
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-            ) {
-                AsyncImage(
-                    model = book.coverArtPath?.let { File(it) },
-                    contentDescription = book.displayTitle,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            0.6f to Color.Transparent,
-                            1f to MaterialTheme.colorScheme.background
-                        )
-                    )
-                )
-            }
+            // ── Cover + reflection ─────────────────────────────────────────
+            ReflectedProgressiveBlurCover(
+                coverPath = book.coverArtPath,
+                modifier  = Modifier.fillMaxWidth()
+            )
 
             // ── Metadata ───────────────────────────────────────────────────
             Column(

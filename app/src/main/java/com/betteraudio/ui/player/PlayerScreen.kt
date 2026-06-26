@@ -2,11 +2,9 @@ package com.betteraudio.ui.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,23 +15,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.theme.Pill
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -105,64 +98,13 @@ fun PlayerScreen(
         )
 
         Box(Modifier.fillMaxSize()) {
-            // ── Cover at natural aspect + blurred reflection ─────────────
+            // ── Cover + reflection background ─────────────────────────────
             Box(Modifier.fillMaxSize().background(Color.Black))
-            Column(Modifier.fillMaxSize()) {
-                // Real cover — full width, natural height; gradual blur starts at lower third
-                Box(Modifier.fillMaxWidth()) {
-                    AsyncImage(
-                        model = book?.coverArtPath?.let { File(it) },
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    // Blurred copy, masked so blur only shows in the lower portion
-                    AsyncImage(
-                        model = book?.coverArtPath?.let { File(it) },
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .then(
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                                    Modifier.blur(14.dp) else Modifier
-                            )
-                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                drawRect(
-                                    brush = Brush.verticalGradient(
-                                        0f to Color.Transparent,
-                                        0.55f to Color.Transparent,
-                                        1f to Color.Black
-                                    ),
-                                    blendMode = BlendMode.DstIn
-                                )
-                            }
-                    )
-                }
-                // Reflection — fills remaining height
-                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-                    AsyncImage(
-                        model = book?.coverArtPath?.let { File(it) },
-                        contentDescription = null,
-                        contentScale = ContentScale.FillWidth,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer { scaleY = -1f }
-                            .then(
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
-                                    Modifier.blur(20.dp) else Modifier
-                            )
-                    )
-                    Box(
-                        Modifier.fillMaxSize().background(
-                            Brush.verticalGradient(
-                                listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.92f))
-                            )
-                        )
-                    )
-                }
+            Box(Modifier.fillMaxSize().clipToBounds()) {
+                ReflectedProgressiveBlurCover(
+                    coverPath = book?.coverArtPath,
+                    modifier  = Modifier.fillMaxWidth()
+                )
             }
             // Progressive scrim: clear at top of cover, dark over controls
             Box(
