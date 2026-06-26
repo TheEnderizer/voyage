@@ -31,6 +31,7 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.home.BookInfoScreen
+import com.betteraudio.ui.home.GroupInfoScreen
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.join.JoinOptionsScreen
 import com.betteraudio.ui.player.PlayerScreen
@@ -125,6 +126,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onEditGroup = { groupId ->
                                 navController.navigate("join_options?groupId=$groupId")
+                            },
+                            onOpenGroupInfo = { groupId ->
+                                navController.navigate("group_info/$groupId")
                             }
                         )
                     }
@@ -137,7 +141,7 @@ class MainActivity : ComponentActivity() {
                         route = "player/{bookId}",
                         arguments = listOf(navArgument("bookId") { type = NavType.LongType })
                     ) {
-                        PlayerScreen(onBack = { navController.popBackStack() })
+                        PlayerScreen(onBack = { navController.popBackStack("home", inclusive = false) })
                     }
 
                     composable(
@@ -167,6 +171,13 @@ class MainActivity : ComponentActivity() {
                             onBack = { navController.popBackStack() },
                             onBookClick = { bookId -> navController.navigate("player/$bookId") }
                         )
+                    }
+
+                    composable(
+                        route = "group_info/{groupId}",
+                        arguments = listOf(navArgument("groupId") { type = NavType.LongType })
+                    ) {
+                        GroupInfoScreen(onBack = { navController.popBackStack() })
                     }
 
                     // Join / Edit group options
@@ -206,7 +217,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        runBlocking { playerController.saveCurrentProgressNow() }
+        runBlocking {
+            playerController.saveCurrentProgressNow()
+            settings.setAppStoppedAt(System.currentTimeMillis())
+        }
     }
 
     override fun onDestroy() {

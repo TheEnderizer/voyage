@@ -41,6 +41,7 @@ class SettingsStore @Inject constructor(
         val ANTHROPIC_API_KEY = stringPreferencesKey("anthropic_api_key")
         val AUTO_REWIND_SECONDS          = intPreferencesKey("auto_rewind_seconds")
         val AUTO_REWIND_THRESHOLD_MINUTES = intPreferencesKey("auto_rewind_threshold_minutes")
+        val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
     }
 
     companion object {
@@ -63,6 +64,7 @@ class SettingsStore @Inject constructor(
     val lastPlayedBookId: Flow<Long>        = context.dataStore.data.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }
     val autoRewindSeconds: Flow<Int>          = context.dataStore.data.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }
     val autoRewindThresholdMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }
+    val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -72,6 +74,7 @@ class SettingsStore @Inject constructor(
     @Volatile var currentDefaultAudioPresetId        = -1L;                                    private set
     @Volatile var currentAutoRewindSeconds           = DEFAULT_AUTO_REWIND_SECONDS;            private set
     @Volatile var currentAutoRewindThresholdMinutes  = DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES;  private set
+    @Volatile var currentAppStoppedAt               = 0L;                                     private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -82,6 +85,7 @@ class SettingsStore @Inject constructor(
         scope.launch { defaultAudioPresetId.collect      { currentDefaultAudioPresetId       = it } }
         scope.launch { autoRewindSeconds.collect         { currentAutoRewindSeconds          = it } }
         scope.launch { autoRewindThresholdMinutes.collect{ currentAutoRewindThresholdMinutes = it } }
+        scope.launch { appStoppedAt.collect              { currentAppStoppedAt              = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -109,4 +113,6 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }.let { }
     suspend fun setAutoRewindThresholdMinutes(m: Int) =
         context.dataStore.edit { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] = m }.let { }
+    suspend fun setAppStoppedAt(ts: Long) =
+        context.dataStore.edit { it[Keys.APP_STOPPED_AT] = ts }.let { }
 }

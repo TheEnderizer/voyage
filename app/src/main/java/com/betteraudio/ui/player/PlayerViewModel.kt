@@ -378,10 +378,15 @@ class PlayerViewModel @Inject constructor(
 
     private fun computeAutoRewindMs(progress: com.betteraudio.data.db.entities.PlaybackProgress?): Long {
         if (progress == null || progress.lastPausedAt <= 0L) return 0L
+        val rewindMs = settings.currentAutoRewindSeconds * 1_000L
+        if (rewindMs <= 0L) return 0L
+        // If the app was stopped (backgrounded/killed) after the last in-app pause, always rewind
+        if (settings.currentAppStoppedAt > progress.lastPausedAt) return rewindMs
+        // Otherwise apply threshold: only rewind if paused longer than configured threshold
         val thresholdMs = settings.currentAutoRewindThresholdMinutes * 60_000L
         if (thresholdMs <= 0L) return 0L
         val elapsed = System.currentTimeMillis() - progress.lastPausedAt
-        return if (elapsed >= thresholdMs) settings.currentAutoRewindSeconds * 1_000L else 0L
+        return if (elapsed >= thresholdMs) rewindMs else 0L
     }
 
     fun play() {

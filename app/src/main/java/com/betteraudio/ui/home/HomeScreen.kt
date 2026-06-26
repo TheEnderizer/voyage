@@ -70,6 +70,7 @@ fun HomeScreen(
     onOpenSeries: (String) -> Unit = {},
     onJoinBooks: (bookIds: String) -> Unit = {},
     onEditGroup: (groupId: Long) -> Unit = {},
+    onOpenGroupInfo: (groupId: Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -245,7 +246,7 @@ fun HomeScreen(
                                         isNowPlaying = playbackState.groupId == gridItem.group.id,
                                         onClick = {
                                             if (isSelectionMode) viewModel.selectGroup(gridItem.group.id)
-                                            else viewModel.launchGroupPlayback(gridItem.group.id)
+                                            else onOpenGroupInfo(gridItem.group.id)
                                         },
                                         onLongClick = { viewModel.selectGroup(gridItem.group.id) }
                                     )

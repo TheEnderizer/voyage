@@ -253,6 +253,7 @@ private fun LazyListScope.librarySection(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 private fun LazyListScope.playbackSection(
     skipForwardMs: Long,
     skipBackMs: Long,
@@ -320,22 +321,17 @@ private fun LazyListScope.playbackSection(
                 }
 
                 if (autoRewindThresholdMinutes > 0) {
-                    var rewindSlider by remember(autoRewindSeconds) { mutableFloatStateOf(autoRewindSeconds.toFloat()) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Rewind amount", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${rewindSlider.toInt()} s",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary)
+                    Text("Rewind amount", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(2, 5, 7, 10, 15, 20).forEach { s ->
+                            FilterChip(
+                                selected = autoRewindSeconds == s,
+                                onClick  = { viewModel.setAutoRewindSeconds(s) },
+                                label    = { Text("${s}s") }
+                            )
+                        }
                     }
-                    Slider(
-                        value = rewindSlider,
-                        onValueChange = { rewindSlider = it.roundToInt().toFloat() },
-                        onValueChangeFinished = { viewModel.setAutoRewindSeconds(rewindSlider.toInt()) },
-                        valueRange = 0f..60f,
-                        steps = 59,
-                        modifier = Modifier.fillMaxWidth()
-                    )
                 }
             }
         }

@@ -17,8 +17,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -105,13 +108,39 @@ fun PlayerScreen(
             // ── Cover at natural aspect + blurred reflection ─────────────
             Box(Modifier.fillMaxSize().background(Color.Black))
             Column(Modifier.fillMaxSize()) {
-                // Real cover — full width, natural height (not cropped)
-                AsyncImage(
-                    model = book?.coverArtPath?.let { File(it) },
-                    contentDescription = null,
-                    contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Real cover — full width, natural height; gradual blur starts at lower third
+                Box(Modifier.fillMaxWidth()) {
+                    AsyncImage(
+                        model = book?.coverArtPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    // Blurred copy, masked so blur only shows in the lower portion
+                    AsyncImage(
+                        model = book?.coverArtPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                                    Modifier.blur(14.dp) else Modifier
+                            )
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .drawWithContent {
+                                drawContent()
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        0f to Color.Transparent,
+                                        0.55f to Color.Transparent,
+                                        1f to Color.Black
+                                    ),
+                                    blendMode = BlendMode.DstIn
+                                )
+                            }
+                    )
+                }
                 // Reflection — fills remaining height
                 Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
                     AsyncImage(
