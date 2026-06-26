@@ -30,8 +30,11 @@ import androidx.navigation.navArgument
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
-import com.betteraudio.ui.home.GroupInfoScreen
 import com.betteraudio.ui.home.HomeScreen
+import com.betteraudio.ui.theme.colorOsEnter
+import com.betteraudio.ui.theme.colorOsExit
+import com.betteraudio.ui.theme.colorOsPopEnter
+import com.betteraudio.ui.theme.colorOsPopExit
 import com.betteraudio.ui.join.JoinOptionsScreen
 import com.betteraudio.ui.player.PlayerScreen
 import com.betteraudio.ui.search.SearchScreen
@@ -111,7 +114,14 @@ class MainActivity : ComponentActivity() {
                     settings.setLastOpenBookId(id)
                 }
 
-                NavHost(navController = navController, startDestination = "home") {
+                NavHost(
+                    navController = navController,
+                    startDestination = "home",
+                    enterTransition = { colorOsEnter() },
+                    exitTransition = { colorOsExit() },
+                    popEnterTransition = { colorOsPopEnter() },
+                    popExitTransition = { colorOsPopExit() }
+                ) {
 
                     composable("home") {
                         HomeScreen(
@@ -179,7 +189,10 @@ class MainActivity : ComponentActivity() {
                         route = "group_info/{groupId}",
                         arguments = listOf(navArgument("groupId") { type = NavType.LongType })
                     ) {
-                        GroupInfoScreen(onBack = { navController.popBackStack() })
+                        PlayerScreen(
+                            onBack = { navController.popBackStack() },
+                            initiallyShowInfo = true
+                        )
                     }
 
                     // Join / Edit group options

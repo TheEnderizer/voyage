@@ -49,6 +49,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.pressScale
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -711,7 +712,7 @@ private fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+        modifier = Modifier.fillMaxWidth().pressScale().clickable(onClick = onClick)
     ) {
         Row(
             Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
@@ -759,10 +760,11 @@ private fun SettingsCard(
     trailing: @Composable (() -> Unit)? = null
 ) {
     val base = Modifier.fillMaxWidth()
+    val clickModifier = if (onClick != null) base.pressScale().clickable(onClick = onClick) else base
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = if (onClick != null) base.clickable(onClick = onClick) else base
+        modifier = clickModifier
     ) {
         Row(
             Modifier.padding(16.dp),

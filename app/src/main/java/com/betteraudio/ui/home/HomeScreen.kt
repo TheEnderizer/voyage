@@ -58,6 +58,7 @@ import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.ui.components.CircleIconButton
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.pressScale
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -222,6 +223,7 @@ fun HomeScreen(
                             is HomeGridItem.SingleBook -> {
                                 item(key = "book_${gridItem.bwp.book.id}") {
                                     BookGridCard(
+                                        modifier = Modifier.animateItem(),
                                         bwp = gridItem.bwp,
                                         isSelected = gridItem.bwp.book.id in selectedBookIds,
                                         isSelectionMode = isSelectionMode,
@@ -240,6 +242,7 @@ fun HomeScreen(
                             is HomeGridItem.Group -> {
                                 item(key = "group_${gridItem.group.id}") {
                                     GroupGridCard(
+                                        modifier = Modifier.animateItem(),
                                         groupItem = gridItem,
                                         isSelected = selectedGroupId == gridItem.group.id,
                                         isSelectionMode = isSelectionMode,
@@ -856,6 +859,7 @@ private fun NavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     Box(
         Modifier
             .size(44.dp)
+            .pressScale()
             .clip(CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -875,7 +879,8 @@ private fun BookGridCard(
     isNowPlaying: Boolean,
     onClick: () -> Unit,
     onPlayClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val book = bwp.book
     val borderColor by animateColorAsState(
@@ -888,9 +893,10 @@ private fun BookGridCard(
     )
 
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
+            .pressScale(enabled = !isSelectionMode)
             .clip(MaterialTheme.shapes.large)
             .border(
                 width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
@@ -1021,7 +1027,8 @@ private fun GroupGridCard(
     isSelectionMode: Boolean,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val borderColor by animateColorAsState(
         when {
@@ -1033,9 +1040,10 @@ private fun GroupGridCard(
     )
 
     Box(
-        Modifier
+        modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
+            .pressScale(enabled = !isSelectionMode)
             .clip(MaterialTheme.shapes.large)
             .border(
                 width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,

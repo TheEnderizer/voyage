@@ -3,6 +3,22 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.3.0b] - 2026-06-27
+
+### Added
+- Joined group info screen now uses the same full-bleed player backdrop and crossfade layout as the book info screen — tap Resume to enter the player without a visual jump
+- Parts list shown in the group info panel (title + duration per book)
+- Unified book options sheet: the player overflow now opens the same Book Options sheet as the home long-press, with an extra Playback section (speed / boost / gallery cover)
+- Spring-physics navigation transitions (OxygenOS/ColorOS 16 feel): screens scale and slide in/out with a natural overshoot on enter
+- Press-scale feedback on grid cards, nav icons, settings rows, search results, and series rows — cards slightly shrink on press and spring back with overshoot
+- List appearance animation on home grid items (reorder/add/remove animate smoothly)
+- `pressScale` modifier and `MotionTokens` spring constants available for reuse across the app
+
+### Changed
+- Group info screen is now the player screen in info mode — `GroupInfoScreen` and `GroupInfoViewModel` deleted, logic unified into `PlayerViewModel`
+- `BookSettingsSheet` deleted — player overflow uses the unified `BookOptionsSheet` with a Playback section instead
+- Cover backdrop (`ReflectedCoverBackdrop`), scrim controls (`ScrimButton`, `ScrimPill`), and info panel (`BookInfoPanel`) extracted to shared components so every screen using the player design language renders identically
+
 ## [1.2.9b] - 2026-06-26
 
 ### Added

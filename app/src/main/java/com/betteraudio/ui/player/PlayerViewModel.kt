@@ -6,6 +6,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.AudioPreset
+import com.betteraudio.data.db.entities.Book
+import com.betteraudio.data.db.entities.BookGroup
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
@@ -41,6 +43,14 @@ import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
 
+data class GroupScreenState(
+    val group: BookGroup,
+    val books: List<Book>,
+    val totalDurationMs: Long,
+    val progressFraction: Float,
+    val coverArtPath: String?
+)
+
 /** A row in the chapter list: a book-title header (for joined groups) or a chapter. */
 sealed class ChapterRow {
     data class BookHeader(val title: String) : ChapterRow()
@@ -67,11 +77,19 @@ class PlayerViewModel @Inject constructor(
     val playerController: PlayerController
 ) : ViewModel() {
 
-    val bookId: Long = checkNotNull(savedStateHandle["bookId"])
+    val bookId: Long = savedStateHandle["bookId"] ?: -1L
+    val groupId: Long = savedStateHandle["groupId"] ?: -1L
+
+    // Group screen model — populated when groupId != -1.
+    private val _groupInfo = MutableStateFlow<GroupScreenState?>(null)
+    val groupInfo: StateFlow<GroupScreenState?> = _groupInfo.asStateFlow()
 
     val bookWithProgress: StateFlow<BookWithProgress?> =
-        repository.getBookWithProgress(bookId)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        if (bookId != -1L)
+            repository.getBookWithProgress(bookId)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        else
+            MutableStateFlow(null)
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
@@ -101,19 +119,50 @@ class PlayerViewModel @Inject constructor(
     // its cover changes), so the player draws one cached bitmap instead of live-blurring.
     private var lastFxCover: String? = null
     init {
-        repository.getBookById(bookId)
-            .onEach { b ->
-                val cover = b?.coverArtPath
-                if (cover != null && b.coverFxPath == null && cover != lastFxCover) {
-                    lastFxCover = cover
-                    repository.ensureCoverFx(bookId)
+        if (bookId != -1L) {
+            repository.getBookById(bookId)
+                .onEach { b ->
+                    val cover = b?.coverArtPath
+                    if (cover != null && b.coverFxPath == null && cover != lastFxCover) {
+                        lastFxCover = cover
+                        repository.ensureCoverFx(bookId)
+                    }
                 }
-            }
-            .launchIn(viewModelScope)
+                .launchIn(viewModelScope)
+        }
+    }
+
+    // Load group info when opened via groupId.
+    init {
+        if (groupId != -1L) {
+            groupRepository.getBooksForGroup(groupId)
+                .flatMapLatest { books ->
+                    flow {
+                        val group = groupRepository.getGroupById(groupId)
+                            ?: run { emit(null); return@flow }
+                        val totalMs = books.sumOf { it.totalDurationMs }
+                        val progressList = books.map { repository.getProgressForBookOnce(it.id) }
+                        val playedMs = books.zip(progressList)
+                            .sumOf { (_, prog) -> prog?.positionMs ?: 0L }
+                        val fraction = if (totalMs > 0)
+                            (playedMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
+                        emit(GroupScreenState(
+                            group           = group,
+                            books           = books,
+                            totalDurationMs = totalMs,
+                            progressFraction = fraction,
+                            coverArtPath    = group.coverArtPath ?: books.firstOrNull()?.coverArtPath
+                        ))
+                    }
+                }
+                .onEach { _groupInfo.value = it }
+                .launchIn(viewModelScope)
+        }
     }
 
     /** Re-bake the reflection/progressive-blur background from the current cover. */
     fun refreshCoverEffect() {
+        if (bookId == -1L) return
         lastFxCover = null
         viewModelScope.launch { repository.regenerateCoverFx(bookId) }
     }
@@ -411,6 +460,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun play() {
+        if (groupId != -1L) { playGroup(); return }
         viewModelScope.launch {
             val bwp = bookWithProgress.value ?: return@launch
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
@@ -435,6 +485,41 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    private fun playGroup() {
+        viewModelScope.launch {
+            val state = _groupInfo.value ?: return@launch
+            val filesPerBook = groupRepository.getAudioFilesForBooks(state.books.map { it.id })
+            val progressMap = state.books.associateWith { book ->
+                repository.getProgressForBookOnce(book.id)
+            }
+            val resumeBook = progressMap.entries
+                .maxByOrNull { it.value?.lastPlayedMs ?: 0L }?.key ?: state.books.first()
+            val resumeProgress = progressMap[resumeBook]
+            var globalIndex = 0
+            for (book in state.books) {
+                val files = filesPerBook[book.id] ?: emptyList()
+                if (book.id == resumeBook.id) {
+                    globalIndex += files.indexOfFirst { it.id == resumeProgress?.currentFileId }
+                        .coerceAtLeast(0)
+                    break
+                }
+                globalIndex += files.size
+            }
+            val startPos = if (resumeProgress?.isCompleted == true) 0L
+                           else resumeProgress?.positionMs ?: 0L
+            playerController.playBookGroup(
+                groupId              = state.group.id,
+                groupName            = state.group.name,
+                coverArtPath         = state.group.coverArtPath,
+                orderedBooks         = state.books,
+                filesPerBook         = filesPerBook,
+                startGlobalFileIndex = globalIndex,
+                startPositionMs      = startPos,
+                speed                = state.group.playbackSpeed
+            )
+        }
+    }
+
     fun togglePlayPause() = playerController.togglePlayPause()
     fun skipForward()     = playerController.skipForward()
     fun skipBack()        = playerController.skipBack()
@@ -448,10 +533,17 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun updateBookStatus(status: BookStatus) {
+        if (bookId == -1L) return
         viewModelScope.launch { repository.updateBookStatus(bookId, status) }
     }
 
+    fun updateBookMetadata(titleOverride: String?, authorOverride: String?) {
+        if (bookId == -1L) return
+        viewModelScope.launch { repository.updateBookMetadata(bookId, titleOverride, authorOverride) }
+    }
+
     fun updateSeriesInfo(seriesName: String?, seriesOrder: Float?) {
+        if (bookId == -1L) return
         viewModelScope.launch { repository.updateSeriesInfo(bookId, seriesName, seriesOrder) }
     }
 
@@ -469,6 +561,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun saveProgress() {
+        if (bookId == -1L) return
         val state = playbackState.value
         if (state.bookId != bookId) return
         val bwp = bookWithProgress.value ?: return
@@ -479,6 +572,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun saveProgressIfActive() {
+        if (bookId == -1L) return
         val state = playbackState.value
         if (state.bookId != bookId) return
         val bwp = bookWithProgress.value ?: return

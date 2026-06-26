@@ -16,6 +16,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.ui.theme.pressScale
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -76,7 +77,7 @@ fun SeriesDetailScreen(
 private fun SeriesBookRow(book: Book, index: Int, onClick: () -> Unit) {
     Card(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().pressScale()
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),

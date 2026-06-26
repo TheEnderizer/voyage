@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.pressScale
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -140,7 +141,7 @@ private fun SearchResultRow(book: Book, onClick: () -> Unit) {
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().pressScale()
     ) {
         Row(
             Modifier.padding(10.dp),

@@ -8,9 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -20,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -30,8 +26,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.betteraudio.data.db.entities.BookStatus
-import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
+import com.betteraudio.ui.components.BookInfoPanel
+import com.betteraudio.ui.components.PartItem
+import com.betteraudio.ui.components.ReflectedCoverBackdrop
+import com.betteraudio.ui.components.ScrimButton
+import com.betteraudio.ui.components.ScrimPill
+import com.betteraudio.ui.home.BookOptionsSheet
+import com.betteraudio.ui.home.PlaybackOptions
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
 
@@ -44,6 +45,7 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val bwp               by viewModel.bookWithProgress.collectAsStateWithLifecycle()
+    val groupInfo         by viewModel.groupInfo.collectAsStateWithLifecycle()
     val state             by viewModel.playbackState.collectAsStateWithLifecycle()
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
@@ -51,6 +53,7 @@ fun PlayerScreen(
     val skipForwardMs     by viewModel.skipForwardMs.collectAsStateWithLifecycle()
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val book = bwp?.book
+    val isGroup = viewModel.groupId != -1L
 
     // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
     val showInfoState = remember { mutableStateOf(initiallyShowInfo) }
@@ -58,7 +61,7 @@ fun PlayerScreen(
     BackHandler(enabled = !showInfoState.value && initiallyShowInfo) { showInfoState.value = true }
 
     var showChapters       by remember { mutableStateOf(false) }
-    var showBookSettings   by remember { mutableStateOf(false) }
+    var showBookOptions    by remember { mutableStateOf(false) }
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
     var showAddBookmark    by remember { mutableStateOf(false) }
@@ -78,16 +81,21 @@ fun PlayerScreen(
         ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { viewModel.updateCoverArt(context, it) } }
 
-    LaunchedEffect(bwp) {
-        if (bwp != null && state.bookId != viewModel.bookId && !showInfoState.value) {
-            viewModel.play()
+    LaunchedEffect(bwp, groupInfo) {
+        if (!showInfoState.value) {
+            if (isGroup && groupInfo != null && state.groupId != viewModel.groupId) {
+                viewModel.play()
+            } else if (!isGroup && bwp != null && state.bookId != viewModel.bookId) {
+                viewModel.play()
+            }
         }
     }
 
     DisposableEffect(Unit) { onDispose { viewModel.saveProgress() } }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
-        if (bwp == null) {
+        val loading = if (isGroup) groupInfo == null else bwp == null
+        if (loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -97,6 +105,9 @@ fun PlayerScreen(
         val onScrim = Color.White
         val onScrimMuted = Color.White.copy(alpha = 0.62f)
         val accent = MaterialTheme.colorScheme.primary
+
+        val coverPath = if (isGroup) groupInfo?.coverArtPath else book?.coverArtPath
+        val bakedPath = if (isGroup) null else book?.coverFxPath
 
         val useBookLevel = state.bookTotalDurationMs > 0
         val bookTotal = if (useBookLevel) state.bookTotalDurationMs else state.durationMs
@@ -111,26 +122,11 @@ fun PlayerScreen(
         )
 
         Box(Modifier.fillMaxSize()) {
-            // ── Cover + reflection background ─────────────────────────────
-            Box(Modifier.fillMaxSize().background(Color.Black))
-            Box(Modifier.fillMaxSize().clipToBounds()) {
-                ReflectedProgressiveBlurCover(
-                    coverPath = book?.coverArtPath,
-                    bakedPath = book?.coverFxPath,
-                    modifier  = Modifier.fillMaxWidth()
-                )
-            }
-            // Progressive scrim: clear at top of cover, dark over controls
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.15f),
-                        0.38f to Color.Black.copy(alpha = 0.04f),
-                        0.54f to Color.Black.copy(alpha = 0.52f),
-                        0.75f to Color.Black.copy(alpha = 0.86f),
-                        1f to Color.Black.copy(alpha = 0.97f)
-                    )
-                )
+            // ── Cover + reflection + progressive scrim ────────────────────
+            ReflectedCoverBackdrop(
+                coverPath = coverPath,
+                bakedPath = bakedPath,
+                modifier  = Modifier.fillMaxSize()
             )
 
             Column(
@@ -146,7 +142,11 @@ fun PlayerScreen(
                 ) {
                     ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = onBack)
                     Spacer(Modifier.weight(1f))
-                    book?.seriesName?.takeIf { it.isNotBlank() }?.let {
+                    val topLabel = if (isGroup)
+                        groupInfo?.group?.name?.takeIf { it.isNotBlank() }
+                    else
+                        book?.seriesName?.takeIf { it.isNotBlank() }
+                    topLabel?.let {
                         Text(
                             it.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
@@ -160,21 +160,25 @@ fun PlayerScreen(
                     Box {
                         ScrimButton(Icons.Default.MoreVert, "More") { showOverflow = true }
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Book settings") },
-                                leadingIcon = { Icon(Icons.Default.Edit, null) },
-                                onClick = { showOverflow = false; showBookSettings = true }
-                            )
+                            if (!isGroup) {
+                                DropdownMenuItem(
+                                    text = { Text("Book options") },
+                                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                                    onClick = { showOverflow = false; showBookOptions = true }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Add bookmark") },
                                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                                 onClick = { showOverflow = false; showAddBookmark = true }
                             )
-                            DropdownMenuItem(
-                                text = { Text("Refresh cover effect") },
-                                leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                                onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
-                            )
+                            if (!isGroup) {
+                                DropdownMenuItem(
+                                    text = { Text("Refresh cover effect") },
+                                    leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                                    onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
+                                )
+                            }
                         }
                     }
                 }
@@ -184,74 +188,38 @@ fun PlayerScreen(
                 // ── Bottom: info panel OR player controls (crossfade, background stays static) ──
                 Crossfade(targetState = showInfoState.value, animationSpec = tween(280)) { isInfo: Boolean ->
                 if (isInfo) {
-                    // ── Book info panel (same content as old BookInfoScreen) ──────────────
-                    Column(Modifier.fillMaxWidth()) {
-                        book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
-                            val label = if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
-                            Text(label.uppercase(), style = MaterialTheme.typography.labelMedium,
-                                color = accent, modifier = Modifier.padding(bottom = 4.dp))
-                        }
-                        Text(book?.displayTitle ?: "", style = MaterialTheme.typography.headlineSmall,
-                            color = onScrim, fontWeight = FontWeight.Bold,
-                            maxLines = 3, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth())
-                        if (book?.displayAuthor?.isNotBlank() == true) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(book.displayAuthor, style = MaterialTheme.typography.titleSmall,
-                                color = onScrimMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        }
-                        if (!book?.narrator.isNullOrBlank()) {
-                            Spacer(Modifier.height(2.dp))
-                            Text("Narrated by ${book!!.narrator}", style = MaterialTheme.typography.bodySmall, color = onScrimMuted)
-                        }
-                        Spacer(Modifier.height(12.dp))
-                        val statusLabel = when (book?.status) {
-                            BookStatus.NOT_STARTED -> "Not started"
-                            BookStatus.IN_PROGRESS -> "In progress"
-                            BookStatus.FINISHED    -> "Finished"
-                            null                   -> ""
-                        }
-                        if (statusLabel.isNotEmpty()) SuggestionChip(onClick = {}, label = { Text(statusLabel) })
-                        val prog = bwp?.progressFraction ?: 0f
-                        val totalMs = book?.totalDurationMs ?: 0L
-                        if (totalMs > 0) {
-                            Spacer(Modifier.height(14.dp))
-                            val remainingMs = ((1f - prog) * totalMs).toLong().coerceAtLeast(0L)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${(prog * 100).toInt()}% complete",
-                                    style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
-                                Text("${formatDurationHuman(remainingMs)} remaining",
-                                    style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
+                    if (isGroup && groupInfo != null) {
+                        val gi = groupInfo!!
+                        BookInfoPanel(
+                            title            = gi.group.name,
+                            author           = gi.books.firstOrNull()?.displayAuthor,
+                            narrator         = null,
+                            seriesLabel      = "${gi.books.size} books joined",
+                            status           = null,
+                            progressFraction = gi.progressFraction,
+                            totalMs          = gi.totalDurationMs,
+                            synopsis         = null,
+                            onResume         = { viewModel.play(); showInfoState.value = false },
+                            parts            = gi.books.map { b ->
+                                PartItem(b.displayTitle, b.totalDurationMs)
                             }
-                            Spacer(Modifier.height(6.dp))
-                            LinearProgressIndicator(progress = { prog },
-                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
-                                color = accent, trackColor = Color.White.copy(alpha = 0.22f))
+                        )
+                    } else {
+                        val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+                            if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
                         }
-                        val about = book?.synopsis?.takeIf { it.isNotBlank() }
-                            ?: book?.description?.takeIf { it.isNotBlank() }
-                        if (about != null) {
-                            Spacer(Modifier.height(16.dp))
-                            Column(Modifier.fillMaxWidth().heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
-                                Text(about, style = MaterialTheme.typography.bodyMedium, color = onScrimMuted)
-                            }
-                        }
-                        Spacer(Modifier.height(18.dp))
-                        val buttonLabel = when {
-                            prog <= 0f                         -> "Start"
-                            bwp?.progress?.isCompleted == true -> "Play again"
-                            else                               -> "Resume"
-                        }
-                        Button(
-                            onClick = { viewModel.play(); showInfoState.value = false },
-                            modifier = Modifier.fillMaxWidth().height(56.dp),
-                            shape = Pill
-                        ) {
-                            Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(buttonLabel, style = MaterialTheme.typography.titleMedium)
-                        }
-                        Spacer(Modifier.height(18.dp))
+                        BookInfoPanel(
+                            title            = book?.displayTitle ?: "",
+                            author           = book?.displayAuthor,
+                            narrator         = book?.narrator,
+                            seriesLabel      = seriesLabel,
+                            status           = book?.status,
+                            progressFraction = bwp?.progressFraction ?: 0f,
+                            totalMs          = book?.totalDurationMs ?: 0L,
+                            synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
+                                               ?: book?.description?.takeIf { it.isNotBlank() },
+                            onResume         = { viewModel.play(); showInfoState.value = false }
+                        )
                     }
                 } else {
                 // ── Player controls ─────────────────────────────────────────────────
@@ -524,16 +492,26 @@ fun PlayerScreen(
             )
         }
 
-        if (showBookSettings && bwp != null) {
-            BookSettingsSheet(
+        if (showBookOptions && bwp != null) {
+            BookOptionsSheet(
                 bwp = bwp!!,
-                currentBoostDb = viewModel.currentBoostDb,
-                onDismiss = { showBookSettings = false },
-                onStatusChange = { viewModel.updateBookStatus(it) },
-                onSpeedChange = { viewModel.setSpeed(it) },
-                onBoostChange = { viewModel.setVolumeBoost(it) },
-                onSeriesChange = { name, order -> viewModel.updateSeriesInfo(name, order) },
-                onChangeCover = { coverPickerLauncher.launch("image/*") }
+                onDismiss = { showBookOptions = false },
+                onUpdateMetadata = { title, author ->
+                    bwp?.book?.let { viewModel.updateBookMetadata(title, author) }
+                },
+                onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
+                onUpdateStatus = { viewModel.updateBookStatus(it) },
+                onSearchOnlineCover = { showBookOptions = false },
+                onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
+                onIgnore = { },
+                onDeletePermanently = { },
+                playback = PlaybackOptions(
+                    currentSpeed = state.speed,
+                    currentBoostDb = viewModel.currentBoostDb,
+                    onSpeedChange = { viewModel.setSpeed(it) },
+                    onBoostChange = { viewModel.setVolumeBoost(it) },
+                    onChangeCoverFromGallery = { coverPickerLauncher.launch("image/*") }
+                )
             )
         }
 
@@ -645,40 +623,6 @@ private fun SkipButton(seconds: Int, forward: Boolean, tint: Color, onClick: () 
 @Composable
 private fun SecondaryIcon(icon: ImageVector, cd: String, tint: Color, onClick: () -> Unit) {
     IconButton(onClick = onClick) { Icon(icon, cd, Modifier.size(22.dp), tint = tint) }
-}
-
-@Composable
-private fun ScrimButton(icon: ImageVector, cd: String, onClick: () -> Unit) {
-    Box(
-        Modifier.size(42.dp).clip(Pill).background(Color.Black.copy(alpha = 0.32f)).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, cd, Modifier.size(22.dp), tint = Color.White)
-    }
-}
-
-@Composable
-private fun ScrimPill(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit,
-    trailing: ImageVector? = null,
-    filled: Boolean = false
-) {
-    val bg = if (filled) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.14f)
-    val fg = if (filled) MaterialTheme.colorScheme.onPrimary else Color.White
-    Row(
-        Modifier.clip(Pill).background(bg).clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(icon, null, Modifier.size(15.dp), tint = fg)
-        Spacer(Modifier.width(5.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = fg)
-        if (trailing != null) {
-            Spacer(Modifier.width(2.dp))
-            Icon(trailing, null, Modifier.size(15.dp), tint = fg)
-        }
-    }
 }
 
 private fun formatDurationHuman(ms: Long): String {

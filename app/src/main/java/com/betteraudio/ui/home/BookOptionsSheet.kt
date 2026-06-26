@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -15,9 +16,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.model.BookWithProgress
+import kotlin.math.roundToInt
+
+/** Playback controls to display when the sheet is opened from a player context. */
+data class PlaybackOptions(
+    val currentSpeed: Float,
+    val currentBoostDb: Int,
+    val onSpeedChange: (Float) -> Unit,
+    val onBoostChange: (Int) -> Unit,
+    val onChangeCoverFromGallery: () -> Unit
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,7 +40,8 @@ fun BookOptionsSheet(
     onSearchOnlineCover: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onIgnore: () -> Unit,
-    onDeletePermanently: (deleteFiles: Boolean) -> Unit
+    onDeletePermanently: (deleteFiles: Boolean) -> Unit,
+    playback: PlaybackOptions? = null
 ) {
     val book = bwp.book
     var titleInput by remember { mutableStateOf(book.titleOverride ?: book.title) }
@@ -41,6 +52,8 @@ fun BookOptionsSheet(
     var showIgnoreConfirm by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var deleteFiles by remember { mutableStateOf(false) }
+    var speed by remember(playback?.currentSpeed) { mutableFloatStateOf(playback?.currentSpeed ?: 1f) }
+    var boost by remember(playback?.currentBoostDb) { mutableIntStateOf(playback?.currentBoostDb ?: 0) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -87,6 +100,45 @@ fun BookOptionsSheet(
                 ) { Text("Save") }
             }
 
+            // ── Playback (only when opened from player context) ────────
+            if (playback != null) {
+                OptionsSection("Playback Speed  ${"%.2f".format(speed)}×") {
+                    Slider(
+                        value = speed,
+                        onValueChange = { speed = (it / 0.05f).roundToInt() * 0.05f },
+                        onValueChangeFinished = { playback.onSpeedChange(speed) },
+                        valueRange = 0.5f..3.0f,
+                        steps = 49,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("0.5×", style = MaterialTheme.typography.labelSmall)
+                        Text("3.0×", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                OptionsSection("Volume Boost  ${boost} dB") {
+                    Slider(
+                        value = boost.toFloat(),
+                        onValueChange = { boost = it.toInt() },
+                        onValueChangeFinished = { playback.onBoostChange(boost) },
+                        valueRange = 0f..24f,
+                        steps = 23,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("0 dB", style = MaterialTheme.typography.labelSmall)
+                        Text("+24 dB", style = MaterialTheme.typography.labelSmall)
+                    }
+                    if (boost > 12) {
+                        Text(
+                            "High boost may cause distortion",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
             // ── Status ─────────────────────────────────────────────────
             OptionsSection("Status") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -114,6 +166,17 @@ fun BookOptionsSheet(
                     Text("Search online for cover")
                 }
                 Spacer(Modifier.height(4.dp))
+                if (playback != null) {
+                    OutlinedButton(
+                        onClick = { playback.onChangeCoverFromGallery(); onDismiss() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Photo, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Choose from gallery")
+                    }
+                    Spacer(Modifier.height(4.dp))
+                }
                 OutlinedButton(
                     onClick = { onRefreshCoverEffect(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
