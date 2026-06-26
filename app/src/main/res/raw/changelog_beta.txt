@@ -3,6 +3,18 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.2.8b] - 2026-06-26
+
+### Added
+- Progressive blur cover effect on the player and book info screens: original image with a vertically-flipped reflection below; top 80% of the cover stays sharp, blur ramps up over the final 20% and into the reflection (70% strength at the seam, 100% at the bottom)
+- Group info screen: dedicated screen for joined book groups showing cover, progress, and a parts list
+- Online cover search now uses iTunes (audiobook-specific) and OpenLibrary instead of Google Images
+- Auto-rewind now always triggers after the app is closed and reopened, not just after a long pause
+
+### Changed
+- Rewind amount in settings is now a chip row (2 / 5 / 7 / 10 / 15 / 20 s) instead of a slider
+- Player back button goes directly to home, skipping the book info screen
+
 ## [1.2.6b] - 2026-06-25
 
 ### Added
