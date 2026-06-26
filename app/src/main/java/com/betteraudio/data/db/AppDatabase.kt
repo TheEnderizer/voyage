@@ -21,10 +21,10 @@ import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.PlaybackProgress
 
-// Version 6: eqBandsJson on PlaybackProgress; titleOverride/authorOverride/isIgnored on Book; type on AudioPreset
+// Version 7: lastPausedAt on PlaybackProgress (for auto-rewind after extended pause)
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -79,6 +79,12 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE books ADD COLUMN authorOverride TEXT")
                 db.execSQL("ALTER TABLE books ADD COLUMN isIgnored INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE audio_presets ADD COLUMN type TEXT NOT NULL DEFAULT 'SPEED'")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN lastPausedAt INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

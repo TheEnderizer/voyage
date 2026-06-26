@@ -6,7 +6,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONObject
 import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -27,52 +26,33 @@ class CoverSearchService @Inject constructor(
         .build()
 
     suspend fun search(query: String): List<String> = withContext(Dispatchers.IO) {
-        val google = runCatching { searchGoogleBooks(query) }.getOrDefault(emptyList())
-        if (google.isNotEmpty()) google
-        else runCatching { searchOpenLibrary(query) }.getOrDefault(emptyList())
+        runCatching { searchGoogleImages("$query book cover") }.getOrDefault(emptyList())
     }
 
-    private fun searchGoogleBooks(query: String): List<String> {
+    private fun searchGoogleImages(query: String): List<String> {
         val q = URLEncoder.encode(query, "UTF-8")
-        val url = "https://www.googleapis.com/books/v1/volumes?q=$q&maxResults=20&country=US"
-        val request = Request.Builder().url(url).build()
+        val url = "https://www.google.com/search?q=$q&tbm=isch&num=20&hl=en"
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+            .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) return emptyList()
             val body = response.body?.string() ?: return emptyList()
-            val items = JSONObject(body).optJSONArray("items") ?: return emptyList()
-            val urls = mutableListOf<String>()
-            for (i in 0 until items.length()) {
-                val imageLinks = items.getJSONObject(i)
-                    .optJSONObject("volumeInfo")
-                    ?.optJSONObject("imageLinks") ?: continue
-                // Prefer the largest available link
-                val link = imageLinks.optString("thumbnail")
-                    .ifBlank { imageLinks.optString("smallThumbnail") }
-                if (link.isNotBlank()) {
-                    // Force https and drop the page-curl overlay for a cleaner cover
-                    urls.add(link.replaceFirst("http://", "https://").replace("&edge=curl", ""))
-                }
-            }
-            return urls.distinct()
-        }
-    }
-
-    private fun searchOpenLibrary(query: String): List<String> {
-        val q = URLEncoder.encode(query, "UTF-8")
-        val url = "https://openlibrary.org/search.json?q=$q&limit=20"
-        val request = Request.Builder().url(url).build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            val body = response.body?.string() ?: return emptyList()
-            val docs = JSONObject(body).optJSONArray("docs") ?: return emptyList()
-            val urls = mutableListOf<String>()
-            for (i in 0 until docs.length()) {
-                val coverId = docs.getJSONObject(i).optInt("cover_i", -1)
-                if (coverId > 0) {
-                    urls.add("https://covers.openlibrary.org/b/id/$coverId-L.jpg")
-                }
-            }
-            return urls.distinct()
+            // Google embeds full-size image URLs in the page JSON as "ou":"https://..."
+            val ouRegex = Regex(""""ou":"(https://[^"]+)"""")
+            val ouUrls = ouRegex.findAll(body).map { it.groupValues[1] }.distinct().take(24).toList()
+            if (ouUrls.isNotEmpty()) return ouUrls
+            // Fallback: scrape any direct image URLs from the page
+            val imgRegex = Regex("""https://[^\s"'\\]+\.(?:jpg|jpeg|png)(?:\?[^\s"'\\]*)?""")
+            return imgRegex.findAll(body)
+                .map { it.value }
+                .filter { "gstatic.com/images" !in it }
+                .distinct()
+                .take(20)
+                .toList()
         }
     }
 

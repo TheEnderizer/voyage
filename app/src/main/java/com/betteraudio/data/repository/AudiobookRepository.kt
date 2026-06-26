@@ -173,4 +173,12 @@ class AudiobookRepository @Inject constructor(
     }
     suspend fun getProgressForBookOnce(bookId: Long): PlaybackProgress? =
         progressDao.getProgressForBookOnce(bookId)
+
+    suspend fun updateLastPausedAt(bookId: Long, ts: Long) {
+        if (progressDao.getProgressForBookOnce(bookId) == null) {
+            progressDao.upsert(PlaybackProgress(bookId = bookId, lastPausedAt = ts))
+        } else {
+            progressDao.updateLastPausedAt(bookId, ts)
+        }
+    }
 }

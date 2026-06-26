@@ -30,6 +30,7 @@ import androidx.navigation.navArgument
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.ui.home.BookInfoScreen
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.join.JoinOptionsScreen
 import com.betteraudio.ui.player.PlayerScreen
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             onOpenSettings = { navController.navigate("settings") },
                             onOpenBook = { bookId -> navController.navigate("player/$bookId") },
+                            onOpenBookInfo = { bookId -> navController.navigate("book_info/$bookId") },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { name -> navController.navigate("series/${Uri.encode(name)}") },
                             onJoinBooks = { bookIds ->
@@ -136,6 +138,16 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("bookId") { type = NavType.LongType })
                     ) {
                         PlayerScreen(onBack = { navController.popBackStack() })
+                    }
+
+                    composable(
+                        route = "book_info/{bookId}",
+                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                    ) {
+                        BookInfoScreen(
+                            onBack = { navController.popBackStack() },
+                            onOpenBook = { bookId -> navController.navigate("player/$bookId") }
+                        )
                     }
 
                     composable("search") {

@@ -38,6 +38,9 @@ interface PlaybackProgressDao {
     @Query("UPDATE playback_progress SET lastPlayedMs = :ts WHERE bookId = :bookId")
     suspend fun touchLastPlayed(bookId: Long, ts: Long): Int
 
+    @Query("UPDATE playback_progress SET lastPausedAt = :ts WHERE bookId = :bookId")
+    suspend fun updateLastPausedAt(bookId: Long, ts: Long)
+
     @Query("""
         UPDATE playback_progress
         SET isCompleted = 1, completedDateMs = :completedMs

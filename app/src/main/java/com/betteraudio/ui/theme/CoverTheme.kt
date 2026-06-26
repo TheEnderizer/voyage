@@ -84,7 +84,11 @@ fun rememberAnimatedScheme(target: ColorScheme): ColorScheme {
 
 private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean): ColorScheme {
     val fallback = if (dark) 0xFFFFA552.toInt() else 0xFFE07B3E.toInt()
-    val primary = Color(palette.getVibrantColor(palette.getDominantColor(fallback)))
+    // Prefer light swatches so accents are legible on the dark background
+    val primary = palette.lightVibrantSwatch?.rgb?.let { Color(it) }
+        ?: palette.vibrantSwatch?.rgb?.let { Color(it) }
+        ?: palette.lightMutedSwatch?.rgb?.let { Color(it) }
+        ?: Color(palette.getDominantColor(fallback))
     val secondary = Color(palette.getMutedColor(primary.toArgb()))
     val tertiary = Color(palette.getLightVibrantColor(palette.getDarkVibrantColor(primary.toArgb())))
 

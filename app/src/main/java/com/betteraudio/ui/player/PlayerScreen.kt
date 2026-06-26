@@ -2,9 +2,12 @@ package com.betteraudio.ui.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -99,22 +102,48 @@ fun PlayerScreen(
         )
 
         Box(Modifier.fillMaxSize()) {
-            // ── Full-bleed cover background ─────────────────────────────
-            AsyncImage(
-                model = book?.coverArtPath?.let { File(it) },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-            // Scrim — light at the top so the cover reads, heavy at the bottom for control legibility
+            // ── Cover at natural aspect + blurred reflection ─────────────
+            Box(Modifier.fillMaxSize().background(Color.Black))
+            Column(Modifier.fillMaxSize()) {
+                // Real cover — full width, natural height (not cropped)
+                AsyncImage(
+                    model = book?.coverArtPath?.let { File(it) },
+                    contentDescription = null,
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Reflection — fills remaining height
+                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+                    AsyncImage(
+                        model = book?.coverArtPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer { scaleY = -1f }
+                            .then(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                                    Modifier.blur(20.dp) else Modifier
+                            )
+                    )
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.92f))
+                            )
+                        )
+                    )
+                }
+            }
+            // Progressive scrim: clear at top of cover, dark over controls
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.30f),
-                        0.30f to Color.Black.copy(alpha = 0.04f),
-                        0.52f to Color.Black.copy(alpha = 0.45f),
-                        0.74f to Color.Black.copy(alpha = 0.82f),
-                        1f to Color.Black.copy(alpha = 0.96f)
+                        0f to Color.Black.copy(alpha = 0.15f),
+                        0.38f to Color.Black.copy(alpha = 0.04f),
+                        0.54f to Color.Black.copy(alpha = 0.52f),
+                        0.75f to Color.Black.copy(alpha = 0.86f),
+                        1f to Color.Black.copy(alpha = 0.97f)
                     )
                 )
             )
@@ -164,7 +193,13 @@ fun PlayerScreen(
 
                 // ── Bottom control cluster ──────────────────────────────
                 if (chapters.hasChapters && cur != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clip(com.betteraudio.ui.theme.Pill)
+                            .clickable { showChapters = true }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(15.dp), tint = onScrimMuted)
                         Spacer(Modifier.width(6.dp))
                         Text(
@@ -350,9 +385,6 @@ fun PlayerScreen(
                         )
                     }
                     SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
-                    if (chapters.hasChapters) {
-                        SecondaryIcon(Icons.AutoMirrored.Filled.List, "Chapters", onScrim) { showChapters = true }
-                    }
                     SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
                     if (state.sleepTimerRemainingMs > 0L) {
                         Column(

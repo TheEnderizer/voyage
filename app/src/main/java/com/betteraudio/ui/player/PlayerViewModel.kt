@@ -376,6 +376,14 @@ class PlayerViewModel @Inject constructor(
 
     // ── Playback actions ─────────────────────────────────────────────────────
 
+    private fun computeAutoRewindMs(progress: com.betteraudio.data.db.entities.PlaybackProgress?): Long {
+        if (progress == null || progress.lastPausedAt <= 0L) return 0L
+        val thresholdMs = settings.currentAutoRewindThresholdMinutes * 60_000L
+        if (thresholdMs <= 0L) return 0L
+        val elapsed = System.currentTimeMillis() - progress.lastPausedAt
+        return if (elapsed >= thresholdMs) settings.currentAutoRewindSeconds * 1_000L else 0L
+    }
+
     fun play() {
         viewModelScope.launch {
             val bwp = bookWithProgress.value ?: return@launch
@@ -383,7 +391,8 @@ class PlayerViewModel @Inject constructor(
             if (files.isEmpty()) return@launch
             val progress = bwp.progress
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-            val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            val startPos = (rawPos - computeAutoRewindMs(progress)).coerceAtLeast(0L)
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
             // Restore per-book boost and EQ so they don't bleed from other books

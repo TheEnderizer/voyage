@@ -56,9 +56,11 @@ Key fields added in recent migrations:
 
 ### Scanner (`data/scanner/`)
 
-`AudioFileScanner` applies a folder-structure heuristic recursively: direct audio files are clustered into books by `clusterBySimilarName` (splits into multiple books only when ≥2 genuine ≥2-file sequences exist). A folder of only sub-folders with >1 child is a series container. When a folder yields multiple books, each book's `folderPath` is a synthetic `"<dir>::<stem>"` key — never do `File(folderPath)` on it without checking for `::`.
+`AudioFileScanner` applies a folder-structure heuristic recursively. A folder of only sub-folders with >1 child is a series container. For a folder's direct audio files, `groupFilesIntoBooks` decides the split: **embedded ALBUM tags win** — every file tagged with ≥2 distinct albums → one book per album; a single shared album → exactly one book (never shattered); untagged/mixed → fall back to `clusterBySimilarName` (filename-stem heuristic, splits only when ≥2 genuine ≥2-file sequences exist). The album pre-pass costs one extra `MediaMetadataRetriever` ALBUM read per loose file at scan time. When a folder yields multiple books, each book's `folderPath` is a synthetic `"<dir>::<stem-or-album>"` key — never do `File(folderPath)` on it without checking for `::`.
 
-`ChapterExtractor` hand-rolls an MP4 `moov/udta/chpl` Nero-atom reader for M4B/M4A. `AutoJoiner` runs only on explicit user scans (`autoJoin = true`) and buckets books by immediate parent directory before merging — books in different subdirectories are never auto-merged.
+**Chapters**: `ChapterExtractor` hand-rolls an MP4 `moov/udta/chpl` Nero-atom reader for M4B/M4A. `buildChapters` uses embedded markers where present; otherwise one row per file, **except** a chapterless file longer than `SYNTHETIC_CHAPTER_MIN_FILE_MS` (20 min) is sliced into `SYNTHETIC_CHAPTER_INTERVAL_MS` (~10 min) "Chapter N" rows (`source = "synthetic"`) so a single long MP3 still gets a usable TOC. Chapters are only rebuilt when the file set changed or `chapterCount == 0`, so existing books won't gain synthetic chapters until a rescan that changes their files.
+
+`AutoJoiner` runs only on explicit user scans (`autoJoin = true`) and buckets books by immediate parent directory before merging — books in different subdirectories are never auto-merged.
 
 ### Playback (`playback/`)
 
@@ -76,22 +78,23 @@ The `MediaSession` is fed a `ForwardingPlayer` whose next/previous overrides see
 
 ### UI (`ui/`)
 
-**Navigation**: single-Activity (`MainActivity`) with Compose `NavHost`. Routes: `home`, `player/{bookId}`, `search`, `series/{seriesName}`, `settings`, `join_options?bookIds=&groupId=`. The home screen renders its own floating pill nav (no bottom-nav graph). Cold start restores the last-open player screen from `LAST_OPEN_BOOK_ID` via `runBlocking` before composition.
+**Navigation**: single-Activity (`MainActivity`) with Compose `NavHost`. Routes: `home`, `player/{bookId}`, `search`, `series/{seriesName}`, `settings`, `join_options?bookIds=&groupId=`. The home screen renders its own floating pill nav (no bottom-nav graph). Cold start restores the last-open player screen from `LAST_OPEN_BOOK_ID` via `runBlocking` before composition. A widget tap carries `WidgetRender.EXTRA_OPEN_PLAYER`; `MainActivity` routes to the active book's player on both cold start and `onNewIntent` (warm, via a `playerNavRequest` state).
 
-**Theme**: `BetterAudioTheme(coverArtPath)` recolours the entire app to the currently-playing book's cover via `androidx.palette`. `dynamicColor` is off. Screens inherit the ambient scheme and do not self-theme.
+**Theme**: `VoyageTheme(coverArtPath)` (in `ui/theme/Theme.kt`) wraps the whole `NavHost` in `MainActivity`, so the cover-driven recolor is **app-wide, not player-only**. `MainActivity` feeds it the active book's cover, falling back to the **last-played** book's cover (`LAST_PLAYED_BOOK_ID` → `repository.getBookById`) when nothing is loaded, so the app stays themed while idle. `rememberCoverScheme` extracts accents via `androidx.palette`; `dynamicColor` is off; screens inherit the ambient scheme and do not self-theme. Exception: the full-bleed player and home cover overlays hardcode `Color.White`/`Color.Black` for scrim legibility over arbitrary art — those are intentionally outside the theme tokens.
 
 **Home screen** (`ui/home/`):
 - Grid shows `HomeGridItem.SingleBook` and `HomeGridItem.Group` items. Groups come from `BookGroupRepository`; ungrouped books from `getAllBooksWithProgressUngrouped()` (already filtered for `isIgnored = 0`).
+- **Library status tabs**: a chip row (All / Listening / Not started / Finished, with live counts). `HomeViewModel` exposes `libraryTab`, `visibleGridItems` (filtered), and `tabCounts`; status is derived from `Book.status`, and a group is classified from its members.
 - **Resume card**: when nothing is actively playing but `LAST_PLAYED_BOOK_ID` is set, a `ResumeCard` composable shows the last-played book in the same paused-state UI as `FeaturedNowPlaying`.
-- **Long press**: 500 ms → selection mode (checkbox via `combinedClickable`). 1 500 ms → `BookOptionsSheet` opens (implemented as a second `pointerInput` modifier that measures elapsed time between press and release).
-- `BookOptionsSheet` provides in-app metadata editing (`titleOverride` / `authorOverride`), hide-from-library (`isIgnored`), and permanent delete with optional file removal.
-- Scanning no longer has a nav button — it runs on first launch (auto-prompt when `savedFolder` is `""`) and on pull-to-refresh.
+- **Long press = select only** (single threshold, `combinedClickable`). The selection bar (`SelectionHeader`) floats as a top overlay (`AnimatedVisibility` aligned `TopCenter`) so it doesn't push the grid down; when exactly one book is selected it shows a `⋮` that opens `BookOptionsSheet` for that book. (The old 1500 ms second-hold gesture was removed.)
+- `BookOptionsSheet` provides in-app metadata editing (`titleOverride` / `authorOverride`), series name + position, reading status, online cover search, hide-from-library (`isIgnored`), and permanent delete with optional file removal.
+- Scanning has no nav button — it runs on first launch (auto-prompt when `savedFolder` is `""`) and on pull-to-refresh.
 
 **Settings screen** (`ui/settings/`): two-level navigation via `AnimatedContent` (sealed class `SettingsSection`). The **About** section contains both the update checker UI and the per-channel changelog (read from `res/raw/changelog_beta.txt` or `res/raw/changelog_stable.txt` based on version suffix). The `LazyListScope` extension functions receive all their data as parameters — do not call `collectAsStateWithLifecycle()` inside them (not a `@Composable` context).
 
 **Audio settings** (`ui/player/AudioSettingsSheet.kt`): 3-tab sheet (Speed / Boost / EQ). Each tab shows only presets of its own type (`AudioPreset.TYPE_SPEED`, `TYPE_BOOST`, `TYPE_EQ`). `PlayerViewModel` exposes three separate typed `StateFlow`s: `speedPresets`, `boostPresets`, `eqPresets`. Long-press on a preset chip calls `overwritePreset()` which updates the stored value to the current slider position.
 
-**Player screen** (`ui/player/`): position history stack (`_positionStack`, capped at 20) pushed before bookmark jumps, chapter seeks, and scrubber drags > 5 min.
+**Player screen** (`ui/player/`): full-bleed layout — the cover fills the screen behind a bottom scrim that holds the controls (chapter context line, title/author, return/confirm jump-history pills, scrubber, transport, secondary row). Skip buttons render the configured seconds from `PlayerViewModel.skipForwardMs`/`skipBackMs` (not a fixed number). Position history stack (`_positionStack`, capped at 20) pushed before bookmark jumps, chapter seeks, and scrubber drags > 5 min. The redesign dropped the inline synopsis + metadata chips from this screen (synopsis still generates and persists; it's destined for a future book-info screen).
 
 ### Changelogs
 
@@ -99,9 +102,11 @@ The `MediaSession` is fed a `ForwardingPlayer` whose next/previous overrides see
 
 ### Widget & AI
 
-Widgets (`widget/`) — three sizes sharing `BaseNowPlayingWidget` + `WidgetRender`. All dynamic visuals are drawn to bitmaps — `RemoteViews` can't use a Compose theme. `PlaybackService.broadcastWidgetUpdate` fires the update broadcast.
+Widgets (`widget/`) — three sizes sharing `BaseNowPlayingWidget` + `WidgetRender`. All dynamic visuals are drawn to bitmaps — `RemoteViews` can't use a Compose theme. `PlaybackService.broadcastWidgetUpdate` fires the update broadcast. The container tap (`WidgetCommon.openAppIntent`) sets `EXTRA_OPEN_PLAYER` to deep-link to the active player (handled in `MainActivity`). Widgets are **not** Compose-themed, so the app-wide cover recolor does not reach them.
 
 `SynopsisService` calls Gemini AI via the key stored in `SettingsStore` under `GEMINI_API_KEY` (never hardcoded). Triggered from `PlayerViewModel` when `book.synopsis == null` and the key is set.
+
+`CoverSearchService` (`data/covers/`) searches book cover art online — Google Books API first (no key), OpenLibrary fallback — and downloads the chosen image to internal storage with a timestamped filename (so Coil reloads it). Driven from `HomeViewModel` (`searchCovers` / `setBookCoverFromUrl`) via `CoverSearchSheet`.
 
 ## Conventions
 

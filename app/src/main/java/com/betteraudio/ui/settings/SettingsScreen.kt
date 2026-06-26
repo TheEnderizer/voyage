@@ -66,9 +66,11 @@ fun SettingsScreen(
     val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
     val rescanRunning   by viewModel.rescanRunning.collectAsStateWithLifecycle()
     val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
-    val updateState     by viewModel.updateState.collectAsStateWithLifecycle()
-    val whatsNew        by viewModel.whatsNew.collectAsStateWithLifecycle()
-    val currentSection  by viewModel.currentSection.collectAsStateWithLifecycle()
+    val updateState               by viewModel.updateState.collectAsStateWithLifecycle()
+    val whatsNew                  by viewModel.whatsNew.collectAsStateWithLifecycle()
+    val currentSection            by viewModel.currentSection.collectAsStateWithLifecycle()
+    val autoRewindSeconds         by viewModel.autoRewindSeconds.collectAsStateWithLifecycle()
+    val autoRewindThresholdMinutes by viewModel.autoRewindThresholdMinutes.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
@@ -143,7 +145,8 @@ fun SettingsScreen(
                         ignoredBooks, storageSettingsLauncher, { showBrowser = true }, viewModel
                     )
                     SettingsSection.Playback -> playbackSection(
-                        skipForwardMs, skipBackMs, defaultSpeed, viewModel
+                        skipForwardMs, skipBackMs, defaultSpeed,
+                        autoRewindSeconds, autoRewindThresholdMinutes, viewModel
                     )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
@@ -254,6 +257,8 @@ private fun LazyListScope.playbackSection(
     skipForwardMs: Long,
     skipBackMs: Long,
     defaultSpeed: Float,
+    autoRewindSeconds: Int,
+    autoRewindThresholdMinutes: Int,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -287,6 +292,51 @@ private fun LazyListScope.playbackSection(
                     steps = 49,
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+        }
+    }
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Auto-rewind", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Rewind when resuming after a long pause",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                val thresholdOptions = listOf(5, 15, 30, 60, 0)
+                val thresholdLabels  = listOf("5 min", "15 min", "30 min", "1 hour", "Off")
+                Text("Trigger after", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    thresholdOptions.forEachIndexed { i, m ->
+                        FilterChip(
+                            selected = autoRewindThresholdMinutes == m,
+                            onClick  = { viewModel.setAutoRewindThresholdMinutes(m) },
+                            label    = { Text(thresholdLabels[i]) }
+                        )
+                    }
+                }
+
+                if (autoRewindThresholdMinutes > 0) {
+                    var rewindSlider by remember(autoRewindSeconds) { mutableFloatStateOf(autoRewindSeconds.toFloat()) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Rewind amount", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${rewindSlider.toInt()} s",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = rewindSlider,
+                        onValueChange = { rewindSlider = it.roundToInt().toFloat() },
+                        onValueChangeFinished = { viewModel.setAutoRewindSeconds(rewindSlider.toInt()) },
+                        valueRange = 0f..60f,
+                        steps = 59,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

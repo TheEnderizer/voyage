@@ -3,6 +3,7 @@ package com.betteraudio.data.settings
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -38,12 +39,16 @@ class SettingsStore @Inject constructor(
         val LAST_PLAYED_BOOK_ID     = longPreferencesKey("last_played_book_id")
         // Legacy key kept so old Anthropic keys are silently ignored on next read
         val ANTHROPIC_API_KEY = stringPreferencesKey("anthropic_api_key")
+        val AUTO_REWIND_SECONDS          = intPreferencesKey("auto_rewind_seconds")
+        val AUTO_REWIND_THRESHOLD_MINUTES = intPreferencesKey("auto_rewind_threshold_minutes")
     }
 
     companion object {
         const val DEFAULT_SKIP_FORWARD_MS = 30_000L
         const val DEFAULT_SKIP_BACK_MS    = 15_000L
         const val DEFAULT_SPEED           = 1.0f
+        const val DEFAULT_AUTO_REWIND_SECONDS           = 10
+        const val DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES = 30
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -56,21 +61,27 @@ class SettingsStore @Inject constructor(
     val sortDirection: Flow<String>         = context.dataStore.data.map { it[Keys.SORT_DIRECTION] ?: "ASC" }
     val lastOpenBookId: Flow<Long>          = context.dataStore.data.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }
     val lastPlayedBookId: Flow<Long>        = context.dataStore.data.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }
+    val autoRewindSeconds: Flow<Int>          = context.dataStore.data.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }
+    val autoRewindThresholdMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }
 
-    @Volatile var currentSkipForwardMs       = DEFAULT_SKIP_FORWARD_MS; private set
-    @Volatile var currentSkipBackMs          = DEFAULT_SKIP_BACK_MS;    private set
-    @Volatile var currentDefaultSpeed        = DEFAULT_SPEED;            private set
-    @Volatile var currentLibraryFolder       = "";                       private set
-    @Volatile var currentGeminiApiKey        = "";                       private set
-    @Volatile var currentDefaultAudioPresetId = -1L;                     private set
+    @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
+    @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
+    @Volatile var currentDefaultSpeed                = DEFAULT_SPEED;                          private set
+    @Volatile var currentLibraryFolder               = "";                                     private set
+    @Volatile var currentGeminiApiKey                = "";                                     private set
+    @Volatile var currentDefaultAudioPresetId        = -1L;                                    private set
+    @Volatile var currentAutoRewindSeconds           = DEFAULT_AUTO_REWIND_SECONDS;            private set
+    @Volatile var currentAutoRewindThresholdMinutes  = DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES;  private set
 
     init {
-        scope.launch { skipForwardMs.collect          { currentSkipForwardMs        = it } }
-        scope.launch { skipBackMs.collect             { currentSkipBackMs           = it } }
-        scope.launch { defaultSpeed.collect           { currentDefaultSpeed         = it } }
-        scope.launch { libraryFolder.collect          { currentLibraryFolder        = it } }
-        scope.launch { geminiApiKey.collect           { currentGeminiApiKey         = it } }
-        scope.launch { defaultAudioPresetId.collect   { currentDefaultAudioPresetId = it } }
+        scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
+        scope.launch { skipBackMs.collect                { currentSkipBackMs                 = it } }
+        scope.launch { defaultSpeed.collect              { currentDefaultSpeed               = it } }
+        scope.launch { libraryFolder.collect             { currentLibraryFolder              = it } }
+        scope.launch { geminiApiKey.collect              { currentGeminiApiKey               = it } }
+        scope.launch { defaultAudioPresetId.collect      { currentDefaultAudioPresetId       = it } }
+        scope.launch { autoRewindSeconds.collect         { currentAutoRewindSeconds          = it } }
+        scope.launch { autoRewindThresholdMinutes.collect{ currentAutoRewindThresholdMinutes = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -94,4 +105,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }.let { }
     suspend fun setLastPlayedBookId(id: Long) =
         context.dataStore.edit { it[Keys.LAST_PLAYED_BOOK_ID] = id }.let { }
+    suspend fun setAutoRewindSeconds(s: Int) =
+        context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }.let { }
+    suspend fun setAutoRewindThresholdMinutes(m: Int) =
+        context.dataStore.edit { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] = m }.let { }
 }

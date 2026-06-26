@@ -65,6 +65,7 @@ import java.io.File
 fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenBook: (Long) -> Unit = {},
+    onOpenBookInfo: (Long) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (String) -> Unit = {},
     onJoinBooks: (bookIds: String) -> Unit = {},
@@ -227,8 +228,9 @@ fun HomeScreen(
                                         onClick = {
                                             if (isSelectionMode)
                                                 viewModel.toggleBookSelection(gridItem.bwp.book.id)
-                                            else onOpenBook(gridItem.bwp.book.id)
+                                            else onOpenBookInfo(gridItem.bwp.book.id)
                                         },
+                                        onPlayClick = { onOpenBook(gridItem.bwp.book.id) },
                                         onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) }
                                     )
                                 }
@@ -870,6 +872,7 @@ private fun BookGridCard(
     isSelectionMode: Boolean,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
+    onPlayClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     val book = bwp.book
@@ -963,6 +966,27 @@ private fun BookGridCard(
         // Selection checkbox
         if (isSelectionMode) {
             SelectionCheck(isSelected, Modifier.padding(8.dp).align(Alignment.TopEnd))
+        }
+
+        // Play button — bottom-right corner, only visible when not in selection mode
+        if (!isSelectionMode) {
+            Box(
+                Modifier
+                    .padding(8.dp)
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable(onClick = onPlayClick)
+                    .align(Alignment.BottomEnd),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    modifier = Modifier.size(20.dp),
+                    tint = Color.White
+                )
+            }
         }
     }
 }

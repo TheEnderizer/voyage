@@ -338,6 +338,10 @@ class PlayerController @Inject constructor(
     private val playerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) startPositionTicker() else stopPositionTicker()
+            if (!isPlaying && currentBookId != -1L) {
+                val bookId = currentBookId
+                scope.launch { repository.updateLastPausedAt(bookId, System.currentTimeMillis()) }
+            }
             syncState()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }

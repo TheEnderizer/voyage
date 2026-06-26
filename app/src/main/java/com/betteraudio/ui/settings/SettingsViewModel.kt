@@ -136,6 +136,13 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultSpeed(speed: Float) = viewModelScope.launch { settings.setDefaultSpeed(speed) }
     fun setGeminiApiKey(key: String) = viewModelScope.launch { settings.setGeminiApiKey(key) }
 
+    val autoRewindSeconds: StateFlow<Int> =
+        settings.autoRewindSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_AUTO_REWIND_SECONDS)
+    val autoRewindThresholdMinutes: StateFlow<Int> =
+        settings.autoRewindThresholdMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES)
+    fun setAutoRewindSeconds(s: Int) = viewModelScope.launch { settings.setAutoRewindSeconds(s) }
+    fun setAutoRewindThresholdMinutes(m: Int) = viewModelScope.launch { settings.setAutoRewindThresholdMinutes(m) }
+
     fun rescan() {
         val path = libraryFolder.value
         if (path.isBlank() || _rescanRunning.value) return
