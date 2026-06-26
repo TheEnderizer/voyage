@@ -1,6 +1,7 @@
 package com.betteraudio.ui.components
 
 import android.os.Build
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -22,30 +23,35 @@ import java.io.File
 
 /**
  * Renders a cover image with a vertically-flipped reflection directly below,
- * and applies a position-varying Gaussian blur across the combined image:
+ * and applies a position-varying blur that grades smoothly from sharp at the
+ * top to fully blurred at the bottom, which then dissolves into black.
  *
  *   ┌──────────────────────────────────┐ ← y = 0.0
- *   │  ORIGINAL  (top 80% stays sharp) │
- *   │  blur ramps from 80% downward    │
- *   ├──────────────────────────────────┤ ← y = 0.5  seam  (~70% of max blur)
+ *   │  ORIGINAL  (top ~56% stays sharp)│
+ *   │  very gradual blur onset         │
+ *   ├──────────────────────────────────┤ ← y = 0.5  seam
  *   │  REFLECTION  (flipped)           │
- *   │  blur continues to 100% of max   │
- *   └──────────────────────────────────┘ ← y = 1.0
+ *   │  blur continues to build         │
+ *   │  fades to black at very bottom   │
+ *   └──────────────────────────────────┘ ← y = 1.0  (black)
  *
  * Technique — stacked-layer blend:
- *   Four copies of the (original + reflection) column are rendered at
- *   increasing blur radii and each masked to a distinct vertical band via a
- *   gradient alpha (BlendMode.DstIn + CompositingStrategy.Offscreen).
- *   The bands crossfade so their alphas sum to ≈ 1.0 at every Y coordinate,
- *   producing the appearance of a continuously-varying blur without per-scanline
- *   blur (which Compose has no native primitive for).
+ *   Five copies of the (original + reflection) column are rendered at
+ *   increasing blur radii, each masked to a vertical band via a gradient
+ *   alpha (BlendMode.DstIn + CompositingStrategy.Offscreen).
+ *   Adjacent bands crossfade over wide overlap zones so their alphas sum to
+ *   ≈ 1.0 at every Y — no brightness doubling, no hard seams.
+ *
+ *   The container Box has a black background. The topmost layer (max blur)
+ *   fades from fully opaque at y ≈ 0.94 to transparent at y = 1.0, letting
+ *   the black background show through — this is the fade-to-black.
  *
  *   Y fractions refer to the combined image height (original = [0, 0.5],
- *   reflection = [0.5, 1.0]).  "Top 80% of original" = y ∈ [0.0, 0.40].
+ *   reflection = [0.5, 1.0]).
  *
- * API requirement: Modifier.blur() requires API 31 (Android S) because it
- * delegates to RenderEffect.createBlurEffect().  On API 26–30, the composable
- * renders the reflection without any blur — still visually correct, just sharp.
+ * API requirement: Modifier.blur() requires API 31 (Android 12 / S) because
+ * it delegates to RenderEffect. On API 26–30, original + reflection render
+ * without blur (still correct visually, just sharp).
  */
 @Composable
 fun ReflectedProgressiveBlurCover(
@@ -55,75 +61,100 @@ fun ReflectedProgressiveBlurCover(
 ) {
     val file = remember(coverPath) { coverPath?.let { File(it) } }
 
-    // Derived blur radii.
-    // mid ≈ 65% of max — this is the dominant level visible at the seam (y=0.50),
-    // which satisfies the "≈70% of max blur at the seam" requirement.
-    val lightBlur = (maxBlurRadius.value * 0.30f).dp
-    val midBlur   = (maxBlurRadius.value * 0.65f).dp
+    val veryLightBlur = (maxBlurRadius.value * 0.17f).dp  // ~5 dp
+    val lightBlur     = (maxBlurRadius.value * 0.43f).dp  // ~13 dp
+    val midBlur       = (maxBlurRadius.value * 0.73f).dp  // ~22 dp
 
-    Box(modifier.fillMaxWidth()) {
+    // Black background so the fade-to-transparent in the max-blur layer at
+    // y = 1.0 resolves to black, not whatever is behind this composable.
+    Box(modifier.fillMaxWidth().background(Color.Black)) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            // Top 80% of original is sharp → y=0.40 of combined (original=[0,0.5]).
-            // Seam = y=0.50; target ~70% of max blur there (mid layer ≈65% satisfies this).
-            // Ramp is compressed into y=0.37–0.50; each adjacent pair crossfades so
-            // their alphas sum to ≈1.0, then mid stays dominant through the seam.
-
-            // ── Layer 0: Sharp ────────────────────────────────────────────────
-            // Full 0–37%, crossfades out 37–43%.
+            // ── Layer 0: Sharp ─────────────────────────────────────────────────
+            // Full until y=28%, very wide crossfade out to y=44%.
+            // This gives ~16% of combined height (≈32% of original image) as a
+            // gradual lead-in zone, making the blur onset imperceptible at first.
             BlurLayer(
                 file       = file,
                 blurRadius = 0.dp,
                 stops      = arrayOf(
                     0.00f to Color.Black,
-                    0.37f to Color.Black,
-                    0.43f to Color.Transparent,
+                    0.28f to Color.Black,
+                    0.44f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
-            // ── Layer 1: Light blur ───────────────────────────────────────────
-            // Rises 37–43%, full 43–46%, crossfades out 46–50%.
+            // ── Layer 1: Very light blur ────────────────────────────────────────
+            // Rises with L0's crossfade (28–44%), briefly full (44–47%),
+            // crossfades into L2 (47–55%).
+            BlurLayer(
+                file       = file,
+                blurRadius = veryLightBlur,
+                stops      = arrayOf(
+                    0.00f to Color.Transparent,
+                    0.28f to Color.Transparent,
+                    0.44f to Color.Black,
+                    0.47f to Color.Black,
+                    0.55f to Color.Transparent,
+                    1.00f to Color.Transparent,
+                )
+            )
+            // ── Layer 2: Light blur ─────────────────────────────────────────────
+            // Rises 47–55% (seam at 50% is inside this zone), full 55–65%,
+            // crossfades into L3 (65–76%).
             BlurLayer(
                 file       = file,
                 blurRadius = lightBlur,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.37f to Color.Transparent,
-                    0.43f to Color.Black,
-                    0.46f to Color.Black,
-                    0.50f to Color.Transparent,
+                    0.47f to Color.Transparent,
+                    0.55f to Color.Black,
+                    0.65f to Color.Black,
+                    0.76f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
-            // ── Layer 2: Mid blur ─────────────────────────────────────────────
-            // Rises 46–50% (seam at 50% → mid at full alpha = ≈65% max ≈ 70% target),
-            // stays full 50–70%, crossfades out 70–82%.
+            // ── Layer 3: Mid blur ───────────────────────────────────────────────
+            // Rises 65–76%, full 76–87%, crossfades into L4 (87–94%).
             BlurLayer(
                 file       = file,
                 blurRadius = midBlur,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.46f to Color.Transparent,
-                    0.50f to Color.Black,
-                    0.70f to Color.Black,
-                    0.82f to Color.Transparent,
+                    0.65f to Color.Transparent,
+                    0.76f to Color.Black,
+                    0.87f to Color.Black,
+                    0.94f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
-            // ── Layer 3: Max blur ─────────────────────────────────────────────
-            // Rises 70–82%, stays full 82–100%.
+            // ── Layer 4: Max blur ───────────────────────────────────────────────
+            // Rises 87–94%, peaks 94–97%, then fades to transparent at 100%.
+            // The black container background shows through the fade → fade-to-black.
             BlurLayer(
                 file       = file,
                 blurRadius = maxBlurRadius,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.70f to Color.Transparent,
-                    0.82f to Color.Black,
-                    1.00f to Color.Black,
+                    0.87f to Color.Transparent,
+                    0.94f to Color.Black,
+                    0.97f to Color.Black,
+                    1.00f to Color.Transparent,
                 )
             )
         } else {
-            // API < 31 fallback: original + reflection, no blur.
+            // API < 31: original + sharp reflection, fades to black via gradient.
             CoverColumn(file = file, blurRadius = 0.dp)
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0.75f to Color.Transparent,
+                            1.00f to Color.Black
+                        )
+                    )
+            )
         }
     }
 }
@@ -134,18 +165,15 @@ private fun BlurLayer(
     blurRadius: Dp,
     stops: Array<Pair<Float, Color>>,
 ) {
-    // Brush is cheap to construct and stops are constants — skip remember.
     val maskBrush = Brush.verticalGradient(colorStops = stops)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            // Offscreen buffer is required so BlendMode.DstIn can use the
-            // layer's own alpha channel instead of the global compositing alpha.
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
-                drawContent()                                        // draws the (blurred) column
-                drawRect(brush = maskBrush, blendMode = BlendMode.DstIn) // cuts the gradient mask
+                drawContent()
+                drawRect(brush = maskBrush, blendMode = BlendMode.DstIn)
             }
     ) {
         CoverColumn(file = file, blurRadius = blurRadius)
@@ -159,14 +187,12 @@ private fun CoverColumn(file: File?, blurRadius: Dp) {
             .fillMaxWidth()
             .then(if (blurRadius > 0.dp) Modifier.blur(blurRadius) else Modifier)
     ) {
-        // Original image at natural aspect ratio (FillWidth = full width, intrinsic height).
         AsyncImage(
             model              = file,
             contentDescription = null,
             contentScale       = ContentScale.FillWidth,
             modifier           = Modifier.fillMaxWidth()
         )
-        // Vertically-flipped reflection directly below — same scale, scaleY = -1.
         AsyncImage(
             model              = file,
             contentDescription = null,
