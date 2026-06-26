@@ -146,6 +146,11 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /** Re-bake the reflection/progressive-blur background from the book's current cover. */
+    fun refreshCoverEffect(bookId: Long) {
+        viewModelScope.launch { repository.regenerateCoverFx(bookId) }
+    }
+
     // ── Selection mode ──────────────────────────────────────────────────────
 
     private val _selectedBookIds = MutableStateFlow<Set<Long>>(emptySet())

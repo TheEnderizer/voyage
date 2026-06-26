@@ -6,6 +6,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
@@ -27,6 +28,7 @@ fun BookOptionsSheet(
     onUpdateSeries: (seriesName: String?, seriesOrder: Float?) -> Unit,
     onUpdateStatus: (BookStatus) -> Unit,
     onSearchOnlineCover: () -> Unit,
+    onRefreshCoverEffect: () -> Unit,
     onIgnore: () -> Unit,
     onDeletePermanently: (deleteFiles: Boolean) -> Unit
 ) {
@@ -110,6 +112,15 @@ fun BookOptionsSheet(
                     Icon(Icons.Default.Search, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Search online for cover")
+                }
+                Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = { onRefreshCoverEffect(); onDismiss() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Refresh cover effect")
                 }
             }
 

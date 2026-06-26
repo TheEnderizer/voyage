@@ -14,6 +14,10 @@ data class Book(
     val seriesOrder: Float? = null,
     val folderPath: String,
     val coverArtPath: String? = null,
+    // Pre-rendered reflection + progressive-blur composite (baked once, reused at
+    // render time so the screens don't recompute the blur every frame). Null = not
+    // yet baked / invalidated by a cover change; the UI live-renders as a fallback.
+    val coverFxPath: String? = null,
     val totalDurationMs: Long = 0,
     val addedDateMs: Long = System.currentTimeMillis(),
     val status: BookStatus = BookStatus.NOT_STARTED,

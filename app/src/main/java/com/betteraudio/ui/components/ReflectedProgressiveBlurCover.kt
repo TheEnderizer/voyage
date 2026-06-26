@@ -59,8 +59,25 @@ import java.io.File
 fun ReflectedProgressiveBlurCover(
     coverPath: String?,
     modifier: Modifier = Modifier,
+    bakedPath: String? = null,
     maxBlurRadius: Dp = 22.dp
 ) {
+    // Fast path: a pre-baked composite already contains the reflection + progressive blur
+    // + fade-to-black, so just draw it (one image, no live blur passes). Falls back to the
+    // live layered render below while the bake is missing/in-progress.
+    val baked = remember(bakedPath) { bakedPath?.let { File(it) }?.takeIf { it.exists() } }
+    if (baked != null) {
+        Box(modifier.fillMaxWidth().background(Color.Black)) {
+            AsyncImage(
+                model = baked,
+                contentDescription = null,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        return
+    }
+
     val file = remember(coverPath) { coverPath?.let { File(it) } }
     val m = maxBlurRadius.value
 

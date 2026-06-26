@@ -97,6 +97,27 @@ class PlayerViewModel @Inject constructor(
     private val _eqBandsMillibels = MutableStateFlow<IntArray?>(null)  // null = flat/bypass
     val eqBandsMillibels: StateFlow<IntArray?> = _eqBandsMillibels.asStateFlow()
 
+    // Lazily bake the cover background effect the first time this book is opened (or after
+    // its cover changes), so the player draws one cached bitmap instead of live-blurring.
+    private var lastFxCover: String? = null
+    init {
+        repository.getBookById(bookId)
+            .onEach { b ->
+                val cover = b?.coverArtPath
+                if (cover != null && b.coverFxPath == null && cover != lastFxCover) {
+                    lastFxCover = cover
+                    repository.ensureCoverFx(bookId)
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
+    /** Re-bake the reflection/progressive-blur background from the current cover. */
+    fun refreshCoverEffect() {
+        lastFxCover = null
+        viewModelScope.launch { repository.regenerateCoverFx(bookId) }
+    }
+
     val currentBoostDb: Int get() = playerController.currentVolumeBoostDb
 
     fun setVolumeBoost(db: Int) {

@@ -39,13 +39,14 @@ Full-filesystem access via `MANAGE_EXTERNAL_STORAGE` ("All files access") and pl
 
 ### Data layer (`data/`)
 
-**Room DB** `betteraudio.db` (`data/db/AppDatabase.kt`), currently **version 6**. Entities: `Book`, `AudioFile`, `PlaybackProgress`, `BookGroup`, `BookGroupMember`, `Chapter`, `Bookmark`, `AudioPreset`. `fallbackToDestructiveMigration()` is the safety net but **explicit migrations must always be written** and registered in both `AppDatabase.kt` and `AppModule.kt`. Existing migrations: `MIGRATION_3_4`, `MIGRATION_4_5`, `MIGRATION_5_6`.
+**Room DB** `betteraudio.db` (`data/db/AppDatabase.kt`), currently **version 8**. Entities: `Book`, `AudioFile`, `PlaybackProgress`, `BookGroup`, `BookGroupMember`, `Chapter`, `Bookmark`, `AudioPreset`. `fallbackToDestructiveMigration()` is the safety net but **explicit migrations must always be written** and registered in both `AppDatabase.kt` and `AppModule.kt`. Existing migrations: `MIGRATION_3_4`, `MIGRATION_4_5`, `MIGRATION_5_6`, `MIGRATION_6_7` (`lastPausedAt`), `MIGRATION_7_8` (`coverFxPath`).
 
 Key fields added in recent migrations:
 - `PlaybackProgress.boostDb` — per-book volume boost level
 - `PlaybackProgress.eqBandsJson` — per-book EQ (JSON int array of millibel values, null = flat)
 - `Book.titleOverride` / `Book.authorOverride` — in-app metadata overrides; scanner never writes these
 - `Book.isIgnored` — soft-delete flag; all library queries filter `WHERE isIgnored = 0`
+- `Book.coverFxPath` — path to the pre-baked cover background (see `CoverEffectBaker` below); null = not yet baked / invalidated by a cover change
 - `AudioPreset.type` — `"SPEED"`, `"BOOST"`, or `"EQ"`; constants on `AudioPreset.Companion`
 
 **Repositories**: `AudiobookRepository` and `BookGroupRepository` are the only things ViewModels/playback should touch — DAOs are never accessed directly outside these.
@@ -93,6 +94,8 @@ The `MediaSession` is fed a `ForwardingPlayer` whose next/previous overrides see
 **Settings screen** (`ui/settings/`): two-level navigation via `AnimatedContent` (sealed class `SettingsSection`). The **About** section contains both the update checker UI and the per-channel changelog (read from `res/raw/changelog_beta.txt` or `res/raw/changelog_stable.txt` based on version suffix). The `LazyListScope` extension functions receive all their data as parameters — do not call `collectAsStateWithLifecycle()` inside them (not a `@Composable` context).
 
 **Audio settings** (`ui/player/AudioSettingsSheet.kt`): 3-tab sheet (Speed / Boost / EQ). Each tab shows only presets of its own type (`AudioPreset.TYPE_SPEED`, `TYPE_BOOST`, `TYPE_EQ`). `PlayerViewModel` exposes three separate typed `StateFlow`s: `speedPresets`, `boostPresets`, `eqPresets`. Long-press on a preset chip calls `overwritePreset()` which updates the stored value to the current slider position.
+
+**Cover background effect** (`ui/components/ReflectedProgressiveBlurCover.kt` + `data/covers/CoverEffectBaker.kt`): the player and book-info screens share one full-bleed backdrop — the cover with a vertically-flipped reflection below it, a continuous top-to-bottom progressive blur, and a fade to black. `CoverEffectBaker` pre-renders this whole composite to a single WebP in `filesDir/cover_fx/` (a genuine per-row continuous blur via repeated box-blur accumulation) so the UI draws one cached bitmap instead of ~7 live blur passes per frame. `ReflectedProgressiveBlurCover` draws `book.coverFxPath` when present and **live-renders** the layered approximation as a fallback while a bake is missing/in-progress. Baking is lazy: `repository.ensureCoverFx(bookId)` runs from the Player/BookInfo ViewModels' init when a cover exists but `coverFxPath` is null. `updateCoverArt()` sets `coverFxPath = null` to invalidate on any cover change. The 3-dot menus expose "Refresh cover effect" → `regenerateCoverFx()` (force re-bake; also the way to roll out an algorithm change — bump `CoverEffectBaker.VERSION`).
 
 **Player screen** (`ui/player/`): full-bleed layout — the cover fills the screen behind a bottom scrim that holds the controls (chapter context line, title/author, return/confirm jump-history pills, scrubber, transport, secondary row). Skip buttons render the configured seconds from `PlayerViewModel.skipForwardMs`/`skipBackMs` (not a fixed number). Position history stack (`_positionStack`, capped at 20) pushed before bookmark jumps, chapter seeks, and scrubber drags > 5 min. The redesign dropped the inline synopsis + metadata chips from this screen (synopsis still generates and persists; it's destined for a future book-info screen).
 

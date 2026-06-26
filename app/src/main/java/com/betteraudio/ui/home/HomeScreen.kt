@@ -377,6 +377,7 @@ fun HomeScreen(
                     viewModel.updateBookStatus(optionsBwp.book.id, status)
                 },
                 onSearchOnlineCover = { viewModel.openCoverSearch(optionsBwp.book.id) },
+                onRefreshCoverEffect = { viewModel.refreshCoverEffect(optionsBwp.book.id) },
                 onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
                 onDeletePermanently = { deleteFiles ->
                     viewModel.deleteBook(optionsBwp.book.id, deleteFiles)

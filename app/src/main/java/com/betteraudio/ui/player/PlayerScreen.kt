@@ -103,6 +103,7 @@ fun PlayerScreen(
             Box(Modifier.fillMaxSize().clipToBounds()) {
                 ReflectedProgressiveBlurCover(
                     coverPath = book?.coverArtPath,
+                    bakedPath = book?.coverFxPath,
                     modifier  = Modifier.fillMaxWidth()
                 )
             }
@@ -155,6 +156,11 @@ fun PlayerScreen(
                                 text = { Text("Add bookmark") },
                                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                                 onClick = { showOverflow = false; showAddBookmark = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Refresh cover effect") },
+                                leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                                onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
                             )
                         }
                     }

@@ -60,6 +60,7 @@ fun BookInfoScreen(
         Box(Modifier.fillMaxSize().clipToBounds()) {
             ReflectedProgressiveBlurCover(
                 coverPath = book.coverArtPath,
+                bakedPath = book.coverFxPath,
                 modifier  = Modifier.fillMaxWidth()
             )
         }

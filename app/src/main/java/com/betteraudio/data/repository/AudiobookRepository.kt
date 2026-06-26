@@ -6,6 +6,7 @@ import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
+import com.betteraudio.data.covers.CoverEffectBaker
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.Book
@@ -26,7 +27,8 @@ class AudiobookRepository @Inject constructor(
     private val progressDao: PlaybackProgressDao,
     private val chapterDao: ChapterDao,
     private val bookmarkDao: BookmarkDao,
-    private val audioPresetDao: AudioPresetDao
+    private val audioPresetDao: AudioPresetDao,
+    private val coverEffectBaker: CoverEffectBaker
 ) {
 
     fun getBooksInProgress(): Flow<List<BookWithProgress>> = bookDao.getBooksInProgress()
@@ -64,12 +66,31 @@ class AudiobookRepository @Inject constructor(
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
     suspend fun updateCoverArt(bookId: Long, path: String) {
         bookDao.updateCoverArt(bookId, path)
+        // The cover changed: invalidate the baked effect so it's re-rendered. The UI
+        // live-renders meanwhile and ensureCoverFx() re-bakes on the next view.
+        bookDao.updateCoverFx(bookId, null)
         // Keep cover art out of the phone gallery
         val folder = java.io.File(path).parentFile
         if (folder != null) {
             val nomedia = java.io.File(folder, ".nomedia")
             if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
         }
+    }
+
+    /** Bake the cover effect if a cover exists but no valid baked file is present yet. */
+    suspend fun ensureCoverFx(bookId: Long) {
+        val book = bookDao.getBookById(bookId).firstOrNull() ?: return
+        val cover = book.coverArtPath ?: return
+        val fx = book.coverFxPath
+        if (fx != null && java.io.File(fx).exists()) return
+        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId))
+    }
+
+    /** Force a re-bake from the current cover (manual "refresh cover effect"). */
+    suspend fun regenerateCoverFx(bookId: Long) {
+        val book = bookDao.getBookById(bookId).firstOrNull() ?: return
+        val cover = book.coverArtPath ?: return
+        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId))
     }
     suspend fun updateBookStatus(bookId: Long, status: BookStatus) = bookDao.updateStatus(bookId, status)
     suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) =
