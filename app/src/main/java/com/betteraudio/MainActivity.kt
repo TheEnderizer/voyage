@@ -30,7 +30,6 @@ import androidx.navigation.navArgument
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
-import com.betteraudio.ui.home.BookInfoScreen
 import com.betteraudio.ui.home.GroupInfoScreen
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.join.JoinOptionsScreen
@@ -148,9 +147,12 @@ class MainActivity : ComponentActivity() {
                         route = "book_info/{bookId}",
                         arguments = listOf(navArgument("bookId") { type = NavType.LongType })
                     ) {
-                        BookInfoScreen(
+                        // Reuse PlayerScreen in info mode: background is identical, only
+                        // the bottom section crossfades from info → controls when the user
+                        // taps Resume, so the cover backdrop never visually changes.
+                        PlayerScreen(
                             onBack = { navController.popBackStack() },
-                            onOpenBook = { bookId -> navController.navigate("player/$bookId") }
+                            initiallyShowInfo = true
                         )
                     }
 

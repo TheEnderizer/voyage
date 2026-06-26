@@ -14,8 +14,8 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 20
-        versionName = "1.2.8b"
+        versionCode = 21
+        versionName = "1.2.9b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

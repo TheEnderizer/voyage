@@ -64,7 +64,8 @@ fun SettingsScreen(
     val defaultSpeed    by viewModel.defaultSpeed.collectAsStateWithLifecycle()
     val bookCount       by viewModel.bookCount.collectAsStateWithLifecycle()
     val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
-    val rescanRunning   by viewModel.rescanRunning.collectAsStateWithLifecycle()
+    val rescanRunning        by viewModel.rescanRunning.collectAsStateWithLifecycle()
+    val coverRefreshRunning  by viewModel.coverRefreshRunning.collectAsStateWithLifecycle()
     val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
     val updateState               by viewModel.updateState.collectAsStateWithLifecycle()
     val whatsNew                  by viewModel.whatsNew.collectAsStateWithLifecycle()
@@ -142,7 +143,8 @@ fun SettingsScreen(
                     SettingsSection.Root -> rootSection(viewModel)
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        ignoredBooks, storageSettingsLauncher, { showBrowser = true }, viewModel
+                        coverRefreshRunning, ignoredBooks, storageSettingsLauncher,
+                        { showBrowser = true }, viewModel
                     )
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
@@ -180,6 +182,7 @@ private fun LazyListScope.librarySection(
     libraryFolder: String,
     bookCount: Int,
     rescanRunning: Boolean,
+    coverRefreshRunning: Boolean,
     ignoredBooks: List<com.betteraudio.data.db.entities.Book>,
     storageSettingsLauncher: androidx.activity.result.ActivityResultLauncher<Intent>,
     onBrowse: () -> Unit,
@@ -223,6 +226,18 @@ private fun LazyListScope.librarySection(
             }
         )
     }
+    item {
+        SettingsCard(
+            icon = Icons.Default.AutoAwesome,
+            iconTint = MaterialTheme.colorScheme.secondary,
+            title = "Refresh all cover effects",
+            subtitle = "Re-bake the blur effect for every book",
+            onClick = if (!coverRefreshRunning) ({ viewModel.refreshAllCoverEffects() }) else null,
+            trailing = {
+                if (coverRefreshRunning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+        )
+    }
 
     if (ignoredBooks.isNotEmpty()) {
         item { SectionHeader("Hidden Books") }
@@ -253,7 +268,6 @@ private fun LazyListScope.librarySection(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 private fun LazyListScope.playbackSection(
     skipForwardMs: Long,
     skipBackMs: Long,
@@ -298,7 +312,7 @@ private fun LazyListScope.playbackSection(
     }
     item {
         CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Auto-rewind", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "Rewind when resuming after a long pause",
@@ -306,31 +320,87 @@ private fun LazyListScope.playbackSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                val thresholdOptions = listOf(5, 15, 30, 60, 0)
-                val thresholdLabels  = listOf("5 min", "15 min", "30 min", "1 hour", "Off")
-                Text("Trigger after", style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    thresholdOptions.forEachIndexed { i, m ->
-                        FilterChip(
-                            selected = autoRewindThresholdMinutes == m,
-                            onClick  = { viewModel.setAutoRewindThresholdMinutes(m) },
-                            label    = { Text(thresholdLabels[i]) }
-                        )
-                    }
+                // Trigger threshold slider (0 = off, 1–30 min)
+                var thresholdSlider by remember(autoRewindThresholdMinutes) {
+                    mutableFloatStateOf(autoRewindThresholdMinutes.toFloat())
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Trigger after", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (thresholdSlider == 0f) "Off" else "${thresholdSlider.toInt()} min",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(
+                        onClick = {
+                            val v = (thresholdSlider - 1).coerceAtLeast(0f)
+                            thresholdSlider = v
+                            viewModel.setAutoRewindThresholdMinutes(v.toInt())
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) { Text("−", style = MaterialTheme.typography.titleMedium) }
+                    Slider(
+                        value = thresholdSlider,
+                        onValueChange = { thresholdSlider = it.toInt().toFloat() },
+                        onValueChangeFinished = { viewModel.setAutoRewindThresholdMinutes(thresholdSlider.toInt()) },
+                        valueRange = 0f..30f,
+                        steps = 29,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(
+                        onClick = {
+                            val v = (thresholdSlider + 1).coerceAtMost(30f)
+                            thresholdSlider = v
+                            viewModel.setAutoRewindThresholdMinutes(v.toInt())
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) { Text("+", style = MaterialTheme.typography.titleMedium) }
                 }
 
+                // Rewind amount slider (0–90 sec)
                 if (autoRewindThresholdMinutes > 0) {
-                    Text("Rewind amount", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(2, 5, 7, 10, 15, 20).forEach { s ->
-                            FilterChip(
-                                selected = autoRewindSeconds == s,
-                                onClick  = { viewModel.setAutoRewindSeconds(s) },
-                                label    = { Text("${s}s") }
-                            )
-                        }
+                    var rewindSlider by remember(autoRewindSeconds) {
+                        mutableFloatStateOf(autoRewindSeconds.toFloat())
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Rewind amount", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${rewindSlider.toInt()} sec",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        IconButton(
+                            onClick = {
+                                val v = (rewindSlider - 1).coerceAtLeast(0f)
+                                rewindSlider = v
+                                viewModel.setAutoRewindSeconds(v.toInt())
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) { Text("−", style = MaterialTheme.typography.titleMedium) }
+                        Slider(
+                            value = rewindSlider,
+                            onValueChange = { rewindSlider = it.toInt().toFloat() },
+                            onValueChangeFinished = { viewModel.setAutoRewindSeconds(rewindSlider.toInt()) },
+                            valueRange = 0f..90f,
+                            steps = 89,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                val v = (rewindSlider + 1).coerceAtMost(90f)
+                                rewindSlider = v
+                                viewModel.setAutoRewindSeconds(v.toInt())
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) { Text("+", style = MaterialTheme.typography.titleMedium) }
                     }
                 }
             }

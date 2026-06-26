@@ -106,6 +106,9 @@ interface BookDao {
     @Query("UPDATE books SET titleOverride = :titleOverride, authorOverride = :authorOverride WHERE id = :id")
     suspend fun updateMetadata(id: Long, titleOverride: String?, authorOverride: String?)
 
+    @Query("SELECT * FROM books WHERE coverArtPath IS NOT NULL ORDER BY title ASC")
+    suspend fun getAllBooksSortedOnce(): List<Book>
+
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: Long)
 }

@@ -22,46 +22,47 @@ class CoverSearchService @Inject constructor(
         .build()
 
     suspend fun search(query: String): List<String> = withContext(Dispatchers.IO) {
-        val itunes = runCatching { searchItunes(query) }.getOrDefault(emptyList())
-        if (itunes.isNotEmpty()) return@withContext itunes
-        runCatching { searchOpenLibrary(query) }.getOrDefault(emptyList())
+        runCatching { searchDuckDuckGo(query) }.getOrDefault(emptyList())
     }
 
-    private fun searchItunes(query: String): List<String> {
+    private fun searchDuckDuckGo(query: String): List<String> {
         val q = URLEncoder.encode(query, "UTF-8")
-        val url = "https://itunes.apple.com/search?term=$q&media=audiobook&limit=20"
-        val request = Request.Builder().url(url)
-            .header("User-Agent", "BetterAudio/1.0")
+        // Step 1: get vqd token from the main search page
+        val tokenReq = Request.Builder()
+            .url("https://duckduckgo.com/?q=$q&iax=images&ia=images")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            val body = response.body?.string() ?: return emptyList()
-            val regex = Regex(""""artworkUrl100"\s*:\s*"([^"]+)"""")
-            return regex.findAll(body).map { match ->
-                match.groupValues[1].replace("100x100bb", "600x600bb")
-            }.distinct().toList()
-        }
-    }
+        val vqd = client.newCall(tokenReq).execute().use { resp ->
+            val body = resp.body?.string() ?: return emptyList()
+            // DuckDuckGo embeds vqd as: vqd="4-..." or vqd=4-...
+            Regex("""vqd=["']?([\d\-]+)["']?""").find(body)?.groupValues?.get(1)
+        } ?: return emptyList()
 
-    private fun searchOpenLibrary(query: String): List<String> {
-        val q = URLEncoder.encode(query, "UTF-8")
-        val url = "https://openlibrary.org/search.json?q=$q&limit=20"
-        val request = Request.Builder().url(url)
-            .header("User-Agent", "BetterAudio/1.0")
+        // Step 2: fetch image results JSON
+        val imgReq = Request.Builder()
+            .url("https://duckduckgo.com/i.js?l=us-en&o=json&q=$q&vqd=$vqd&f=,,,,,&p=1")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36")
+            .header("Referer", "https://duckduckgo.com/")
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) return emptyList()
-            val body = response.body?.string() ?: return emptyList()
-            val regex = Regex(""""cover_i"\s*:\s*(\d+)""")
-            return regex.findAll(body).map { match ->
-                "https://covers.openlibrary.org/b/id/${match.groupValues[1]}-L.jpg"
-            }.distinct().toList()
+        client.newCall(imgReq).execute().use { resp ->
+            if (!resp.isSuccessful) return emptyList()
+            val body = resp.body?.string() ?: return emptyList()
+            // Extract "image":"url" entries
+            return Regex(""""image"\s*:\s*"([^"]+)"""")
+                .findAll(body)
+                .map { it.groupValues[1] }
+                .filter { it.startsWith("http") }
+                .distinct()
+                .take(30)
+                .toList()
         }
     }
 
     suspend fun download(imageUrl: String, bookId: Long): String? = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder().url(imageUrl).build()
+            val request = Request.Builder().url(imageUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
+                .build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext null
                 val bytes = response.body?.bytes() ?: return@withContext null

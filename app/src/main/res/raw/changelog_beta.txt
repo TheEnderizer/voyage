@@ -3,6 +3,14 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.2.9b] - 2026-06-26
+
+### Added
+- Cover image search now uses general web image search (DuckDuckGo) instead of audiobook-specific databases — finds any image
+- Info screen to player transition: tapping Resume now crossfades only the controls; the cover background stays completely still
+- Auto-rewind trigger and rewind amount are now continuous sliders with +/− controls (0–30 min trigger, 0–90 sec rewind)
+- Settings → Library: "Refresh all cover effects" button to re-bake the blur background for every book at once
+
 ## [1.2.8b] - 2026-06-26
 
 ### Added

@@ -1,10 +1,15 @@
 package com.betteraudio.ui.player
 
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,13 +30,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.theme.Pill
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
+    initiallyShowInfo: Boolean = false,
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -43,6 +51,11 @@ fun PlayerScreen(
     val skipForwardMs     by viewModel.skipForwardMs.collectAsStateWithLifecycle()
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val book = bwp?.book
+
+    // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
+    val showInfoState = remember { mutableStateOf(initiallyShowInfo) }
+    // Back in player-mode when opened from info: return to info view rather than popping the screen.
+    BackHandler(enabled = !showInfoState.value && initiallyShowInfo) { showInfoState.value = true }
 
     var showChapters       by remember { mutableStateOf(false) }
     var showBookSettings   by remember { mutableStateOf(false) }
@@ -66,7 +79,7 @@ fun PlayerScreen(
     ) { uri -> uri?.let { viewModel.updateCoverArt(context, it) } }
 
     LaunchedEffect(bwp) {
-        if (bwp != null && state.bookId != viewModel.bookId) {
+        if (bwp != null && state.bookId != viewModel.bookId && !showInfoState.value) {
             viewModel.play()
         }
     }
@@ -167,6 +180,82 @@ fun PlayerScreen(
                 }
 
                 Spacer(Modifier.weight(1f))
+
+                // ── Bottom: info panel OR player controls (crossfade, background stays static) ──
+                Crossfade(targetState = showInfoState.value, animationSpec = tween(280)) { isInfo: Boolean ->
+                if (isInfo) {
+                    // ── Book info panel (same content as old BookInfoScreen) ──────────────
+                    Column(Modifier.fillMaxWidth()) {
+                        book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+                            val label = if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
+                            Text(label.uppercase(), style = MaterialTheme.typography.labelMedium,
+                                color = accent, modifier = Modifier.padding(bottom = 4.dp))
+                        }
+                        Text(book?.displayTitle ?: "", style = MaterialTheme.typography.headlineSmall,
+                            color = onScrim, fontWeight = FontWeight.Bold,
+                            maxLines = 3, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth())
+                        if (book?.displayAuthor?.isNotBlank() == true) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(book.displayAuthor, style = MaterialTheme.typography.titleSmall,
+                                color = onScrimMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        if (!book?.narrator.isNullOrBlank()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text("Narrated by ${book!!.narrator}", style = MaterialTheme.typography.bodySmall, color = onScrimMuted)
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        val statusLabel = when (book?.status) {
+                            BookStatus.NOT_STARTED -> "Not started"
+                            BookStatus.IN_PROGRESS -> "In progress"
+                            BookStatus.FINISHED    -> "Finished"
+                            null                   -> ""
+                        }
+                        if (statusLabel.isNotEmpty()) SuggestionChip(onClick = {}, label = { Text(statusLabel) })
+                        val prog = bwp?.progressFraction ?: 0f
+                        val totalMs = book?.totalDurationMs ?: 0L
+                        if (totalMs > 0) {
+                            Spacer(Modifier.height(14.dp))
+                            val remainingMs = ((1f - prog) * totalMs).toLong().coerceAtLeast(0L)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("${(prog * 100).toInt()}% complete",
+                                    style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
+                                Text("${formatDurationHuman(remainingMs)} remaining",
+                                    style = MaterialTheme.typography.labelMedium, color = onScrimMuted)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            LinearProgressIndicator(progress = { prog },
+                                modifier = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
+                                color = accent, trackColor = Color.White.copy(alpha = 0.22f))
+                        }
+                        val about = book?.synopsis?.takeIf { it.isNotBlank() }
+                            ?: book?.description?.takeIf { it.isNotBlank() }
+                        if (about != null) {
+                            Spacer(Modifier.height(16.dp))
+                            Column(Modifier.fillMaxWidth().heightIn(max = 160.dp).verticalScroll(rememberScrollState())) {
+                                Text(about, style = MaterialTheme.typography.bodyMedium, color = onScrimMuted)
+                            }
+                        }
+                        Spacer(Modifier.height(18.dp))
+                        val buttonLabel = when {
+                            prog <= 0f                         -> "Start"
+                            bwp?.progress?.isCompleted == true -> "Play again"
+                            else                               -> "Resume"
+                        }
+                        Button(
+                            onClick = { viewModel.play(); showInfoState.value = false },
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = Pill
+                        ) {
+                            Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(buttonLabel, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Spacer(Modifier.height(18.dp))
+                    }
+                } else {
+                // ── Player controls ─────────────────────────────────────────────────
+                Column(Modifier.fillMaxWidth()) {
 
                 // ── Bottom control cluster ──────────────────────────────
                 if (chapters.hasChapters && cur != null) {
@@ -377,6 +466,9 @@ fun PlayerScreen(
                 }
 
                 Spacer(Modifier.height(18.dp))
+                } // end Column (player controls)
+                } // end else (player mode)
+                } // end Crossfade
             }
         }
 
@@ -586,6 +678,16 @@ private fun ScrimPill(
             Spacer(Modifier.width(2.dp))
             Icon(trailing, null, Modifier.size(15.dp), tint = fg)
         }
+    }
+}
+
+private fun formatDurationHuman(ms: Long): String {
+    val hours   = TimeUnit.MILLISECONDS.toHours(ms)
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(ms) % 60
+    return when {
+        hours > 0   -> "${hours}h ${minutes}m"
+        minutes > 0 -> "${minutes}m"
+        else        -> "<1m"
     }
 }
 

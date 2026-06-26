@@ -94,6 +94,18 @@ class SettingsViewModel @Inject constructor(
     private val _rescanRunning = MutableStateFlow(false)
     val rescanRunning: StateFlow<Boolean> = _rescanRunning.asStateFlow()
 
+    private val _coverRefreshRunning = MutableStateFlow(false)
+    val coverRefreshRunning: StateFlow<Boolean> = _coverRefreshRunning.asStateFlow()
+
+    fun refreshAllCoverEffects() {
+        if (_coverRefreshRunning.value) return
+        viewModelScope.launch {
+            _coverRefreshRunning.value = true
+            try { repository.regenerateAllCoverFx() } catch (_: Exception) {}
+            _coverRefreshRunning.value = false
+        }
+    }
+
     val geminiApiKey: StateFlow<String> =
         settings.geminiApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
 

@@ -202,4 +202,13 @@ class AudiobookRepository @Inject constructor(
             progressDao.updateLastPausedAt(bookId, ts)
         }
     }
+
+    /** Re-bake the cover effect for every book that has a cover. */
+    suspend fun regenerateAllCoverFx() {
+        bookDao.getAllBooksSortedOnce()
+            .filter { it.coverArtPath != null }
+            .forEach { book ->
+                bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id))
+            }
+    }
 }
