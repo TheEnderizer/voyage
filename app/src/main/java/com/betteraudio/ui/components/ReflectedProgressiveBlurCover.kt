@@ -25,8 +25,8 @@ import java.io.File
  * and applies a position-varying Gaussian blur across the combined image:
  *
  *   ┌──────────────────────────────────┐ ← y = 0.0
- *   │  ORIGINAL  (top 30% stays sharp) │
- *   │  blur ramps from 30% downward    │
+ *   │  ORIGINAL  (top 80% stays sharp) │
+ *   │  blur ramps from 80% downward    │
  *   ├──────────────────────────────────┤ ← y = 0.5  seam  (~70% of max blur)
  *   │  REFLECTION  (flipped)           │
  *   │  blur continues to 100% of max   │
@@ -41,7 +41,7 @@ import java.io.File
  *   blur (which Compose has no native primitive for).
  *
  *   Y fractions refer to the combined image height (original = [0, 0.5],
- *   reflection = [0.5, 1.0]).  "Top 30% of original" = y ∈ [0.0, 0.15].
+ *   reflection = [0.5, 1.0]).  "Top 80% of original" = y ∈ [0.0, 0.40].
  *
  * API requirement: Modifier.blur() requires API 31 (Android S) because it
  * delegates to RenderEffect.createBlurEffect().  On API 26–30, the composable
@@ -63,55 +63,60 @@ fun ReflectedProgressiveBlurCover(
 
     Box(modifier.fillMaxWidth()) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            // Top 80% of original is sharp → y=0.40 of combined (original=[0,0.5]).
+            // Seam = y=0.50; target ~70% of max blur there (mid layer ≈65% satisfies this).
+            // Ramp is compressed into y=0.37–0.50; each adjacent pair crossfades so
+            // their alphas sum to ≈1.0, then mid stays dominant through the seam.
+
             // ── Layer 0: Sharp ────────────────────────────────────────────────
-            // Fully visible y=0–12%, crossfades out 12–22%, invisible below 22%.
+            // Full 0–37%, crossfades out 37–43%.
             BlurLayer(
                 file       = file,
                 blurRadius = 0.dp,
                 stops      = arrayOf(
                     0.00f to Color.Black,
-                    0.12f to Color.Black,
-                    0.22f to Color.Transparent,
+                    0.37f to Color.Black,
+                    0.43f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
             // ── Layer 1: Light blur ───────────────────────────────────────────
-            // Rises 12–22%, full 22–35%, crossfades out 35–47%.
+            // Rises 37–43%, full 43–46%, crossfades out 46–50%.
             BlurLayer(
                 file       = file,
                 blurRadius = lightBlur,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.12f to Color.Transparent,
-                    0.22f to Color.Black,
-                    0.35f to Color.Black,
-                    0.47f to Color.Transparent,
+                    0.37f to Color.Transparent,
+                    0.43f to Color.Black,
+                    0.46f to Color.Black,
+                    0.50f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
             // ── Layer 2: Mid blur ─────────────────────────────────────────────
-            // Rises 35–47%, full 47–68% (seam at 50% is inside this zone →
-            // ~65% of max blur = ≈70% target), crossfades out 68–82%.
+            // Rises 46–50% (seam at 50% → mid at full alpha = ≈65% max ≈ 70% target),
+            // stays full 50–70%, crossfades out 70–82%.
             BlurLayer(
                 file       = file,
                 blurRadius = midBlur,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.35f to Color.Transparent,
-                    0.47f to Color.Black,
-                    0.68f to Color.Black,
+                    0.46f to Color.Transparent,
+                    0.50f to Color.Black,
+                    0.70f to Color.Black,
                     0.82f to Color.Transparent,
                     1.00f to Color.Transparent,
                 )
             )
             // ── Layer 3: Max blur ─────────────────────────────────────────────
-            // Rises 68–82%, stays full 82–100%.
+            // Rises 70–82%, stays full 82–100%.
             BlurLayer(
                 file       = file,
                 blurRadius = maxBlurRadius,
                 stops      = arrayOf(
                     0.00f to Color.Transparent,
-                    0.68f to Color.Transparent,
+                    0.70f to Color.Transparent,
                     0.82f to Color.Black,
                     1.00f to Color.Black,
                 )
