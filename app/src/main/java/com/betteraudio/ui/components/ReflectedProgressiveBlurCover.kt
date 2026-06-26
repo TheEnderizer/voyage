@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
@@ -72,6 +73,10 @@ fun ReflectedProgressiveBlurCover(
                 model = baked,
                 contentDescription = null,
                 contentScale = ContentScale.FillWidth,
+                // Anchor to the top: when the composite is taller than the box it's
+                // clamped to, the top of the artwork stays put and only the bottom is
+                // clipped (default Center alignment would crop the top off too).
+                alignment = Alignment.TopCenter,
                 modifier = Modifier.fillMaxWidth()
             )
         }
