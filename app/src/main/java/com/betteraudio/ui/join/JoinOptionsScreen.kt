@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -28,6 +29,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.pressScale
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -70,6 +73,7 @@ fun JoinOptionsScreen(
             Button(
                 onClick = { viewModel.save { onSaved() } },
                 enabled = !saving && name.isNotBlank() && books.size >= 2,
+                shape = Pill,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp)
@@ -93,10 +97,11 @@ fun JoinOptionsScreen(
             // Cover + Name row
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 // Cover image picker
-                Card(
+                Surface(
                     onClick = { coverPickerLauncher.launch("image/*") },
-                    modifier = Modifier.size(100.dp),
-                    elevation = CardDefaults.cardElevation(4.dp)
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.size(100.dp).pressScale()
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         if (coverArtPath != null) {
@@ -262,7 +267,7 @@ private fun DraggableBookList(
                         model = book.coverArtPath?.let { File(it) },
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
-                        modifier = Modifier.size(56.dp)
+                        modifier = Modifier.size(56.dp).clip(MaterialTheme.shapes.medium)
                     )
 
                     Spacer(Modifier.width(12.dp))
@@ -270,14 +275,14 @@ private fun DraggableBookList(
                     // Book info
                     Column(Modifier.weight(1f)) {
                         Text(
-                            book.title,
+                            book.displayTitle,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (book.author.isNotBlank()) {
+                        if (book.displayAuthor.isNotBlank()) {
                             Text(
-                                book.author,
+                                book.displayAuthor,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1

@@ -33,7 +33,10 @@ data class Book(
     // ── User-editable overrides (scanner never writes here) ─────────────────
     val titleOverride: String? = null,
     val authorOverride: String? = null,
-    val isIgnored: Boolean = false
+    val isIgnored: Boolean = false,
+    // True once the user has explicitly joined or split this book's grouping. The scanner's
+    // AutoJoiner skips these so a manual decision is never silently undone by a refresh.
+    val manualGrouping: Boolean = false
 ) {
     val displayTitle: String get() = titleOverride ?: title
     val displayAuthor: String get() = authorOverride ?: author

@@ -57,11 +57,15 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.ui.components.CircleIconButton
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.playerContainerTransform
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
@@ -72,6 +76,8 @@ fun HomeScreen(
     onJoinBooks: (bookIds: String) -> Unit = {},
     onEditGroup: (groupId: Long) -> Unit = {},
     onOpenGroupInfo: (groupId: Long) -> Unit = {},
+    sharedScope: SharedTransitionScope? = null,
+    animScope: AnimatedVisibilityScope? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -174,6 +180,8 @@ fun HomeScreen(
                             FeaturedNowPlaying(
                                 state = playbackState,
                                 book = currentBook,
+                                sharedScope = sharedScope,
+                                animScope = animScope,
                                 onPlayPause = { viewModel.playerController.togglePlayPause() },
                                 onSkipForward = { viewModel.playerController.skipForward() },
                                 onExpand = {
@@ -187,6 +195,8 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             ResumeCard(
                                 bwp = bwp,
+                                sharedScope = sharedScope,
+                                animScope = animScope,
                                 onPlay = { viewModel.playResumeBook(bwp) },
                                 onExpand = { onOpenBook(bwp.book.id) }
                             )
@@ -511,13 +521,16 @@ private fun SelectionHeader(
 
 // ─── Featured now-playing card ────────────────────────────────────────────────
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun FeaturedNowPlaying(
     state: PlaybackState,
     book: Book?,
     onPlayPause: () -> Unit,
     onSkipForward: () -> Unit,
-    onExpand: () -> Unit
+    onExpand: () -> Unit,
+    sharedScope: SharedTransitionScope? = null,
+    animScope: AnimatedVisibilityScope? = null
 ) {
     val progress = if (state.bookTotalDurationMs > 0)
         (state.bookPositionMs.toFloat() / state.bookTotalDurationMs).coerceIn(0f, 1f) else 0f
@@ -529,7 +542,9 @@ private fun FeaturedNowPlaying(
         onClick = onExpand,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .playerContainerTransform(sharedScope, animScope, state.bookId)
     ) {
         Column(Modifier.padding(16.dp)) {
             Row {
@@ -711,11 +726,14 @@ private fun NowPlayingPill(
 
 // ─── Resume card (last played book, shown after app restart when not playing) ──
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun ResumeCard(
     bwp: BookWithProgress,
     onPlay: () -> Unit,
-    onExpand: () -> Unit
+    onExpand: () -> Unit,
+    sharedScope: SharedTransitionScope? = null,
+    animScope: AnimatedVisibilityScope? = null
 ) {
     val progress = bwp.progressFraction.coerceIn(0f, 1f)
     val timeLeft = ((1f - progress) * bwp.book.totalDurationMs).toLong()
@@ -724,7 +742,9 @@ private fun ResumeCard(
         onClick = onExpand,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .playerContainerTransform(sharedScope, animScope, bwp.book.id)
     ) {
         Column(Modifier.padding(16.dp)) {
             Row {

@@ -10,6 +10,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +62,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
+    @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -108,12 +111,13 @@ class MainActivity : ComponentActivity() {
                 val currentEntry by navController.currentBackStackEntryAsState()
                 LaunchedEffect(currentEntry) {
                     val route = currentEntry?.destination?.route
-                    val id = if (route == "player/{bookId}")
+                    val id = if (route == "player/{bookId}?startInfo={startInfo}")
                         currentEntry?.arguments?.getLong("bookId") ?: -1L
                     else -1L
                     settings.setLastOpenBookId(id)
                 }
 
+                SharedTransitionLayout {
                 NavHost(
                     navController = navController,
                     startDestination = "home",
@@ -125,9 +129,11 @@ class MainActivity : ComponentActivity() {
 
                     composable("home") {
                         HomeScreen(
+                            sharedScope = this@SharedTransitionLayout,
+                            animScope = this,
                             onOpenSettings = { navController.navigate("settings") },
                             onOpenBook = { bookId -> navController.navigate("player/$bookId") },
-                            onOpenBookInfo = { bookId -> navController.navigate("book_info/$bookId") },
+                            onOpenBookInfo = { bookId -> navController.navigate("player/$bookId?startInfo=true") },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { name -> navController.navigate("series/${Uri.encode(name)}") },
                             onJoinBooks = { bookIds ->
@@ -146,23 +152,24 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(onBack = { navController.popBackStack() })
                     }
 
+                    // One screen for both the book-info panel and the transport controls. The
+                    // info↔controls switch is an in-place crossfade inside PlayerScreen — never a
+                    // navigation — so the two can't stack and back always returns straight home.
                     composable(
-                        route = "player/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                        route = "player/{bookId}?startInfo={startInfo}",
+                        arguments = listOf(
+                            navArgument("bookId") { type = NavType.LongType },
+                            navArgument("startInfo") {
+                                type = NavType.BoolType
+                                defaultValue = false
+                            }
+                        )
                     ) {
-                        PlayerScreen(onBack = { navController.popBackStack("home", inclusive = false) })
-                    }
-
-                    composable(
-                        route = "book_info/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
-                    ) {
-                        // Reuse PlayerScreen in info mode: background is identical, only
-                        // the bottom section crossfades from info → controls when the user
-                        // taps Resume, so the cover backdrop never visually changes.
                         PlayerScreen(
-                            onBack = { navController.popBackStack() },
-                            initiallyShowInfo = true
+                            sharedScope = this@SharedTransitionLayout,
+                            animScope = this,
+                            onBack = { navController.popBackStack("home", inclusive = false) },
+                            initiallyShowInfo = it.arguments?.getBoolean("startInfo") ?: false
                         )
                     }
 
@@ -190,7 +197,9 @@ class MainActivity : ComponentActivity() {
                         arguments = listOf(navArgument("groupId") { type = NavType.LongType })
                     ) {
                         PlayerScreen(
-                            onBack = { navController.popBackStack() },
+                            sharedScope = this@SharedTransitionLayout,
+                            animScope = this,
+                            onBack = { navController.popBackStack("home", inclusive = false) },
                             initiallyShowInfo = true
                         )
                     }
@@ -215,6 +224,7 @@ class MainActivity : ComponentActivity() {
                             onSaved = { navController.popBackStack() }
                         )
                     }
+                }
                 }
             }
         }

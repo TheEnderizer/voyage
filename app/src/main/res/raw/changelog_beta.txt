@@ -3,6 +3,20 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.4.0b] - 2026-06-27
+
+### Added
+- The home now-playing / resume card now expands upward into the full player with a smooth container-transform animation (and collapses back on return)
+- Modern adaptive launcher icon: a compass rose on a deep navy gradient, with a themed-icon (monochrome) layer for Android 13+
+- The widget's play button now starts the last-played book from cold — no need to open the app first; it restores position, speed, and per-book volume boost/EQ
+
+### Changed
+- Book info and the player are now a single screen with no navigation between them: tapping Resume crossfades in place, and back / swipe-back from either always returns straight to the home screen (never bounces to the info panel)
+- Refresh is now strictly additive: existing books are never re-titled, re-grouped, or reset — only brand-new folders are added, and new files dropped into an existing book are appended without touching its progress
+- Manually joined or split books are now permanently respected; a refresh will never silently re-join a group you split or disturb one you created
+- Books are no longer artificially divided into chapters; a file shows chapters only when its own metadata defines them (existing auto-sliced chapters are cleaned up on launch)
+- Continued the app-wide reskin onto the player's design language: squircle cards, accent-tinted controls, pill buttons, and list animations across Search, Series, and the Join-books editor
+
 ## [1.3.0b] - 2026-06-27
 
 ### Added

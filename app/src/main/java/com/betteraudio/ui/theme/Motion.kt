@@ -1,8 +1,12 @@
 package com.betteraudio.ui.theme
 
 import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -63,6 +67,29 @@ fun Modifier.pressScale(pressedScale: Float = 0.96f, enabled: Boolean = true): M
                     pressed = false
                 }
             }
+    }
+}
+
+/**
+ * Container-transform: morph this composable's bounds to/from the matching player screen so a
+ * home now-playing card visibly expands up into the full player (and collapses back). Both the
+ * source (card) and target (player root) tag the same `player-<bookId>` key. A no-op when the
+ * shared-transition scopes aren't supplied or there's no book to key on, so it stacks safely on
+ * any modifier chain.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.playerContainerTransform(
+    sharedScope: SharedTransitionScope?,
+    animScope: AnimatedVisibilityScope?,
+    bookId: Long
+): Modifier {
+    if (sharedScope == null || animScope == null || bookId == -1L) return this
+    return with(sharedScope) {
+        this@playerContainerTransform.sharedBounds(
+            rememberSharedContentState(key = "player-$bookId"),
+            animatedVisibilityScope = animScope
+        )
     }
 }
 

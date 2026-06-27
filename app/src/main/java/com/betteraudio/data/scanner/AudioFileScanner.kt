@@ -15,10 +15,6 @@ import javax.inject.Singleton
 
 private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus", "wav")
 
-// Files longer than this with no embedded chapters get sliced into logical chapters.
-private const val SYNTHETIC_CHAPTER_MIN_FILE_MS  = 20 * 60_000L   // 20 minutes
-private const val SYNTHETIC_CHAPTER_INTERVAL_MS  = 10 * 60_000L   // ~10-minute chapters
-
 @Singleton
 class AudioFileScanner @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -79,23 +75,37 @@ class AudioFileScanner @Inject constructor(
         seriesOrder: Float?
     ) {
         val existing = repository.getBookByFolder(folderKey)
-        val retriever = MediaMetadataRetriever()
 
         val sortedFiles = audioFiles.sortedWith(
             compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name })
         )
+
+        // Refresh is additive: for a book already in the library, only re-read files when the
+        // file set actually changed or its chapters need (re)building. A plain refresh that
+        // found nothing new leaves the existing book completely untouched — title, author,
+        // series, progress, group membership and manual grouping are never overwritten.
+        val existingPaths = existing
+            ?.let { repository.getAudioFilesOnce(it.id).map { f -> f.filePath }.toSet() }
+            ?: emptySet()
+        val currentPaths = sortedFiles.map { it.absolutePath }.toSet()
+        val filesChanged = existing == null || existingPaths != currentPaths
+        val needChapters = existing != null && repository.chapterCountForBook(existing.id) == 0
+        if (existing != null && !filesChanged && !needChapters) return
+
+        val retriever = MediaMetadataRetriever()
 
         var totalDuration = 0L
         val audioEntities = mutableListOf<AudioFile>()
         // path -> embedded chapters (empty if none)
         val embeddedByPath = mutableMapOf<String, List<RawChapter>>()
 
-        var bookTitle = existing?.title ?: defaultTitle
-        var bookAuthor = existing?.author ?: ""
-        var narrator = existing?.narrator
-        var genre = existing?.genre
-        var year = existing?.year
-        var album = existing?.album
+        // Derived metadata only feeds a brand-new book; existing books keep their stored values.
+        var bookTitle = defaultTitle
+        var bookAuthor = ""
+        var narrator: String? = null
+        var genre: String? = null
+        var year: Int? = null
+        var album: String? = null
 
         sortedFiles.forEachIndexed { index, file ->
             try {
@@ -146,33 +156,36 @@ class AudioFileScanner @Inject constructor(
         }
         retriever.release()
 
-        val book = (existing ?: Book(
-            title = bookTitle,
-            author = bookAuthor,
-            folderPath = folderKey,
-            seriesName = seriesName,
-            seriesOrder = seriesOrder
-        )).copy(
-            title = bookTitle,
-            author = bookAuthor,
-            totalDurationMs = totalDuration,
-            fileCount = sortedFiles.size,
-            seriesName = seriesName ?: existing?.seriesName,
-            seriesOrder = seriesOrder ?: existing?.seriesOrder,
-            narrator = narrator,
-            genre = genre,
-            year = year,
-            album = album
-        )
-        val bookId = repository.upsertBook(book)
+        val bookId: Long
+        if (existing == null) {
+            bookId = repository.upsertBook(
+                Book(
+                    title = bookTitle,
+                    author = bookAuthor,
+                    folderPath = folderKey,
+                    seriesName = seriesName,
+                    seriesOrder = seriesOrder,
+                    totalDurationMs = totalDuration,
+                    fileCount = sortedFiles.size,
+                    narrator = narrator,
+                    genre = genre,
+                    year = year,
+                    album = album
+                )
+            )
+        } else {
+            bookId = existing.id
+            // Existing book whose file set grew/shrank: refresh only the file-derived stats,
+            // preserving every user-facing field (title, overrides, status, series, group…).
+            if (filesChanged) {
+                repository.upsertBook(
+                    existing.copy(totalDurationMs = totalDuration, fileCount = sortedFiles.size)
+                )
+            }
+        }
 
         // Only rewrite audio files when the file set actually changed (re-inserting would
         // null out PlaybackProgress.currentFileId and reset the resume position).
-        val existingPaths = if (existing != null)
-            repository.getAudioFilesOnce(bookId).map { it.filePath }.toSet()
-        else emptySet()
-        val newPaths = audioEntities.map { it.filePath }.toSet()
-        val filesChanged = existingPaths != newPaths
         if (filesChanged) {
             repository.clearAudioFiles(bookId)
             repository.insertAudioFiles(audioEntities.map { it.copy(bookId = bookId) })
@@ -183,16 +196,16 @@ class AudioFileScanner @Inject constructor(
             buildChapters(bookId, embeddedByPath)
         }
 
-        if (book.coverArtPath == null) {
+        if (existing?.coverArtPath == null) {
             val coverName = if (multiBook) ".cover_${folderKey.substringAfterLast("::").safeFileName()}.jpg" else ".cover.jpg"
             extractCoverArt(sortedFiles.firstOrNull(), bookId, folder, coverName)
         }
     }
 
     /**
-     * Build Chapter rows for a book: embedded markers where present; otherwise one row per file,
-     * except for long chapterless files which are sliced into fixed-interval "logical" chapters so
-     * a single-file (or few-file) book still gets a usable table of contents.
+     * Build Chapter rows for a book: embedded markers where present, otherwise exactly one row
+     * per file (the whole file). A book is never artificially divided — chapters only exist when
+     * the audio's own metadata defines them.
      */
     private suspend fun buildChapters(bookId: Long, embeddedByPath: Map<String, List<RawChapter>>) {
         val storedFiles = repository.getAudioFilesOnce(bookId) // sorted by track/name
@@ -215,25 +228,6 @@ class AudioFileScanner @Inject constructor(
                                 source = "embedded"
                             )
                         )
-                    }
-                }
-                // Long file with no chapter metadata → synthesize evenly-spaced chapters.
-                file.durationMs > SYNTHETIC_CHAPTER_MIN_FILE_MS -> {
-                    var start = 0L
-                    while (start < file.durationMs) {
-                        val end = minOf(start + SYNTHETIC_CHAPTER_INTERVAL_MS, file.durationMs)
-                        chapters.add(
-                            Chapter(
-                                bookId = bookId,
-                                fileId = file.id,
-                                title = "Chapter ${order + 1}",
-                                startInFileMs = start,
-                                durationMs = (end - start).coerceAtLeast(0),
-                                orderIndex = order++,
-                                source = "synthetic"
-                            )
-                        )
-                        start = end
                     }
                 }
                 else -> {

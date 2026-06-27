@@ -101,7 +101,11 @@ fun SearchScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(results, key = { it.id }) { book ->
-                            SearchResultRow(book = book, onClick = { onBookClick(book.id) })
+                            SearchResultRow(
+                                book = book,
+                                onClick = { onBookClick(book.id) },
+                                modifier = Modifier.animateItem()
+                            )
                         }
                     }
                 }
@@ -136,12 +140,12 @@ private fun CenteredHint(icon: Boolean, text: String) {
 }
 
 @Composable
-private fun SearchResultRow(book: Book, onClick: () -> Unit) {
+private fun SearchResultRow(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().pressScale()
+        modifier = modifier.fillMaxWidth().pressScale()
     ) {
         Row(
             Modifier.padding(10.dp),
@@ -155,11 +159,11 @@ private fun SearchResultRow(book: Book, onClick: () -> Unit) {
             )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(book.title, style = MaterialTheme.typography.titleSmall,
+                Text(book.displayTitle, style = MaterialTheme.typography.titleSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     buildString {
-                        if (book.author.isNotBlank()) append(book.author)
+                        if (book.displayAuthor.isNotBlank()) append(book.displayAuthor)
                         if (book.seriesName != null) {
                             if (isNotEmpty()) append(" · ")
                             append(book.seriesName)

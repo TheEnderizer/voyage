@@ -6,6 +6,7 @@ import android.content.Intent
 import android.media.AudioManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.net.Uri
 import org.json.JSONArray
 import android.os.Bundle
 import android.util.Log
@@ -14,6 +15,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -31,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
@@ -213,8 +216,13 @@ class PlaybackService : MediaSessionService() {
         val player = mediaSession?.player
         when (intent?.action) {
             ACTION_TOGGLE_PLAY_PAUSE -> player?.let {
-                if (it.isPlaying) it.pause() else it.play()
-                broadcastWidgetUpdate()
+                // Cold widget tap: nothing loaded yet → load the last-played book and start,
+                // entirely inside the service. No Activity needs to open.
+                if (it.mediaItemCount == 0) loadLastPlayedAndPlay()
+                else {
+                    if (it.isPlaying) it.pause() else it.play()
+                    broadcastWidgetUpdate()
+                }
             }
             ACTION_SKIP_FORWARD -> player?.let {
                 it.seekTo(it.currentPosition + settings.currentSkipForwardMs)
@@ -224,6 +232,61 @@ class PlaybackService : MediaSessionService() {
             }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /**
+     * Build the last-played book's playlist directly on the service player and start it. Used
+     * when the widget's play button is pressed from cold (app killed, nothing loaded) so the
+     * user can resume without opening the app. Mirrors [PlayerController.playBook]'s media-item
+     * shape and per-book boost/EQ restore.
+     */
+    private fun loadLastPlayedAndPlay() {
+        val player = mediaSession?.player ?: return
+        serviceScope.launch {
+            val bookId = settings.lastPlayedBookId.first()
+            if (bookId == -1L) return@launch
+            val book = repository.getBookById(bookId).first() ?: return@launch
+            val files = repository.getAudioFilesOnce(bookId)
+                .sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+            if (files.isEmpty()) return@launch
+            val progress = repository.getProgressForBookOnce(bookId)
+            val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
+            val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+
+            val items = files.map { file ->
+                MediaItem.Builder()
+                    .setMediaId(file.id.toString())
+                    .setUri(Uri.parse("file://${file.filePath}"))
+                    .setRequestMetadata(
+                        MediaItem.RequestMetadata.Builder()
+                            .setMediaUri(Uri.parse("file://${file.filePath}"))
+                            .build()
+                    )
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setAlbumTitle(book.title)
+                            .setArtist(book.author)
+                            .setTitle(file.chapterTitle ?: file.fileName)
+                            .setArtworkUri(book.coverArtPath?.let { Uri.parse("file://$it") })
+                            .setExtras(Bundle().apply {
+                                putLong("bookId", book.id)
+                                putLong("groupId", -1L)
+                            })
+                            .build()
+                    )
+                    .build()
+            }
+            player.setMediaItems(items, startIndex, startPos)
+            player.setPlaybackSpeed(speed)
+            player.prepare()
+            player.play()
+            // Restore this book's saved boost/EQ (mb = dB * 100).
+            applyBoost((progress?.boostDb ?: 0) * 100)
+            applyEq(progress?.eqBandsJson)
+            repository.touchLastPlayed(bookId)
+            broadcastWidgetUpdate()
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession

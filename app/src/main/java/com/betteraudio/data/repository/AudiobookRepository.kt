@@ -177,6 +177,20 @@ class AudiobookRepository @Inject constructor(
     suspend fun getBooksByIds(ids: List<Long>): List<Book> = bookDao.getBooksByIds(ids)
     suspend fun getAllUngroupedOnce(): List<Book> = bookDao.getAllUngroupedOnce()
 
+    /** Lock these books' grouping so the scanner's AutoJoiner never touches them again. */
+    suspend fun markManualGrouping(ids: List<Long>) = bookDao.markManualGrouping(ids)
+
+    /**
+     * One-time cleanup of legacy auto-sliced "synthetic" chapters. Clearing all chapter rows
+     * for affected books makes the next scan rebuild them via the (now synthetic-free)
+     * chapter builder — embedded markers where present, else one chapter per file.
+     */
+    suspend fun purgeSyntheticChapters() {
+        chapterDao.bookIdsWithSyntheticChapters().forEach { bookId ->
+            chapterDao.deleteForBook(bookId)
+        }
+    }
+
     // ── Bookmarks ────────────────────────────────────────────────────────────
     fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>> = bookmarkDao.getForBook(bookId)
     suspend fun addBookmark(bookmark: Bookmark): Long = bookmarkDao.insert(bookmark)

@@ -390,6 +390,9 @@ class HomeViewModel @Inject constructor(
             // user grants "All files access" imports nothing useful and can surface stale
             // restored state (see allowBackup=false). The home screen drives a manual scan
             // once permission is granted.
+            // One-time cleanup of legacy auto-sliced chapters; the next scan rebuilds the
+            // affected books' chapters from embedded markers (or one row per file).
+            try { repository.purgeSyntheticChapters() } catch (_: Exception) {}
             if (folder.isNotBlank() && hasFileAccess()) {
                 try { scanner.scanDirectory(folder) } catch (_: Exception) {}
             }

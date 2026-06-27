@@ -129,7 +129,8 @@ class JoinOptionsViewModel @Inject constructor(
                     name = _name.value,
                     coverArtPath = _coverArtPath.value,
                     playbackSpeed = _speed.value,
-                    orderedBookIds = orderedIds
+                    orderedBookIds = orderedIds,
+                    manual = true
                 )
             }
             _saving.value = false

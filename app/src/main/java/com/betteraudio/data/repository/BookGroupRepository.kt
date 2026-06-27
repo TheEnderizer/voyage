@@ -32,11 +32,16 @@ class BookGroupRepository @Inject constructor(
         }
     }
 
+    /**
+     * [manual] = the user explicitly created this group (vs. the scanner's AutoJoiner). Manual
+     * groups lock their members' [Book.manualGrouping] so a later refresh never disturbs them.
+     */
     suspend fun createGroup(
         name: String,
         coverArtPath: String?,
         playbackSpeed: Float,
-        orderedBookIds: List<Long>
+        orderedBookIds: List<Long>,
+        manual: Boolean = false
     ): Long {
         val group = BookGroup(name = name, coverArtPath = coverArtPath, playbackSpeed = playbackSpeed)
         val groupId = bookGroupDao.insertGroup(group)
@@ -45,6 +50,7 @@ class BookGroupRepository @Inject constructor(
         }
         bookGroupDao.insertMembers(members)
         orderedBookIds.forEach { bookId -> bookDao.setGroupId(bookId, groupId) }
+        if (manual) bookDao.markManualGrouping(orderedBookIds)
         return groupId
     }
 
@@ -58,11 +64,14 @@ class BookGroupRepository @Inject constructor(
             BookGroupMember(group.id, bookId, index)
         }
         bookGroupDao.insertMembers(members)
+        bookDao.markManualGrouping(orderedBookIds) // editing a group is a manual decision
     }
 
     suspend fun dissolveGroup(groupId: Long) {
         val books = bookGroupDao.getBooksForGroupOnce(groupId)
         books.forEach { bookDao.setGroupId(it.id, null) }
+        // Splitting is a manual decision: keep these books ungrouped through future refreshes.
+        bookDao.markManualGrouping(books.map { it.id })
         val group = bookGroupDao.getGroupById(groupId) ?: return
         bookGroupDao.deleteGroup(group)
     }

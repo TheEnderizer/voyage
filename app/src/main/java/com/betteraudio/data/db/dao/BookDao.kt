@@ -90,8 +90,12 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id IN (:ids)")
     suspend fun getBooksByIds(ids: List<Long>): List<Book>
 
-    @Query("SELECT * FROM books WHERE groupId IS NULL")
+    // Auto-join candidates: ungrouped books the user has NOT manually grouped/split.
+    @Query("SELECT * FROM books WHERE groupId IS NULL AND manualGrouping = 0")
     suspend fun getAllUngroupedOnce(): List<Book>
+
+    @Query("UPDATE books SET manualGrouping = 1 WHERE id IN (:ids)")
+    suspend fun markManualGrouping(ids: List<Long>)
 
     @Transaction
     @Query("SELECT * FROM books WHERE groupId IS NULL AND isIgnored = 0 ORDER BY addedDateMs DESC")

@@ -1,9 +1,11 @@
 package com.betteraudio.ui.player
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,13 +36,16 @@ import com.betteraudio.ui.components.ScrimPill
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.PlaybackOptions
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.theme.playerContainerTransform
 import java.util.concurrent.TimeUnit
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
     initiallyShowInfo: Boolean = false,
+    sharedScope: SharedTransitionScope? = null,
+    animScope: AnimatedVisibilityScope? = null,
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -56,9 +61,9 @@ fun PlayerScreen(
     val isGroup = viewModel.groupId != -1L
 
     // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
+    // Back is intentionally NOT intercepted here — the system back / swipe always returns straight
+    // to home from either info or controls, never bouncing back to the info panel.
     val showInfoState = remember { mutableStateOf(initiallyShowInfo) }
-    // Back in player-mode when opened from info: return to info view rather than popping the screen.
-    BackHandler(enabled = !showInfoState.value && initiallyShowInfo) { showInfoState.value = true }
 
     var showChapters       by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
@@ -93,7 +98,10 @@ fun PlayerScreen(
 
     DisposableEffect(Unit) { onDispose { viewModel.saveProgress() } }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    Scaffold(
+        modifier = Modifier.playerContainerTransform(sharedScope, animScope, viewModel.bookId),
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
         val loading = if (isGroup) groupInfo == null else bwp == null
         if (loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {

@@ -21,10 +21,10 @@ import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.PlaybackProgress
 
-// Version 8: coverFxPath on books (pre-baked reflection + progressive-blur composite)
+// Version 9: manualGrouping on books (user-locked join/split, ignored by AutoJoiner)
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -91,6 +91,12 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE books ADD COLUMN coverFxPath TEXT")
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN manualGrouping INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

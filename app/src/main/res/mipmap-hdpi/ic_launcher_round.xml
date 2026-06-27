@@ -1,10 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Self-contained legacy round icon (pre-API-26 fallback). API 26+ uses mipmap-anydpi-v26. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <path android:fillColor="#5B4FCF" android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
-    <path android:fillColor="#FFFFFF"
-        android:pathData="M54,24 C40.74,24 30,34.74 30,48 v18 h8 v-18 c0,-8.84 7.16,-16 16,-16 s16,7.16 16,16 v18 h8 V48 C78,34.74 67.26,24 54,24 z" />
+    <path android:fillColor="#FF14264A" android:pathData="M54,54m-54,0a54,54 0,1 1,108 0a54,54 0,1 1,-108 0" />
+    <path
+        android:fillColor="#FFF3E7C9"
+        android:pathData="M69.56,38.44 L62,54 L69.56,69.56 L54,62 L38.44,69.56 L46,54 L38.44,38.44 L54,46 Z" />
+    <path
+        android:fillColor="#FFE8B23C"
+        android:pathData="M54,21 L59.66,48.34 L87,54 L59.66,59.66 L54,87 L48.34,59.66 L21,54 L48.34,48.34 Z" />
+    <path android:fillColor="#FF14264A" android:pathData="M54,47 a7,7 0 1,0 0.1,0 Z" />
+    <path android:fillColor="#FFE8B23C" android:pathData="M54,51 a3,3 0 1,0 0.1,0 Z" />
 </vector>

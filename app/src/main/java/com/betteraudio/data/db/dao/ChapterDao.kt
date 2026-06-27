@@ -24,4 +24,8 @@ interface ChapterDao {
 
     @Query("DELETE FROM chapters WHERE bookId = :bookId")
     suspend fun deleteForBook(bookId: Long)
+
+    /** Distinct books that still carry legacy auto-sliced "synthetic" chapter rows. */
+    @Query("SELECT DISTINCT bookId FROM chapters WHERE source = 'synthetic'")
+    suspend fun bookIdsWithSyntheticChapters(): List<Long>
 }

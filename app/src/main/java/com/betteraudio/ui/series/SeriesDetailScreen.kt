@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,11 +63,12 @@ fun SeriesDetailScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            itemsIndexed(books) { index, book ->
+            itemsIndexed(books, key = { _, b -> b.id }) { index, book ->
                 SeriesBookRow(
                     book = book,
                     index = index + 1,
-                    onClick = { onBookClick(book.id) }
+                    onClick = { onBookClick(book.id) },
+                    modifier = Modifier.animateItem()
                 )
             }
         }
@@ -74,10 +76,12 @@ fun SeriesDetailScreen(
 }
 
 @Composable
-private fun SeriesBookRow(book: Book, index: Int, onClick: () -> Unit) {
-    Card(
+private fun SeriesBookRow(book: Book, index: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().pressScale()
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = modifier.fillMaxWidth().pressScale()
     ) {
         Row(
             Modifier.fillMaxWidth().padding(12.dp),
@@ -100,21 +104,19 @@ private fun SeriesBookRow(book: Book, index: Int, onClick: () -> Unit) {
             }
 
             // Cover thumbnail
-            Card(Modifier.size(64.dp), elevation = CardDefaults.cardElevation(2.dp)) {
-                AsyncImage(
-                    model = book.coverArtPath?.let { File(it) },
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            AsyncImage(
+                model = book.coverArtPath?.let { File(it) },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(64.dp).clip(MaterialTheme.shapes.medium)
+            )
 
             // Book info
             Column(Modifier.weight(1f)) {
-                Text(book.title, style = MaterialTheme.typography.titleSmall,
+                Text(book.displayTitle, style = MaterialTheme.typography.titleSmall,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (book.author.isNotBlank()) {
-                    Text(book.author, style = MaterialTheme.typography.bodySmall,
+                if (book.displayAuthor.isNotBlank()) {
+                    Text(book.displayAuthor, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
