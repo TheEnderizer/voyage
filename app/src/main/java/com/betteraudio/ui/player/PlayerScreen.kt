@@ -2,10 +2,7 @@ package com.betteraudio.ui.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -33,21 +30,22 @@ import com.betteraudio.ui.components.PartItem
 import com.betteraudio.ui.components.ReflectedCoverBackdrop
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
+import com.betteraudio.ui.components.frostedWhenVisible
+import com.betteraudio.ui.history.BookHistoryOverlay
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.PlaybackOptions
 import com.betteraudio.ui.theme.Pill
-import com.betteraudio.ui.theme.playerContainerTransform
 import java.util.concurrent.TimeUnit
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayerScreen(
-    onBack: () -> Unit,
+fun PlayerContent(
+    onCollapse: () -> Unit,
     initiallyShowInfo: Boolean = false,
-    sharedScope: SharedTransitionScope? = null,
-    animScope: AnimatedVisibilityScope? = null,
+    startPlaying: Boolean = true,
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
+    val onBack = onCollapse
     val context = LocalContext.current
     val bwp               by viewModel.bookWithProgress.collectAsStateWithLifecycle()
     val groupInfo         by viewModel.groupInfo.collectAsStateWithLifecycle()
@@ -57,6 +55,8 @@ fun PlayerScreen(
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
     val skipForwardMs     by viewModel.skipForwardMs.collectAsStateWithLifecycle()
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
+    val sessions          by viewModel.listeningSessions.collectAsStateWithLifecycle()
+    val skips             by viewModel.skipEvents.collectAsStateWithLifecycle()
     val book = bwp?.book
     val isGroup = viewModel.groupId != -1L
 
@@ -74,6 +74,7 @@ fun PlayerScreen(
     var showReturnMenu     by remember { mutableStateOf(false) }
     var showAudioSettings  by remember { mutableStateOf(false) }
     var showOverflow       by remember { mutableStateOf(false) }
+    var showHistory        by remember { mutableStateOf(false) }
 
     // Scrubber drag state. While dragging, the thumb follows the finger but playback keeps
     // running from the original spot; the seek happens only on release (onValueChangeFinished).
@@ -86,20 +87,26 @@ fun PlayerScreen(
         ActivityResultContracts.GetContent()
     ) { uri -> uri?.let { viewModel.updateCoverArt(context, it) } }
 
+    // Guard against the LaunchedEffect firing multiple times (bwp changes on every DB write,
+    // e.g. touchLastPlayed inside play()) before the service confirms the new bookId via syncState.
+    var hasAutoPlayed by remember { mutableStateOf(false) }
+
     LaunchedEffect(bwp, groupInfo) {
-        if (!showInfoState.value) {
-            if (isGroup && groupInfo != null && state.groupId != viewModel.groupId) {
-                viewModel.play()
-            } else if (!isGroup && bwp != null && state.bookId != viewModel.bookId) {
-                viewModel.play()
-            }
+        // Only auto-play when the user deliberately opened this book (startPlaying = true).
+        // Cold-start restores (startPlaying = false) must not start playback automatically.
+        if (!startPlaying || showInfoState.value || hasAutoPlayed) return@LaunchedEffect
+        if (isGroup && groupInfo != null && state.groupId != viewModel.groupId) {
+            hasAutoPlayed = true
+            viewModel.play()
+        } else if (!isGroup && bwp != null && state.bookId != viewModel.bookId) {
+            hasAutoPlayed = true
+            viewModel.play()
         }
     }
 
     DisposableEffect(Unit) { onDispose { viewModel.saveProgress() } }
 
     Scaffold(
-        modifier = Modifier.playerContainerTransform(sharedScope, animScope, viewModel.bookId),
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         val loading = if (isGroup) groupInfo == null else bwp == null
@@ -129,7 +136,7 @@ fun PlayerScreen(
             inactiveTrackColor = Color.White.copy(alpha = 0.24f)
         )
 
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().frostedWhenVisible(showHistory || showChapters)) {
             // ── Cover + reflection + progressive scrim ────────────────────
             ReflectedCoverBackdrop(
                 coverPath = coverPath,
@@ -182,6 +189,13 @@ fun PlayerScreen(
                             )
                             if (!isGroup) {
                                 DropdownMenuItem(
+                                    text = { Text("Listening history") },
+                                    leadingIcon = { Icon(Icons.Default.History, null) },
+                                    onClick = { showOverflow = false; showHistory = true }
+                                )
+                            }
+                            if (!isGroup) {
+                                DropdownMenuItem(
                                     text = { Text("Refresh cover effect") },
                                     leadingIcon = { Icon(Icons.Default.Refresh, null) },
                                     onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
@@ -226,7 +240,8 @@ fun PlayerScreen(
                             totalMs          = book?.totalDurationMs ?: 0L,
                             synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
                                                ?: book?.description?.takeIf { it.isNotBlank() },
-                            onResume         = { viewModel.play(); showInfoState.value = false }
+                            onResume         = { viewModel.play(); showInfoState.value = false },
+                            onShowHistory    = { showHistory = true }
                         )
                     }
                 } else {
@@ -411,20 +426,45 @@ fun PlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clip(Pill)
-                            .clickable { showAudioSettings = true }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.Speed, null, Modifier.size(16.dp), tint = onScrim)
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            "${"%.2f".format(state.speed).trimEnd('0').trimEnd('.')}×",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = onScrim
-                        )
+                    if (!isGroup) {
+                        // Skip-silence toggle (replaces the old playback-speed pill — speed lives
+                        // in the audio settings sheet's Speed tab).
+                        val skipSilenceOn = book?.skipSilenceEnabled == true
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(Pill)
+                                .background(if (skipSilenceOn) accent.copy(alpha = 0.22f) else Color.Transparent)
+                                .clickable { viewModel.setSkipSilenceEnabled(!skipSilenceOn) }
+                                .padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.FastForward, null, Modifier.size(16.dp),
+                                tint = if (skipSilenceOn) accent else onScrimMuted
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Skip silence",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (skipSilenceOn) accent else onScrimMuted
+                            )
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(Pill)
+                                .clickable { showAudioSettings = true }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Speed, null, Modifier.size(16.dp), tint = onScrim)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "${"%.2f".format(state.speed).trimEnd('0').trimEnd('.')}×",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = onScrim
+                            )
+                        }
                     }
                     SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
                     SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
@@ -491,14 +531,13 @@ fun PlayerScreen(
             )
         }
 
-        if (showChapters && chapters.rows.isNotEmpty()) {
-            ChapterSheet(
-                rows = chapters.rows,
-                currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
-                onSeek = { viewModel.seekToChapter(it) },
-                onDismiss = { showChapters = false }
-            )
-        }
+        ChapterOverlay(
+            visible = showChapters && chapters.rows.isNotEmpty(),
+            rows = chapters.rows,
+            currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
+            onSeek = { viewModel.seekToChapter(it) },
+            onDismiss = { showChapters = false }
+        )
 
         if (showBookOptions && bwp != null) {
             BookOptionsSheet(
@@ -537,6 +576,18 @@ fun PlayerScreen(
                 onDismiss = { showAudioSettings = false }
             )
         }
+
+        BookHistoryOverlay(
+            visible = showHistory,
+            sessions = sessions,
+            skips = skips,
+            onResumeSession = { endPos ->
+                showInfoState.value = false
+                viewModel.resumeFromHistory(endPos)
+                showHistory = false
+            },
+            onDismiss = { showHistory = false }
+        )
     }
 }
 
@@ -624,7 +675,16 @@ private fun SkipButton(seconds: Int, forward: Boolean, tint: Color, onClick: () 
             Modifier.size(38.dp).graphicsLayer { if (forward) scaleX = -1f },
             tint = tint
         )
-        Text("$seconds", style = MaterialTheme.typography.labelSmall, color = tint, fontWeight = FontWeight.Medium)
+        // The Replay glyph's open loop sits slightly low-left of the box centre, so the centred
+        // number reads as off. Nudge it into the loop's optical centre (the icon is mirrored for
+        // the forward button, but the text is a separate child so it isn't flipped).
+        Text(
+            "$seconds",
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.offset(x = 0.5.dp, y = 1.5.dp)
+        )
     }
 }
 

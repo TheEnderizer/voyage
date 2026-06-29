@@ -36,7 +36,10 @@ data class Book(
     val isIgnored: Boolean = false,
     // True once the user has explicitly joined or split this book's grouping. The scanner's
     // AutoJoiner skips these so a manual decision is never silently undone by a refresh.
-    val manualGrouping: Boolean = false
+    val manualGrouping: Boolean = false,
+    // Per-book toggle: when on, the player auto-skips silent gaps (sensitivity + min length
+    // are global, in SettingsStore).
+    val skipSilenceEnabled: Boolean = false
 ) {
     val displayTitle: String get() = titleOverride ?: title
     val displayAuthor: String get() = authorOverride ?: author

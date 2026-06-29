@@ -8,6 +8,7 @@ import android.graphics.BitmapFactory
 import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
@@ -163,6 +164,45 @@ object WidgetRender {
             setBounds(0, 0, size, size)
             draw(canvas)
         }
+        return bmp
+    }
+
+    /** Center-cropped cover scaled to [w]×[h] with optional corner radius (0 = no rounding). */
+    fun coverBitmapRect(context: Context, source: Bitmap?, w: Int, h: Int, radius: Float = 0f): Bitmap {
+        val src = source ?: renderPlaceholder(context, max(w, h))
+        val scale = max(w.toFloat() / src.width, h.toFloat() / src.height)
+        val sw = (src.width * scale).toInt().coerceAtLeast(w)
+        val sh = (src.height * scale).toInt().coerceAtLeast(h)
+        val scaled = Bitmap.createScaledBitmap(src, sw, sh, true)
+        val x = ((scaled.width - w) / 2).coerceAtLeast(0)
+        val y = ((scaled.height - h) / 2).coerceAtLeast(0)
+        val cropped = Bitmap.createBitmap(scaled, x, y, w, h)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = BitmapShader(cropped, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        }
+        if (radius > 0f)
+            canvas.drawRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radius, radius, paint)
+        else
+            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
+        return out
+    }
+
+    /** Bottom-to-top gradient scrim: dark at the bottom for text legibility, transparent at top. */
+    fun renderScrim(w: Int, h: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        Canvas(bmp).drawRect(
+            0f, 0f, w.toFloat(), h.toFloat(),
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = LinearGradient(
+                    0f, 0f, 0f, h.toFloat(),
+                    intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.argb(210, 0, 0, 0)),
+                    floatArrayOf(0f, 0.4f, 1f),
+                    Shader.TileMode.CLAMP
+                )
+            }
+        )
         return bmp
     }
 

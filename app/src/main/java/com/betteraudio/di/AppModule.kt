@@ -9,6 +9,7 @@ import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookGroupDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
+import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import dagger.Module
 import dagger.Provides
@@ -25,7 +26,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "betteraudio.db")
-            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -36,4 +37,5 @@ object AppModule {
     @Provides fun provideChapterDao(db: AppDatabase): ChapterDao = db.chapterDao()
     @Provides fun provideBookmarkDao(db: AppDatabase): BookmarkDao = db.bookmarkDao()
     @Provides fun provideAudioPresetDao(db: AppDatabase): AudioPresetDao = db.audioPresetDao()
+    @Provides fun provideListeningHistoryDao(db: AppDatabase): ListeningHistoryDao = db.listeningHistoryDao()
 }

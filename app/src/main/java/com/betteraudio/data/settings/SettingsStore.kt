@@ -42,6 +42,8 @@ class SettingsStore @Inject constructor(
         val AUTO_REWIND_SECONDS          = intPreferencesKey("auto_rewind_seconds")
         val AUTO_REWIND_THRESHOLD_MINUTES = intPreferencesKey("auto_rewind_threshold_minutes")
         val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
+        val SKIP_SILENCE_MIN_MS          = longPreferencesKey("skip_silence_min_ms")
+        val SKIP_SILENCE_THRESHOLD       = intPreferencesKey("skip_silence_threshold")
     }
 
     companion object {
@@ -50,6 +52,11 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SPEED           = 1.0f
         const val DEFAULT_AUTO_REWIND_SECONDS           = 10
         const val DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES = 30
+        // Skip-silence engine config. Threshold is the SilenceSkippingAudioProcessor PCM level
+        // below which audio counts as silence (higher = more aggressive). Applied when the
+        // playback service builds its audio pipeline.
+        const val DEFAULT_SKIP_SILENCE_MIN_MS    = 1_000L
+        const val DEFAULT_SKIP_SILENCE_THRESHOLD = 1024
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -65,6 +72,8 @@ class SettingsStore @Inject constructor(
     val autoRewindSeconds: Flow<Int>          = context.dataStore.data.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }
     val autoRewindThresholdMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }
     val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
+    val skipSilenceMinMs: Flow<Long>          = context.dataStore.data.map { it[Keys.SKIP_SILENCE_MIN_MS] ?: DEFAULT_SKIP_SILENCE_MIN_MS }
+    val skipSilenceThreshold: Flow<Int>       = context.dataStore.data.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -75,6 +84,8 @@ class SettingsStore @Inject constructor(
     @Volatile var currentAutoRewindSeconds           = DEFAULT_AUTO_REWIND_SECONDS;            private set
     @Volatile var currentAutoRewindThresholdMinutes  = DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES;  private set
     @Volatile var currentAppStoppedAt               = 0L;                                     private set
+    @Volatile var currentSkipSilenceMinMs           = DEFAULT_SKIP_SILENCE_MIN_MS;            private set
+    @Volatile var currentSkipSilenceThreshold       = DEFAULT_SKIP_SILENCE_THRESHOLD;         private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -86,6 +97,8 @@ class SettingsStore @Inject constructor(
         scope.launch { autoRewindSeconds.collect         { currentAutoRewindSeconds          = it } }
         scope.launch { autoRewindThresholdMinutes.collect{ currentAutoRewindThresholdMinutes = it } }
         scope.launch { appStoppedAt.collect              { currentAppStoppedAt              = it } }
+        scope.launch { skipSilenceMinMs.collect          { currentSkipSilenceMinMs          = it } }
+        scope.launch { skipSilenceThreshold.collect      { currentSkipSilenceThreshold      = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -115,4 +128,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] = m }.let { }
     suspend fun setAppStoppedAt(ts: Long) =
         context.dataStore.edit { it[Keys.APP_STOPPED_AT] = ts }.let { }
+    suspend fun setSkipSilenceMinMs(ms: Long) =
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_MIN_MS] = ms }.let { }
+    suspend fun setSkipSilenceThreshold(level: Int) =
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_THRESHOLD] = level }.let { }
 }

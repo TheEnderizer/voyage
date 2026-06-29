@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compass rose: a two-tone eight-point star with a hub, centred in the 66dp safe zone. -->
+<!-- Compass rose fused with an audio "play" hub: an eight-point star whose centre is a
+     play triangle, so the mark reads as both a compass (voyage) and audio playback. Centred
+     in the 66dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
@@ -13,11 +15,12 @@
     <path
         android:fillColor="#FFE8B23C"
         android:pathData="M54,21 L59.66,48.34 L87,54 L59.66,59.66 L54,87 L48.34,59.66 L21,54 L48.34,48.34 Z" />
-    <!-- Hub: navy disc with a gold centre dot -->
+    <!-- Hub: navy disc -->
     <path
         android:fillColor="#FF0D1A33"
-        android:pathData="M54,47 a7,7 0 1,0 0.1,0 Z" />
+        android:pathData="M54,42 a12,12 0 1,0 0.1,0 Z" />
+    <!-- Play triangle in the hub (audio cue), gold -->
     <path
         android:fillColor="#FFE8B23C"
-        android:pathData="M54,51 a3,3 0 1,0 0.1,0 Z" />
+        android:pathData="M50,47.5 L50,60.5 L61.5,54 Z" />
 </vector>

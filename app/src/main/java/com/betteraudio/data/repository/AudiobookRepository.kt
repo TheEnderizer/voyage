@@ -5,6 +5,7 @@ import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
+import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.covers.CoverEffectBaker
 import com.betteraudio.data.db.entities.AudioFile
@@ -13,7 +14,9 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
+import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
+import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.model.BookWithProgress
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -28,8 +31,26 @@ class AudiobookRepository @Inject constructor(
     private val chapterDao: ChapterDao,
     private val bookmarkDao: BookmarkDao,
     private val audioPresetDao: AudioPresetDao,
+    private val listeningHistoryDao: ListeningHistoryDao,
     private val coverEffectBaker: CoverEffectBaker
 ) {
+
+    // ── Listening history ────────────────────────────────────────────────────
+    suspend fun insertListeningSession(session: ListeningSession): Long = listeningHistoryDao.insertSession(session)
+    suspend fun finishListeningSession(
+        id: Long, endMs: Long, endChapterIndex: Int, endChapterName: String,
+        endPositionInChapterMs: Long, listenedMs: Long
+    ) = listeningHistoryDao.finishSession(id, endMs, endChapterIndex, endChapterName, endPositionInChapterMs, listenedMs)
+    fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>> = listeningHistoryDao.getSessionsForBook(bookId)
+    suspend fun insertSkipEvent(skip: SkipEvent): Long = listeningHistoryDao.insertSkip(skip)
+    fun getSkipsForBook(bookId: Long): Flow<List<SkipEvent>> = listeningHistoryDao.getSkipsForBook(bookId)
+    suspend fun deleteHistoryForBook(bookId: Long) {
+        listeningHistoryDao.deleteSessionsForBook(bookId)
+        listeningHistoryDao.deleteSkipsForBook(bookId)
+    }
+
+    suspend fun setSkipSilenceEnabled(bookId: Long, enabled: Boolean) =
+        bookDao.setSkipSilenceEnabled(bookId, enabled)
 
     fun getBooksInProgress(): Flow<List<BookWithProgress>> = bookDao.getBooksInProgress()
     fun getNotStartedBooks(): Flow<List<Book>> = bookDao.getNotStartedBooks()

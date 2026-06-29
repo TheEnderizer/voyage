@@ -31,6 +31,7 @@ sealed class SettingsSection {
     object AI : SettingsSection()
     object Updates : SettingsSection()
     object About : SettingsSection()
+    object Diagnostics : SettingsSection()
 }
 
 data class UpdateUiState(
@@ -154,6 +155,13 @@ class SettingsViewModel @Inject constructor(
         settings.autoRewindThresholdMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES)
     fun setAutoRewindSeconds(s: Int) = viewModelScope.launch { settings.setAutoRewindSeconds(s) }
     fun setAutoRewindThresholdMinutes(m: Int) = viewModelScope.launch { settings.setAutoRewindThresholdMinutes(m) }
+
+    val skipSilenceMinMs: StateFlow<Long> =
+        settings.skipSilenceMinMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_MIN_MS)
+    val skipSilenceThreshold: StateFlow<Int> =
+        settings.skipSilenceThreshold.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_THRESHOLD)
+    fun setSkipSilenceMinMs(ms: Long) = viewModelScope.launch { settings.setSkipSilenceMinMs(ms) }
+    fun setSkipSilenceThreshold(level: Int) = viewModelScope.launch { settings.setSkipSilenceThreshold(level) }
 
     fun rescan() {
         val path = libraryFolder.value

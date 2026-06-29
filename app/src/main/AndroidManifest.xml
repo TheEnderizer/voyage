@@ -99,6 +99,19 @@
                 android:resource="@xml/widget_now_playing_compact_info" />
         </receiver>
 
+        <!-- 2×2 square widget -->
+        <receiver
+            android:name=".widget.NowPlayingWidget2x2"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_now_playing_2x2_info" />
+        </receiver>
+
         <!-- FileProvider for serving downloaded APK updates to the system installer -->
         <provider
             android:name="androidx.core.content.FileProvider"

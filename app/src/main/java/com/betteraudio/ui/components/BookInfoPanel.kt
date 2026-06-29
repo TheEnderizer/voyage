@@ -1,5 +1,6 @@
 package com.betteraudio.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -55,7 +57,8 @@ fun BookInfoPanel(
     synopsis: String?,
     onResume: () -> Unit,
     modifier: Modifier = Modifier,
-    parts: List<PartItem>? = null
+    parts: List<PartItem>? = null,
+    onShowHistory: (() -> Unit)? = null
 ) {
     val accent      = MaterialTheme.colorScheme.primary
     val onScrim     = Color.White
@@ -184,6 +187,21 @@ fun BookInfoPanel(
             Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text(resumeLabel, style = MaterialTheme.typography.titleMedium)
+        }
+
+        if (onShowHistory != null) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier
+                    .clip(Pill)
+                    .clickable(onClick = onShowHistory)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.History, null, Modifier.size(18.dp), tint = onScrimMuted)
+                Spacer(Modifier.width(6.dp))
+                Text("Listening history", style = MaterialTheme.typography.labelLarge, color = onScrimMuted)
+            }
         }
 
         Spacer(Modifier.height(18.dp))

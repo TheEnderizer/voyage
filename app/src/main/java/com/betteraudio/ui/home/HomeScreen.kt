@@ -57,15 +57,11 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.ui.components.CircleIconButton
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionScope
 import com.betteraudio.ui.theme.Pill
-import com.betteraudio.ui.theme.playerContainerTransform
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
@@ -76,8 +72,6 @@ fun HomeScreen(
     onJoinBooks: (bookIds: String) -> Unit = {},
     onEditGroup: (groupId: Long) -> Unit = {},
     onOpenGroupInfo: (groupId: Long) -> Unit = {},
-    sharedScope: SharedTransitionScope? = null,
-    animScope: AnimatedVisibilityScope? = null,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -159,7 +153,7 @@ fun HomeScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 132.dp
+                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp
                     ),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -170,6 +164,7 @@ fun HomeScreen(
                         HomeHeader(
                             scanning = scan.status == ScanStatus.Running,
                             onSearch = onOpenSearch,
+                            onSort = { showSortFilter = true },
                             onSettings = onOpenSettings
                         )
                     }
@@ -180,8 +175,6 @@ fun HomeScreen(
                             FeaturedNowPlaying(
                                 state = playbackState,
                                 book = currentBook,
-                                sharedScope = sharedScope,
-                                animScope = animScope,
                                 onPlayPause = { viewModel.playerController.togglePlayPause() },
                                 onSkipForward = { viewModel.playerController.skipForward() },
                                 onExpand = {
@@ -195,8 +188,6 @@ fun HomeScreen(
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             ResumeCard(
                                 bwp = bwp,
-                                sharedScope = sharedScope,
-                                animScope = animScope,
                                 onPlay = { viewModel.playResumeBook(bwp) },
                                 onExpand = { onOpenBook(bwp.book.id) }
                             )
@@ -271,38 +262,6 @@ fun HomeScreen(
                 } // end PullToRefreshBox
             }
 
-            // ── Floating bottom chrome ─────────────────────────────────────
-            Column(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                AnimatedVisibility(
-                    visible = nowPlaying && !isSelectionMode,
-                    enter = slideInVertically { it } + fadeIn(),
-                    exit = slideOutVertically { it } + fadeOut()
-                ) {
-                    NowPlayingPill(
-                        state = playbackState,
-                        coverPath = currentBook?.coverArtPath ?: playbackState.coverArtUri?.removePrefix("file://"),
-                        onPlayPause = { viewModel.playerController.togglePlayPause() },
-                        onSkipForward = { viewModel.playerController.skipForward() },
-                        onExpand = {
-                            val id = playbackState.bookId
-                            if (id != -1L) onOpenBook(id)
-                        }
-                    )
-                }
-                FloatingNavBar(
-                    onSearch = onOpenSearch,
-                    onSort = { showSortFilter = true },
-                    onSettings = onOpenSettings
-                )
-            }
 
             // ── Selection bar — floats over the top, doesn't push content down ──
             AnimatedVisibility(
@@ -425,20 +384,42 @@ fun HomeScreen(
 private fun HomeHeader(
     scanning: Boolean,
     onSearch: () -> Unit,
+    onSort: () -> Unit,
     onSettings: () -> Unit
 ) {
-    if (scanning) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.End
-        ) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (scanning) {
             CircularProgressIndicator(
-                Modifier.size(22.dp),
+                Modifier.size(20.dp).padding(start = 4.dp),
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        IconButton(onClick = onSearch) {
+            Icon(
+                Icons.Default.Search, "Search",
+                Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onSort) {
+            Icon(
+                Icons.AutoMirrored.Filled.Sort, "Sort & filter",
+                Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        IconButton(onClick = onSettings) {
+            Icon(
+                Icons.Default.Settings, "Settings",
+                Modifier.size(22.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -521,16 +502,13 @@ private fun SelectionHeader(
 
 // ─── Featured now-playing card ────────────────────────────────────────────────
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun FeaturedNowPlaying(
     state: PlaybackState,
     book: Book?,
     onPlayPause: () -> Unit,
     onSkipForward: () -> Unit,
-    onExpand: () -> Unit,
-    sharedScope: SharedTransitionScope? = null,
-    animScope: AnimatedVisibilityScope? = null
+    onExpand: () -> Unit
 ) {
     val progress = if (state.bookTotalDurationMs > 0)
         (state.bookPositionMs.toFloat() / state.bookTotalDurationMs).coerceIn(0f, 1f) else 0f
@@ -542,121 +520,105 @@ private fun FeaturedNowPlaying(
         onClick = onExpand,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .playerContainerTransform(sharedScope, animScope, state.bookId)
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row {
-                Box(
-                    Modifier
-                        .size(108.dp)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                ) {
-                    AsyncImage(
-                        model = coverPath?.let { File(it) } ?: state.coverArtUri,
-                        contentDescription = "Now playing cover",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+        // The book cover is the card background.
+        Box(Modifier.clip(MaterialTheme.shapes.extraLarge)) {
+            // The book cover IS the card background.
+            AsyncImage(
+                model = coverPath?.let { File(it) } ?: state.coverArtUri,
+                contentDescription = "Now playing cover",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
+            // Scrim so the controls stay legible over arbitrary cover art.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.78f))
+                        )
                     )
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.GraphicEq,
-                            null,
-                            Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (state.isPlaying) "NOW PLAYING" else "PAUSED",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(Modifier.height(4.dp))
+            )
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.GraphicEq, null, Modifier.size(14.dp), tint = Color.White)
+                    Spacer(Modifier.width(6.dp))
                     Text(
-                        title,
-                        style = MaterialTheme.typography.titleLarge,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        if (state.isPlaying) "NOW PLAYING" else "PAUSED",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White
                     )
-                    if (state.author.isNotBlank()) {
-                        Text(
-                            state.author,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
                 }
-            }
-
-            val synopsis = book?.synopsis
-            if (!synopsis.isNullOrBlank()) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(4.dp))
                 Text(
-                    synopsis,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    title,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "${(progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "${formatDurationHero(timeLeft)} left",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onPlayPause,
-                    shape = Pill,
-                    modifier = Modifier.weight(1f).height(50.dp)
-                ) {
-                    Icon(
-                        if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        null
+                if (state.author.isNotBlank()) {
+                    Text(
+                        state.author,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (state.isPlaying) "Pause" else "Play")
                 }
-                FilledTonalIconButton(
-                    onClick = onSkipForward,
-                    shape = Pill,
-                    modifier = Modifier.size(50.dp)
-                ) { Icon(Icons.Default.FastForward, "Skip forward") }
-                FilledTonalIconButton(
-                    onClick = onExpand,
-                    shape = Pill,
-                    modifier = Modifier.size(50.dp)
-                ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
+
+                Spacer(Modifier.height(14.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.25f)
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    Text(
+                        "${formatDurationHero(timeLeft)} left",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Button(
+                        onClick = onPlayPause,
+                        shape = Pill,
+                        modifier = Modifier.weight(1f).height(50.dp)
+                    ) {
+                        Icon(
+                            if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            null
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(if (state.isPlaying) "Pause" else "Play")
+                    }
+                    FilledTonalIconButton(
+                        onClick = onSkipForward,
+                        shape = Pill,
+                        modifier = Modifier.size(50.dp)
+                    ) { Icon(Icons.Default.FastForward, "Skip forward") }
+                    FilledTonalIconButton(
+                        onClick = onExpand,
+                        shape = Pill,
+                        modifier = Modifier.size(50.dp)
+                    ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
+                }
             }
         }
     }
@@ -726,14 +688,11 @@ private fun NowPlayingPill(
 
 // ─── Resume card (last played book, shown after app restart when not playing) ──
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun ResumeCard(
     bwp: BookWithProgress,
     onPlay: () -> Unit,
-    onExpand: () -> Unit,
-    sharedScope: SharedTransitionScope? = null,
-    animScope: AnimatedVisibilityScope? = null
+    onExpand: () -> Unit
 ) {
     val progress = bwp.progressFraction.coerceIn(0f, 1f)
     val timeLeft = ((1f - progress) * bwp.book.totalDurationMs).toLong()
@@ -742,151 +701,91 @@ private fun ResumeCard(
         onClick = onExpand,
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier
-            .fillMaxWidth()
-            .playerContainerTransform(sharedScope, animScope, bwp.book.id)
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Row {
-                Box(
-                    Modifier
-                        .size(108.dp)
-                        .clip(MaterialTheme.shapes.large)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                ) {
-                    AsyncImage(
-                        model = bwp.book.coverArtPath?.let { File(it) },
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+        // The book cover is the card background.
+        Box(Modifier.clip(MaterialTheme.shapes.extraLarge)) {
+            // Cover fills the card as its background.
+            AsyncImage(
+                model = bwp.book.coverArtPath?.let { File(it) },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize()
+            )
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.78f))
+                        )
                     )
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f).padding(top = 4.dp)) {
+            )
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    bwp.book.displayTitle,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (bwp.book.displayAuthor.isNotBlank()) {
                     Text(
-                        bwp.book.displayTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2,
+                        bwp.book.displayAuthor,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (bwp.book.displayAuthor.isNotBlank()) {
-                        Spacer(Modifier.height(4.dp))
+                }
+                Spacer(Modifier.height(14.dp))
+                LinearProgressIndicator(
+                    progress = { progress },
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
+                    color = Color.White,
+                    trackColor = Color.White.copy(alpha = 0.25f)
+                )
+                Spacer(Modifier.height(6.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(
+                        "${(progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.75f)
+                    )
+                    if (bwp.book.totalDurationMs > 0) {
                         Text(
-                            bwp.book.displayAuthor,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            "${formatDurationHero(timeLeft)} left",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.White.copy(alpha = 0.75f)
                         )
                     }
                 }
-            }
-            Spacer(Modifier.height(14.dp))
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(
-                    "${(progress * 100).toInt()}%",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (bwp.book.totalDurationMs > 0) {
-                    Text(
-                        "${formatDurationHero(timeLeft)} left",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.height(14.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onPlay,
-                    shape = Pill,
-                    modifier = Modifier.weight(1f).height(50.dp)
-                ) {
-                    Icon(Icons.Default.PlayArrow, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Resume")
-                }
-                FilledTonalIconButton(
-                    onClick = onExpand,
-                    shape = Pill,
-                    modifier = Modifier.size(50.dp)
-                ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
-            }
-        }
-    }
-}
-
-// ─── Floating nav bar ─────────────────────────────────────────────────────────
-
-@Composable
-private fun FloatingNavBar(
-    onSearch: () -> Unit,
-    onSort: () -> Unit,
-    onSettings: () -> Unit
-) {
-    Surface(
-        shape = Pill,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
-        shadowElevation = 12.dp
-    ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            // Active "Home" pill
-            Surface(shape = Pill, color = MaterialTheme.colorScheme.primary) {
+                Spacer(Modifier.height(14.dp))
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.Home,
-                        null,
-                        Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Home",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
+                    Button(
+                        onClick = onPlay,
+                        shape = Pill,
+                        modifier = Modifier.weight(1f).height(50.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Resume")
+                    }
+                    FilledTonalIconButton(
+                        onClick = onExpand,
+                        shape = Pill,
+                        modifier = Modifier.size(50.dp)
+                    ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
                 }
             }
-            NavIcon(Icons.Default.Search, "Search", onSearch)
-            NavIcon(Icons.AutoMirrored.Filled.Sort, "Sort & filter", onSort)
-            NavIcon(Icons.Default.Settings, "Settings", onSettings)
         }
     }
 }
 
-@Composable
-private fun NavIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .size(44.dp)
-            .pressScale()
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, label, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
 
 // ─── Book grid card ───────────────────────────────────────────────────────────
 
@@ -1150,7 +1049,7 @@ private fun EmptyLibrary(
     onOpenSearch: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        HomeHeader(scanning = false, onSearch = onOpenSearch, onSettings = onOpenSettings)
+        HomeHeader(scanning = false, onSearch = onOpenSearch, onSort = {}, onSettings = onOpenSettings)
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(

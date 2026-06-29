@@ -1,5 +1,7 @@
 package com.betteraudio.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -7,6 +9,8 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -24,7 +28,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
@@ -45,11 +53,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
+import com.betteraudio.util.AppLog
+import java.io.File
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,6 +85,8 @@ fun SettingsScreen(
     val currentSection            by viewModel.currentSection.collectAsStateWithLifecycle()
     val autoRewindSeconds         by viewModel.autoRewindSeconds.collectAsStateWithLifecycle()
     val autoRewindThresholdMinutes by viewModel.autoRewindThresholdMinutes.collectAsStateWithLifecycle()
+    val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
+    val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
@@ -106,6 +120,7 @@ fun SettingsScreen(
         SettingsSection.AI -> "AI Synopsis"
         SettingsSection.Updates -> "Updates"
         SettingsSection.About -> "About"
+        SettingsSection.Diagnostics -> "Diagnostics"
     }
 
     Scaffold(
@@ -149,11 +164,13 @@ fun SettingsScreen(
                     )
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
-                        autoRewindSeconds, autoRewindThresholdMinutes, viewModel
+                        autoRewindSeconds, autoRewindThresholdMinutes,
+                        skipSilenceMinMs, skipSilenceThreshold, viewModel
                     )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
                     SettingsSection.About -> aboutSection(updateState, viewModel)
+                    SettingsSection.Diagnostics -> diagnosticsSection(context)
                 }
             }
         }
@@ -168,6 +185,7 @@ private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
         Triple(Icons.Default.Speed, "Playback", SettingsSection.Playback),
         Triple(Icons.Default.AutoAwesome, "AI Synopsis", SettingsSection.AI),
         Triple(Icons.Default.Info, "About", SettingsSection.About),
+        Triple(Icons.Default.BugReport, "Diagnostics", SettingsSection.Diagnostics),
     )
     item { Spacer(Modifier.height(4.dp)) }
     rows.forEach { (icon, label, dest) ->
@@ -275,6 +293,8 @@ private fun LazyListScope.playbackSection(
     defaultSpeed: Float,
     autoRewindSeconds: Int,
     autoRewindThresholdMinutes: Int,
+    skipSilenceMinMs: Long,
+    skipSilenceThreshold: Int,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -404,6 +424,60 @@ private fun LazyListScope.playbackSection(
                         ) { Text("+", style = MaterialTheme.typography.titleMedium) }
                     }
                 }
+            }
+        }
+    }
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Skip silence", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Tune how silence is detected. Enable per book from the player.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                // Minimum silence length before trimming (0.2–3.0 s)
+                var minSlider by remember(skipSilenceMinMs) { mutableFloatStateOf(skipSilenceMinMs / 1000f) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Minimum silence", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${"%.1f".format(minSlider)} s",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                Slider(
+                    value = minSlider,
+                    onValueChange = { minSlider = (it / 0.1f).roundToInt() * 0.1f },
+                    onValueChangeFinished = { viewModel.setSkipSilenceMinMs((minSlider * 1000).toLong()) },
+                    valueRange = 0.2f..3.0f,
+                    steps = 27,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Sensitivity (PCM threshold level). Higher slider = more aggressive trimming.
+                var sensSlider by remember(skipSilenceThreshold) { mutableFloatStateOf(skipSilenceThreshold.toFloat()) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sensitivity", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${sensSlider.toInt()}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                Slider(
+                    value = sensSlider,
+                    onValueChange = { sensSlider = it },
+                    onValueChangeFinished = { viewModel.setSkipSilenceThreshold(sensSlider.toInt()) },
+                    valueRange = 256f..4096f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Changes apply the next time playback starts.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -675,19 +749,10 @@ private fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: Se
         }
     }
 
-    // Changelog for this channel
+    // Changelog for this channel — parsed into styled version/category cards.
     if (viewModel.changelog.isNotBlank()) {
         item { SectionHeader("What's new in this build") }
-        item {
-            CardContainer {
-                Text(
-                    viewModel.changelog,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth().padding(16.dp)
-                )
-            }
-        }
+        item { ChangelogView(viewModel.changelog) }
     }
 
     item { SectionHeader("Expected Folder Structure") }
@@ -703,6 +768,74 @@ private fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: Se
             }
         }
     }
+}
+
+// ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
+
+private fun LazyListScope.diagnosticsSection(context: Context) {
+    item {
+        var logText by remember { mutableStateOf(AppLog.recentText()) }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionHeader("Diagnostics log")
+            Text(
+                "A rolling record of what the app does — playback, scans, navigation, errors and crashes. When something goes wrong, copy or share this and send it over.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(shape = Pill, onClick = {
+                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Voyage log", AppLog.recentText()))
+                }) {
+                    Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp)); Text("Copy")
+                }
+                FilledTonalButton(shape = Pill, onClick = { shareLog(context) }) {
+                    Icon(Icons.Default.Share, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp)); Text("Share")
+                }
+                FilledTonalButton(shape = Pill, onClick = {
+                    AppLog.clear(); logText = ""
+                }) {
+                    Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp)); Text("Clear")
+                }
+                IconButton(onClick = { logText = AppLog.recentText() }) {
+                    Icon(Icons.Default.Refresh, "Refresh")
+                }
+            }
+            CardContainer {
+                Text(
+                    logText.ifBlank { "(empty)" },
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace, fontSize = 11.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .heightIn(max = 460.dp)
+                        .padding(12.dp)
+                        .verticalScroll(rememberScrollState())
+                )
+            }
+        }
+    }
+}
+
+private fun shareLog(context: Context) {
+    val source = AppLog.logFile() ?: return
+    val dir = source.parentFile ?: return
+    val shareFile = File(dir, "voyage-log.txt")
+    try { shareFile.writeText(AppLog.recentText()) } catch (_: Throwable) { return }
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareFile)
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        putExtra(Intent.EXTRA_SUBJECT, "Voyage diagnostics log")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(
+        Intent.createChooser(send, "Share log").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
 }
 
 // ─── Reusable settings building blocks ────────────────────────────────────────

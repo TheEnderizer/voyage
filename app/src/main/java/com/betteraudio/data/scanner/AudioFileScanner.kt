@@ -6,6 +6,7 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.repository.AudiobookRepository
+import com.betteraudio.util.AppLog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,9 +29,18 @@ class AudioFileScanner @Inject constructor(
      */
     suspend fun scanDirectory(rootPath: String, autoJoin: Boolean = false): Int = withContext(Dispatchers.IO) {
         val root = File(rootPath)
-        if (!root.exists() || !root.isDirectory) return@withContext 0
-        val count = scanFolder(root, seriesName = null, seriesOrder = null)
+        if (!root.exists() || !root.isDirectory) {
+            AppLog.w("Scan", "skipped — path missing or not a dir: $rootPath")
+            return@withContext 0
+        }
+        AppLog.i("Scan", "start path=$rootPath autoJoin=$autoJoin")
+        val count = try {
+            scanFolder(root, seriesName = null, seriesOrder = null)
+        } catch (e: Throwable) {
+            AppLog.e("Scan", "failed for $rootPath", e); throw e
+        }
         if (autoJoin) autoJoiner.run(rootPath)
+        AppLog.i("Scan", "done path=$rootPath imported/updated=$count")
         count
     }
 

@@ -7,11 +7,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,14 +23,15 @@ import kotlinx.coroutines.flow.collectLatest
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.ui.Modifier
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
@@ -38,11 +41,13 @@ import com.betteraudio.ui.theme.colorOsExit
 import com.betteraudio.ui.theme.colorOsPopEnter
 import com.betteraudio.ui.theme.colorOsPopExit
 import com.betteraudio.ui.join.JoinOptionsScreen
-import com.betteraudio.ui.player.PlayerScreen
+import com.betteraudio.ui.player.PlayerSheet
+import com.betteraudio.ui.player.rememberPlayerSheetController
 import com.betteraudio.ui.search.SearchScreen
 import com.betteraudio.ui.series.SeriesDetailScreen
 import com.betteraudio.ui.settings.SettingsScreen
 import com.betteraudio.ui.theme.VoyageTheme
+import com.betteraudio.util.AppLog
 import com.betteraudio.widget.WidgetRender
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -62,7 +67,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
-    @OptIn(ExperimentalSharedTransitionApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -92,32 +96,43 @@ class MainActivity : ComponentActivity() {
             val coverPath = activeCover ?: lastPlayedCover
             VoyageTheme(coverArtPath = coverPath) {
                 val navController = rememberNavController()
+                val sheetController = rememberPlayerSheetController()
 
-                // Restore the player the user last had open (or, from a widget tap, the active one).
-                LaunchedEffect(Unit) {
-                    if (coldStartBookId != -1L) navController.navigate("player/$coldStartBookId")
+                // Trace navigation so the in-app log shows the screen flow leading to a bug.
+                DisposableEffect(navController) {
+                    val listener = NavController.OnDestinationChangedListener { _, dest, _ ->
+                        AppLog.i("Nav", "→ ${dest.route}")
+                    }
+                    navController.addOnDestinationChangedListener(listener)
+                    onDispose { navController.removeOnDestinationChangedListener(listener) }
                 }
 
-                // Warm-start widget taps (singleTask onNewIntent) route here.
+                // Restore the player the user last had open (or, from a widget tap, the active one).
+                // startPlaying = false on a cold-start restore so the player shows the last book
+                // without automatically starting playback — the user must tap Play themselves.
+                LaunchedEffect(Unit) {
+                    if (coldStartBookId != -1L) sheetController.open(bookId = coldStartBookId, startPlaying = false)
+                }
+
+                // Warm-start widget taps (singleTask onNewIntent) expand the player sheet.
                 LaunchedEffect(playerNavRequest) {
                     playerNavRequest?.let { id ->
-                        navController.navigate("player/$id")
+                        sheetController.open(bookId = id)
                         playerNavRequest = null
                     }
                 }
 
-                // Remember which book the player is showing (or -1 elsewhere) so we can restore it
-                // after the app is closed and reopened.
-                val currentEntry by navController.currentBackStackEntryAsState()
-                LaunchedEffect(currentEntry) {
-                    val route = currentEntry?.destination?.route
-                    val id = if (route == "player/{bookId}?startInfo={startInfo}")
-                        currentEntry?.arguments?.getLong("bookId") ?: -1L
-                    else -1L
+                // Remember which book the player is showing (or -1 when collapsed) so we can
+                // restore it after the app is closed and reopened.
+                LaunchedEffect(sheetController.isExpanded, sheetController.target) {
+                    val id = if (sheetController.isExpanded) sheetController.target?.bookId ?: -1L else -1L
                     settings.setLastOpenBookId(id)
                 }
 
-                SharedTransitionLayout {
+                // Back collapses the expanded player before doing anything else.
+                BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
+
+                Box(Modifier.fillMaxSize()) {
                 NavHost(
                     navController = navController,
                     startDestination = "home",
@@ -129,11 +144,9 @@ class MainActivity : ComponentActivity() {
 
                     composable("home") {
                         HomeScreen(
-                            sharedScope = this@SharedTransitionLayout,
-                            animScope = this,
                             onOpenSettings = { navController.navigate("settings") },
-                            onOpenBook = { bookId -> navController.navigate("player/$bookId") },
-                            onOpenBookInfo = { bookId -> navController.navigate("player/$bookId?startInfo=true") },
+                            onOpenBook = { bookId -> sheetController.open(bookId = bookId) },
+                            onOpenBookInfo = { bookId -> sheetController.open(bookId = bookId, startInfo = true) },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { name -> navController.navigate("series/${Uri.encode(name)}") },
                             onJoinBooks = { bookIds ->
@@ -143,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                 navController.navigate("join_options?groupId=$groupId")
                             },
                             onOpenGroupInfo = { groupId ->
-                                navController.navigate("group_info/$groupId")
+                                sheetController.open(groupId = groupId, startInfo = true)
                             }
                         )
                     }
@@ -152,31 +165,10 @@ class MainActivity : ComponentActivity() {
                         SettingsScreen(onBack = { navController.popBackStack() })
                     }
 
-                    // One screen for both the book-info panel and the transport controls. The
-                    // info↔controls switch is an in-place crossfade inside PlayerScreen — never a
-                    // navigation — so the two can't stack and back always returns straight home.
-                    composable(
-                        route = "player/{bookId}?startInfo={startInfo}",
-                        arguments = listOf(
-                            navArgument("bookId") { type = NavType.LongType },
-                            navArgument("startInfo") {
-                                type = NavType.BoolType
-                                defaultValue = false
-                            }
-                        )
-                    ) {
-                        PlayerScreen(
-                            sharedScope = this@SharedTransitionLayout,
-                            animScope = this,
-                            onBack = { navController.popBackStack("home", inclusive = false) },
-                            initiallyShowInfo = it.arguments?.getBoolean("startInfo") ?: false
-                        )
-                    }
-
                     composable("search") {
                         SearchScreen(
                             onBack = { navController.popBackStack() },
-                            onBookClick = { bookId -> navController.navigate("player/$bookId") }
+                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
                         )
                     }
 
@@ -188,19 +180,7 @@ class MainActivity : ComponentActivity() {
                         SeriesDetailScreen(
                             seriesName = name,
                             onBack = { navController.popBackStack() },
-                            onBookClick = { bookId -> navController.navigate("player/$bookId") }
-                        )
-                    }
-
-                    composable(
-                        route = "group_info/{groupId}",
-                        arguments = listOf(navArgument("groupId") { type = NavType.LongType })
-                    ) {
-                        PlayerScreen(
-                            sharedScope = this@SharedTransitionLayout,
-                            animScope = this,
-                            onBack = { navController.popBackStack("home", inclusive = false) },
-                            initiallyShowInfo = true
+                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
                         )
                     }
 
@@ -225,6 +205,8 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                PlayerSheet(controller = sheetController, playerController = playerController)
                 }
             }
         }

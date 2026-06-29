@@ -6,11 +6,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.AudioPreset
+import com.betteraudio.util.AppLog
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookGroup
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
+import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.model.BookWithProgress
 import org.json.JSONArray
 import com.betteraudio.data.repository.AudiobookRepository
@@ -174,12 +176,30 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { repository.updateBoostDb(bookId, db) }
     }
 
+    /** Toggle silence-skipping for this book: persist the flag and apply it to live playback. */
+    fun setSkipSilenceEnabled(enabled: Boolean) {
+        val targetBookId = bookId.takeIf { it != -1L } ?: playbackState.value.bookId
+        if (targetBookId == -1L) return
+        playerController.setSkipSilence(enabled)
+        viewModelScope.launch { repository.setSkipSilenceEnabled(targetBookId, enabled) }
+    }
+
     fun setEqBands(bands: IntArray?) {
         _eqBandsMillibels.value = bands
         val json = bands?.let { JSONArray(it.toList()).toString() }
         playerController.setEqBands(json)
         viewModelScope.launch { repository.updateEqBands(bookId, json) }
     }
+
+    // ── Per-book "local preset" reset: clear this book's override back to defaults ────────
+    /** The global default speed — what a book falls back to when its override is cleared. */
+    val defaultSpeed: Float get() = settings.currentDefaultSpeed
+    /** Reset this book's playback speed to the global default. */
+    fun clearBookSpeed() = setSpeed(settings.currentDefaultSpeed)
+    /** Reset this book's volume boost to 0 dB. */
+    fun clearBookBoost() = setVolumeBoost(0)
+    /** Reset this book's EQ to flat (falls back to the global default). */
+    fun clearBookEq() = setEqBands(null)
 
     fun saveAudioPreset(name: String, type: String) {
         val preset = when (type) {
@@ -242,6 +262,17 @@ class PlayerViewModel @Inject constructor(
     val bookmarks: StateFlow<List<Bookmark>> =
         repository.getBookmarksForBook(bookId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── Listening history (single books only; empty for groups) ───────────────
+    val listeningSessions: StateFlow<List<com.betteraudio.data.db.entities.ListeningSession>> =
+        if (bookId != -1L) repository.getSessionsForBook(bookId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        else MutableStateFlow(emptyList())
+
+    val skipEvents: StateFlow<List<SkipEvent>> =
+        if (bookId != -1L) repository.getSkipsForBook(bookId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        else MutableStateFlow(emptyList())
 
     // Position history stack — pushed before jumps; pop to return, auto-clears after 10 min of uninterrupted playback
     private val _positionStack = MutableStateFlow<List<Long>>(emptyList())
@@ -400,7 +431,50 @@ class PlayerViewModel @Inject constructor(
         else
             playbackState.value.currentPositionMs
         pushPosition(currentAbsPos)
+        recordSkip(currentAbsPos, bookmark.absolutePositionMs)
         playerController.bookSeekTo(bookmark.absolutePositionMs)
+    }
+
+    /**
+     * Resume from where a past listening session ended: jump to that absolute book position
+     * and start playing. This is a confirmed jump, so it's recorded as a skip.
+     */
+    fun resumeFromHistory(endBookPositionMs: Long) {
+        AppLog.i("History", "resumeFromHistory target=${endBookPositionMs}ms book=$bookId")
+        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
+            playbackState.value.bookPositionMs
+        else
+            playbackState.value.currentPositionMs
+        // Start playback if this book isn't loaded yet, then seek.
+        if (playbackState.value.bookId != bookId) play()
+        pushPosition(currentAbsPos)
+        recordSkip(currentAbsPos, endBookPositionMs)
+        playerController.bookSeekTo(endBookPositionMs)
+        if (!playbackState.value.isPlaying) playerController.togglePlayPause()
+    }
+
+    /**
+     * Record a *confirmed* navigation jump (chapter select / bookmark jump / large scrubber
+     * drag) into listening history. Fixed-amount skip-button taps are intentionally excluded.
+     */
+    private fun recordSkip(fromMs: Long, toMs: Long) {
+        val targetBookId = playbackState.value.bookId.takeIf { it != -1L } ?: bookId
+        if (targetBookId == -1L) return
+        val items = chapters.value.rows.filterIsInstance<ChapterRow.Item>()
+        val active = items.lastOrNull { it.absStartMs <= toMs }
+        val idx = active?.let { items.indexOf(it) } ?: -1
+        AppLog.i("History", "skip recorded book=$targetBookId ${fromMs}ms→${toMs}ms ch=$idx")
+        viewModelScope.launch {
+            repository.insertSkipEvent(
+                SkipEvent(
+                    bookId = targetBookId,
+                    fromPositionMs = fromMs,
+                    toPositionMs = toMs,
+                    chapterIndex = idx,
+                    chapterName = active?.title ?: ""
+                )
+            )
+        }
     }
 
     fun returnFromJump() {
@@ -431,12 +505,14 @@ class PlayerViewModel @Inject constructor(
         else
             playbackState.value.currentPositionMs
         pushPosition(currentAbsPos)
+        recordSkip(currentAbsPos, absMs)
         playerController.bookSeekTo(absMs)
     }
 
     fun pushPositionIfLargeJump(beforeMs: Long, afterMs: Long) {
         if (kotlin.math.abs(afterMs - beforeMs) > 5 * 60_000L) {
             pushPosition(beforeMs)
+            recordSkip(beforeMs, afterMs)
         }
     }
 
@@ -468,8 +544,10 @@ class PlayerViewModel @Inject constructor(
             val progress = bwp.progress
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
             val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-            val startPos = (rawPos - computeAutoRewindMs(progress)).coerceAtLeast(0L)
+            val rewind = computeAutoRewindMs(progress)
+            val startPos = (rawPos - rewind).coerceAtLeast(0L)
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            AppLog.i("Player", "resume book=${bwp.book.id} savedFile=${progress?.currentFileId} savedPos=${rawPos}ms rewind=${rewind}ms → startIdx=$startIndex startPos=${startPos}ms")
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
             // Restore per-book boost and EQ so they don't bleed from other books
             playerController.setVolumeBoost(progress?.boostDb ?: 0)
@@ -479,6 +557,7 @@ class PlayerViewModel @Inject constructor(
                 catch (_: Exception) { null }
             }
             playerController.setEqBands(savedEq)
+            playerController.setSkipSilence(bwp.book.skipSilenceEnabled)
             // Mark as just-played now so last-played sorting moves it to the top immediately.
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
@@ -565,9 +644,13 @@ class PlayerViewModel @Inject constructor(
         val state = playbackState.value
         if (state.bookId != bookId) return
         val bwp = bookWithProgress.value ?: return
-        val currentFile = bwp.audioFiles.getOrNull(state.currentFileIndex) ?: return
-        viewModelScope.launch {
-            repository.updatePosition(bookId, currentFile.id, playerController.currentPositionMs)
+        val sortedFiles = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+        val currentFile = sortedFiles.getOrNull(state.currentFileIndex) ?: return
+        val positionMs = playerController.currentPositionMs
+        if (positionMs <= 0L) return
+        // NonCancellable: this runs from onDispose where viewModelScope may be cancelled imminently.
+        viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            repository.updatePosition(bookId, currentFile.id, positionMs)
         }
     }
 
@@ -576,9 +659,12 @@ class PlayerViewModel @Inject constructor(
         val state = playbackState.value
         if (state.bookId != bookId) return
         val bwp = bookWithProgress.value ?: return
-        val currentFile = bwp.audioFiles.getOrNull(state.currentFileIndex) ?: return
+        val sortedFiles = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+        val currentFile = sortedFiles.getOrNull(state.currentFileIndex) ?: return
+        val positionMs = playerController.currentPositionMs
+        if (positionMs <= 0L) return
         viewModelScope.launch {
-            repository.updatePosition(bookId, currentFile.id, playerController.currentPositionMs)
+            repository.updatePosition(bookId, currentFile.id, positionMs)
         }
     }
 }

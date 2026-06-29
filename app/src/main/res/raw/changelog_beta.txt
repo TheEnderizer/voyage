@@ -3,6 +3,29 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.5.1b] - 2026-06-29
+
+### Fixed
+- Playback no longer resets to the beginning every time — position is now correctly restored on resume (fixes a file-sort mismatch and a zero-position overwrite that together corrupted the saved position)
+- Opening a book from the home screen no longer triggers multiple simultaneous play() calls when the player screen reloads
+
+## [1.5.0b] - 2026-06-27
+
+### Added
+- Per-book listening history: open it from the player's 3-dot menu or the book-info screen to see your listening sessions (with chapter span and time listened) and confirmed chapter/bookmark jumps, as a frosted overlay over the page. Tap a session to jump back to where it ended and resume playing
+- Per-book Skip silence: a toggle on the player (in place of the old speed button) that auto-skips silent gaps; tune the minimum silence length and sensitivity in Settings → Playback
+- "This book" reset in the audio settings sheet: clear a book's own speed, boost, or EQ override and fall back to the defaults
+
+### Changed
+- Opening a book now morphs its cover: tapping a grid tile, the now-playing card, or the resume card expands the cover into the player's backdrop, and grid taps animate from the tapped book itself
+- Chapters now open as a frosted in-player overlay instead of a bottom sheet, with the player blurred behind for legibility
+- The What's-new changelog is now rendered as styled version cards with per-category (Added / Changed / Fixed) headers
+- The home search button has a clearer, accent-tinted treatment
+- New launcher icon: the compass rose now carries an audio "play" mark at its hub
+
+### Fixed
+- The seconds label inside the skip-forward / skip-back buttons is now centred in the arrow
+
 ## [1.4.0b] - 2026-06-27
 
 ### Added

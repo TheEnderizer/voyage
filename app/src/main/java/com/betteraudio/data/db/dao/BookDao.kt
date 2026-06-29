@@ -97,6 +97,9 @@ interface BookDao {
     @Query("UPDATE books SET manualGrouping = 1 WHERE id IN (:ids)")
     suspend fun markManualGrouping(ids: List<Long>)
 
+    @Query("UPDATE books SET skipSilenceEnabled = :enabled WHERE id = :id")
+    suspend fun setSkipSilenceEnabled(id: Long, enabled: Boolean)
+
     @Transaction
     @Query("SELECT * FROM books WHERE groupId IS NULL AND isIgnored = 0 ORDER BY addedDateMs DESC")
     fun getAllBooksWithProgressUngrouped(): Flow<List<com.betteraudio.data.model.BookWithProgress>>

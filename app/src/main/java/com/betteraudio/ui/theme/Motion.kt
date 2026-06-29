@@ -93,6 +93,30 @@ fun Modifier.playerContainerTransform(
     }
 }
 
+/**
+ * Cover-as-hero transform: the book's cover image is the single shared element that morphs
+ * between a home card / grid tile and the full player backdrop. The small cover visibly expands
+ * and translates to become the player background (whose top *is* the same cover, so the swap is
+ * seamless), while the rest of each screen's content fades via the nav transition. Tag the cover
+ * on the source (card / grid tile) and the backdrop on the player with the same `cover-<bookId>`
+ * key. No-op when scopes/bookId are absent so it stacks safely.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+fun Modifier.coverTransform(
+    sharedScope: SharedTransitionScope?,
+    animScope: AnimatedVisibilityScope?,
+    bookId: Long
+): Modifier {
+    if (sharedScope == null || animScope == null || bookId == -1L) return this
+    return with(sharedScope) {
+        this@coverTransform.sharedBounds(
+            rememberSharedContentState(key = "cover-$bookId"),
+            animatedVisibilityScope = animScope
+        )
+    }
+}
+
 // ── NavHost transition builders ───────────────────────────────────────────────
 // Usage: composable(enterTransition = { colorOsEnter() }, exitTransition = { colorOsExit() }, ...)
 

@@ -96,6 +96,48 @@ fun AudioSettingsSheet(
 
             HorizontalDivider()
 
+            // ── This book: per-book local value + reset/delete override ───────────────
+            val (thisBookValue, isOverridden, onResetBook) = when (selectedTab) {
+                0 -> Triple(
+                    "${String.format("%.2f", speedValue)}×",
+                    speedValue != viewModel.defaultSpeed,
+                    { viewModel.clearBookSpeed(); speedValue = viewModel.defaultSpeed }
+                )
+                1 -> Triple(
+                    "+${boostValue} dB",
+                    boostValue != 0,
+                    { viewModel.clearBookBoost(); boostValue = 0 }
+                )
+                else -> Triple(
+                    if (localEqBands.any { it != 0 }) "Custom" else "Flat",
+                    localEqBands.any { it != 0 },
+                    { viewModel.clearBookEq(); localEqBands = IntArray(5) { 0 } }
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("This book", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        thisBookValue,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = { onResetBook() }, enabled = isOverridden) {
+                    Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Reset")
+                }
+            }
+
+            HorizontalDivider()
+
             // Preset section — only shows presets for the active tab type
             val activePresets = when (selectedTab) {
                 0 -> speedPresets

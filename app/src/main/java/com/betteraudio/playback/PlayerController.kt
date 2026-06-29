@@ -14,6 +14,8 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.data.db.entities.ListeningSession
+import com.betteraudio.util.AppLog
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -59,6 +61,11 @@ class PlayerController @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    companion object {
+        // Ignore sub-5s play blips so play/pause taps don't spam the history.
+        private const val MIN_SESSION_MS = 5_000L
+    }
+
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
 
@@ -82,9 +89,12 @@ class PlayerController @Inject constructor(
         if (positionTickerJob?.isActive == true) return
         // Must run on Main — MediaController properties are main-thread only
         positionTickerJob = scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+            var tick = 0
             while (isActive) {
                 delay(500)
                 playerListener.triggerSync()
+                // Persist progress every ~5s so a swipe-kill (no onStop) can't lose the position.
+                if (++tick % 10 == 0) saveCurrentProgress()
             }
         }
     }
@@ -97,6 +107,20 @@ class PlayerController @Inject constructor(
     // Volume boost — the LoudnessEnhancer itself lives in PlaybackService; this is just
     // the last value we sent, kept so the UI can show the current level.
     private var currentBoostMb: Int = 0  // millibels (100 mb = 1 dB)
+
+    // ── Listening-history session tracking ───────────────────────────────────
+    // A session = one continuous play→pause/stop/book-change span. Captured in memory
+    // while open (no controller reads off the main thread — all state comes from the
+    // thread-safe _playbackState), written as one complete row on close.
+    private var sessionOpen = false
+    private var sessionBookId = -1L
+    private var sessionStartMs = 0L
+    private var sessionStartBookPos = 0L
+    private var sessionStartChapterIndex = -1
+    private var sessionStartChapterName = ""
+    private var sessionStartPosInChapter = 0L
+    // (absStartMs, index, name) per chapter for the loaded single book; empty for groups.
+    private var chapterBoundaries: List<Triple<Long, Int, String>> = emptyList()
 
     fun connect() {
         if (controller != null) return
@@ -113,9 +137,76 @@ class PlayerController @Inject constructor(
     }
 
     fun disconnect() {
+        closeHistorySession()
         controller?.removeListener(playerListener)
         controller?.release()
         controller = null
+    }
+
+    // ── History session helpers ──────────────────────────────────────────────
+    private fun bookPosFromState(): Long {
+        val st = _playbackState.value
+        return if (st.bookTotalDurationMs > 0) st.bookPositionMs else st.currentPositionMs
+    }
+
+    /** index, name, position-within-chapter for a book-level position. */
+    private fun chapterAt(bookPos: Long): Triple<Int, String, Long> {
+        val b = chapterBoundaries.lastOrNull { it.first <= bookPos } ?: return Triple(-1, "", bookPos)
+        return Triple(b.second, b.third, bookPos - b.first)
+    }
+
+    private fun loadChapterBoundaries(bookId: Long, files: List<AudioFile>) {
+        scope.launch {
+            val chapters = repository.getChaptersForBookOnce(bookId).sortedBy { it.orderIndex }
+            val cum = HashMap<Long, Long>(files.size)
+            var t = 0L
+            files.forEach { f -> cum[f.id] = t; t += f.durationMs }
+            chapterBoundaries = chapters
+                .mapIndexed { i, c -> Triple((cum[c.fileId] ?: 0L) + c.startInFileMs, i, c.title) }
+                .sortedBy { it.first }
+        }
+    }
+
+    private fun openHistorySession() {
+        val bid = _playbackState.value.bookId.takeIf { it != -1L }
+            ?: currentBookId.takeIf { it != -1L } ?: return
+        if (sessionOpen && sessionBookId == bid) return
+        if (sessionOpen) closeHistorySession()
+        val pos = bookPosFromState()
+        val (ci, cn, pic) = chapterAt(pos)
+        sessionOpen = true
+        sessionBookId = bid
+        sessionStartMs = System.currentTimeMillis()
+        sessionStartBookPos = pos
+        sessionStartChapterIndex = ci
+        sessionStartChapterName = cn
+        sessionStartPosInChapter = pic
+    }
+
+    private fun closeHistorySession() {
+        if (!sessionOpen) return
+        sessionOpen = false
+        val bid = sessionBookId
+        val endMs = System.currentTimeMillis()
+        val listened = endMs - sessionStartMs
+        if (bid == -1L || listened < MIN_SESSION_MS) return
+        val pos = bookPosFromState()
+        val (ci, cn, pic) = chapterAt(pos)
+        val session = ListeningSession(
+            bookId = bid,
+            startMs = sessionStartMs,
+            endMs = endMs,
+            startChapterIndex = sessionStartChapterIndex,
+            startChapterName = sessionStartChapterName,
+            endChapterIndex = ci,
+            endChapterName = cn,
+            startPositionInChapterMs = sessionStartPosInChapter,
+            endPositionInChapterMs = pic,
+            endBookPositionMs = pos,
+            listenedMs = listened
+        )
+        AppLog.i("History", "session closed book=$bid listened=${listened}ms endPos=${pos}ms ch=$ci")
+        scope.launch { repository.insertListeningSession(session) }
     }
 
     /** [boostDb] 0–24. Forwarded to the playback service, which owns the LoudnessEnhancer. */
@@ -138,6 +229,14 @@ class PlayerController @Inject constructor(
         ctrl.sendCustomCommand(SessionCommand(PlaybackService.CMD_SET_EQ, Bundle.EMPTY), args)
     }
 
+    /** Toggle silence-skipping for the loaded book (forwarded to the playback service). */
+    fun setSkipSilence(enabled: Boolean) {
+        AppLog.i("Player", "setSkipSilence=$enabled book=$currentBookId")
+        val ctrl = controller ?: return
+        val args = Bundle().apply { putBoolean(PlaybackService.KEY_SKIP_SILENCE, enabled) }
+        ctrl.sendCustomCommand(SessionCommand(PlaybackService.CMD_SET_SKIP_SILENCE, Bundle.EMPTY), args)
+    }
+
     fun playBook(
         book: Book,
         files: List<AudioFile>,
@@ -145,9 +244,12 @@ class PlayerController @Inject constructor(
         startPositionMs: Long = 0L,
         speed: Float = settings.currentDefaultSpeed
     ) {
+        closeHistorySession()  // end any session on the previously-loaded book first
+        AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed")
         currentBookId = book.id
         currentGroupId = -1L
         currentGroupName = ""
+        loadChapterBoundaries(book.id, files)
         buildAndPlay(
             items = files.map { file ->
                 buildMediaItem(
@@ -180,6 +282,8 @@ class PlayerController @Inject constructor(
         startPositionMs: Long = 0L,
         speed: Float = settings.currentDefaultSpeed
     ) {
+        closeHistorySession()  // end any session on the previously-loaded book first
+        chapterBoundaries = emptyList()  // per-member chapter mapping skipped for groups
         currentGroupId = groupId
         currentGroupName = groupName
         // Use the first member book's ID as the "representative" book ID
@@ -323,6 +427,9 @@ class PlayerController @Inject constructor(
         val ctrl = controller ?: return
         val fileId = ctrl.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val positionMs = ctrl.currentPosition
+        // Never overwrite a good saved position with a transient 0 (reported briefly right after
+        // a (re)load before the seek lands, or between media-item transitions).
+        if (positionMs <= 0L) return
         scope.launch { repository.updatePosition(bookId, fileId, positionMs) }
     }
 
@@ -332,17 +439,26 @@ class PlayerController @Inject constructor(
         val ctrl = controller ?: return
         val fileId = ctrl.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val positionMs = ctrl.currentPosition
+        if (positionMs <= 0L) { AppLog.i("Player", "saveProgressNow skipped (pos=0) book=$bookId"); return }
+        AppLog.i("Player", "saveProgressNow book=$bookId file=$fileId pos=${positionMs}ms")
         repository.updatePosition(bookId, fileId, positionMs)
     }
 
     private val playerListener = object : Player.Listener {
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            AppLog.e("Player", "playback error book=$currentBookId code=${error.errorCodeName}: ${error.message}", error)
+        }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            AppLog.i("Player", "isPlaying=$isPlaying book=$currentBookId pos=${controller?.currentPosition ?: -1}ms")
             if (isPlaying) startPositionTicker() else stopPositionTicker()
             if (!isPlaying && currentBookId != -1L) {
+                saveCurrentProgress()  // persist the moment we pause, not only at app-stop
                 val bookId = currentBookId
                 scope.launch { repository.updateLastPausedAt(bookId, System.currentTimeMillis()) }
             }
             syncState()
+            // Open/close the listening session after syncState so _playbackState is current.
+            if (isPlaying) openHistorySession() else closeHistorySession()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
