@@ -61,6 +61,11 @@ interface BookDao {
     @Query("UPDATE books SET coverArtPath = :path WHERE id = :id")
     suspend fun updateCoverArt(id: Long, path: String)
 
+    // Repoint a book's folder (and cover) to a new on-disk location — library restructure move.
+    // coverFxPath is left intact (the cover image itself is unchanged, just relocated).
+    @Query("UPDATE books SET folderPath = :folderPath, coverArtPath = :coverArtPath WHERE id = :id")
+    suspend fun updateLocation(id: Long, folderPath: String, coverArtPath: String?)
+
     @Query("UPDATE books SET coverFxPath = :path WHERE id = :id")
     suspend fun updateCoverFx(id: Long, path: String?)
 

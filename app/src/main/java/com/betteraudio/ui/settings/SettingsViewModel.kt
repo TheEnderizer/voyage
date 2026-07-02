@@ -56,8 +56,40 @@ class SettingsViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val scanner: AudioFileScanner,
     private val updateChecker: UpdateChecker,
-    private val repository: AudiobookRepository
+    private val repository: AudiobookRepository,
+    private val restructurer: com.betteraudio.data.files.LibraryRestructurer
 ) : ViewModel() {
+
+    // ── File restructure ─────────────────────────────────────────────────────
+    data class RestructureUi(
+        val planCount: Int? = null,      // null = not yet computed
+        val running: Boolean = false,
+        val done: Int = 0,
+        val total: Int = 0,
+        val result: com.betteraudio.data.files.LibraryRestructurer.Result? = null
+    )
+    private val _restructure = MutableStateFlow(RestructureUi())
+    val restructure: StateFlow<RestructureUi> = _restructure.asStateFlow()
+
+    /** Dry-run: count how many books would move (shown in the confirm dialog). */
+    fun loadRestructurePlan() {
+        viewModelScope.launch {
+            _restructure.value = RestructureUi(planCount = restructurer.plan().size)
+        }
+    }
+
+    fun runRestructure() {
+        if (_restructure.value.running) return
+        viewModelScope.launch {
+            _restructure.update { it.copy(running = true, done = 0, total = 0, result = null) }
+            val result = restructurer.run { done, total ->
+                _restructure.update { it.copy(done = done, total = total) }
+            }
+            _restructure.update { it.copy(running = false, result = result) }
+        }
+    }
+
+    fun clearRestructure() { _restructure.value = RestructureUi() }
 
     val libraryFolder: StateFlow<String> =
         settings.libraryFolder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")

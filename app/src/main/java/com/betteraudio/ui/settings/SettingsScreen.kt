@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
@@ -317,6 +318,65 @@ private fun LazyListScope.librarySection(
                 },
                 dismissButton = {
                     TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+    }
+
+    item {
+        val restructure by viewModel.restructure.collectAsStateWithLifecycle()
+        var showRestructure by remember { mutableStateOf(false) }
+        SettingsCard(
+            icon = Icons.Default.DriveFileMove,
+            iconTint = MaterialTheme.colorScheme.secondary,
+            title = "Restructure files on disk",
+            subtitle = "Move audio files to match your Author / Series / Book layout",
+            onClick = if (!restructure.running) ({ viewModel.loadRestructurePlan(); showRestructure = true }) else null,
+            trailing = {
+                if (restructure.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+        )
+        if (showRestructure) {
+            AlertDialog(
+                onDismissRequest = { if (!restructure.running) { showRestructure = false; viewModel.clearRestructure() } },
+                icon = { Icon(Icons.Default.DriveFileMove, null, tint = MaterialTheme.colorScheme.secondary) },
+                title = { Text("Restructure files?") },
+                text = {
+                    Column {
+                        val result = restructure.result
+                        when {
+                            result != null -> Text(
+                                "Done. Moved ${result.moved}, skipped ${result.skipped}" +
+                                    (if (result.failed > 0) ", failed ${result.failed}" else "") + "."
+                            )
+                            restructure.running -> Text("Moving… ${restructure.done}/${restructure.total}")
+                            else -> Text(
+                                "This will move ${restructure.planCount ?: "…"} book folder(s) on your device " +
+                                    "to match the chosen library structure, using each book's author and series. " +
+                                    "Files are copied and verified before the originals are removed, so nothing is lost. " +
+                                    "Books already in place or without a real folder are skipped."
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    val result = restructure.result
+                    if (result != null || restructure.running) {
+                        TextButton(
+                            onClick = { showRestructure = false; viewModel.clearRestructure() },
+                            enabled = !restructure.running
+                        ) { Text("Done") }
+                    } else {
+                        TextButton(
+                            onClick = { viewModel.runRestructure() },
+                            enabled = (restructure.planCount ?: 0) > 0
+                        ) { Text("Restructure") }
+                    }
+                },
+                dismissButton = {
+                    if (restructure.result == null && !restructure.running) {
+                        TextButton(onClick = { showRestructure = false; viewModel.clearRestructure() }) { Text("Cancel") }
+                    }
                 }
             )
         }

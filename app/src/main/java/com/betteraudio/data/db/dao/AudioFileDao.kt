@@ -27,4 +27,8 @@ interface AudioFileDao {
 
     @Query("DELETE FROM audio_files WHERE bookId = :bookId")
     suspend fun deleteFilesForBook(bookId: Long)
+
+    // Repoint a file to a new on-disk location (used by the library restructure move).
+    @Query("UPDATE audio_files SET filePath = :path WHERE id = :id")
+    suspend fun updatePath(id: Long, path: String)
 }

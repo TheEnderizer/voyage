@@ -112,6 +112,10 @@ class AudiobookRepository @Inject constructor(
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
     /** Every book, including hidden/ignored ones — for the scanner's disk reconciliation. */
     suspend fun getAllBooksIncludingIgnoredOnce(): List<Book> = bookDao.getAllBooksOnce()
+    /** Repoint a book + its files to a new on-disk location (library restructure move). */
+    suspend fun updateBookLocation(bookId: Long, folderPath: String, coverArtPath: String?) =
+        bookDao.updateLocation(bookId, folderPath, coverArtPath)
+    suspend fun updateAudioFilePath(fileId: Long, path: String) = audioFileDao.updatePath(fileId, path)
     /** Refresh a book's file-derived stats after files were dropped in reconciliation. */
     suspend fun updateBookFileStats(bookId: Long, totalDurationMs: Long, fileCount: Int) =
         bookDao.updateDuration(bookId, totalDurationMs, fileCount)

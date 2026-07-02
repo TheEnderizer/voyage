@@ -3,6 +3,11 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.8b] - 2026-07-02
+
+### Added
+- Restructure files on disk (Settings → Library): moves your audio-book folders to match the chosen Author / Series / Book layout, using each book's author and series — so series/author changes you make in the app can be reflected in the actual folders. Every move is copy → verify → delete-original, so nothing is lost; books already in place or without a real folder are skipped, and it shows how many will move before you confirm
+
 ## [1.6.7b] - 2026-07-02
 
 ### Added
