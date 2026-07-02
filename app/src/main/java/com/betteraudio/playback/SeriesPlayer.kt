@@ -62,22 +62,35 @@ class SeriesPlayer @Inject constructor(
         return startBook.id
     }
 
+    /** Play a specific member [bookId] of [seriesId] at [positionMs] within that book (used when
+     *  a chapter from another book is picked in the chapter list); the series continues from there. */
+    suspend fun playSeriesBookAt(seriesId: Long, bookId: Long, positionMs: Long) {
+        val books = seriesRepository.getBooksInSeriesOnce(seriesId)
+        if (books.none { it.id == bookId }) return
+        playBookInSeries(bookId, seriesId, books.map { it.id }, resume = false, explicitPositionMs = positionMs)
+        playerController.seriesAdvanced.tryEmit(bookId)
+    }
+
     private suspend fun playBookInSeries(
-        bookId: Long, seriesId: Long, orderedIds: List<Long>, resume: Boolean
+        bookId: Long, seriesId: Long, orderedIds: List<Long>, resume: Boolean,
+        explicitPositionMs: Long? = null
     ) {
         val bwp = repository.getBookWithProgress(bookId).first() ?: return
         val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
         if (files.isEmpty()) return
         val series = seriesRepository.getSeriesOnce(seriesId)
         val progress = bwp.progress
-        val startIndex = if (resume)
+        val startIndex = if (resume && explicitPositionMs == null)
             files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0) else 0
-        val startPos = if (resume && progress?.isCompleted != true) progress?.positionMs ?: 0L else 0L
+        val startPos = if (resume && explicitPositionMs == null && progress?.isCompleted != true)
+            progress?.positionMs ?: 0L else 0L
         val speed = progress?.playbackSpeed ?: series?.playbackSpeed ?: settings.currentDefaultSpeed
         playerController.playBook(
             book = bwp.book, files = files, startFileIndex = startIndex, startPositionMs = startPos,
             speed = speed, seriesId = seriesId, seriesBookIds = orderedIds
         )
+        // Seek to an exact within-book position once the timeline is loaded (chapter pick).
+        if (explicitPositionMs != null) playerController.bookSeekTo(explicitPositionMs)
         playerController.setVolumeBoost(progress?.boostDb ?: series?.boostDb ?: 0)
         repository.touchLastPlayed(bwp.book.id)
         settings.setLastPlayedBookId(bwp.book.id)

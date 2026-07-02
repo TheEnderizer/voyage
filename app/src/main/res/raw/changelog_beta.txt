@@ -3,6 +3,14 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.6b] - 2026-07-02
+
+### Added
+- The chapters list, while a series is playing, now shows **every book in the series** with its chapters (a header per book). Tap a chapter in the current book to seek; tap one in another book to jump straight to that book and continue the series from there
+
+### Changed
+- Switching a series book to "Show series cover" now recolors the **whole app theme** from the series cover too — not just the player backdrop
+
 ## [1.6.5b] - 2026-07-02
 
 ### Changed

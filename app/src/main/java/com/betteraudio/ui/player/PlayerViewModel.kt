@@ -60,9 +60,10 @@ sealed class ChapterRow {
     data class BookHeader(val title: String) : ChapterRow()
     data class Item(
         val title: String,
-        val absStartMs: Long,
+        val absStartMs: Long,   // position within its own book
         val durationMs: Long,
-        val key: Long
+        val key: Long,
+        val bookId: Long = -1L  // which book this chapter belongs to (for series chapter lists)
     ) : ChapterRow()
 }
 
@@ -76,6 +77,7 @@ class PlayerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
+    private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val settings: SettingsStore,
     private val synopsisService: SynopsisService,
     val playerController: PlayerController
@@ -329,13 +331,16 @@ class PlayerViewModel @Inject constructor(
     }
 
     // ── Chapters ─────────────────────────────────────────────────────────────
+    // When the current book belongs to a series, the list spans the WHOLE series (a header per
+    // member book, then its chapters). Otherwise it's just this book's chapters.
     @OptIn(ExperimentalCoroutinesApi::class)
     val chapters: StateFlow<ChapterUiState> =
-        playbackState
-            .map { it.groupId }
+        if (bookId == -1L) MutableStateFlow(ChapterUiState())
+        else repository.getBookById(bookId)
+            .map { it?.seriesId }
             .distinctUntilChanged()
-            .flatMapLatest { groupId ->
-                if (groupId != -1L) flow { emit(buildGroupChapters(groupId)) }
+            .flatMapLatest { seriesId ->
+                if (seriesId != null) flow { emit(buildSeriesChapters(seriesId)) }
                 else combine(
                     repository.getChaptersForBook(bookId),
                     bookWithProgress
@@ -344,41 +349,58 @@ class PlayerViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChapterUiState())
 
     private fun buildBookChapters(chapters: List<Chapter>, bwp: BookWithProgress?): ChapterUiState {
+        val bId = bwp?.book?.id ?: bookId
         val files = bwp?.audioFiles
             ?.sortedWith(compareBy({ it.trackNumber }, { it.fileName })) ?: emptyList()
         val cum = cumulativeStarts(files.map { it.id to it.durationMs })
         val rows = if (chapters.isNotEmpty()) {
             chapters.map { c ->
-                ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id)
+                ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id, bId)
             }
         } else {
             files.map { f ->
-                ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id)
+                ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id, bId)
             }
         }
         return ChapterUiState(rows)
     }
 
-    private suspend fun buildGroupChapters(groupId: Long): ChapterUiState {
-        val books = seriesRepository.getBooksInSeriesOnce(groupId)
+    /** All member books of [seriesId] as headers + their chapters; positions are within each book. */
+    private suspend fun buildSeriesChapters(seriesId: Long): ChapterUiState {
+        val books = seriesRepository.getBooksInSeriesOnce(seriesId)
         val filesPerBook = seriesRepository.getAudioFilesForBooks(books.map { it.id })
-        val ordered = books.flatMap { b -> (filesPerBook[b.id] ?: emptyList()) }
-        val cum = cumulativeStarts(ordered.map { it.id to it.durationMs })
         val rows = mutableListOf<ChapterRow>()
         for (b in books) {
-            rows.add(ChapterRow.BookHeader(b.title))
+            rows.add(ChapterRow.BookHeader(b.displayTitle))
+            val files = filesPerBook[b.id] ?: emptyList()
+            val cum = cumulativeStarts(files.map { it.id to it.durationMs })   // within this book
             val chs = repository.getChaptersForBookOnce(b.id)
             if (chs.isNotEmpty()) {
                 chs.forEach { c ->
-                    rows.add(ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id))
+                    rows.add(ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id, b.id))
                 }
             } else {
-                (filesPerBook[b.id] ?: emptyList()).forEach { f ->
-                    rows.add(ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id))
+                files.forEach { f ->
+                    rows.add(ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id, b.id))
                 }
             }
         }
         return ChapterUiState(rows)
+    }
+
+    /**
+     * Chapter tapped in the chapter list. Within the currently-playing book → seek; a chapter in
+     * a different series book → start that book at the chapter's position (the series continues
+     * from there).
+     */
+    fun onChapterSelected(item: ChapterRow.Item) {
+        val playingBook = playbackState.value.bookId
+        if (item.bookId == -1L || item.bookId == playingBook) {
+            seekToChapter(item.absStartMs)
+        } else {
+            val sid = bookWithProgress.value?.book?.seriesId ?: return
+            viewModelScope.launch { seriesPlayer.playSeriesBookAt(sid, item.bookId, item.absStartMs) }
+        }
     }
 
     private fun cumulativeStarts(idDur: List<Pair<Long, Long>>): Map<Long, Long> {

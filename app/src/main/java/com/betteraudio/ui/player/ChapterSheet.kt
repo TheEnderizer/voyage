@@ -38,16 +38,21 @@ fun ChapterOverlay(
     visible: Boolean,
     rows: List<ChapterRow>,
     currentPositionMs: Long,
-    onSeek: (Long) -> Unit,
+    currentBookId: Long,
+    onSelect: (ChapterRow.Item) -> Unit,
     onDismiss: () -> Unit
 ) {
     val onScrim = Color.White
     val onScrimMuted = Color.White.copy(alpha = 0.6f)
     val accent = MaterialTheme.colorScheme.primary
 
-    // Index of the active chapter = last Item whose start <= current position
-    val activeIndex = rows.indexOfLast { it is ChapterRow.Item && it.absStartMs <= currentPositionMs + 250 }
-        .let { if (it < 0) rows.indexOfFirst { r -> r is ChapterRow.Item } else it }
+    // Active chapter = last Item of the CURRENTLY-PLAYING book whose start <= current position
+    // (positions are within each book, so only the current book's rows are candidates).
+    val activeIndex = rows.indexOfLast {
+        it is ChapterRow.Item &&
+            (it.bookId == -1L || it.bookId == currentBookId) &&
+            it.absStartMs <= currentPositionMs + 250
+    }.let { if (it < 0) rows.indexOfFirst { r -> r is ChapterRow.Item } else it }
 
     val listState = rememberLazyListState()
     LaunchedEffect(visible, activeIndex) {
@@ -104,7 +109,7 @@ fun ChapterOverlay(
                                         .background(
                                             if (isActive) accent.copy(alpha = 0.22f) else Color.Transparent
                                         )
-                                        .clickable { onSeek(row.absStartMs); onDismiss() }
+                                        .clickable { onSelect(row); onDismiss() }
                                         .padding(horizontal = 12.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {

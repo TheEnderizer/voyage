@@ -164,7 +164,10 @@ fun PlayerContent(
             else 0L
         }
 
+        // For the chapter-context line, only the current book's chapters matter (series lists
+        // carry every book's chapters, each with positions relative to its own book).
         val items = chapters.rows.filterIsInstance<ChapterRow.Item>()
+            .filter { it.bookId == -1L || it.bookId == state.bookId }
         val cur = currentChapter(items, bookPos, bookTotal)
 
         val sliderColors = SliderDefaults.colors(
@@ -581,7 +584,8 @@ fun PlayerContent(
             visible = showChapters && chapters.rows.isNotEmpty(),
             rows = chapters.rows,
             currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
-            onSeek = { viewModel.seekToChapter(it) },
+            currentBookId = state.bookId,
+            onSelect = { viewModel.onChapterSelected(it) },
             onDismiss = { showChapters = false }
         )
 

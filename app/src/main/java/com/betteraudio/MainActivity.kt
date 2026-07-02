@@ -20,7 +20,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
@@ -63,6 +69,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var playerController: PlayerController
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var repository: AudiobookRepository
+    @Inject lateinit var seriesRepository: com.betteraudio.data.repository.SeriesRepository
 
     private val updateGateViewModel: UpdateGateViewModel by viewModels()
 
@@ -73,6 +80,7 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -99,7 +107,24 @@ class MainActivity : ComponentActivity() {
             val activeCover = playbackState.coverArtUri
                 ?.removePrefix("file://")
                 ?.takeIf { playbackState.bookId != -1L && it.isNotBlank() }
-            val coverPath = activeCover ?: lastPlayedCover
+            // When the "show series cover" toggle is on and the playing book is in a series, the
+            // whole-app theme should recolor from the series cover too (not just the player).
+            val seriesThemeCover by produceState<String?>(null) {
+                combine(
+                    settings.playerShowSeriesCover,
+                    playerController.playbackState.map { it.bookId }.distinctUntilChanged()
+                ) { show, id -> show to id }
+                    .flatMapLatest { (show, id) ->
+                        if (!show || id == -1L) flowOf(null)
+                        else repository.getBookById(id).flatMapLatest { b ->
+                            val sid = b?.seriesId
+                            if (sid == null) flowOf(null)
+                            else seriesRepository.getSeries(sid).map { it?.coverArtPath }
+                        }
+                    }
+                    .collectLatest { value = it }
+            }
+            val coverPath = seriesThemeCover ?: activeCover ?: lastPlayedCover
             VoyageTheme(coverArtPath = coverPath) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
