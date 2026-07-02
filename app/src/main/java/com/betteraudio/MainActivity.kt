@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.ui.author.AuthorDetailScreen
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.theme.colorOsEnter
 import com.betteraudio.ui.theme.colorOsExit
@@ -154,15 +155,7 @@ class MainActivity : ComponentActivity() {
                             onOpenBookInfo = { bookId -> sheetController.open(bookId = bookId, startInfo = true) },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { name -> navController.navigate("series/${Uri.encode(name)}") },
-                            onJoinBooks = { bookIds ->
-                                navController.navigate("join_options?bookIds=${Uri.encode(bookIds)}")
-                            },
-                            onEditGroup = { groupId ->
-                                navController.navigate("join_options?groupId=$groupId")
-                            },
-                            onOpenGroupInfo = { groupId ->
-                                sheetController.open(groupId = groupId, startInfo = true)
-                            }
+                            onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") }
                         )
                     }
 
@@ -184,6 +177,18 @@ class MainActivity : ComponentActivity() {
                         val name = Uri.decode(backStack.arguments?.getString("seriesName") ?: "")
                         SeriesDetailScreen(
                             seriesName = name,
+                            onBack = { navController.popBackStack() },
+                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
+                        )
+                    }
+
+                    composable(
+                        route = "author/{authorName}",
+                        arguments = listOf(navArgument("authorName") { type = NavType.StringType })
+                    ) { backStack ->
+                        val name = Uri.decode(backStack.arguments?.getString("authorName") ?: "")
+                        AuthorDetailScreen(
+                            authorName = name,
                             onBack = { navController.popBackStack() },
                             onBookClick = { bookId -> sheetController.open(bookId = bookId) }
                         )

@@ -87,6 +87,9 @@ interface BookDao {
     @Query("SELECT DISTINCT author FROM books WHERE isIgnored = 0 AND author != ''")
     fun getDistinctAuthors(): Flow<List<String>>
 
+    @Query("SELECT * FROM books WHERE author = :author AND isIgnored = 0 ORDER BY seriesName ASC, seriesOrder ASC, title ASC")
+    fun getBooksByAuthor(author: String): Flow<List<Book>>
+
     @Query("SELECT * FROM books ORDER BY CASE WHEN seriesName IS NULL THEN title ELSE seriesName END ASC, seriesOrder ASC, title ASC")
     fun getAllBooksSorted(): Flow<List<Book>>
 

@@ -5,12 +5,13 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.covers.CoverSearchService
+import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Book
-import com.betteraudio.data.db.entities.BookGroup
 import com.betteraudio.data.db.entities.BookStatus
+import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.repository.AudiobookRepository
-import com.betteraudio.data.repository.BookGroupRepository
+import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlaybackState
@@ -69,6 +70,20 @@ enum class LibraryTab(val label: String) {
 }
 
 /** Items shown in the home library grid */
+/** How the home library is grouped. */
+enum class HomeViewMode { BOOKS, SERIES, AUTHORS }
+
+/** Target of a per-view (series/author) cover search. */
+sealed class CoverCollectionTarget {
+    abstract val seed: String
+    data class Series(val seriesId: Long, val name: String) : CoverCollectionTarget() {
+        override val seed get() = name
+    }
+    data class Author(val name: String) : CoverCollectionTarget() {
+        override val seed get() = name
+    }
+}
+
 sealed class HomeGridItem {
     abstract val lastPlayedMs: Long
 
@@ -78,10 +93,19 @@ sealed class HomeGridItem {
         override val lastPlayedMs: Long
     ) : HomeGridItem()
 
-    /** A user-created joined group */
-    data class Group(
-        val group: BookGroup,
-        val books: List<Book>,
+    /** A series tile (Series view) with its member books. */
+    data class SeriesItem(
+        val series: Series,
+        val books: List<BookWithProgress>,
+        val coverPath: String?,
+        override val lastPlayedMs: Long
+    ) : HomeGridItem()
+
+    /** An author tile (Authors view) with that author's books. */
+    data class AuthorItem(
+        val name: String,
+        val coverPath: String?,
+        val books: List<BookWithProgress>,
         override val lastPlayedMs: Long
     ) : HomeGridItem()
 }
@@ -90,7 +114,7 @@ sealed class HomeGridItem {
 class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: AudiobookRepository,
-    private val groupRepository: BookGroupRepository,
+    private val seriesRepository: SeriesRepository,
     private val scanner: AudioFileScanner,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
@@ -146,6 +170,36 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    // Per-view cover for a series or author tile — changes only that collection's cover,
+    // never the member books' covers.
+    private val _coverSearchCollection = MutableStateFlow<CoverCollectionTarget?>(null)
+    val coverSearchCollection: StateFlow<CoverCollectionTarget?> = _coverSearchCollection.asStateFlow()
+
+    fun openSeriesCoverSearch(seriesId: Long, name: String) {
+        _coverSearchCollection.value = CoverCollectionTarget.Series(seriesId, name)
+    }
+    fun openAuthorCoverSearch(name: String) {
+        _coverSearchCollection.value = CoverCollectionTarget.Author(name)
+    }
+    fun closeCollectionCoverSearch() { _coverSearchCollection.value = null }
+
+    fun setCollectionCoverFromUrl(imageUrl: String) {
+        val target = _coverSearchCollection.value ?: return
+        viewModelScope.launch {
+            when (target) {
+                is CoverCollectionTarget.Series -> {
+                    val path = coverSearchService.download(imageUrl, "series${target.seriesId}")
+                    if (path != null) seriesRepository.setSeriesCover(target.seriesId, path)
+                }
+                is CoverCollectionTarget.Author -> {
+                    val path = coverSearchService.download(imageUrl, "author${target.name}")
+                    if (path != null) repository.setAuthorCover(target.name, path)
+                }
+            }
+            closeCollectionCoverSearch()
+        }
+    }
+
     /** Re-bake the reflection/progressive-blur background from the book's current cover. */
     fun refreshCoverEffect(bookId: Long) {
         viewModelScope.launch { repository.regenerateCoverFx(bookId) }
@@ -156,14 +210,10 @@ class HomeViewModel @Inject constructor(
     private val _selectedBookIds = MutableStateFlow<Set<Long>>(emptySet())
     val selectedBookIds: StateFlow<Set<Long>> = _selectedBookIds.asStateFlow()
 
-    private val _selectedGroupId = MutableStateFlow<Long?>(null)
-    val selectedGroupId: StateFlow<Long?> = _selectedGroupId.asStateFlow()
-
     val isSelectionMode: Boolean
-        get() = _selectedBookIds.value.isNotEmpty() || _selectedGroupId.value != null
+        get() = _selectedBookIds.value.isNotEmpty()
 
     fun enterBookSelection(bookId: Long) {
-        _selectedGroupId.value = null
         _selectedBookIds.value = setOf(bookId)
     }
 
@@ -173,24 +223,8 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun selectGroup(groupId: Long) {
-        _selectedBookIds.value = emptySet()
-        _selectedGroupId.value = groupId
-    }
-
     fun clearSelection() {
         _selectedBookIds.value = emptySet()
-        _selectedGroupId.value = null
-    }
-
-    /** Split a selected group back into individual books */
-    fun splitSelectedGroup(onDone: () -> Unit) {
-        val gid = _selectedGroupId.value ?: return
-        viewModelScope.launch {
-            groupRepository.dissolveGroup(gid)
-            clearSelection()
-            onDone()
-        }
     }
 
     // ── Grid items ───────────────────────────────────────────────────────────
@@ -202,13 +236,25 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { settings.setSort(sf.option.name, sf.direction.name) }
     }
 
+    // ── Home view mode (Books / Series / Authors) ─────────────────────────────
+    val homeViewMode: StateFlow<HomeViewMode> =
+        settings.homeViewMode
+            .map { runCatching { HomeViewMode.valueOf(it) }.getOrDefault(HomeViewMode.BOOKS) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeViewMode.BOOKS)
+
+    fun setHomeViewMode(mode: HomeViewMode) {
+        viewModelScope.launch { settings.setHomeViewMode(mode.name) }
+    }
+
     val gridItems: StateFlow<List<HomeGridItem>> =
         combine(
             repository.getAllBooksWithProgressUngrouped(),
-            groupRepository.getAllGroups(),
+            seriesRepository.getAllSeries(),
+            repository.getAllAuthorMeta(),
+            homeViewMode,
             _sortFilter
-        ) { bwpList, groups, sf ->
-            buildGridItems(bwpList, groups, sf)
+        ) { bwpList, seriesList, authorMetas, mode, sf ->
+            buildGridItems(bwpList, seriesList, authorMetas, mode, sf)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Library status tabs ──────────────────────────────────────────────────
@@ -233,16 +279,15 @@ class HomeViewModel @Inject constructor(
 
     private fun statusOf(item: HomeGridItem): LibraryTab = when (item) {
         is HomeGridItem.SingleBook -> tabFor(item.bwp.book.status)
-        is HomeGridItem.Group -> {
-            val statuses = item.books.map { it.status }
-            when {
-                statuses.any { it == BookStatus.IN_PROGRESS } -> LibraryTab.LISTENING
-                statuses.isNotEmpty() && statuses.all { it == BookStatus.FINISHED } -> LibraryTab.FINISHED
-                statuses.all { it == BookStatus.NOT_STARTED } -> LibraryTab.NOT_STARTED
-                // mix of finished + not-started, nothing in progress → treat as in progress overall
-                else -> LibraryTab.LISTENING
-            }
-        }
+        is HomeGridItem.SeriesItem -> collectionStatus(item.books.map { it.book.status })
+        is HomeGridItem.AuthorItem -> collectionStatus(item.books.map { it.book.status })
+    }
+
+    private fun collectionStatus(statuses: List<BookStatus>): LibraryTab = when {
+        statuses.any { it == BookStatus.IN_PROGRESS } -> LibraryTab.LISTENING
+        statuses.isNotEmpty() && statuses.all { it == BookStatus.FINISHED } -> LibraryTab.FINISHED
+        statuses.isNotEmpty() && statuses.all { it == BookStatus.NOT_STARTED } -> LibraryTab.NOT_STARTED
+        else -> LibraryTab.LISTENING
     }
 
     private fun tabFor(status: BookStatus): LibraryTab = when (status) {
@@ -251,64 +296,66 @@ class HomeViewModel @Inject constructor(
         BookStatus.NOT_STARTED -> LibraryTab.NOT_STARTED
     }
 
-    private suspend fun buildGridItems(
+    private fun buildGridItems(
         bwpList: List<BookWithProgress>,
-        groups: List<BookGroup>,
+        seriesList: List<Series>,
+        authorMetas: List<AuthorMeta>,
+        mode: HomeViewMode,
         sf: SortFilter
     ): List<HomeGridItem> {
         val result = mutableListOf<HomeGridItem>()
 
-        // Joined groups — read member progress directly (grouped books are not in bwpList,
-        // which only contains ungrouped books), so last-played stays accurate for groups too.
-        for (group in groups) {
-            val memberBooks = groupRepository.getBooksForGroupOnce(group.id)
-            val lastPlayed = memberBooks
-                .mapNotNull { book -> repository.getProgressForBookOnce(book.id)?.lastPlayedMs }
-                .maxOrNull() ?: group.createdAtMs
-            result.add(HomeGridItem.Group(group, memberBooks, lastPlayed))
-        }
+        when (mode) {
+            HomeViewMode.BOOKS ->
+                bwpList.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
 
-        // Every ungrouped book is its own grid card (flat grid, no folders)
-        for (bwp in bwpList) {
-            result.add(HomeGridItem.SingleBook(bwp, bwp.lastPlayedMs))
+            HomeViewMode.SERIES -> {
+                val seriesById = seriesList.associateBy { it.id }
+                val (inSeries, standalone) = bwpList.partition { it.book.seriesId != null && seriesById.containsKey(it.book.seriesId) }
+                inSeries.groupBy { it.book.seriesId!! }.forEach { (sid, members) ->
+                    val series = seriesById.getValue(sid)
+                    val ordered = members.sortedWith(compareBy({ it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
+                    val cover = series.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                    result.add(HomeGridItem.SeriesItem(series, ordered, cover, ordered.maxOfOrNull { it.lastPlayedMs } ?: series.createdAtMs))
+                }
+                standalone.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
+            }
+
+            HomeViewMode.AUTHORS -> {
+                val metaByName = authorMetas.associateBy { it.name }
+                bwpList.groupBy { it.book.author.ifBlank { "Unknown" } }.forEach { (name, members) ->
+                    val ordered = members.sortedWith(compareBy({ it.book.seriesName ?: "" }, { it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
+                    val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                    result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))
+                }
+            }
         }
 
         // Sort using the user-selected SortFilter
+        fun members(item: HomeGridItem): List<BookWithProgress> = when (item) {
+            is HomeGridItem.SingleBook -> listOf(item.bwp)
+            is HomeGridItem.SeriesItem -> item.books
+            is HomeGridItem.AuthorItem -> item.books
+        }
         fun numericKey(item: HomeGridItem): Double = when (sf.option) {
-            SortOption.DATE_ADDED -> when (item) {
-                is HomeGridItem.SingleBook -> item.bwp.book.addedDateMs.toDouble()
-                is HomeGridItem.Group -> item.group.createdAtMs.toDouble()
-            }
-            SortOption.DURATION -> when (item) {
-                is HomeGridItem.SingleBook -> item.bwp.book.totalDurationMs.toDouble()
-                is HomeGridItem.Group -> item.books.sumOf { it.totalDurationMs }.toDouble()
-            }
+            SortOption.DATE_ADDED -> members(item).maxOf { it.book.addedDateMs }.toDouble()
+            SortOption.DURATION -> members(item).sumOf { it.book.totalDurationMs }.toDouble()
             SortOption.LAST_PLAYED -> item.lastPlayedMs.toDouble()
-            SortOption.PROGRESS -> when (item) {
-                is HomeGridItem.SingleBook -> item.bwp.progressFraction.toDouble()
-                is HomeGridItem.Group -> item.books
-                    .mapNotNull { b -> bwpList.find { it.book.id == b.id }?.progressFraction?.toDouble() }
-                    .maxOrNull() ?: 0.0
-            }
+            SortOption.PROGRESS -> members(item).maxOf { it.progressFraction.toDouble() }
             else -> 0.0
         }
-        fun textKey(item: HomeGridItem): String = when (sf.option) {
-            SortOption.AUTHOR -> when (item) {
-                is HomeGridItem.SingleBook -> item.bwp.book.author.lowercase()
-                is HomeGridItem.Group -> item.books.firstOrNull()?.author?.lowercase() ?: ""
-            }
-            SortOption.SERIES -> when (item) {
-                is HomeGridItem.SingleBook -> {
+        fun textKey(item: HomeGridItem): String = when (item) {
+            is HomeGridItem.SingleBook -> when (sf.option) {
+                SortOption.AUTHOR -> item.bwp.book.author.lowercase()
+                SortOption.SERIES -> {
                     val s = item.bwp.book.seriesName?.lowercase() ?: "￿"
                     val o = item.bwp.book.seriesOrder ?: Float.MAX_VALUE
                     "$s${o.toString().padStart(10, '0')}"
                 }
-                is HomeGridItem.Group -> item.group.name.lowercase()
+                else -> item.bwp.book.title.lowercase()
             }
-            else -> when (item) { // TITLE and numeric fallback secondary key
-                is HomeGridItem.SingleBook -> item.bwp.book.title.lowercase()
-                is HomeGridItem.Group -> item.group.name.lowercase()
-            }
+            is HomeGridItem.SeriesItem -> item.series.name.lowercase()
+            is HomeGridItem.AuthorItem -> item.name.lowercase()
         }
 
         val useNumeric = sf.option in setOf(
@@ -435,53 +482,39 @@ class HomeViewModel @Inject constructor(
 
     fun resetScanState() { _scan.value = ScanResult() }
 
-    // ── Group player launch ────────────────────────────────────────────────────
+    // ── Series playback ────────────────────────────────────────────────────────
 
-    fun launchGroupPlayback(groupId: Long) {
+    /**
+     * Play a series: resume the member the user was last in (most-recently-played, else the
+     * first unfinished, else the first by order) as a book. Each member keeps its own progress,
+     * so resume naturally continues from wherever the listener actually is — even if the series
+     * order later changes. (Continuous cross-book playback lands in a later update.)
+     */
+    fun playSeries(seriesId: Long) {
         viewModelScope.launch {
-            val group = groupRepository.getGroupById(groupId) ?: return@launch
-            val books = groupRepository.getBooksForGroupOnce(groupId)
-            val filesPerBook = groupRepository.getAudioFilesForBooks(books.map { it.id })
-
-            // Find resume point: the book with most recent lastPlayedMs
-            val progressMap = books.associateWith { book ->
-                repository.getProgressForBook(book.id).first()
-            }
-            val resumeBook = progressMap.entries
-                .maxByOrNull { it.value?.lastPlayedMs ?: 0L }?.key ?: books.first()
-            val resumeProgress = progressMap[resumeBook]
-
-            // Compute global start index
-            var globalIndex = 0
-            var found = false
-            for (book in books) {
-                val files = filesPerBook[book.id] ?: emptyList()
-                if (!found) {
-                    if (book.id == resumeBook.id) {
-                        val fileIdx = files.indexOfFirst { it.id == resumeProgress?.currentFileId }
-                            .coerceAtLeast(0)
-                        globalIndex += fileIdx
-                        found = true
-                        break
-                    }
-                    globalIndex += files.size
-                }
-            }
-            val startPos = if (resumeProgress?.isCompleted == true) 0L
-                          else resumeProgress?.positionMs ?: 0L
-
-            playerController.playBookGroup(
-                groupId = group.id,
-                groupName = group.name,
-                coverArtPath = group.coverArtPath,
-                orderedBooks = books,
-                filesPerBook = filesPerBook,
-                startGlobalFileIndex = globalIndex,
-                startPositionMs = startPos,
-                speed = group.playbackSpeed
-            )
-            // Bump the resume member's last-played so the group rises to the top right away.
-            repository.touchLastPlayed(resumeBook.id)
+            val members = seriesRepository.getBooksInSeriesOnce(seriesId)
+            if (members.isEmpty()) return@launch
+            val withProgress = members.map { it to repository.getProgressForBookOnce(it.id) }
+            val resumeBook = withProgress
+                .filter { (_, p) -> p != null && p.lastPlayedMs > 0 }
+                .maxByOrNull { (_, p) -> p!!.lastPlayedMs }?.first
+                ?: members.firstOrNull { it.status != BookStatus.FINISHED }
+                ?: members.first()
+            playBookById(resumeBook.id)
         }
+    }
+
+    private suspend fun playBookById(bookId: Long) {
+        val bwp = repository.getBookWithProgress(bookId).first() ?: return
+        val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+        if (files.isEmpty()) return
+        val progress = bwp.progress
+        val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
+        val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+        val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+        playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+        playerController.setVolumeBoost(progress?.boostDb ?: 0)
+        repository.touchLastPlayed(bwp.book.id)
+        settings.setLastPlayedBookId(bwp.book.id)
     }
 }

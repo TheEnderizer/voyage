@@ -58,7 +58,10 @@ class CoverSearchService @Inject constructor(
         }
     }
 
-    suspend fun download(imageUrl: String, bookId: Long): String? = withContext(Dispatchers.IO) {
+    suspend fun download(imageUrl: String, bookId: Long): String? = download(imageUrl, "book$bookId")
+
+    /** Download a cover to internal storage under an arbitrary [key] (e.g. "series12", "authorFooBar"). */
+    suspend fun download(imageUrl: String, key: String): String? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(imageUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
@@ -68,7 +71,8 @@ class CoverSearchService @Inject constructor(
                 val bytes = response.body?.bytes() ?: return@withContext null
                 if (bytes.size < 100) return@withContext null
                 val dir = File(context.filesDir, "covers").apply { mkdirs() }
-                val file = File(dir, "${bookId}_${System.currentTimeMillis()}.jpg")
+                val safeKey = key.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "cover" }
+                val file = File(dir, "${safeKey}_${System.currentTimeMillis()}.jpg")
                 file.writeBytes(bytes)
                 file.absolutePath
             }

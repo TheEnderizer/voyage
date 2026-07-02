@@ -70,9 +70,7 @@ fun HomeScreen(
     onOpenBookInfo: (Long) -> Unit = {},
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (String) -> Unit = {},
-    onJoinBooks: (bookIds: String) -> Unit = {},
-    onEditGroup: (groupId: Long) -> Unit = {},
-    onOpenGroupInfo: (groupId: Long) -> Unit = {},
+    onOpenAuthor: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -93,11 +91,12 @@ fun HomeScreen(
     val structureChosen by viewModel.structureChosen.collectAsStateWithLifecycle()
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selectedBookIds by viewModel.selectedBookIds.collectAsStateWithLifecycle()
-    val selectedGroupId by viewModel.selectedGroupId.collectAsStateWithLifecycle()
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
     val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
+    val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
+    val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
 
-    val isSelectionMode = selectedBookIds.isNotEmpty() || selectedGroupId != null
+    val isSelectionMode = selectedBookIds.isNotEmpty()
 
     val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
         Manifest.permission.READ_MEDIA_AUDIO
@@ -218,6 +217,14 @@ fun HomeScreen(
                         }
                     }
 
+                    // View-mode switch (Books / Series / Authors)
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        HomeViewModeRow(
+                            selected = homeViewMode,
+                            onSelect = { viewModel.setHomeViewMode(it) }
+                        )
+                    }
+
                     // Library status tabs
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         LibraryTabRow(
@@ -264,19 +271,32 @@ fun HomeScreen(
                                 }
                             }
 
-                            is HomeGridItem.Group -> {
-                                item(key = "group_${gridItem.group.id}") {
-                                    GroupGridCard(
+                            is HomeGridItem.SeriesItem -> {
+                                item(key = "series_${gridItem.series.id}") {
+                                    CollectionGridCard(
                                         modifier = Modifier.animateItem(),
-                                        groupItem = gridItem,
-                                        isSelected = selectedGroupId == gridItem.group.id,
-                                        isSelectionMode = isSelectionMode,
-                                        isNowPlaying = playbackState.groupId == gridItem.group.id,
-                                        onClick = {
-                                            if (isSelectionMode) viewModel.selectGroup(gridItem.group.id)
-                                            else onOpenGroupInfo(gridItem.group.id)
-                                        },
-                                        onLongClick = { viewModel.selectGroup(gridItem.group.id) }
+                                        title = gridItem.series.name,
+                                        subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
+                                        coverPath = gridItem.coverPath,
+                                        isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
+                                        onClick = { onOpenSeries(gridItem.series.name) },
+                                        onPlayClick = { viewModel.playSeries(gridItem.series.id) },
+                                        onLongClick = { viewModel.openSeriesCoverSearch(gridItem.series.id, gridItem.series.name) }
+                                    )
+                                }
+                            }
+
+                            is HomeGridItem.AuthorItem -> {
+                                item(key = "author_${gridItem.name}") {
+                                    CollectionGridCard(
+                                        modifier = Modifier.animateItem(),
+                                        title = gridItem.name,
+                                        subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
+                                        coverPath = gridItem.coverPath,
+                                        isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
+                                        onClick = { onOpenAuthor(gridItem.name) },
+                                        onPlayClick = null,
+                                        onLongClick = { viewModel.openAuthorCoverSearch(gridItem.name) }
                                     )
                                 }
                             }
@@ -295,22 +315,9 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp)
             ) {
                 SelectionHeader(
-                    selectedCount = selectedBookIds.size + (if (selectedGroupId != null) 1 else 0),
-                    showSplit = selectedGroupId != null && selectedBookIds.isEmpty(),
-                    showJoin = selectedBookIds.size >= 2,
-                    showOptions = selectedBookIds.size == 1 && selectedGroupId == null,
+                    selectedCount = selectedBookIds.size,
+                    showOptions = selectedBookIds.size == 1,
                     onClear = viewModel::clearSelection,
-                    onJoin = {
-                        val ids = selectedBookIds.joinToString(",")
-                        viewModel.clearSelection()
-                        onJoinBooks(ids)
-                    },
-                    onSplit = { viewModel.splitSelectedGroup { } },
-                    onEditGroup = {
-                        val gid = selectedGroupId ?: return@SelectionHeader
-                        viewModel.clearSelection()
-                        onEditGroup(gid)
-                    },
                     onOptions = { selectedBookIds.firstOrNull()?.let { viewModel.openBookOptions(it) } }
                 )
             }
@@ -400,6 +407,16 @@ fun HomeScreen(
             onDismiss = { viewModel.closeCoverSearch() }
         )
     }
+
+    // Per-view cover search for a series or author tile
+    coverSearchCollection?.let { target ->
+        CoverSearchSheet(
+            initialQuery = target.seed,
+            onSearch = { query -> viewModel.searchCovers(query) },
+            onPick = { url -> viewModel.setCollectionCoverFromUrl(url) },
+            onDismiss = { viewModel.closeCollectionCoverSearch() }
+        )
+    }
 }
 
 // ─── Home header ──────────────────────────────────────────────────────────────
@@ -478,13 +495,8 @@ private fun LibraryTabRow(
 @Composable
 private fun SelectionHeader(
     selectedCount: Int,
-    showSplit: Boolean,
-    showJoin: Boolean,
     showOptions: Boolean,
     onClear: () -> Unit,
-    onJoin: () -> Unit,
-    onSplit: () -> Unit,
-    onEditGroup: () -> Unit,
     onOptions: () -> Unit
 ) {
     Surface(
@@ -506,19 +518,44 @@ private fun SelectionHeader(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f)
             )
-            if (showSplit) {
-                IconButton(onClick = onEditGroup) { Icon(Icons.Default.Edit, "Edit group") }
-                TextButton(
-                    onClick = onSplit,
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                ) { Text("Split") }
-            }
-            if (showJoin) {
-                Button(onClick = onJoin, shape = Pill) { Text("Join") }
-            }
             // Single-book selection → overflow menu with that book's options
             if (showOptions) {
                 IconButton(onClick = onOptions) { Icon(Icons.Default.MoreVert, "Book options") }
+            }
+        }
+    }
+}
+
+/** Books / Series / Authors segmented switch shown above the status tabs. */
+@Composable
+private fun HomeViewModeRow(
+    selected: com.betteraudio.ui.home.HomeViewMode,
+    onSelect: (com.betteraudio.ui.home.HomeViewMode) -> Unit
+) {
+    val modes = listOf(
+        com.betteraudio.ui.home.HomeViewMode.BOOKS to "Books",
+        com.betteraudio.ui.home.HomeViewMode.SERIES to "Series",
+        com.betteraudio.ui.home.HomeViewMode.AUTHORS to "Authors"
+    )
+    Row(
+        Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        modes.forEach { (mode, label) ->
+            val isSel = mode == selected
+            Surface(
+                onClick = { onSelect(mode) },
+                shape = Pill,
+                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelLarge,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                )
             }
         }
     }
@@ -960,43 +997,45 @@ private fun SelectionCheck(isSelected: Boolean, modifier: Modifier = Modifier) {
     }
 }
 
-// ─── Joined group card ────────────────────────────────────────────────────────
+// ─── Series / Author collection card ───────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GroupGridCard(
-    groupItem: HomeGridItem.Group,
-    isSelected: Boolean,
-    isSelectionMode: Boolean,
+private fun CollectionGridCard(
+    title: String,
+    subtitle: String,
+    coverPath: String?,
     isNowPlaying: Boolean,
     onClick: () -> Unit,
+    onPlayClick: (() -> Unit)?,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val borderColor by animateColorAsState(
-        when {
-            isSelected -> MaterialTheme.colorScheme.primary
-            isNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-            else -> Color.Transparent
-        },
-        tween(150), label = "groupBorder"
+        if (isNowPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent,
+        tween(150), label = "collectionBorder"
     )
 
     Box(
         modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
-            .pressScale(enabled = !isSelectionMode)
+            .pressScale()
             .clip(MaterialTheme.shapes.large)
             .border(
-                width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
+                width = if (isNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
                 shape = MaterialTheme.shapes.large
             )
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
     ) {
-        StackedCovers(books = groupItem.books, modifier = Modifier.fillMaxSize(), corner = 0.dp)
+        AsyncImage(
+            model = coverPath?.let { File(it) },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
         Box(
             Modifier
                 .fillMaxWidth()
@@ -1009,22 +1048,13 @@ private fun GroupGridCard(
                 .padding(12.dp)
         ) {
             Column {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Link, null,
-                        Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "${groupItem.books.size} joined",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
                 Text(
-                    groupItem.group.name,
+                    subtitle,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    title,
                     style = MaterialTheme.typography.titleSmall,
                     color = Color.White,
                     maxLines = 2,
@@ -1032,8 +1062,11 @@ private fun GroupGridCard(
                 )
             }
         }
-        if (isSelectionMode) {
-            SelectionCheck(isSelected, Modifier.padding(8.dp).align(Alignment.TopEnd))
+        if (onPlayClick != null) {
+            FilledIconButton(
+                onClick = onPlayClick,
+                modifier = Modifier.padding(8.dp).align(Alignment.TopEnd).size(36.dp)
+            ) { Icon(Icons.Default.PlayArrow, "Play series", Modifier.size(20.dp)) }
         }
     }
 }

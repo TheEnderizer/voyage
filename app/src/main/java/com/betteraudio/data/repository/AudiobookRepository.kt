@@ -33,8 +33,21 @@ class AudiobookRepository @Inject constructor(
     private val audioPresetDao: AudioPresetDao,
     private val listeningHistoryDao: ListeningHistoryDao,
     private val bookGroupDao: com.betteraudio.data.db.dao.BookGroupDao,
+    private val authorMetaDao: com.betteraudio.data.db.dao.AuthorMetaDao,
     private val coverEffectBaker: CoverEffectBaker
 ) {
+
+    // ── Author view (lightweight per-author cover) ───────────────────────────
+    fun getAllAuthorMeta(): kotlinx.coroutines.flow.Flow<List<com.betteraudio.data.db.entities.AuthorMeta>> =
+        authorMetaDao.getAll()
+    fun getBooksByAuthor(author: String): kotlinx.coroutines.flow.Flow<List<Book>> =
+        bookDao.getBooksByAuthor(author)
+    suspend fun setAuthorCover(name: String, path: String?) {
+        val existing = authorMetaDao.getByName(name)
+        authorMetaDao.upsert(
+            (existing ?: com.betteraudio.data.db.entities.AuthorMeta(name = name)).copy(coverArtPath = path)
+        )
+    }
 
     /**
      * Wipe the entire library from the database — every book (which cascades to its files,

@@ -3,6 +3,17 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.1b] - 2026-07-02
+
+### Added
+- Home library view modes: switch between Books, Series, and Authors with the pill switch above the status tabs
+- Series view groups your books into series tiles — tap to open the series, or tap the play button to resume that series where you left off (it continues from the book you last had in progress)
+- Authors view groups your books by author — tap to see all of that author's books
+- Change a tile's cover per view: long-press a Series or Author tile to set its own cover from an online search. It changes only that tile — the member books keep their own covers
+
+### Changed
+- The old manual "join books" grouping is fully replaced by the Series system
+
 ## [1.6.0b] - 2026-07-02
 
 ### Fixed
