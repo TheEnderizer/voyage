@@ -3,6 +3,12 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.4b] - 2026-07-02
+
+### Added
+- Player cover toggle: while a series is playing, use the ⋮ menu to switch between the series cover and the current book's cover
+- When a series rolls from one book into the next, the book you just finished is now marked Finished automatically, so in Books view it correctly shows as done and the series resumes at the next unfinished book
+
 ## [1.6.3b] - 2026-07-02
 
 ### Fixed

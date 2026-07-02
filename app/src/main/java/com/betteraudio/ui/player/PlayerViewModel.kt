@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
@@ -95,6 +96,24 @@ class PlayerViewModel @Inject constructor(
             MutableStateFlow(null)
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
+
+    // Series cover mode: when true, the player shows the currently-playing member book's cover
+    // instead of the series cover. Persisted globally; toggled from the player overflow menu.
+    val seriesShowBookCover: StateFlow<Boolean> =
+        settings.playerSeriesBookCover.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun toggleSeriesCoverMode() {
+        viewModelScope.launch { settings.setPlayerSeriesBookCover(!seriesShowBookCover.value) }
+    }
+
+    // The member book currently playing within a series (for the book-cover option / backdrop).
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val currentMemberBook: StateFlow<Book?> =
+        playerController.playbackState
+            .map { it.bookId }
+            .distinctUntilChanged()
+            .flatMapLatest { id -> if (id == -1L) flowOf(null) else repository.getBookById(id) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Configured skip intervals — surfaced so the transport buttons can show the real seconds.
     val skipForwardMs: StateFlow<Long> =

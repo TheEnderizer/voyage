@@ -57,6 +57,8 @@ fun PlayerContent(
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val sessions          by viewModel.listeningSessions.collectAsStateWithLifecycle()
     val skips             by viewModel.skipEvents.collectAsStateWithLifecycle()
+    val seriesShowBookCover by viewModel.seriesShowBookCover.collectAsStateWithLifecycle()
+    val currentMemberBook by viewModel.currentMemberBook.collectAsStateWithLifecycle()
     val book = bwp?.book
     val isGroup = viewModel.groupId != -1L
 
@@ -121,8 +123,19 @@ fun PlayerContent(
         val onScrimMuted = Color.White.copy(alpha = 0.62f)
         val accent = MaterialTheme.colorScheme.primary
 
-        val coverPath = if (isGroup) groupInfo?.coverArtPath else book?.coverArtPath
-        val bakedPath = if (isGroup) null else book?.coverFxPath
+        // For a series, show the series cover by default, or the current member book's cover when
+        // the user has toggled to book-cover mode.
+        val showMemberCover = isGroup && seriesShowBookCover && currentMemberBook != null
+        val coverPath = when {
+            showMemberCover -> currentMemberBook?.coverArtPath
+            isGroup -> groupInfo?.coverArtPath
+            else -> book?.coverArtPath
+        }
+        val bakedPath = when {
+            showMemberCover -> currentMemberBook?.coverFxPath
+            isGroup -> null
+            else -> book?.coverFxPath
+        }
 
         // True only when the service already has *this* book/group loaded and playing/paused.
         // False on cold start and whenever the player sheet opens before the service confirms.
@@ -211,6 +224,13 @@ fun PlayerContent(
                                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                                 onClick = { showOverflow = false; showAddBookmark = true }
                             )
+                            if (isGroup) {
+                                DropdownMenuItem(
+                                    text = { Text(if (seriesShowBookCover) "Show series cover" else "Show book cover") },
+                                    leadingIcon = { Icon(Icons.Default.Image, null) },
+                                    onClick = { showOverflow = false; viewModel.toggleSeriesCoverMode() }
+                                )
+                            }
                             if (!isGroup) {
                                 DropdownMenuItem(
                                     text = { Text("Listening history") },

@@ -52,6 +52,9 @@ class SettingsStore @Inject constructor(
         val SKIPPED_UPDATE_VERSION       = stringPreferencesKey("skipped_update_version")
         // Home library grouping view: BOOKS (default) | SERIES | AUTHORS.
         val HOME_VIEW_MODE               = stringPreferencesKey("home_view_mode")
+        // In the player, while a series is playing: show the current book's cover (true) instead
+        // of the series cover (false, default).
+        val PLAYER_SERIES_BOOK_COVER     = booleanPreferencesKey("player_series_book_cover")
     }
 
     companion object {
@@ -84,6 +87,7 @@ class SettingsStore @Inject constructor(
     val skipSilenceThreshold: Flow<Int>       = context.dataStore.data.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }
     val importStructure: Flow<String>         = context.dataStore.data.map { it[Keys.IMPORT_STRUCTURE] ?: "" }
     val skippedUpdateVersion: Flow<String>    = context.dataStore.data.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }
+    val playerSeriesBookCover: Flow<Boolean>  = context.dataStore.data.map { it[Keys.PLAYER_SERIES_BOOK_COVER] ?: false }
     val homeViewMode: Flow<String>            = context.dataStore.data.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
@@ -151,4 +155,6 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.SKIPPED_UPDATE_VERSION] = version }.let { }
     suspend fun setHomeViewMode(mode: String) =
         context.dataStore.edit { it[Keys.HOME_VIEW_MODE] = mode }.let { }
+    suspend fun setPlayerSeriesBookCover(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.PLAYER_SERIES_BOOK_COVER] = enabled }.let { }
 }

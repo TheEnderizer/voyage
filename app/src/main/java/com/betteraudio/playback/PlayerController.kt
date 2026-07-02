@@ -501,7 +501,18 @@ class PlayerController @Inject constructor(
                 }
             }
         }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // When a series auto-advances from one member book into the next, mark the book we
+            // just left as finished. Only on a natural advance — seeking across books must not.
+            val newBookId = mediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+            if (currentGroupId != -1L && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
+                currentBookId != -1L && newBookId != -1L && newBookId != currentBookId
+            ) {
+                val finishedBook = currentBookId
+                scope.launch { repository.markBookFinished(finishedBook) }
+            }
+            syncState()
+        }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
