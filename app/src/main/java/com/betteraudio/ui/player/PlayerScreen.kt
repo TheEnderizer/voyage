@@ -182,7 +182,7 @@ fun PlayerContent(
                     ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = onBack)
                     Spacer(Modifier.weight(1f))
                     val topLabel = if (isGroup)
-                        groupInfo?.group?.name?.takeIf { it.isNotBlank() }
+                        groupInfo?.name?.takeIf { it.isNotBlank() }
                     else
                         book?.seriesName?.takeIf { it.isNotBlank() }
                     topLabel?.let {
@@ -237,10 +237,10 @@ fun PlayerContent(
                     if (isGroup && groupInfo != null) {
                         val gi = groupInfo!!
                         BookInfoPanel(
-                            title            = gi.group.name,
+                            title            = gi.name,
                             author           = gi.books.firstOrNull()?.displayAuthor,
                             narrator         = null,
-                            seriesLabel      = "${gi.books.size} books joined",
+                            seriesLabel      = "${gi.books.size} books in series",
                             status           = null,
                             progressFraction = gi.progressFraction,
                             totalMs          = gi.totalDurationMs,

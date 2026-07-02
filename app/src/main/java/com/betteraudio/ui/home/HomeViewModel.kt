@@ -485,36 +485,49 @@ class HomeViewModel @Inject constructor(
     // ── Series playback ────────────────────────────────────────────────────────
 
     /**
-     * Play a series: resume the member the user was last in (most-recently-played, else the
-     * first unfinished, else the first by order) as a book. Each member keeps its own progress,
-     * so resume naturally continues from wherever the listener actually is — even if the series
-     * order later changes. (Continuous cross-book playback lands in a later update.)
+     * Play a series as one continuous timeline: all member books' files are flattened in series
+     * order, so when a book ends the next book starts automatically. Playback resumes at the
+     * member the listener was last in (most-recently-played → first unfinished → first), and each
+     * book keeps its own progress, so resume stays correct even if the order later changes.
      */
     fun playSeries(seriesId: Long) {
         viewModelScope.launch {
-            val members = seriesRepository.getBooksInSeriesOnce(seriesId)
-            if (members.isEmpty()) return@launch
-            val withProgress = members.map { it to repository.getProgressForBookOnce(it.id) }
-            val resumeBook = withProgress
-                .filter { (_, p) -> p != null && p.lastPlayedMs > 0 }
-                .maxByOrNull { (_, p) -> p!!.lastPlayedMs }?.first
-                ?: members.firstOrNull { it.status != BookStatus.FINISHED }
-                ?: members.first()
-            playBookById(resumeBook.id)
-        }
-    }
+            val series = seriesRepository.getSeriesOnce(seriesId) ?: return@launch
+            val books = seriesRepository.getBooksInSeriesOnce(seriesId)
+            if (books.isEmpty()) return@launch
+            val filesPerBook = seriesRepository.getAudioFilesForBooks(books.map { it.id })
 
-    private suspend fun playBookById(bookId: Long) {
-        val bwp = repository.getBookWithProgress(bookId).first() ?: return
-        val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        if (files.isEmpty()) return
-        val progress = bwp.progress
-        val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-        val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-        val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
-        playerController.playBook(bwp.book, files, startIndex, startPos, speed)
-        playerController.setVolumeBoost(progress?.boostDb ?: 0)
-        repository.touchLastPlayed(bwp.book.id)
-        settings.setLastPlayedBookId(bwp.book.id)
+            val progressMap = books.associateWith { repository.getProgressForBookOnce(it.id) }
+            val resumeBook = progressMap.entries
+                .filter { (_, p) -> (p?.lastPlayedMs ?: 0L) > 0L }
+                .maxByOrNull { (_, p) -> p?.lastPlayedMs ?: 0L }?.key
+                ?: books.firstOrNull { it.status != BookStatus.FINISHED }
+                ?: books.first()
+            val resumeProgress = progressMap[resumeBook]
+
+            var globalIndex = 0
+            for (book in books) {
+                val files = filesPerBook[book.id] ?: emptyList()
+                if (book.id == resumeBook.id) {
+                    globalIndex += files.indexOfFirst { it.id == resumeProgress?.currentFileId }.coerceAtLeast(0)
+                    break
+                }
+                globalIndex += files.size
+            }
+            val startPos = if (resumeProgress?.isCompleted == true) 0L else resumeProgress?.positionMs ?: 0L
+
+            playerController.playBookGroup(
+                groupId = series.id,
+                groupName = series.name,
+                coverArtPath = series.coverArtPath,
+                orderedBooks = books,
+                filesPerBook = filesPerBook,
+                startGlobalFileIndex = globalIndex,
+                startPositionMs = startPos,
+                speed = series.playbackSpeed ?: settings.currentDefaultSpeed
+            )
+            repository.touchLastPlayed(resumeBook.id)
+            settings.setLastPlayedBookId(resumeBook.id)
+        }
     }
 }

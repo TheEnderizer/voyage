@@ -1,7 +1,9 @@
 package com.betteraudio.data.repository
 
+import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.SeriesDao
+import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
 import kotlinx.coroutines.flow.Flow
@@ -16,8 +18,15 @@ import javax.inject.Singleton
 @Singleton
 class SeriesRepository @Inject constructor(
     private val seriesDao: SeriesDao,
-    private val bookDao: BookDao
+    private val bookDao: BookDao,
+    private val audioFileDao: AudioFileDao
 ) {
+
+    /** bookId → its audio files, sorted for playback. Used to flatten a series into one timeline. */
+    suspend fun getAudioFilesForBooks(bookIds: List<Long>): Map<Long, List<AudioFile>> =
+        bookIds.associateWith { id ->
+            audioFileDao.getFilesForBookOnce(id).sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+        }
     fun getAllSeries(): Flow<List<Series>> = seriesDao.getAll()
     suspend fun getAllSeriesOnce(): List<Series> = seriesDao.getAllOnce()
     fun getSeries(id: Long): Flow<Series?> = seriesDao.getById(id)

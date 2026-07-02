@@ -3,6 +3,12 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.2b] - 2026-07-02
+
+### Fixed
+- Playing a series now continues across books: when one book finishes, the next book in the series starts automatically instead of stopping. Each book still keeps its own progress, so resuming a series picks up exactly where you left off
+- The full player screen now shows the series (name, cover, and a chapter list grouped by book) when a series is playing
+
 ## [1.6.1b] - 2026-07-02
 
 ### Added

@@ -8,7 +8,6 @@ import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.util.AppLog
 import com.betteraudio.data.db.entities.Book
-import com.betteraudio.data.db.entities.BookGroup
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
@@ -16,7 +15,7 @@ import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.model.BookWithProgress
 import org.json.JSONArray
 import com.betteraudio.data.repository.AudiobookRepository
-import com.betteraudio.data.repository.BookGroupRepository
+import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.data.synopsis.SynopsisResult
 import com.betteraudio.data.synopsis.SynopsisService
@@ -46,7 +45,9 @@ import java.io.File
 import javax.inject.Inject
 
 data class GroupScreenState(
-    val group: BookGroup,
+    val seriesId: Long,
+    val name: String,
+    val speed: Float,
     val books: List<Book>,
     val totalDurationMs: Long,
     val progressFraction: Float,
@@ -73,7 +74,7 @@ data class ChapterUiState(val rows: List<ChapterRow> = emptyList()) {
 class PlayerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: AudiobookRepository,
-    private val groupRepository: BookGroupRepository,
+    private val seriesRepository: SeriesRepository,
     private val settings: SettingsStore,
     private val synopsisService: SynopsisService,
     val playerController: PlayerController
@@ -134,13 +135,13 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    // Load group info when opened via groupId.
+    // Load series info when opened via a series (carried in the groupId route arg).
     init {
         if (groupId != -1L) {
-            groupRepository.getBooksForGroup(groupId)
+            seriesRepository.getBooksInSeries(groupId)
                 .flatMapLatest { books ->
                     flow {
-                        val group = groupRepository.getGroupById(groupId)
+                        val series = seriesRepository.getSeriesOnce(groupId)
                             ?: run { emit(null); return@flow }
                         val totalMs = books.sumOf { it.totalDurationMs }
                         val progressList = books.map { repository.getProgressForBookOnce(it.id) }
@@ -149,11 +150,13 @@ class PlayerViewModel @Inject constructor(
                         val fraction = if (totalMs > 0)
                             (playedMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
                         emit(GroupScreenState(
-                            group           = group,
-                            books           = books,
-                            totalDurationMs = totalMs,
+                            seriesId         = groupId,
+                            name             = series.name,
+                            speed            = series.playbackSpeed ?: settings.currentDefaultSpeed,
+                            books            = books,
+                            totalDurationMs  = totalMs,
                             progressFraction = fraction,
-                            coverArtPath    = group.coverArtPath ?: books.firstOrNull()?.coverArtPath
+                            coverArtPath     = series.coverArtPath ?: books.firstOrNull()?.coverArtPath
                         ))
                     }
                 }
@@ -338,8 +341,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     private suspend fun buildGroupChapters(groupId: Long): ChapterUiState {
-        val books = groupRepository.getBooksForGroupOnce(groupId)
-        val filesPerBook = groupRepository.getAudioFilesForBooks(books.map { it.id })
+        val books = seriesRepository.getBooksInSeriesOnce(groupId)
+        val filesPerBook = seriesRepository.getAudioFilesForBooks(books.map { it.id })
         val ordered = books.flatMap { b -> (filesPerBook[b.id] ?: emptyList()) }
         val cum = cumulativeStarts(ordered.map { it.id to it.durationMs })
         val rows = mutableListOf<ChapterRow>()
@@ -571,7 +574,7 @@ class PlayerViewModel @Inject constructor(
     private fun playGroup() {
         viewModelScope.launch {
             val state = _groupInfo.value ?: return@launch
-            val filesPerBook = groupRepository.getAudioFilesForBooks(state.books.map { it.id })
+            val filesPerBook = seriesRepository.getAudioFilesForBooks(state.books.map { it.id })
             val progressMap = state.books.associateWith { book ->
                 repository.getProgressForBookOnce(book.id)
             }
@@ -591,14 +594,14 @@ class PlayerViewModel @Inject constructor(
             val startPos = if (resumeProgress?.isCompleted == true) 0L
                            else resumeProgress?.positionMs ?: 0L
             playerController.playBookGroup(
-                groupId              = state.group.id,
-                groupName            = state.group.name,
-                coverArtPath         = state.group.coverArtPath,
+                groupId              = state.seriesId,
+                groupName            = state.name,
+                coverArtPath         = state.coverArtPath,
                 orderedBooks         = state.books,
                 filesPerBook         = filesPerBook,
                 startGlobalFileIndex = globalIndex,
                 startPositionMs      = startPos,
-                speed                = state.group.playbackSpeed
+                speed                = state.speed
             )
         }
     }
