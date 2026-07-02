@@ -154,7 +154,7 @@ class MainActivity : ComponentActivity() {
                             onOpenBook = { bookId -> sheetController.open(bookId = bookId) },
                             onOpenBookInfo = { bookId -> sheetController.open(bookId = bookId, startInfo = true) },
                             onOpenSearch = { navController.navigate("search") },
-                            onOpenSeries = { name -> navController.navigate("series/${Uri.encode(name)}") },
+                            onOpenSeries = { seriesId -> navController.navigate("series/$seriesId") },
                             onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") }
                         )
                     }
@@ -171,14 +171,13 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable(
-                        route = "series/{seriesName}",
-                        arguments = listOf(navArgument("seriesName") { type = NavType.StringType })
+                        route = "series/{seriesId}",
+                        arguments = listOf(navArgument("seriesId") { type = NavType.LongType })
                     ) { backStack ->
-                        val name = Uri.decode(backStack.arguments?.getString("seriesName") ?: "")
+                        val sid = backStack.arguments?.getLong("seriesId") ?: -1L
                         SeriesDetailScreen(
-                            seriesName = name,
                             onBack = { navController.popBackStack() },
-                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
+                            onOpenPlayer = { sheetController.open(groupId = sid) }
                         )
                     }
 

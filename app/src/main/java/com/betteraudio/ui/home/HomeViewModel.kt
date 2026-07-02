@@ -115,6 +115,7 @@ class HomeViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
+    private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val scanner: AudioFileScanner,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
@@ -484,50 +485,8 @@ class HomeViewModel @Inject constructor(
 
     // ── Series playback ────────────────────────────────────────────────────────
 
-    /**
-     * Play a series as one continuous timeline: all member books' files are flattened in series
-     * order, so when a book ends the next book starts automatically. Playback resumes at the
-     * member the listener was last in (most-recently-played → first unfinished → first), and each
-     * book keeps its own progress, so resume stays correct even if the order later changes.
-     */
+    /** Play a series as one continuous timeline (see [SeriesPlayer]). */
     fun playSeries(seriesId: Long) {
-        viewModelScope.launch {
-            val series = seriesRepository.getSeriesOnce(seriesId) ?: return@launch
-            val books = seriesRepository.getBooksInSeriesOnce(seriesId)
-            if (books.isEmpty()) return@launch
-            val filesPerBook = seriesRepository.getAudioFilesForBooks(books.map { it.id })
-
-            val progressMap = books.associateWith { repository.getProgressForBookOnce(it.id) }
-            val resumeBook = progressMap.entries
-                .filter { (_, p) -> (p?.lastPlayedMs ?: 0L) > 0L }
-                .maxByOrNull { (_, p) -> p?.lastPlayedMs ?: 0L }?.key
-                ?: books.firstOrNull { it.status != BookStatus.FINISHED }
-                ?: books.first()
-            val resumeProgress = progressMap[resumeBook]
-
-            var globalIndex = 0
-            for (book in books) {
-                val files = filesPerBook[book.id] ?: emptyList()
-                if (book.id == resumeBook.id) {
-                    globalIndex += files.indexOfFirst { it.id == resumeProgress?.currentFileId }.coerceAtLeast(0)
-                    break
-                }
-                globalIndex += files.size
-            }
-            val startPos = if (resumeProgress?.isCompleted == true) 0L else resumeProgress?.positionMs ?: 0L
-
-            playerController.playBookGroup(
-                groupId = series.id,
-                groupName = series.name,
-                coverArtPath = series.coverArtPath,
-                orderedBooks = books,
-                filesPerBook = filesPerBook,
-                startGlobalFileIndex = globalIndex,
-                startPositionMs = startPos,
-                speed = series.playbackSpeed ?: settings.currentDefaultSpeed
-            )
-            repository.touchLastPlayed(resumeBook.id)
-            settings.setLastPlayedBookId(resumeBook.id)
-        }
+        viewModelScope.launch { seriesPlayer.playSeries(seriesId) }
     }
 }

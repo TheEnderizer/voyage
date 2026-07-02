@@ -3,6 +3,15 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.3b] - 2026-07-02
+
+### Fixed
+- Tapping a book on the series screen now plays the whole series starting from that book, so it continues into the following books instead of stopping when that one book ends
+
+### Added
+- Series screen is now a proper series manager: a "Play series" button, plus add books, remove books, reorder books (up/down), and rename the series
+- Opening a series from the home Series view now opens this manager and can launch straight into the player
+
 ## [1.6.2b] - 2026-07-02
 
 ### Fixed

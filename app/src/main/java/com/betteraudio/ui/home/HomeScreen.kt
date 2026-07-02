@@ -69,7 +69,7 @@ fun HomeScreen(
     onOpenBook: (Long) -> Unit = {},
     onOpenBookInfo: (Long) -> Unit = {},
     onOpenSearch: () -> Unit = {},
-    onOpenSeries: (String) -> Unit = {},
+    onOpenSeries: (Long) -> Unit = {},
     onOpenAuthor: (String) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
@@ -279,7 +279,7 @@ fun HomeScreen(
                                         subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
                                         coverPath = gridItem.coverPath,
                                         isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
-                                        onClick = { onOpenSeries(gridItem.series.name) },
+                                        onClick = { onOpenSeries(gridItem.series.id) },
                                         onPlayClick = { viewModel.playSeries(gridItem.series.id) },
                                         onLongClick = { viewModel.openSeriesCoverSearch(gridItem.series.id, gridItem.series.name) }
                                     )
