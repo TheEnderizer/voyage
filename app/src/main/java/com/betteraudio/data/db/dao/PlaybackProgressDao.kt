@@ -21,7 +21,8 @@ interface PlaybackProgressDao {
 
     @Query("""
         UPDATE playback_progress
-        SET currentFileId = :fileId, positionMs = :positionMs, lastPlayedMs = :lastPlayedMs
+        SET currentFileId = :fileId, positionMs = :positionMs, lastPlayedMs = :lastPlayedMs,
+            isCompleted = 0
         WHERE bookId = :bookId
     """)
     suspend fun updatePosition(bookId: Long, fileId: Long, positionMs: Long, lastPlayedMs: Long)

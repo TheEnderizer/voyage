@@ -32,8 +32,20 @@ class AudiobookRepository @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val audioPresetDao: AudioPresetDao,
     private val listeningHistoryDao: ListeningHistoryDao,
+    private val bookGroupDao: com.betteraudio.data.db.dao.BookGroupDao,
     private val coverEffectBaker: CoverEffectBaker
 ) {
+
+    /**
+     * Wipe the entire library from the database — every book (which cascades to its files,
+     * chapters, progress, bookmarks and listening history) and every playback group. The
+     * audio files on disk are left untouched; the folder + import-structure settings are kept
+     * so the user can immediately rescan. Custom audio presets are preserved.
+     */
+    suspend fun resetLibrary() {
+        bookDao.deleteAll()
+        bookGroupDao.deleteAllGroups()
+    }
 
     // ── Listening history ────────────────────────────────────────────────────
     suspend fun insertListeningSession(session: ListeningSession): Long = listeningHistoryDao.insertSession(session)
@@ -85,6 +97,11 @@ class AudiobookRepository @Inject constructor(
     suspend fun getAudioFilesOnce(bookId: Long): List<AudioFile> = audioFileDao.getFilesForBookOnce(bookId)
     suspend fun saveProgress(progress: PlaybackProgress) = progressDao.upsert(progress)
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
+    /** Every book, including hidden/ignored ones — for the scanner's disk reconciliation. */
+    suspend fun getAllBooksIncludingIgnoredOnce(): List<Book> = bookDao.getAllBooksOnce()
+    /** Refresh a book's file-derived stats after files were dropped in reconciliation. */
+    suspend fun updateBookFileStats(bookId: Long, totalDurationMs: Long, fileCount: Int) =
+        bookDao.updateDuration(bookId, totalDurationMs, fileCount)
     suspend fun updateCoverArt(bookId: Long, path: String) {
         bookDao.updateCoverArt(bookId, path)
         // The cover changed: invalidate the baked effect so it's re-rendered. The UI

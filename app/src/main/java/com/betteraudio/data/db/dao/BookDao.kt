@@ -32,6 +32,10 @@ interface BookDao {
     @Query("SELECT * FROM books ORDER BY title ASC")
     fun getAllBooks(): Flow<List<Book>>
 
+    // Every book including ignored/hidden ones — used by the scanner's disk reconciliation.
+    @Query("SELECT * FROM books")
+    suspend fun getAllBooksOnce(): List<Book>
+
     @Query("SELECT * FROM books WHERE id = :id")
     fun getBookById(id: Long): Flow<Book?>
 
@@ -62,6 +66,26 @@ interface BookDao {
 
     @Query("UPDATE books SET seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
     suspend fun updateSeriesInfo(id: Long, seriesName: String?, seriesOrder: Float?)
+
+    // ── First-class series membership (seriesId is authoritative) ─────────────
+    @Query("UPDATE books SET seriesId = :seriesId, seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
+    suspend fun setSeriesMembership(id: Long, seriesId: Long?, seriesName: String?, seriesOrder: Float?)
+
+    @Query("UPDATE books SET seriesOrder = :order WHERE id = :id")
+    suspend fun setSeriesOrder(id: Long, order: Float?)
+
+    @Query("SELECT * FROM books WHERE seriesId = :seriesId AND isIgnored = 0 ORDER BY seriesOrder ASC, title ASC")
+    fun getBooksInSeriesById(seriesId: Long): Flow<List<Book>>
+
+    @Query("SELECT * FROM books WHERE seriesId = :seriesId AND isIgnored = 0 ORDER BY seriesOrder ASC, title ASC")
+    suspend fun getBooksInSeriesByIdOnce(seriesId: Long): List<Book>
+
+    @Query("SELECT COUNT(*) FROM books WHERE seriesId = :seriesId")
+    suspend fun countBooksInSeries(seriesId: Long): Int
+
+    // Distinct non-blank author names across the (non-ignored) library — for the Authors view.
+    @Query("SELECT DISTINCT author FROM books WHERE isIgnored = 0 AND author != ''")
+    fun getDistinctAuthors(): Flow<List<String>>
 
     @Query("SELECT * FROM books ORDER BY CASE WHEN seriesName IS NULL THEN title ELSE seriesName END ASC, seriesOrder ASC, title ASC")
     fun getAllBooksSorted(): Flow<List<Book>>
@@ -118,4 +142,9 @@ interface BookDao {
 
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    // Full library wipe. Cascades to audio_files, chapters, playback_progress, bookmarks,
+    // listening_sessions, skip_events and book_group_members via their FKs.
+    @Query("DELETE FROM books")
+    suspend fun deleteAll()
 }

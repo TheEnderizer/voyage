@@ -1,15 +1,19 @@
 package com.betteraudio.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 enum class BookStatus { NOT_STARTED, IN_PROGRESS, FINISHED }
 
-@Entity(tableName = "books")
+@Entity(tableName = "books", indices = [Index("seriesId")])
 data class Book(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
     val author: String = "",
+    // Source of truth for series membership. seriesName is kept as a denormalised cache/hint
+    // (scanner + legacy) but seriesId is authoritative.
+    val seriesId: Long? = null,
     val seriesName: String? = null,
     val seriesOrder: Float? = null,
     val folderPath: String,

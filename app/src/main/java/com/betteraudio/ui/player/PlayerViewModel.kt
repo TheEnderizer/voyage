@@ -545,9 +545,13 @@ class PlayerViewModel @Inject constructor(
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
             val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
             val rewind = computeAutoRewindMs(progress)
-            val startPos = (rawPos - rewind).coerceAtLeast(0L)
+            // Never rewind past the chapter/file boundary: if the saved position is shorter than
+            // the rewind amount, resume from the saved position instead of the file start.
+            val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
-            AppLog.i("Player", "resume book=${bwp.book.id} savedFile=${progress?.currentFileId} savedPos=${rawPos}ms rewind=${rewind}ms → startIdx=$startIndex startPos=${startPos}ms")
+            AppLog.i("Player", "play() book=${bwp.book.id}" +
+                " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
+                " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
             // Restore per-book boost and EQ so they don't bleed from other books
             playerController.setVolumeBoost(progress?.boostDb ?: 0)

@@ -24,6 +24,10 @@ interface BookGroupDao {
     @Query("DELETE FROM book_group_members WHERE groupId = :groupId")
     suspend fun clearMembers(groupId: Long)
 
+    // Full wipe of all playback groups (cascades to book_group_members).
+    @Query("DELETE FROM book_groups")
+    suspend fun deleteAllGroups()
+
     @Query("SELECT * FROM book_groups ORDER BY createdAtMs DESC")
     fun getAllGroups(): Flow<List<BookGroup>>
 

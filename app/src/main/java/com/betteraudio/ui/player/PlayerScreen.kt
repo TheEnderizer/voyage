@@ -124,9 +124,33 @@ fun PlayerContent(
         val coverPath = if (isGroup) groupInfo?.coverArtPath else book?.coverArtPath
         val bakedPath = if (isGroup) null else book?.coverFxPath
 
-        val useBookLevel = state.bookTotalDurationMs > 0
-        val bookTotal = if (useBookLevel) state.bookTotalDurationMs else state.durationMs
-        val bookPos = if (useBookLevel) state.bookPositionMs else state.currentPositionMs
+        // True only when the service already has *this* book/group loaded and playing/paused.
+        // False on cold start and whenever the player sheet opens before the service confirms.
+        val serviceHasBook = if (isGroup) state.groupId == viewModel.groupId && viewModel.groupId != -1L
+                             else state.bookId == viewModel.bookId && viewModel.bookId != -1L
+
+        val bookTotal: Long
+        val bookPos: Long
+        if (serviceHasBook && state.bookTotalDurationMs > 0) {
+            bookTotal = state.bookTotalDurationMs
+            bookPos = state.bookPositionMs
+        } else if (serviceHasBook) {
+            bookTotal = state.durationMs
+            bookPos = state.currentPositionMs
+        } else {
+            // Service doesn't have this book (e.g. cold start, info-panel open before first play).
+            // Show the saved position from the DB so the scrubber reflects where reading left off.
+            val p = bwp?.progress
+            val sortedFiles = bwp?.audioFiles
+                ?.sortedWith(compareBy({ it.trackNumber }, { it.fileName })) ?: emptyList()
+            val filesBeforeSaved = sortedFiles
+                .takeWhile { it.id != p?.currentFileId }.sumOf { it.durationMs }
+            bookTotal = bwp?.book?.totalDurationMs ?: 0L
+            bookPos = if (p != null && bookTotal > 0)
+                (filesBeforeSaved + p.positionMs).coerceAtMost(bookTotal)
+            else 0L
+        }
+
         val items = chapters.rows.filterIsInstance<ChapterRow.Item>()
         val cur = currentChapter(items, bookPos, bookTotal)
 
@@ -221,7 +245,7 @@ fun PlayerContent(
                             progressFraction = gi.progressFraction,
                             totalMs          = gi.totalDurationMs,
                             synopsis         = null,
-                            onResume         = { viewModel.play(); showInfoState.value = false },
+                            onResume         = { hasAutoPlayed = true; viewModel.play(); showInfoState.value = false },
                             parts            = gi.books.map { b ->
                                 PartItem(b.displayTitle, b.totalDurationMs)
                             }
@@ -240,7 +264,7 @@ fun PlayerContent(
                             totalMs          = book?.totalDurationMs ?: 0L,
                             synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
                                                ?: book?.description?.takeIf { it.isNotBlank() },
-                            onResume         = { viewModel.play(); showInfoState.value = false },
+                            onResume         = { hasAutoPlayed = true; viewModel.play(); showInfoState.value = false },
                             onShowHistory    = { showHistory = true }
                         )
                     }
@@ -398,7 +422,9 @@ fun PlayerContent(
                     }
                     SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim) { viewModel.skipBack() }
                     Box(
-                        Modifier.size(72.dp).clip(Pill).background(accent).clickable { viewModel.togglePlayPause() },
+                        Modifier.size(72.dp).clip(Pill).background(accent).clickable {
+                            if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause()
+                        },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(

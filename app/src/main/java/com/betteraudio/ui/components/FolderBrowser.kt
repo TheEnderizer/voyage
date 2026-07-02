@@ -43,6 +43,7 @@ fun FolderBrowser(
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
+                contentWindowInsets = WindowInsets.safeDrawing,
                 topBar = {
                     TopAppBar(
                         title = {
@@ -78,6 +79,10 @@ fun FolderBrowser(
                         Row(
                             Modifier
                                 .fillMaxWidth()
+                                // The dialog draws edge-to-edge (usePlatformDefaultWidth = false),
+                                // so keep the buttons clear of the gesture/nav bar and the IME.
+                                .navigationBarsPadding()
+                                .imePadding()
                                 .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {

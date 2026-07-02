@@ -292,6 +292,7 @@ class PlaybackService : MediaSessionService() {
         val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
         if (bookId == -1L) return
         serviceScope.launch(Dispatchers.IO) {
+            AppLog.i("Player", "saveCurrentPosition book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
         }
     }
@@ -353,6 +354,9 @@ class PlaybackService : MediaSessionService() {
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
             val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
             val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            AppLog.i("Player", "widget loadLastPlayedAndPlay book=$bookId" +
+                " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
+                " → startIdx=$startIndex startPos=${startPos}ms")
 
             val items = files.map { file ->
                 MediaItem.Builder()

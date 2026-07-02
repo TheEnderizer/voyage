@@ -143,7 +143,7 @@ private fun SessionRow(s: ListeningSession, onScrim: Color, muted: Color, accent
                 maxLines = 2, overflow = TextOverflow.Ellipsis
             )
             Text(
-                "${dayLabel(s.startMs)} · ${clock(s.startMs)}–${clock(s.endMs)}",
+                "${dayLabel(s.startMs)} · ${clock(s.startMs)}",
                 style = MaterialTheme.typography.labelSmall, color = muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
@@ -192,10 +192,8 @@ private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
 private fun dayLabel(ms: Long): String = dayFmt.format(Date(ms))
 private fun clock(ms: Long): String = clockFmt.format(Date(ms))
 
-private fun chapterLabel(index: Int, name: String): String {
-    val num = if (index >= 0) "Ch ${index + 1}" else "Ch ?"
-    return if (name.isNotBlank() && name != num) "$num · $name" else num
-}
+private fun chapterLabel(index: Int, @Suppress("UNUSED_PARAMETER") name: String): String =
+    if (index >= 0) "Ch ${index + 1}" else "Ch ?"
 
 /** Chapter + position-within-chapter for a session, e.g. "Ch 13 · 04:32 → 11:08". */
 private fun chapterPosLine(s: ListeningSession): String {

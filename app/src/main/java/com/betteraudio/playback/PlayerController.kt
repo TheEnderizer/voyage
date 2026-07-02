@@ -64,6 +64,8 @@ class PlayerController @Inject constructor(
     companion object {
         // Ignore sub-5s play blips so play/pause taps don't spam the history.
         private const val MIN_SESSION_MS = 5_000L
+        // Pause longer than this splits the listening session into a new one.
+        private const val PAUSE_SESSION_SPLIT_MS = 20 * 60 * 1_000L
     }
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -109,9 +111,10 @@ class PlayerController @Inject constructor(
     private var currentBoostMb: Int = 0  // millibels (100 mb = 1 dB)
 
     // ── Listening-history session tracking ───────────────────────────────────
-    // A session = one continuous play→pause/stop/book-change span. Captured in memory
-    // while open (no controller reads off the main thread — all state comes from the
-    // thread-safe _playbackState), written as one complete row on close.
+    // A session spans the open→close window, ignoring short pauses (< 20 min). Only
+    // app-close or a pause longer than PAUSE_SESSION_SPLIT_MS ends a session.
+    // All session state is touched only on the main thread (playerListener callbacks +
+    // Dispatchers.Main timer), so no synchronisation is needed.
     private var sessionOpen = false
     private var sessionBookId = -1L
     private var sessionStartMs = 0L
@@ -119,6 +122,9 @@ class PlayerController @Inject constructor(
     private var sessionStartChapterIndex = -1
     private var sessionStartChapterName = ""
     private var sessionStartPosInChapter = 0L
+    private var sessionAccumulatedMs = 0L   // actual play time, pauses excluded
+    private var sessionSegmentStartMs = 0L  // wall-clock when current segment started; 0 = not playing
+    private var pauseTimerJob: Job? = null
     // (absStartMs, index, name) per chapter for the loaded single book; empty for groups.
     private var chapterBoundaries: List<Triple<Long, Int, String>> = emptyList()
 
@@ -170,8 +176,7 @@ class PlayerController @Inject constructor(
     private fun openHistorySession() {
         val bid = _playbackState.value.bookId.takeIf { it != -1L }
             ?: currentBookId.takeIf { it != -1L } ?: return
-        if (sessionOpen && sessionBookId == bid) return
-        if (sessionOpen) closeHistorySession()
+        if (sessionOpen) closeHistorySession()   // flush previous session (different book)
         val pos = bookPosFromState()
         val (ci, cn, pic) = chapterAt(pos)
         sessionOpen = true
@@ -181,17 +186,26 @@ class PlayerController @Inject constructor(
         sessionStartChapterIndex = ci
         sessionStartChapterName = cn
         sessionStartPosInChapter = pic
+        sessionAccumulatedMs = 0L
+        sessionSegmentStartMs = System.currentTimeMillis()
     }
 
     private fun closeHistorySession() {
+        pauseTimerJob?.cancel()
+        pauseTimerJob = null
         if (!sessionOpen) return
         sessionOpen = false
+        // Flush any in-progress playing segment (e.g., force-close while still playing)
+        if (sessionSegmentStartMs > 0L) {
+            sessionAccumulatedMs += System.currentTimeMillis() - sessionSegmentStartMs
+            sessionSegmentStartMs = 0L
+        }
         val bid = sessionBookId
-        val endMs = System.currentTimeMillis()
-        val listened = endMs - sessionStartMs
+        val listened = sessionAccumulatedMs
         if (bid == -1L || listened < MIN_SESSION_MS) return
         val pos = bookPosFromState()
         val (ci, cn, pic) = chapterAt(pos)
+        val endMs = System.currentTimeMillis()
         val session = ListeningSession(
             bookId = bid,
             startMs = sessionStartMs,
@@ -430,7 +444,10 @@ class PlayerController @Inject constructor(
         // Never overwrite a good saved position with a transient 0 (reported briefly right after
         // a (re)load before the seek lands, or between media-item transitions).
         if (positionMs <= 0L) return
-        scope.launch { repository.updatePosition(bookId, fileId, positionMs) }
+        scope.launch {
+            AppLog.i("Player", "saveCurrentProgress book=$bookId file=$fileId pos=${positionMs}ms")
+            repository.updatePosition(bookId, fileId, positionMs)
+        }
     }
 
     /** Suspending version — awaits the DB write. Use with runBlocking in lifecycle callbacks. */
@@ -457,8 +474,32 @@ class PlayerController @Inject constructor(
                 scope.launch { repository.updateLastPausedAt(bookId, System.currentTimeMillis()) }
             }
             syncState()
-            // Open/close the listening session after syncState so _playbackState is current.
-            if (isPlaying) openHistorySession() else closeHistorySession()
+            // Session logic after syncState so _playbackState is current.
+            if (isPlaying) {
+                pauseTimerJob?.cancel()
+                pauseTimerJob = null
+                val bid = _playbackState.value.bookId.takeIf { it != -1L } ?: currentBookId
+                if (sessionOpen && sessionBookId == bid) {
+                    // Short pause ended — resume the same session
+                    sessionSegmentStartMs = System.currentTimeMillis()
+                } else {
+                    openHistorySession()
+                }
+            } else {
+                // Accumulate the segment that just ended
+                if (sessionOpen && sessionSegmentStartMs > 0L) {
+                    sessionAccumulatedMs += System.currentTimeMillis() - sessionSegmentStartMs
+                    sessionSegmentStartMs = 0L
+                }
+                // Wait 20 min before committing the session; if play resumes we continue it
+                if (sessionOpen) {
+                    pauseTimerJob?.cancel()
+                    pauseTimerJob = scope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                        delay(PAUSE_SESSION_SPLIT_MS)
+                        closeHistorySession()
+                    }
+                }
+            }
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }

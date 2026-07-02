@@ -373,6 +373,17 @@ class HomeViewModel @Inject constructor(
         settings.libraryFolder
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    // null = DataStore not yet loaded; false = user hasn't picked a structure (first run);
+    // true = a structure has been chosen. Drives the first-launch structure prompt.
+    val structureChosen: StateFlow<Boolean?> =
+        settings.importStructure
+            .map { it.isNotBlank() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun chooseImportStructure(structure: com.betteraudio.data.scanner.ImportStructure) {
+        viewModelScope.launch { settings.setImportStructure(structure.name) }
+    }
+
     private val _scan = MutableStateFlow(ScanResult())
     val scan: StateFlow<ScanResult> = _scan.asStateFlow()
 
@@ -410,7 +421,7 @@ class HomeViewModel @Inject constructor(
             val f = File(path)
             Log.e(TAG, "ScanStart: path=$path exists=${f.exists()}")
             try {
-                val count = scanner.scanDirectory(path, autoJoin = true)
+                val count = scanner.scanDirectory(path)
                 _scan.value = ScanResult(ScanStatus.Done, booksFound = count)
             } catch (e: SecurityException) {
                 _scan.value = ScanResult(ScanStatus.Error,

@@ -30,8 +30,10 @@ class UpdateChecker @Inject constructor(
 
     companion object {
         const val GITHUB_REPO = "TheEnderizer/voyage"
-        private const val STABLE_URL  = "https://api.github.com/repos/$GITHUB_REPO/releases/latest"
-        private const val ALL_URL     = "https://api.github.com/repos/$GITHUB_REPO/releases?per_page=10"
+        // GitHub orders /releases by created_at (the tag's commit date), NOT by version or
+        // publish date — so a release cut from an older tag can sort low. Fetch a wide page and
+        // pick the highest version ourselves rather than trusting the list order.
+        private const val ALL_URL = "https://api.github.com/repos/$GITHUB_REPO/releases?per_page=30"
     }
 
     // Installed version from the package manager (always matches the running APK). BuildConfig is
@@ -46,22 +48,19 @@ class UpdateChecker @Inject constructor(
 
     suspend fun checkForUpdate(): ReleaseInfo? = withContext(Dispatchers.IO) {
         try {
-            val json = fetchChannelRelease() ?: return@withContext null
-            val tagName = json.optString("tag_name", "")
-            val remoteVersion = tagName.trimStart('v')
+            val best = bestChannelRelease() ?: return@withContext null
+            val remoteVersion = best.optString("tag_name", "").trimStart('v')
             if (!isNewerVersion(remoteVersion, installedVersionName())) return@withContext null
-            val notes = json.optString("body", "")
-            val apkUrl = findApkAssetUrl(json) ?: return@withContext null
-            ReleaseInfo(remoteVersion, notes, apkUrl)
+            val apkUrl = findApkAssetUrl(best) ?: return@withContext null
+            ReleaseInfo(remoteVersion, best.optString("body", ""), apkUrl)
         } catch (_: Exception) { null }
     }
 
     suspend fun fetchLatestReleaseNotes(): Pair<String, String>? = withContext(Dispatchers.IO) {
         try {
-            val json = fetchChannelRelease() ?: return@withContext null
-            val tag = json.optString("tag_name", "").trimStart('v')
-            val notes = json.optString("body", "No release notes available.")
-            Pair(tag, notes)
+            val best = bestChannelRelease() ?: return@withContext null
+            val tag = best.optString("tag_name", "").trimStart('v')
+            Pair(tag, best.optString("body", "No release notes available."))
         } catch (_: Exception) { null }
     }
 
@@ -108,32 +107,38 @@ class UpdateChecker @Inject constructor(
             } catch (_: Exception) { null }
         }
 
-    // Returns the most recent release for the current channel:
-    //   beta  → latest entry in /releases where prerelease == true
-    //   stable → /releases/latest (GitHub always excludes pre-releases from this endpoint)
-    private fun fetchChannelRelease(): JSONObject? {
-        return if (isBeta()) {
-            val request = Request.Builder()
-                .url(ALL_URL)
-                .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2022-11-28")
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
-            val array = org.json.JSONArray(response.body?.string() ?: return null)
-            (0 until array.length())
-                .map { array.getJSONObject(it) }
-                .firstOrNull { it.optBoolean("prerelease", false) }
-        } else {
-            val request = Request.Builder()
-                .url(STABLE_URL)
-                .header("Accept", "application/vnd.github+json")
-                .header("X-GitHub-Api-Version", "2022-11-28")
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
-            JSONObject(response.body?.string() ?: return null)
+    /**
+     * The highest-version release for the current channel (beta → prereleases, stable →
+     * non-prereleases), among releases that actually ship an APK. Selection is by semantic
+     * version, NOT list order, so a newer release cut from an older tag is still found.
+     */
+    private fun bestChannelRelease(): JSONObject? {
+        val array = fetchReleasesArray() ?: return null
+        val wantPrerelease = isBeta()
+        var best: JSONObject? = null
+        var bestKey: List<Int> = emptyList()
+        for (i in 0 until array.length()) {
+            val r = array.getJSONObject(i)
+            if (r.optBoolean("draft", false)) continue
+            if (r.optBoolean("prerelease", false) != wantPrerelease) continue
+            if (findApkAssetUrl(r) == null) continue   // notes-only releases aren't installable
+            val key = versionKey(r.optString("tag_name", "").trimStart('v'))
+            if (best == null || compareVersions(key, bestKey) > 0) {
+                best = r; bestKey = key
+            }
         }
+        return best
+    }
+
+    private fun fetchReleasesArray(): org.json.JSONArray? {
+        val request = Request.Builder()
+            .url(ALL_URL)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .build()
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) return null
+        return org.json.JSONArray(response.body?.string() ?: return null)
     }
 
     private fun findApkAssetUrl(json: JSONObject): String? {
@@ -149,17 +154,19 @@ class UpdateChecker @Inject constructor(
         return null
     }
 
-    private fun isNewerVersion(remote: String, current: String): Boolean {
-        // Strip channel suffixes ("b") before numeric comparison so "1.2.3b" parses as [1,2,3].
-        fun parse(v: String) = v.split(".").map { seg -> seg.filter { it.isDigit() }.toIntOrNull() ?: 0 }
-        val r = parse(remote)
-        val c = parse(current)
-        for (i in 0 until maxOf(r.size, c.size)) {
-            val rv = r.getOrElse(i) { 0 }
-            val cv = c.getOrElse(i) { 0 }
-            if (rv > cv) return true
-            if (rv < cv) return false
+    private fun isNewerVersion(remote: String, current: String): Boolean =
+        compareVersions(versionKey(remote), versionKey(current)) > 0
+
+    // Strip channel suffixes ("b") so "1.2.3b" → [1,2,3] for numeric comparison.
+    private fun versionKey(v: String): List<Int> =
+        v.split(".").map { seg -> seg.filter { it.isDigit() }.toIntOrNull() ?: 0 }
+
+    private fun compareVersions(a: List<Int>, b: List<Int>): Int {
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val av = a.getOrElse(i) { 0 }
+            val bv = b.getOrElse(i) { 0 }
+            if (av != bv) return av - bv
         }
-        return false
+        return 0
     }
 }

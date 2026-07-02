@@ -10,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,6 +48,8 @@ import com.betteraudio.ui.search.SearchScreen
 import com.betteraudio.ui.series.SeriesDetailScreen
 import com.betteraudio.ui.settings.SettingsScreen
 import com.betteraudio.ui.theme.VoyageTheme
+import com.betteraudio.ui.update.UpdateAvailableScreen
+import com.betteraudio.ui.update.UpdateGateViewModel
 import com.betteraudio.util.AppLog
 import com.betteraudio.widget.WidgetRender
 import dagger.hilt.android.AndroidEntryPoint
@@ -59,6 +62,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var playerController: PlayerController
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var repository: AudiobookRepository
+
+    private val updateGateViewModel: UpdateGateViewModel by viewModels()
 
     // Set when a widget tap (warm start) asks to open the active player; observed in setContent.
     private var playerNavRequest by mutableStateOf<Long?>(null)
@@ -207,6 +212,24 @@ class MainActivity : ComponentActivity() {
                 }
 
                 PlayerSheet(controller = sheetController, playerController = playerController)
+
+                // Launch-time update gate: draws over everything when a new release is found
+                // (and the user hasn't skipped that exact version).
+                val updateState by updateGateViewModel.state.collectAsStateWithLifecycle()
+                LaunchedEffect(Unit) { updateGateViewModel.checkOnLaunch() }
+                updateState.info?.let { info ->
+                    // Back = decide later (reappears next launch), never a silent skip.
+                    BackHandler(enabled = !updateState.downloading) { updateGateViewModel.dismissForNow() }
+                    UpdateAvailableScreen(
+                        versionName = info.versionName,
+                        releaseNotes = info.releaseNotes,
+                        downloading = updateState.downloading,
+                        progress = updateState.progress,
+                        error = updateState.error,
+                        onInstall = { updateGateViewModel.install() },
+                        onSkip = { updateGateViewModel.skip() }
+                    )
+                }
                 }
             }
         }

@@ -57,6 +57,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.ui.components.CircleIconButton
+import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
@@ -78,6 +79,7 @@ fun HomeScreen(
     var showScanSheet by remember { mutableStateOf(false) }
     var showStorageRationale by remember { mutableStateOf(false) }
     var showSortFilter by remember { mutableStateOf(false) }
+    var showStructureDialog by remember { mutableStateOf(false) }
 
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val currentBook by viewModel.currentlyPlayingBook.collectAsStateWithLifecycle()
@@ -88,6 +90,7 @@ fun HomeScreen(
     val tabCounts by viewModel.tabCounts.collectAsStateWithLifecycle()
     val scan by viewModel.scan.collectAsStateWithLifecycle()
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
+    val structureChosen by viewModel.structureChosen.collectAsStateWithLifecycle()
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selectedBookIds by viewModel.selectedBookIds.collectAsStateWithLifecycle()
     val selectedGroupId by viewModel.selectedGroupId.collectAsStateWithLifecycle()
@@ -124,13 +127,34 @@ fun HomeScreen(
     val nowPlaying = playbackState.bookId != -1L && playbackState.bookTitle.isNotBlank()
     val showResumeCard = !nowPlaying && resumeBook != null
 
-    // Auto-open folder picker on first launch. savedFolder is null until DataStore emits,
-    // so we only act once the real value arrives — avoids a false trigger on the "" default.
-    LaunchedEffect(savedFolder) {
+    // First launch: pick the library structure, then auto-open the folder picker. Both
+    // savedFolder and structureChosen are null until DataStore emits, so we only act once the
+    // real values arrive — avoids a false trigger on the "" / not-yet-loaded defaults.
+    LaunchedEffect(savedFolder, structureChosen, showStructureDialog) {
         val folder = savedFolder
-        if (folder != null && folder.isBlank() && !showScanSheet) {
-            onScanClick()
+        val chosen = structureChosen
+        if (folder != null && folder.isBlank() && chosen != null) {
+            when {
+                !chosen -> showStructureDialog = true
+                !showScanSheet && !showStructureDialog -> onScanClick()
+            }
         }
+    }
+
+    if (showStructureDialog) {
+        ImportStructureDialog(
+            initial = com.betteraudio.data.scanner.ImportStructure.AUTO,
+            confirmLabel = "Continue",
+            onConfirm = { chosen ->
+                viewModel.chooseImportStructure(chosen)
+                showStructureDialog = false
+            },
+            // Dismissing still commits a choice (Automatic) so the prompt doesn't reappear.
+            onDismiss = {
+                viewModel.chooseImportStructure(com.betteraudio.data.scanner.ImportStructure.AUTO)
+                showStructureDialog = false
+            }
+        )
     }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->

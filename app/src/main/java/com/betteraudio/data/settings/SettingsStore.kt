@@ -44,6 +44,12 @@ class SettingsStore @Inject constructor(
         val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
         val SKIP_SILENCE_MIN_MS          = longPreferencesKey("skip_silence_min_ms")
         val SKIP_SILENCE_THRESHOLD       = intPreferencesKey("skip_silence_threshold")
+        // "" = not chosen yet (drives the first-run structure prompt); otherwise an
+        // ImportStructure name. Blank is treated as AUTO at scan time.
+        val IMPORT_STRUCTURE             = stringPreferencesKey("import_structure")
+        // Version the user tapped "Skip" on in the launch update prompt; suppresses the prompt
+        // only for that exact version, so a newer release still prompts.
+        val SKIPPED_UPDATE_VERSION       = stringPreferencesKey("skipped_update_version")
     }
 
     companion object {
@@ -74,6 +80,8 @@ class SettingsStore @Inject constructor(
     val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
     val skipSilenceMinMs: Flow<Long>          = context.dataStore.data.map { it[Keys.SKIP_SILENCE_MIN_MS] ?: DEFAULT_SKIP_SILENCE_MIN_MS }
     val skipSilenceThreshold: Flow<Int>       = context.dataStore.data.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }
+    val importStructure: Flow<String>         = context.dataStore.data.map { it[Keys.IMPORT_STRUCTURE] ?: "" }
+    val skippedUpdateVersion: Flow<String>    = context.dataStore.data.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -86,6 +94,7 @@ class SettingsStore @Inject constructor(
     @Volatile var currentAppStoppedAt               = 0L;                                     private set
     @Volatile var currentSkipSilenceMinMs           = DEFAULT_SKIP_SILENCE_MIN_MS;            private set
     @Volatile var currentSkipSilenceThreshold       = DEFAULT_SKIP_SILENCE_THRESHOLD;         private set
+    @Volatile var currentImportStructure            = "";                                     private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -99,6 +108,7 @@ class SettingsStore @Inject constructor(
         scope.launch { appStoppedAt.collect              { currentAppStoppedAt              = it } }
         scope.launch { skipSilenceMinMs.collect          { currentSkipSilenceMinMs          = it } }
         scope.launch { skipSilenceThreshold.collect      { currentSkipSilenceThreshold      = it } }
+        scope.launch { importStructure.collect           { currentImportStructure           = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -132,4 +142,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.SKIP_SILENCE_MIN_MS] = ms }.let { }
     suspend fun setSkipSilenceThreshold(level: Int) =
         context.dataStore.edit { it[Keys.SKIP_SILENCE_THRESHOLD] = level }.let { }
+    suspend fun setImportStructure(name: String) =
+        context.dataStore.edit { it[Keys.IMPORT_STRUCTURE] = name }.let { }
+    suspend fun setSkippedUpdateVersion(version: String) =
+        context.dataStore.edit { it[Keys.SKIPPED_UPDATE_VERSION] = version }.let { }
 }

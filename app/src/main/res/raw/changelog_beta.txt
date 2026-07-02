@@ -3,6 +3,28 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.0b] - 2026-07-02
+
+### Fixed
+- Update checker now finds new releases reliably. GitHub lists releases by tag-commit date, not version, so a release cut from an older tag could sort below older ones and be missed entirely — the app now picks the highest version number instead of trusting the list order, and scans more releases
+- The folder picker's Select / Cancel buttons are no longer cut off behind the gesture navigation bar
+
+### Added
+- Choose how your library folders are read: Automatic, Author / Series / Book, or Author - Series / Book. Pick it on first launch or in Settings → Library → Library structure
+- The app now detects when audiobook files or folders are removed from your device: a book whose files are all gone is hidden (kept, with its progress, in case it comes back) and a book that lost only some files is trimmed
+- On launch, if an update is available you'll get an update screen with the release notes and Install / Skip. Skipping suppresses only that version, so the next release still prompts you
+- Reset library action in Settings → Library — clears every book from the app (your audio files on disk are kept) for a clean re-scan
+
+### Changed
+- Series are now first-class: the library keeps a proper series record (seeded automatically from your existing series info). This is the groundwork for series covers, a series info screen, series-wide options, and continuous series playback arriving in upcoming beta updates
+- Automatic book "joining" has been retired in favour of the new series system
+
+## [1.5.2b] - 2026-06-29
+
+### Fixed
+- Pressing Play (or Resume) no longer resets to the start of the current chapter after a book has been completed — saving a new position now clears the "finished" flag so resume picks up from where you actually are
+- Auto-rewind no longer overshoots past the start of a chapter when the saved position within the file is shorter than the rewind amount
+
 ## [1.5.1b] - 2026-06-29
 
 ### Fixed

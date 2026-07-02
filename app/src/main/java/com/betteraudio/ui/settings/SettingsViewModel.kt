@@ -92,11 +92,38 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { repository.setBookIgnored(bookId, false) }
     }
 
+    val importStructure: StateFlow<com.betteraudio.data.scanner.ImportStructure> =
+        settings.importStructure
+            .map { com.betteraudio.data.scanner.ImportStructure.fromName(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.data.scanner.ImportStructure.AUTO)
+
+    /** Persist a new import structure; optionally kick off a rescan so it takes effect now. */
+    fun setImportStructure(structure: com.betteraudio.data.scanner.ImportStructure, rescan: Boolean) {
+        viewModelScope.launch {
+            settings.setImportStructure(structure.name)
+            if (rescan) rescan()
+        }
+    }
+
     private val _rescanRunning = MutableStateFlow(false)
     val rescanRunning: StateFlow<Boolean> = _rescanRunning.asStateFlow()
 
     private val _coverRefreshRunning = MutableStateFlow(false)
     val coverRefreshRunning: StateFlow<Boolean> = _coverRefreshRunning.asStateFlow()
+
+    private val _resetRunning = MutableStateFlow(false)
+    val resetRunning: StateFlow<Boolean> = _resetRunning.asStateFlow()
+
+    /** Clear the whole library from the DB (audio files on disk are kept). */
+    fun resetLibrary() {
+        if (_resetRunning.value) return
+        viewModelScope.launch {
+            _resetRunning.value = true
+            try { repository.resetLibrary() } catch (_: Exception) {}
+            _resetRunning.value = false
+        }
+    }
 
     fun refreshAllCoverEffects() {
         if (_coverRefreshRunning.value) return

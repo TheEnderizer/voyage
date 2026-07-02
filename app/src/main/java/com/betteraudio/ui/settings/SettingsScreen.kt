@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
@@ -58,6 +59,8 @@ import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
+import com.betteraudio.ui.components.ImportStructureDialog
+import com.betteraudio.ui.components.label
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import com.betteraudio.util.AppLog
@@ -79,6 +82,7 @@ fun SettingsScreen(
     val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
     val rescanRunning        by viewModel.rescanRunning.collectAsStateWithLifecycle()
     val coverRefreshRunning  by viewModel.coverRefreshRunning.collectAsStateWithLifecycle()
+    val resetRunning         by viewModel.resetRunning.collectAsStateWithLifecycle()
     val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
     val updateState               by viewModel.updateState.collectAsStateWithLifecycle()
     val whatsNew                  by viewModel.whatsNew.collectAsStateWithLifecycle()
@@ -87,6 +91,7 @@ fun SettingsScreen(
     val autoRewindThresholdMinutes by viewModel.autoRewindThresholdMinutes.collectAsStateWithLifecycle()
     val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
     val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
+    val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
@@ -159,8 +164,8 @@ fun SettingsScreen(
                     SettingsSection.Root -> rootSection(viewModel)
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        coverRefreshRunning, ignoredBooks, storageSettingsLauncher,
-                        { showBrowser = true }, viewModel
+                        coverRefreshRunning, resetRunning, ignoredBooks, importStructure,
+                        storageSettingsLauncher, { showBrowser = true }, viewModel
                     )
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
@@ -202,7 +207,9 @@ private fun LazyListScope.librarySection(
     bookCount: Int,
     rescanRunning: Boolean,
     coverRefreshRunning: Boolean,
+    resetRunning: Boolean,
     ignoredBooks: List<com.betteraudio.data.db.entities.Book>,
+    importStructure: com.betteraudio.data.scanner.ImportStructure,
     storageSettingsLauncher: androidx.activity.result.ActivityResultLauncher<Intent>,
     onBrowse: () -> Unit,
     viewModel: SettingsViewModel
@@ -234,6 +241,27 @@ private fun LazyListScope.librarySection(
         )
     }
     item {
+        var showStructureDialog by remember { mutableStateOf(false) }
+        SettingsCard(
+            icon = Icons.AutoMirrored.Filled.List,
+            iconTint = MaterialTheme.colorScheme.primary,
+            title = "Library structure",
+            subtitle = importStructure.label(),
+            onClick = { showStructureDialog = true }
+        )
+        if (showStructureDialog) {
+            ImportStructureDialog(
+                initial = importStructure,
+                confirmLabel = "Save & rescan",
+                onConfirm = { chosen ->
+                    viewModel.setImportStructure(chosen, rescan = true)
+                    showStructureDialog = false
+                },
+                onDismiss = { showStructureDialog = false }
+            )
+        }
+    }
+    item {
         SettingsCard(
             icon = Icons.Default.Refresh,
             iconTint = MaterialTheme.colorScheme.primary,
@@ -256,6 +284,42 @@ private fun LazyListScope.librarySection(
                 if (coverRefreshRunning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }
         )
+    }
+    item {
+        var showResetConfirm by remember { mutableStateOf(false) }
+        SettingsCard(
+            icon = Icons.Default.DeleteSweep,
+            iconTint = MaterialTheme.colorScheme.error,
+            title = "Reset library",
+            subtitle = "Remove all books from the app (your audio files are kept)",
+            onClick = if (!resetRunning) ({ showResetConfirm = true }) else null,
+            trailing = {
+                if (resetRunning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            }
+        )
+        if (showResetConfirm) {
+            AlertDialog(
+                onDismissRequest = { showResetConfirm = false },
+                icon = { Icon(Icons.Default.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
+                title = { Text("Reset library?") },
+                text = {
+                    Text(
+                        "This removes every book, series, group, bookmark and listening-history " +
+                        "entry from the app. Your audio files on the device are not deleted — " +
+                        "rescan to import them again."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.resetLibrary(); showResetConfirm = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Reset") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
     }
 
     if (ignoredBooks.isNotEmpty()) {
