@@ -174,10 +174,9 @@ class MainActivity : ComponentActivity() {
                         route = "series/{seriesId}",
                         arguments = listOf(navArgument("seriesId") { type = NavType.LongType })
                     ) { backStack ->
-                        val sid = backStack.arguments?.getLong("seriesId") ?: -1L
                         SeriesDetailScreen(
                             onBack = { navController.popBackStack() },
-                            onOpenPlayer = { sheetController.open(groupId = sid) }
+                            onOpenPlayer = { bookId -> sheetController.open(bookId = bookId) }
                         )
                     }
 

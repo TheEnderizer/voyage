@@ -3,6 +3,12 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.5b] - 2026-07-02
+
+### Changed
+- Series now play in the **exact same player as a single book** — no separate "group" player. A series plays one book at a time and automatically rolls into the next book when one ends, and the open player follows along. This means series get the full player: book options, listening history, chapters, bookmarks — everything a normal book has
+- The book↔series cover toggle now lives in any series book's ⋮ menu ("Show series cover" / "Show book cover")
+
 ## [1.6.4b] - 2026-07-02
 
 ### Added

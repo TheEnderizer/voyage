@@ -105,6 +105,14 @@ class PlayerSheetController {
 
     fun expandCurrent() { if (target != null) expandToken++ }
     fun collapse() { collapseToken++ }
+
+    /** Re-point the (already-open) player at a new book without re-animating — used when a series
+     *  auto-advances so the full player follows into the next book. */
+    fun follow(bookId: Long) {
+        if (bookId != -1L && target?.bookId != bookId) {
+            target = PlayerTarget(bookId = bookId, startPlaying = false)
+        }
+    }
 }
 
 @Composable
@@ -130,6 +138,13 @@ fun PlayerSheet(
     // Mirror the playing book into the target so the mini bar is ready to expand.
     LaunchedEffect(playback.bookId, playback.groupId) {
         if (playback.bookId != -1L) controller.prime(playback.bookId, playback.groupId)
+    }
+
+    // When a series auto-advances into the next book, follow it in the open full player.
+    LaunchedEffect(Unit) {
+        playerController.seriesAdvanced.collect { nextBookId ->
+            if (controller.isExpanded) controller.follow(nextBookId)
+        }
     }
 
     if (target == null && playback.bookId == -1L) return  // nothing ever played → no sheet

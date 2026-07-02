@@ -9,8 +9,11 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.playback.SeriesPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -40,8 +43,18 @@ class SeriesDetailViewModel @Inject constructor(
                 .sortedBy { it.displayTitle.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun playSeries() = viewModelScope.launch { seriesPlayer.playSeries(seriesId) }
-    fun playFromBook(bookId: Long) = viewModelScope.launch { seriesPlayer.playSeries(seriesId, startBookId = bookId) }
+    // Emits the book id that started playing, so the screen can open the player on it.
+    private val _openPlayer = MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    val openPlayer: SharedFlow<Long> = _openPlayer.asSharedFlow()
+
+    fun playSeries() = viewModelScope.launch {
+        val id = seriesPlayer.playSeries(seriesId)
+        if (id != -1L) _openPlayer.emit(id)
+    }
+    fun playFromBook(bookId: Long) = viewModelScope.launch {
+        val id = seriesPlayer.playSeries(seriesId, startBookId = bookId)
+        if (id != -1L) _openPlayer.emit(id)
+    }
 
     fun addBook(bookId: Long) = viewModelScope.launch { seriesRepository.addBookToSeries(bookId, seriesId) }
     fun removeBook(bookId: Long) = viewModelScope.launch { seriesRepository.removeBookFromSeries(bookId) }

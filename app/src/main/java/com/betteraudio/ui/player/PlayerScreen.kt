@@ -57,10 +57,11 @@ fun PlayerContent(
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val sessions          by viewModel.listeningSessions.collectAsStateWithLifecycle()
     val skips             by viewModel.skipEvents.collectAsStateWithLifecycle()
-    val seriesShowBookCover by viewModel.seriesShowBookCover.collectAsStateWithLifecycle()
-    val currentMemberBook by viewModel.currentMemberBook.collectAsStateWithLifecycle()
+    val showSeriesCover by viewModel.showSeriesCover.collectAsStateWithLifecycle()
+    val seriesCover by viewModel.seriesCover.collectAsStateWithLifecycle()
     val book = bwp?.book
     val isGroup = viewModel.groupId != -1L
+    val inSeries = book?.seriesId != null
 
     // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
     // Back is intentionally NOT intercepted here — the system back / swipe always returns straight
@@ -123,16 +124,15 @@ fun PlayerContent(
         val onScrimMuted = Color.White.copy(alpha = 0.62f)
         val accent = MaterialTheme.colorScheme.primary
 
-        // For a series, show the series cover by default, or the current member book's cover when
-        // the user has toggled to book-cover mode.
-        val showMemberCover = isGroup && seriesShowBookCover && currentMemberBook != null
+        // For a book in a series, optionally show the series cover instead of the book's own.
+        val useSeriesCover = inSeries && showSeriesCover && seriesCover != null
         val coverPath = when {
-            showMemberCover -> currentMemberBook?.coverArtPath
+            useSeriesCover -> seriesCover
             isGroup -> groupInfo?.coverArtPath
             else -> book?.coverArtPath
         }
         val bakedPath = when {
-            showMemberCover -> currentMemberBook?.coverFxPath
+            useSeriesCover -> null            // series cover isn't pre-baked; live-render the effect
             isGroup -> null
             else -> book?.coverFxPath
         }
@@ -224,11 +224,11 @@ fun PlayerContent(
                                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                                 onClick = { showOverflow = false; showAddBookmark = true }
                             )
-                            if (isGroup) {
+                            if (inSeries) {
                                 DropdownMenuItem(
-                                    text = { Text(if (seriesShowBookCover) "Show series cover" else "Show book cover") },
+                                    text = { Text(if (showSeriesCover) "Show book cover" else "Show series cover") },
                                     leadingIcon = { Icon(Icons.Default.Image, null) },
-                                    onClick = { showOverflow = false; viewModel.toggleSeriesCoverMode() }
+                                    onClick = { showOverflow = false; viewModel.toggleShowSeriesCover() }
                                 )
                             }
                             if (!isGroup) {

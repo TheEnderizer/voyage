@@ -97,22 +97,22 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
 
-    // Series cover mode: when true, the player shows the currently-playing member book's cover
-    // instead of the series cover. Persisted globally; toggled from the player overflow menu.
-    val seriesShowBookCover: StateFlow<Boolean> =
-        settings.playerSeriesBookCover.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    // Series cover mode: when true, a book that belongs to a series shows the SERIES cover in the
+    // player instead of the book's own cover. Persisted globally; toggled from the overflow menu.
+    val showSeriesCover: StateFlow<Boolean> =
+        settings.playerShowSeriesCover.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    fun toggleSeriesCoverMode() {
-        viewModelScope.launch { settings.setPlayerSeriesBookCover(!seriesShowBookCover.value) }
+    fun toggleShowSeriesCover() {
+        viewModelScope.launch { settings.setPlayerShowSeriesCover(!showSeriesCover.value) }
     }
 
-    // The member book currently playing within a series (for the book-cover option / backdrop).
+    // The current book's series cover (if it belongs to one), for the cover toggle.
     @OptIn(ExperimentalCoroutinesApi::class)
-    val currentMemberBook: StateFlow<Book?> =
-        playerController.playbackState
-            .map { it.bookId }
+    val seriesCover: StateFlow<String?> =
+        bookWithProgress
+            .map { it?.book?.seriesId }
             .distinctUntilChanged()
-            .flatMapLatest { id -> if (id == -1L) flowOf(null) else repository.getBookById(id) }
+            .flatMapLatest { sid -> if (sid == null) flowOf(null) else seriesRepository.getSeries(sid).map { it?.coverArtPath } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Configured skip intervals — surfaced so the transport buttons can show the real seconds.

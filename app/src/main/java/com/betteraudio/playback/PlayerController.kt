@@ -76,6 +76,15 @@ class PlayerController @Inject constructor(
     private var currentGroupId = -1L
     private var currentGroupName = ""
 
+    // Series-continuation context: when the playing book belongs to an active series session,
+    // the next book auto-starts when it ends. Managed by SeriesPlayer via [playBook].
+    private var currentSeriesId = -1L
+    private var currentSeriesBookIds: List<Long> = emptyList()
+    /** Invoked when a series member book ends, so the next book can be loaded and played. */
+    var onSeriesBookEnded: ((seriesId: Long, orderedBookIds: List<Long>, endedBookId: Long) -> Unit)? = null
+    /** Emits the new book id when a series auto-advances, so the open player can re-target to it. */
+    val seriesAdvanced = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 1)
+
     // Cumulative start offsets per file index, computed when a book is loaded
     private var cumulativeStartsMs: List<Long> = emptyList()
     private var bookTotalDurationMs: Long = 0L
@@ -256,13 +265,19 @@ class PlayerController @Inject constructor(
         files: List<AudioFile>,
         startFileIndex: Int = 0,
         startPositionMs: Long = 0L,
-        speed: Float = settings.currentDefaultSpeed
+        speed: Float = settings.currentDefaultSpeed,
+        // Series continuation: when set, this book is part of series [seriesId] and the next book
+        // in [seriesBookIds] auto-starts when it ends. Empty = a standalone book.
+        seriesId: Long = -1L,
+        seriesBookIds: List<Long> = emptyList()
     ) {
         closeHistorySession()  // end any session on the previously-loaded book first
-        AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed")
+        AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed series=$seriesId")
         currentBookId = book.id
         currentGroupId = -1L
         currentGroupName = ""
+        currentSeriesId = seriesId
+        currentSeriesBookIds = seriesBookIds
         loadChapterBoundaries(book.id, files)
         buildAndPlay(
             items = files.map { file ->
@@ -501,24 +516,17 @@ class PlayerController @Inject constructor(
                 }
             }
         }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-            // When a series auto-advances from one member book into the next, mark the book we
-            // just left as finished. Only on a natural advance — seeking across books must not.
-            val newBookId = mediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
-            if (currentGroupId != -1L && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO &&
-                currentBookId != -1L && newBookId != -1L && newBookId != currentBookId
-            ) {
-                val finishedBook = currentBookId
-                scope.launch { repository.markBookFinished(finishedBook) }
-            }
-            syncState()
-        }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED && currentBookId != -1L) {
-                val bookId = currentBookId
-                scope.launch { repository.markBookFinished(bookId) }
+                val endedBook = currentBookId
+                scope.launch { repository.markBookFinished(endedBook) }
+                // Part of a series? Hand off so the next member book auto-starts.
+                if (currentSeriesId != -1L) {
+                    onSeriesBookEnded?.invoke(currentSeriesId, currentSeriesBookIds, endedBook)
+                }
             }
             syncState()
         }

@@ -31,7 +31,7 @@ import java.io.File
 @Composable
 fun SeriesDetailScreen(
     onBack: () -> Unit,
-    onOpenPlayer: () -> Unit,
+    onOpenPlayer: (bookId: Long) -> Unit,
     viewModel: SeriesDetailViewModel = hiltViewModel()
 ) {
     val series by viewModel.series.collectAsStateWithLifecycle()
@@ -40,6 +40,9 @@ fun SeriesDetailScreen(
 
     var showAdd by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
+
+    // Open the player on whichever book started playing (resume book, or a tapped book).
+    LaunchedEffect(Unit) { viewModel.openPlayer.collect { onOpenPlayer(it) } }
 
     Scaffold(
         topBar = {
@@ -71,7 +74,7 @@ fun SeriesDetailScreen(
         ) {
             item {
                 Button(
-                    onClick = { viewModel.playSeries(); onOpenPlayer() },
+                    onClick = { viewModel.playSeries() },
                     enabled = books.isNotEmpty(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -87,7 +90,7 @@ fun SeriesDetailScreen(
                     index = index + 1,
                     canMoveUp = index > 0,
                     canMoveDown = index < books.size - 1,
-                    onClick = { viewModel.playFromBook(book.id); onOpenPlayer() },
+                    onClick = { viewModel.playFromBook(book.id) },
                     onMoveUp = { viewModel.moveBook(book.id, up = true) },
                     onMoveDown = { viewModel.moveBook(book.id, up = false) },
                     onRemove = { viewModel.removeBook(book.id) },
