@@ -60,6 +60,23 @@ class CoverSearchService @Inject constructor(
 
     suspend fun download(imageUrl: String, bookId: Long): String? = download(imageUrl, "book$bookId")
 
+    /** Download a cover directly to [target] on disk (e.g. inside the book's own folder). */
+    suspend fun downloadTo(imageUrl: String, target: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder().url(imageUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext false
+                val bytes = response.body?.bytes() ?: return@withContext false
+                if (bytes.size < 100) return@withContext false
+                target.parentFile?.mkdirs()
+                target.writeBytes(bytes)
+                true
+            }
+        } catch (_: Exception) { false }
+    }
+
     /** Download a cover to internal storage under an arbitrary [key] (e.g. "series12", "authorFooBar"). */
     suspend fun download(imageUrl: String, key: String): String? = withContext(Dispatchers.IO) {
         try {

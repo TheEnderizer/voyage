@@ -92,7 +92,12 @@ interface BookDao {
     @Query("SELECT DISTINCT author FROM books WHERE isIgnored = 0 AND author != ''")
     fun getDistinctAuthors(): Flow<List<String>>
 
-    @Query("SELECT * FROM books WHERE author = :author AND isIgnored = 0 ORDER BY seriesName ASC, seriesOrder ASC, title ASC")
+    // Match the effective author (authorOverride when set, else the scanned author).
+    @Query("""
+        SELECT * FROM books
+        WHERE COALESCE(NULLIF(authorOverride, ''), author) = :author AND isIgnored = 0
+        ORDER BY seriesName ASC, seriesOrder ASC, title ASC
+    """)
     fun getBooksByAuthor(author: String): Flow<List<Book>>
 
     @Query("SELECT * FROM books ORDER BY CASE WHEN seriesName IS NULL THEN title ELSE seriesName END ASC, seriesOrder ASC, title ASC")
@@ -144,6 +149,9 @@ interface BookDao {
 
     @Query("UPDATE books SET titleOverride = :titleOverride, authorOverride = :authorOverride WHERE id = :id")
     suspend fun updateMetadata(id: Long, titleOverride: String?, authorOverride: String?)
+
+    @Query("UPDATE books SET narrator = :narrator WHERE id = :id")
+    suspend fun updateNarrator(id: Long, narrator: String?)
 
     @Query("SELECT * FROM books WHERE coverArtPath IS NOT NULL ORDER BY title ASC")
     suspend fun getAllBooksSortedOnce(): List<Book>

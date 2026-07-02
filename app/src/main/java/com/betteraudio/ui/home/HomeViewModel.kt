@@ -165,7 +165,24 @@ class HomeViewModel @Inject constructor(
 
     fun setBookCoverFromUrl(bookId: Long, imageUrl: String) {
         viewModelScope.launch {
-            val path = coverSearchService.download(imageUrl, bookId)
+            val book = repository.getBookById(bookId).first()
+            val folder = book?.folderPath?.let { File(it) }
+            // Prefer storing the cover INSIDE the book's folder (a timestamped ".cover_*.jpg") so it
+            // persists with the audio and travels with a restructure move. Fall back to internal
+            // storage for synthetic multi-book folders ("dir::stem", not a real directory).
+            val path = if (folder != null && folder.isDirectory) {
+                val target = File(folder, ".cover_${System.currentTimeMillis()}.jpg")
+                if (coverSearchService.downloadTo(imageUrl, target)) {
+                    // Remove a previous app-written cover in the same folder to avoid clutter.
+                    book.coverArtPath?.let { old ->
+                        val f = File(old)
+                        if (f.parentFile == folder && f.name.startsWith(".cover")) runCatching { f.delete() }
+                    }
+                    target.absolutePath
+                } else null
+            } else {
+                coverSearchService.download(imageUrl, bookId)
+            }
             if (path != null) repository.updateCoverArt(bookId, path)
             closeCoverSearch()
         }
@@ -324,7 +341,8 @@ class HomeViewModel @Inject constructor(
 
             HomeViewMode.AUTHORS -> {
                 val metaByName = authorMetas.associateBy { it.name }
-                bwpList.groupBy { it.book.author.ifBlank { "Unknown" } }.forEach { (name, members) ->
+                // Group by the effective author (override-aware) so an author you change is reflected.
+                bwpList.groupBy { it.book.displayAuthor.ifBlank { "Unknown" } }.forEach { (name, members) ->
                     val ordered = members.sortedWith(compareBy({ it.book.seriesName ?: "" }, { it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
                     val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
                     result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))

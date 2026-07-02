@@ -60,7 +60,19 @@ class SeriesDetailViewModel @Inject constructor(
     fun removeBook(bookId: Long) = viewModelScope.launch { seriesRepository.removeBookFromSeries(bookId) }
     fun rename(name: String) = viewModelScope.launch { if (name.isNotBlank()) seriesRepository.renameSeries(seriesId, name) }
     fun saveOptions(updated: com.betteraudio.data.db.entities.Series) =
-        viewModelScope.launch { seriesRepository.updateSeries(updated) }
+        viewModelScope.launch {
+            seriesRepository.updateSeries(updated)
+            // Author/narrator are metadata: applying them to the series writes them onto every
+            // member book so they actually show in each book's options, the grid and the player.
+            // (Per-book playback settings still stay per-book via the audio cascade.)
+            val members = seriesRepository.getBooksInSeriesOnce(updated.id)
+            updated.author?.takeIf { it.isNotBlank() }?.let { author ->
+                members.forEach { repository.updateBookMetadata(it.id, it.titleOverride, author) }
+            }
+            updated.narrator?.takeIf { it.isNotBlank() }?.let { narrator ->
+                members.forEach { repository.updateBookNarrator(it.id, narrator) }
+            }
+        }
 
     /** Move a member up or down and renumber the whole series so the order sticks. */
     fun moveBook(bookId: Long, up: Boolean) {

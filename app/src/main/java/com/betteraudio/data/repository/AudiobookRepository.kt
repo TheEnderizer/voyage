@@ -198,6 +198,8 @@ class AudiobookRepository @Inject constructor(
     suspend fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) =
         bookDao.updateMetadata(bookId, titleOverride?.takeIf { it.isNotBlank() }, authorOverride?.takeIf { it.isNotBlank() })
 
+    suspend fun updateBookNarrator(bookId: Long, narrator: String?) = bookDao.updateNarrator(bookId, narrator)
+
     suspend fun setBookIgnored(bookId: Long, ignored: Boolean) = bookDao.setIgnored(bookId, ignored)
 
     fun getAllIgnoredBooks(): Flow<List<Book>> = bookDao.getAllIgnoredBooks()

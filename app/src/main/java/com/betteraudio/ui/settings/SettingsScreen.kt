@@ -325,17 +325,30 @@ private fun LazyListScope.librarySection(
 
     item {
         val restructure by viewModel.restructure.collectAsStateWithLifecycle()
+        var showPicker by remember { mutableStateOf(false) }
         var showRestructure by remember { mutableStateOf(false) }
         SettingsCard(
             icon = Icons.Default.DriveFileMove,
             iconTint = MaterialTheme.colorScheme.secondary,
             title = "Restructure files on disk",
-            subtitle = "Move audio files to match your Author / Series / Book layout",
-            onClick = if (!restructure.running) ({ viewModel.loadRestructurePlan(); showRestructure = true }) else null,
+            subtitle = "Move audio files to match a chosen Author / Series / Book layout",
+            onClick = if (!restructure.running) ({ showPicker = true }) else null,
             trailing = {
                 if (restructure.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }
         )
+        if (showPicker) {
+            ImportStructureDialog(
+                initial = importStructure,
+                confirmLabel = "Next",
+                onConfirm = { chosen ->
+                    viewModel.chooseRestructureStructure(chosen)
+                    showPicker = false
+                    showRestructure = true
+                },
+                onDismiss = { showPicker = false }
+            )
+        }
         if (showRestructure) {
             AlertDialog(
                 onDismissRequest = { if (!restructure.running) { showRestructure = false; viewModel.clearRestructure() } },

@@ -60,8 +60,23 @@ class LibraryRestructurer @Inject constructor(
             }
             onProgress(index + 1, moves.size)
         }
+        if (moved > 0) {
+            val root = settings.libraryFolder.first()
+            if (root.isNotBlank()) cleanupEmptyDirs(File(root))
+        }
         AppLog.i("Restructure", "done moved=$moved skipped=$skipped failed=$failed")
         Result(moved, skipped, failed)
+    }
+
+    /** Remove folders left empty by the moves (bottom-up), keeping the library root itself. A
+     *  folder holding only a leftover .nomedia is treated as empty. */
+    private fun cleanupEmptyDirs(root: File) {
+        root.walkBottomUp().forEach { d ->
+            if (d.isDirectory && d.absolutePath != root.absolutePath) {
+                val meaningful = d.listFiles()?.filter { !(it.isFile && it.name == ".nomedia") } ?: emptyList()
+                if (meaningful.isEmpty()) runCatching { d.deleteRecursively() }
+            }
+        }
     }
 
     private enum class MoveOutcome { MOVED, SKIPPED, FAILED }

@@ -3,6 +3,15 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.9b] - 2026-07-02
+
+### Fixed
+- Changing a series' author (or narrator) now actually updates every book in the series — it shows in each book's options, the Authors view, and the player. The Authors view now groups by the effective author, so an author you change is reflected right away
+
+### Changed
+- Restructure files now asks which layout to use (Author / Series / Book, or Author - Series / Book) before it moves anything, and removes the now-empty leftover folders after the move
+- A cover you set from an online search is now saved inside the book's own folder, so it stays with the audio and travels with a restructure move
+
 ## [1.6.8b] - 2026-07-02
 
 ### Added

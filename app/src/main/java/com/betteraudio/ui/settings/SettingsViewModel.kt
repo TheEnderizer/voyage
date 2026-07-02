@@ -78,6 +78,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** Set the target structure (also becomes the app's structure) then compute the dry-run plan. */
+    fun chooseRestructureStructure(structure: com.betteraudio.data.scanner.ImportStructure) {
+        viewModelScope.launch {
+            settings.setImportStructure(structure.name)
+            _restructure.value = RestructureUi(planCount = restructurer.plan().size)
+        }
+    }
+
     fun runRestructure() {
         if (_restructure.value.running) return
         viewModelScope.launch {
