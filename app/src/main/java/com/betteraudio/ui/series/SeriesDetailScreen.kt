@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +41,7 @@ fun SeriesDetailScreen(
 
     var showAdd by remember { mutableStateOf(false) }
     var showRename by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
 
     // Open the player on whichever book started playing (resume book, or a tapped book).
     LaunchedEffect(Unit) { viewModel.openPlayer.collect { onOpenPlayer(it) } }
@@ -61,6 +63,9 @@ fun SeriesDetailScreen(
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
                 },
                 actions = {
+                    IconButton(onClick = { showOptions = true }, enabled = series != null) {
+                        Icon(Icons.Default.Tune, "Series options")
+                    }
                     IconButton(onClick = { showRename = true }) { Icon(Icons.Default.Edit, "Rename series") }
                     IconButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, "Add books") }
                 }
@@ -108,6 +113,16 @@ fun SeriesDetailScreen(
                     )
                 }
             }
+        }
+    }
+
+    if (showOptions) {
+        series?.let { s ->
+            SeriesOptionsSheet(
+                series = s,
+                onSave = { viewModel.saveOptions(it) },
+                onDismiss = { showOptions = false }
+            )
         }
     }
 

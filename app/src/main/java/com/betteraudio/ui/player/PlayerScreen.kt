@@ -59,9 +59,13 @@ fun PlayerContent(
     val skips             by viewModel.skipEvents.collectAsStateWithLifecycle()
     val showSeriesCover by viewModel.showSeriesCover.collectAsStateWithLifecycle()
     val seriesCover by viewModel.seriesCover.collectAsStateWithLifecycle()
+    val currentSeries by viewModel.currentSeries.collectAsStateWithLifecycle()
     val book = bwp?.book
     val isGroup = viewModel.groupId != -1L
     val inSeries = book?.seriesId != null
+    // A book with no author/narrator of its own falls back to the series' (metadata cascade).
+    val effectiveAuthor = book?.displayAuthor?.takeIf { it.isNotBlank() } ?: currentSeries?.author
+    val effectiveNarrator = book?.narrator?.takeIf { it.isNotBlank() } ?: currentSeries?.narrator
 
     // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
     // Back is intentionally NOT intercepted here — the system back / swipe always returns straight
@@ -279,8 +283,8 @@ fun PlayerContent(
                         }
                         BookInfoPanel(
                             title            = book?.displayTitle ?: "",
-                            author           = book?.displayAuthor,
-                            narrator         = book?.narrator,
+                            author           = effectiveAuthor,
+                            narrator         = effectiveNarrator,
                             seriesLabel      = seriesLabel,
                             status           = book?.status,
                             progressFraction = bwp?.progressFraction ?: 0f,
@@ -325,10 +329,10 @@ fun PlayerContent(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (book?.author?.isNotBlank() == true) {
+                if (!effectiveAuthor.isNullOrBlank()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = book.author,
+                        text = effectiveAuthor,
                         style = MaterialTheme.typography.titleSmall,
                         color = onScrimMuted,
                         maxLines = 1,

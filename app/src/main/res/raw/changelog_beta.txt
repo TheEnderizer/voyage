@@ -3,6 +3,12 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.6.7b] - 2026-07-02
+
+### Added
+- Series options: on a series screen tap the tune icon to set a default playback speed, volume boost, skip-silence, author, and narrator for the whole series. Every book inherits these unless it has its own setting — a book you've individually tuned keeps its own speed/boost/EQ
+- A book with no author/narrator of its own now shows the series' author/narrator in the player
+
 ## [1.6.6b] - 2026-07-02
 
 ### Added

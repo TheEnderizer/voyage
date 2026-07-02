@@ -108,13 +108,17 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { settings.setPlayerShowSeriesCover(!showSeriesCover.value) }
     }
 
-    // The current book's series cover (if it belongs to one), for the cover toggle.
+    // The current book's series (if any), for the cover toggle and author/narrator fallback.
     @OptIn(ExperimentalCoroutinesApi::class)
-    val seriesCover: StateFlow<String?> =
+    val currentSeries: StateFlow<com.betteraudio.data.db.entities.Series?> =
         bookWithProgress
             .map { it?.book?.seriesId }
             .distinctUntilChanged()
-            .flatMapLatest { sid -> if (sid == null) flowOf(null) else seriesRepository.getSeries(sid).map { it?.coverArtPath } }
+            .flatMapLatest { sid -> if (sid == null) flowOf(null) else seriesRepository.getSeries(sid) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val seriesCover: StateFlow<String?> =
+        currentSeries.map { it?.coverArtPath }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Configured skip intervals — surfaced so the transport buttons can show the real seconds.
@@ -592,20 +596,22 @@ class PlayerViewModel @Inject constructor(
             // Never rewind past the chapter/file boundary: if the saved position is shorter than
             // the rewind amount, resume from the saved position instead of the file start.
             val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
-            val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            // A book in a series inherits the series' audio defaults unless it has its own.
+            val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
+            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, settings.currentDefaultSpeed)
             AppLog.i("Player", "play() book=${bwp.book.id}" +
                 " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                 " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
-            // Restore per-book boost and EQ so they don't bleed from other books
-            playerController.setVolumeBoost(progress?.boostDb ?: 0)
-            val savedEq = progress?.eqBandsJson
+            // Restore per-book (or inherited series) boost and EQ so they don't bleed from other books
+            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb))
+            val savedEq = com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson)
             _eqBandsMillibels.value = savedEq?.let { json ->
                 try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
                 catch (_: Exception) { null }
             }
             playerController.setEqBands(savedEq)
-            playerController.setSkipSilence(bwp.book.skipSilenceEnabled)
+            playerController.setSkipSilence(com.betteraudio.playback.AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
             // Mark as just-played now so last-played sorting moves it to the top immediately.
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)

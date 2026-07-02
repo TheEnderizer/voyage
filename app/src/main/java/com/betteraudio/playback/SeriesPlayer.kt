@@ -84,14 +84,17 @@ class SeriesPlayer @Inject constructor(
             files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0) else 0
         val startPos = if (resume && explicitPositionMs == null && progress?.isCompleted != true)
             progress?.positionMs ?: 0L else 0L
-        val speed = progress?.playbackSpeed ?: series?.playbackSpeed ?: settings.currentDefaultSpeed
+        // Effective audio: book override → series default → global.
+        val speed = AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, settings.currentDefaultSpeed)
         playerController.playBook(
             book = bwp.book, files = files, startFileIndex = startIndex, startPositionMs = startPos,
             speed = speed, seriesId = seriesId, seriesBookIds = orderedIds
         )
         // Seek to an exact within-book position once the timeline is loaded (chapter pick).
         if (explicitPositionMs != null) playerController.bookSeekTo(explicitPositionMs)
-        playerController.setVolumeBoost(progress?.boostDb ?: series?.boostDb ?: 0)
+        playerController.setVolumeBoost(AudioCascade.boost(progress?.boostDb, series?.boostDb))
+        playerController.setEqBands(AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson))
+        playerController.setSkipSilence(AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
         repository.touchLastPlayed(bwp.book.id)
         settings.setLastPlayedBookId(bwp.book.id)
     }

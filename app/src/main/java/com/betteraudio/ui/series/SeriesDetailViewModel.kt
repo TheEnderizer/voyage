@@ -59,6 +59,8 @@ class SeriesDetailViewModel @Inject constructor(
     fun addBook(bookId: Long) = viewModelScope.launch { seriesRepository.addBookToSeries(bookId, seriesId) }
     fun removeBook(bookId: Long) = viewModelScope.launch { seriesRepository.removeBookFromSeries(bookId) }
     fun rename(name: String) = viewModelScope.launch { if (name.isNotBlank()) seriesRepository.renameSeries(seriesId, name) }
+    fun saveOptions(updated: com.betteraudio.data.db.entities.Series) =
+        viewModelScope.launch { seriesRepository.updateSeries(updated) }
 
     /** Move a member up or down and renumber the whole series so the order sticks. */
     fun moveBook(bookId: Long, up: Boolean) {
