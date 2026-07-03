@@ -3,6 +3,14 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.7.1b] - 2026-07-03
+
+### Changed
+- New app icon (sailboat + open book).
+
+### Notes
+- Everything from the beta channel is now also on the stable channel as **1.7**. This build is the beta continuation on top of that.
+
 ## [1.6.9b] - 2026-07-02
 
 ### Fixed
