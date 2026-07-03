@@ -3,6 +3,32 @@
 All notable changes to Voyage are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.7] - 2026-07-02
+
+A big release that adds a full **Series** system on top of your library, plus a redesigned player, a reliable updater, and a new app icon.
+
+### Added
+- **First-class Series.** The home screen now switches between **Books / Series / Authors** views. Series and authors get their own grouped tiles.
+- **Play a whole series continuously** — when one book ends the next book starts automatically, and the player follows along. Each book keeps its own progress, so resuming a series always picks up where you left off.
+- **Series manager** — open a series to add, remove, reorder, and rename its books, and to set series-wide options.
+- **Cascading series options** — set a default playback speed, volume boost, skip-silence, author, and narrator for a whole series; every book inherits them unless it has its own setting.
+- **Per-view covers** — give a Series or Author tile its own cover without changing the member books; toggle between the book cover and series cover in the player, which also recolours the app theme.
+- **Full series chapter list** — the chapter list spans every book in the series; tap any chapter in any book to jump there.
+- **Library import structures** — Automatic, Author / Series / Book, or Author - Series / Book, chosen on first launch or in Settings → Library.
+- **Restructure files on disk** — move your audiobook folders to match a chosen layout, using each book's author and series. Every move is copy → verify → delete-original, so nothing is lost.
+- **Deleted-file detection** — a book whose files are gone is hidden (its progress kept); a book missing some files is trimmed.
+- **On-launch update prompt** with Install / Skip, plus **per-book listening history**, **skip-silence**, **auto-rewind on resume**, **reset library**, and **online cover search**.
+
+### Changed
+- **One player for everything** — series play through the exact same player as a single book (full options, chapters, bookmarks, history).
+- Covers you set from an online search are now stored inside the book's own folder, so they travel with your files.
+- New app icon.
+
+### Fixed
+- **Reliable update detection** — the updater now picks the newest version regardless of how GitHub orders releases, so updates are no longer missed.
+- **Reliable position resume** — playback no longer resets to the start of a chapter or book.
+- Numerous scanner import fixes (disc-split books, multi-volume folders, incorrectly merged/split books).
+
 ## [1.2.3] - 2026-06-22
 
 ### Added
