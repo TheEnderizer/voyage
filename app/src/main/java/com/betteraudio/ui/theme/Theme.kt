@@ -9,6 +9,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -86,14 +87,22 @@ private val LightColors = lightColorScheme(
 @Composable
 fun VoyageTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Brand palette is the identity — dynamic color is opt-in only.
-    dynamicColor: Boolean = false,
+    // Which of the two app looks is active (user-chosen on first launch / in Settings → Theme).
+    appTheme: AppTheme = AppTheme.MATERIAL_YOU,
+    // Colour source for the Material You theme; Immersive always uses the cover.
+    colorSource: ThemeColorSource = ThemeColorSource.WALLPAPER,
     // When set, the whole app recolours to the playing book's cover art.
     coverArtPath: String? = null,
     content: @Composable () -> Unit
 ) {
+    // Material You + wallpaper source → true dynamic colour (needs Android 12+). Everything
+    // else (Immersive, MY+cover, and the <API-31 wallpaper fallback) uses the brand base
+    // recoloured from the playing cover.
+    val useWallpaper = appTheme == AppTheme.MATERIAL_YOU &&
+        colorSource == ThemeColorSource.WALLPAPER &&
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val baseScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useWallpaper -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context)
             else dynamicLightColorScheme(context)
@@ -102,7 +111,12 @@ fun VoyageTheme(
         else -> LightColors
     }
 
-    val coverScheme = rememberCoverScheme(coverArtPath, baseScheme, darkTheme)
+    val coverScheme = if (useWallpaper) null
+        else rememberCoverScheme(
+            coverArtPath, baseScheme, darkTheme,
+            // Only the Immersive theme tints text toward the cover accent.
+            tintText = appTheme == AppTheme.IMMERSIVE
+        )
     val colorScheme = rememberAnimatedScheme(coverScheme ?: baseScheme)
 
     val view = LocalView.current
@@ -114,10 +128,12 @@ fun VoyageTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        shapes = AppShapes,
-        content = content
-    )
+    CompositionLocalProvider(LocalAppTheme provides appTheme) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            shapes = AppShapes,
+            content = content
+        )
+    }
 }

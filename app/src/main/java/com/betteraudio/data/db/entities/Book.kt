@@ -43,7 +43,17 @@ data class Book(
     val manualGrouping: Boolean = false,
     // Per-book toggle: when on, the player auto-skips silent gaps (sensitivity + min length
     // are global, in SettingsStore).
-    val skipSilenceEnabled: Boolean = false
+    val skipSilenceEnabled: Boolean = false,
+    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
+    // Absolute path to a connected .epub. Non-null = this book has an ebook (either attached to an
+    // audiobook, or a standalone ebook-only row where fileCount/totalDurationMs are both 0).
+    val ebookPath: String? = null,
+    // Spine item count at last parse — used for whole-book reading-progress math without
+    // re-parsing the epub on every read of PlaybackProgress.
+    val ebookSpineCount: Int = 0,
+    // Audio-chapter-index ↔ epub-spine-index alignment (JSON int array), or null = not yet
+    // computed (auto-matched on next reader/sync use). Nulled whenever ebookPath changes.
+    val chapterMapJson: String? = null
 ) {
     val displayTitle: String get() = titleOverride ?: title
     val displayAuthor: String get() = authorOverride ?: author

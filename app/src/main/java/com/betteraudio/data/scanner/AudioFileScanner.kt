@@ -37,7 +37,8 @@ class AudioFileScanner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
-    private val settings: SettingsStore
+    private val settings: SettingsStore,
+    private val ebookScanner: EbookScanner
 ) {
 
     /**
@@ -66,6 +67,12 @@ class AudioFileScanner @Inject constructor(
         // and playback groups are only ever created by an explicit user action.
         runCatching { reconcileAgainstDisk(root) }
             .onFailure { AppLog.e("Scan", "reconcile failed for $rootPath", it) }
+        // One "rescan" covers both libraries: also sweep the (separate) standalone-ebook folder.
+        runCatching {
+            settings.ebookFolder.first().takeIf { it.isNotBlank() }
+                ?.let { ebookScanner.scanEbookDirectory(it) }
+            ebookScanner.reconcileEbooks()
+        }.onFailure { AppLog.e("Scan", "ebook scan/reconcile failed", it) }
         AppLog.i("Scan", "done path=$rootPath imported/updated=$count")
         count
     }
@@ -413,6 +420,16 @@ class AudioFileScanner @Inject constructor(
         if (existing?.coverArtPath == null) {
             val coverName = if (multiBook) ".cover_${folderKey.substringAfterLast("::").safeFileName()}.jpg" else ".cover.jpg"
             extractCoverArt(sortedFiles.firstOrNull(), bookId, folder, coverName)
+        }
+
+        // Auto-attach an .epub sitting next to the audio, once. Skipped for multi-book folders
+        // (a synthetic "::" split) — ambiguous which of the cluster's books the epub belongs to;
+        // the user can still connect it manually from that book's options.
+        if (!multiBook && existing?.ebookPath == null) {
+            ebookScanner.findEpubIn(folder)?.let { epub ->
+                runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
+                    .onFailure { AppLog.e("Scan", "auto-attach epub failed for book=$bookId", it) }
+            }
         }
     }
 

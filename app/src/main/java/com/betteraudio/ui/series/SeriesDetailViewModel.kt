@@ -5,26 +5,41 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
+import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
+import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.data.synopsis.SynopsisResult
+import com.betteraudio.data.synopsis.SynopsisService
 import com.betteraudio.playback.SeriesPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Aggregate listening progress across the whole series. */
+data class SeriesProgress(val fraction: Float = 0f, val totalMs: Long = 0L)
 
 @HiltViewModel
 class SeriesDetailViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val seriesRepository: SeriesRepository,
     private val repository: AudiobookRepository,
-    private val seriesPlayer: SeriesPlayer
+    private val seriesPlayer: SeriesPlayer,
+    private val settings: SettingsStore,
+    private val synopsisService: SynopsisService
 ) : ViewModel() {
 
     val seriesId: Long = checkNotNull(savedStateHandle["seriesId"])
@@ -34,6 +49,25 @@ class SeriesDetailViewModel @Inject constructor(
 
     val books: StateFlow<List<Book>> = seriesRepository.getBooksInSeries(seriesId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Ordered member books with their progress — drives the aggregate bar and the book list. */
+    val booksWithProgress: StateFlow<List<BookWithProgress>> =
+        combine(books, repository.getAllBooksWithProgressUngrouped()) { ordered, all ->
+            val byId = all.associateBy { it.book.id }
+            ordered.mapNotNull { byId[it.id] }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val progress: StateFlow<SeriesProgress> =
+        booksWithProgress
+            .map { bwps ->
+                val total = bwps.sumOf { it.book.totalDurationMs }
+                val played = bwps.sumOf { (it.progressFraction * it.book.totalDurationMs).toLong() }
+                SeriesProgress(
+                    fraction = if (total > 0) (played.toFloat() / total).coerceIn(0f, 1f) else 0f,
+                    totalMs = total
+                )
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SeriesProgress())
 
     /** Books not already in this series — candidates for the "add books" picker. */
     val candidateBooks: StateFlow<List<Book>> =
@@ -47,6 +81,33 @@ class SeriesDetailViewModel @Inject constructor(
     private val _openPlayer = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     val openPlayer: SharedFlow<Long> = _openPlayer.asSharedFlow()
 
+    // ── AI synopsis (stored in Series.description, generated like a book's) ────
+    private val _synopsisGenerating = MutableStateFlow(false)
+    val synopsisGenerating: StateFlow<Boolean> = _synopsisGenerating.asStateFlow()
+
+    init {
+        // Auto-generate once the series is loaded, has no synopsis yet, and a key exists.
+        combine(series, books, settings.geminiApiKey) { s, members, key -> Triple(s, members, key) }
+            .filter { (s, _, key) -> s != null && s.description.isNullOrBlank() && key.isNotBlank() }
+            .onEach { (s, members, _) ->
+                if (_synopsisGenerating.value) return@onEach
+                runSynopsisGeneration(s!!, members)
+            }
+            .launchIn(viewModelScope)
+    }
+
+    private suspend fun runSynopsisGeneration(s: Series, members: List<Book>) {
+        _synopsisGenerating.value = true
+        val author = s.author?.takeIf { it.isNotBlank() }
+            ?: members.firstOrNull { it.displayAuthor.isNotBlank() }?.displayAuthor
+        when (val result = synopsisService.generateSeriesSynopsis(s.name, author)) {
+            is SynopsisResult.Success ->
+                seriesRepository.updateSeries(s.copy(description = result.text))
+            is SynopsisResult.Error -> { /* silent — the panel simply shows no synopsis */ }
+        }
+        _synopsisGenerating.value = false
+    }
+
     fun playSeries() = viewModelScope.launch {
         val id = seriesPlayer.playSeries(seriesId)
         if (id != -1L) _openPlayer.emit(id)
@@ -59,7 +120,7 @@ class SeriesDetailViewModel @Inject constructor(
     fun addBook(bookId: Long) = viewModelScope.launch { seriesRepository.addBookToSeries(bookId, seriesId) }
     fun removeBook(bookId: Long) = viewModelScope.launch { seriesRepository.removeBookFromSeries(bookId) }
     fun rename(name: String) = viewModelScope.launch { if (name.isNotBlank()) seriesRepository.renameSeries(seriesId, name) }
-    fun saveOptions(updated: com.betteraudio.data.db.entities.Series) =
+    fun saveOptions(updated: Series) =
         viewModelScope.launch {
             seriesRepository.updateSeries(updated)
             // Author/narrator are metadata: applying them to the series writes them onto every

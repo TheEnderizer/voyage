@@ -31,6 +31,10 @@ fun AuthorDetailScreen(
     val books by viewModel.books.collectAsStateWithLifecycle()
 
     Scaffold(
+        // Transparent in the Immersive theme so the blurred cover shows through; explicit
+        // contentColor since contentColorFor(Transparent) falls back to black.
+        containerColor = com.betteraudio.ui.theme.appSurfaceColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
                 title = {
@@ -47,7 +51,10 @@ fun AuthorDetailScreen(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = com.betteraudio.ui.theme.appSurfaceColor()
+                )
             )
         }
     ) { padding ->
@@ -68,7 +75,8 @@ private fun AuthorBookRow(book: Book, onClick: () -> Unit, modifier: Modifier = 
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxWidth().pressScale()
     ) {
         Row(

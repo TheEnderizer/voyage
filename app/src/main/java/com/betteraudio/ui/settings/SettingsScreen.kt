@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -28,22 +29,32 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -93,9 +104,15 @@ fun SettingsScreen(
     val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
     val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
     val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
+    val appTheme                  by viewModel.appTheme.collectAsStateWithLifecycle()
+    val themeColorSource          by viewModel.themeColorSource.collectAsStateWithLifecycle()
+    val presets                   by viewModel.presets.collectAsStateWithLifecycle()
+    val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
+    var showEbookBrowser by remember { mutableStateOf(false) }
     var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
+    val ebookFolder by viewModel.ebookFolder.collectAsStateWithLifecycle()
 
     val storageSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -115,14 +132,28 @@ fun SettingsScreen(
         )
     }
 
+    if (showEbookBrowser) {
+        FolderBrowser(
+            startPath = ebookFolder.ifBlank { "/storage/emulated/0" },
+            onSelect = {
+                viewModel.setEbookFolder(it)
+                showEbookBrowser = false
+            },
+            onCancel = { showEbookBrowser = false }
+        )
+    }
+
     BackHandler(enabled = currentSection != SettingsSection.Root) {
         viewModel.navigateTo(SettingsSection.Root)
     }
 
     val sectionTitle = when (currentSection) {
         SettingsSection.Root -> "Settings"
+        SettingsSection.Theme -> "Theme"
         SettingsSection.Library -> "Library"
         SettingsSection.Playback -> "Playback"
+        SettingsSection.Presets -> "Audio presets"
+        SettingsSection.Widget -> "Widget"
         SettingsSection.AI -> "AI Synopsis"
         SettingsSection.Updates -> "Updates"
         SettingsSection.About -> "About"
@@ -130,7 +161,10 @@ fun SettingsScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        // Transparent in the Immersive theme so the blurred cover shows through. Explicit
+        // contentColor: contentColorFor(Transparent) falls back to black otherwise.
+        containerColor = com.betteraudio.ui.theme.appSurfaceColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
                 title = { Text(sectionTitle, style = MaterialTheme.typography.titleLarge) },
@@ -143,7 +177,7 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = com.betteraudio.ui.theme.appSurfaceColor()
                 )
             )
         }
@@ -163,16 +197,20 @@ fun SettingsScreen(
             ) {
                 when (section) {
                     SettingsSection.Root -> rootSection(viewModel)
+                    SettingsSection.Theme -> themeSection(appTheme, themeColorSource, viewModel)
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
                         coverRefreshRunning, resetRunning, ignoredBooks, importStructure,
-                        storageSettingsLauncher, { showBrowser = true }, viewModel
+                        storageSettingsLauncher, { showBrowser = true },
+                        ebookFolder, { showEbookBrowser = true }, viewModel
                     )
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
                         autoRewindSeconds, autoRewindThresholdMinutes,
                         skipSilenceMinMs, skipSilenceThreshold, viewModel
                     )
+                    SettingsSection.Presets -> presetsSection(presets, viewModel)
+                    SettingsSection.Widget -> widgetSection(widgetDefaultCover, viewModel)
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
                     SettingsSection.About -> aboutSection(updateState, viewModel)
@@ -187,8 +225,11 @@ fun SettingsScreen(
 
 private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
     val rows = listOf(
+        Triple(Icons.Default.Palette, "Theme", SettingsSection.Theme),
         Triple(Icons.Default.Folder, "Library", SettingsSection.Library),
         Triple(Icons.Default.Speed, "Playback", SettingsSection.Playback),
+        Triple(Icons.Default.Tune, "Audio presets", SettingsSection.Presets),
+        Triple(Icons.Default.Widgets, "Widget", SettingsSection.Widget),
         Triple(Icons.Default.AutoAwesome, "AI Synopsis", SettingsSection.AI),
         Triple(Icons.Default.Info, "About", SettingsSection.About),
         Triple(Icons.Default.BugReport, "Diagnostics", SettingsSection.Diagnostics),
@@ -197,6 +238,87 @@ private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
     rows.forEach { (icon, label, dest) ->
         item {
             NavRow(icon = icon, label = label, onClick = { viewModel.navigateTo(dest) })
+        }
+    }
+}
+
+// ─── Theme ────────────────────────────────────────────────────────────────────
+
+private fun LazyListScope.themeSection(
+    appTheme: com.betteraudio.ui.theme.AppTheme,
+    colorSource: com.betteraudio.ui.theme.ThemeColorSource,
+    viewModel: SettingsViewModel
+) {
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("App theme", style = MaterialTheme.typography.titleSmall)
+                com.betteraudio.ui.components.THEME_OPTIONS.forEach { opt ->
+                    com.betteraudio.ui.components.ThemeOptionRow(
+                        opt = opt,
+                        selected = appTheme == opt.theme,
+                        onSelect = { viewModel.setAppTheme(opt.theme) }
+                    )
+                }
+            }
+        }
+    }
+
+    // Colour source only applies to the Material You theme (Immersive always follows the cover).
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Color source", style = MaterialTheme.typography.titleSmall)
+                    val wallpaperAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    if (wallpaperAvailable) {
+                        ThemeRadioRow(
+                            title = "System wallpaper",
+                            detail = "Dynamic colors from your wallpaper (Material You).",
+                            selected = colorSource == com.betteraudio.ui.theme.ThemeColorSource.WALLPAPER,
+                            onSelect = { viewModel.setThemeColorSource(com.betteraudio.ui.theme.ThemeColorSource.WALLPAPER) }
+                        )
+                    } else {
+                        Text(
+                            "Wallpaper colors need Android 12+.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    ThemeRadioRow(
+                        title = "Book cover",
+                        detail = "Colors from the playing book's cover art.",
+                        selected = !wallpaperAvailable ||
+                            colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER,
+                        onSelect = { viewModel.setThemeColorSource(com.betteraudio.ui.theme.ThemeColorSource.COVER) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThemeRadioRow(title: String, detail: String, selected: Boolean, onSelect: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onSelect)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            RadioButton(selected = selected, onClick = onSelect)
+            Column(Modifier.padding(start = 4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
 }
@@ -213,6 +335,8 @@ private fun LazyListScope.librarySection(
     importStructure: com.betteraudio.data.scanner.ImportStructure,
     storageSettingsLauncher: androidx.activity.result.ActivityResultLauncher<Intent>,
     onBrowse: () -> Unit,
+    ebookFolder: String,
+    onBrowseEbooks: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -239,6 +363,16 @@ private fun LazyListScope.librarySection(
             subtitle = libraryFolder.ifBlank { "Not set — tap to choose" },
             subtitleMono = true,
             onClick = onBrowse
+        )
+    }
+    item {
+        SettingsCard(
+            icon = Icons.Default.MenuBook,
+            iconTint = MaterialTheme.colorScheme.primary,
+            title = "Ebook folder",
+            subtitle = ebookFolder.ifBlank { "Not set — standalone ebooks live here" },
+            subtitleMono = ebookFolder.isNotBlank(),
+            onClick = onBrowseEbooks
         )
     }
     item {
@@ -450,21 +584,21 @@ private fun LazyListScope.playbackSection(
                     onSelect = { viewModel.setSkipBack(it) }
                 )
 
-                var speedSlider by remember(defaultSpeed) { mutableFloatStateOf(defaultSpeed) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Default speed", style = MaterialTheme.typography.titleSmall)
-                    Text("${"%.2f".format(speedSlider)}×",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-                Slider(
-                    value = speedSlider,
-                    onValueChange = { raw -> speedSlider = (raw / 0.05f).roundToInt() * 0.05f },
-                    onValueChangeFinished = { viewModel.setDefaultSpeed(speedSlider) },
-                    valueRange = 0.5f..3.0f,
-                    steps = 49,
-                    modifier = Modifier.fillMaxWidth()
+                Text("Default speed, boost & EQ", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "The default audio for every book now comes from your global default preset. " +
+                        "A book keeps its own settings if you change them individually.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                FilledTonalButton(
+                    onClick = { viewModel.navigateTo(SettingsSection.Presets) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Tune, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Manage audio presets")
+                }
             }
         }
     }
@@ -981,7 +1115,8 @@ private fun shareLog(context: Context) {
 private fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth().pressScale().clickable(onClick = onClick)
     ) {
         Row(
@@ -1001,7 +1136,8 @@ private fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 private fun CardContainer(content: @Composable () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth()
     ) { content() }
 }
@@ -1033,7 +1169,8 @@ private fun SettingsCard(
     val clickModifier = if (onClick != null) base.pressScale().clickable(onClick = onClick) else base
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = clickModifier
     ) {
         Row(
@@ -1125,6 +1262,279 @@ private fun IntervalChips(
                 label = { Text("${ms / 1000}s") },
                 shape = Pill
             )
+        }
+    }
+}
+
+// ─── Audio presets (unified bundles + global default) ──────────────────────────
+
+private fun LazyListScope.presetsSection(
+    presets: List<com.betteraudio.data.db.entities.AudioPreset>,
+    viewModel: SettingsViewModel
+) {
+    item {
+        var creating by remember { mutableStateOf(false) }
+        var editing by remember { mutableStateOf<com.betteraudio.data.db.entities.AudioPreset?>(null) }
+
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Global default", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "The starred preset sets the default speed, volume boost & EQ for every book " +
+                            "in your library (including new ones). A book you tune individually keeps its own.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (presets.isEmpty()) {
+                Text(
+                    "No presets yet. Create one below, or save the current speed/boost/EQ from the " +
+                        "player's audio panel.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+            } else {
+                presets.forEach { preset ->
+                    PresetRow(
+                        preset = preset,
+                        onToggleDefault = {
+                            if (preset.isDefault) viewModel.clearDefaultPreset()
+                            else viewModel.setDefaultPreset(preset.id)
+                        },
+                        onEdit = { editing = preset },
+                        onDelete = { viewModel.deletePreset(preset.id) }
+                    )
+                }
+            }
+
+            FilledTonalButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("New preset")
+            }
+        }
+
+        if (creating) {
+            PresetEditorDialog(
+                initial = null,
+                onDismiss = { creating = false },
+                onSave = { viewModel.savePreset(it); creating = false }
+            )
+        }
+        editing?.let { preset ->
+            PresetEditorDialog(
+                initial = preset,
+                onDismiss = { editing = null },
+                onSave = { viewModel.savePreset(it); editing = null }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PresetRow(
+    preset: com.betteraudio.data.db.entities.AudioPreset,
+    onToggleDefault: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var confirmDelete by remember { mutableStateOf(false) }
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(preset.name, style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(preset.summary(), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onToggleDefault) {
+                Icon(
+                    if (preset.isDefault) Icons.Default.Star else Icons.Default.StarBorder,
+                    if (preset.isDefault) "Default preset" else "Set as default",
+                    tint = if (preset.isDefault) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit", Modifier.size(20.dp)) }
+            IconButton(onClick = { confirmDelete = true }) {
+                Icon(Icons.Default.Delete, "Delete", Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            icon = { Icon(Icons.Default.Delete, null) },
+            title = { Text("Delete preset?") },
+            text = { Text("\"${preset.name}\" will be removed.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+        )
+    }
+}
+
+private val PRESET_EQ_LABELS = listOf("60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz")
+
+@Composable
+private fun PresetEditorDialog(
+    initial: com.betteraudio.data.db.entities.AudioPreset?,
+    onDismiss: () -> Unit,
+    onSave: (com.betteraudio.data.db.entities.AudioPreset) -> Unit
+) {
+    var name by remember { mutableStateOf(initial?.name ?: "") }
+    var speed by remember { mutableFloatStateOf(initial?.speedMult ?: 1.0f) }
+    var boost by remember { mutableIntStateOf(initial?.boostDb ?: 0) }
+    val eq = remember {
+        val arr = IntArray(5) { 0 }
+        initial?.eqBandsJson?.let { json ->
+            runCatching {
+                val a = org.json.JSONArray(json)
+                for (i in 0 until minOf(a.length(), 5)) arr[i] = a.getInt(i)
+            }
+        }
+        androidx.compose.runtime.mutableStateListOf(*arr.toTypedArray())
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "New preset" else "Edit preset") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Speed
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Speed", style = MaterialTheme.typography.labelLarge)
+                    Text("${"%.2f".format(speed)}×", color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = speed,
+                    onValueChange = { speed = (it / 0.05f).roundToInt() * 0.05f },
+                    valueRange = 0.5f..3.0f, steps = 49
+                )
+                // Boost
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Volume boost", style = MaterialTheme.typography.labelLarge)
+                    Text("+$boost dB", color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelLarge)
+                }
+                Slider(
+                    value = boost.toFloat(),
+                    onValueChange = { boost = it.roundToInt() },
+                    valueRange = 0f..24f, steps = 23
+                )
+                // EQ
+                Text("Equalizer", style = MaterialTheme.typography.labelLarge)
+                PRESET_EQ_LABELS.forEachIndexed { i, label ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(56.dp))
+                        Slider(
+                            value = eq[i].toFloat(),
+                            onValueChange = { eq[i] = it.roundToInt() },
+                            valueRange = -1500f..1500f,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text("${if (eq[i] >= 0) "+" else ""}${"%.1f".format(eq[i] / 100f)}",
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(44.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                    }
+                }
+                TextButton(onClick = { for (i in 0 until 5) eq[i] = 0 }) { Text("Flat EQ") }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    val hasEq = eq.any { it != 0 }
+                    val json = if (hasEq) org.json.JSONArray(eq.toList()).toString() else null
+                    onSave(
+                        (initial ?: com.betteraudio.data.db.entities.AudioPreset(name = "")).copy(
+                            name = name.trim(),
+                            type = com.betteraudio.data.db.entities.AudioPreset.TYPE_BUNDLE,
+                            speedMult = speed,
+                            boostDb = boost,
+                            eqBandsJson = json
+                        )
+                    )
+                }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+// ─── Widget ─────────────────────────────────────────────────────────────────────
+
+private fun LazyListScope.widgetSection(currentCoverPath: String, viewModel: SettingsViewModel) {
+    item {
+        val picker = rememberLauncherForActivityResult(
+            ActivityResultContracts.PickVisualMedia()
+        ) { uri -> if (uri != null) viewModel.setWidgetDefaultCover(uri) }
+
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Default cover", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Shown on the home-screen widget when nothing is playing. Defaults to the app " +
+                        "placeholder if unset.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Box(
+                    Modifier.size(96.dp).clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (currentCoverPath.isNotBlank()) {
+                        coil.compose.AsyncImage(
+                            model = java.io.File(currentCoverPath),
+                            contentDescription = "Widget default cover",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(Icons.Default.Image, null, Modifier.size(32.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = {
+                        picker.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }) { Text(if (currentCoverPath.isBlank()) "Choose image" else "Change") }
+                    if (currentCoverPath.isNotBlank()) {
+                        TextButton(onClick = { viewModel.clearWidgetDefaultCover() }) { Text("Remove") }
+                    }
+                }
+            }
         }
     }
 }

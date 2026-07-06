@@ -24,14 +24,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.theme.Pill
 
-/** Circular dark-scrim icon button — used on the player's full-bleed backdrop. */
+/** Circular dark-scrim icon button — used on the player's full-bleed backdrop. [tonal] swaps
+ *  to a Material-You tonal fill for the tonal player layout (no cover behind it). */
 @Composable
-fun ScrimButton(icon: ImageVector, cd: String, onClick: () -> Unit) {
+fun ScrimButton(icon: ImageVector, cd: String, tonal: Boolean = false, onClick: () -> Unit) {
+    val bg = if (tonal) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Black.copy(alpha = 0.32f)
+    val fg = if (tonal) MaterialTheme.colorScheme.onSurface else Color.White
     Box(
-        Modifier.size(42.dp).clip(Pill).background(Color.Black.copy(alpha = 0.32f)).clickable(onClick = onClick),
+        Modifier.size(42.dp).clip(Pill).background(bg).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(icon, cd, Modifier.size(22.dp), tint = Color.White)
+        Icon(icon, cd, Modifier.size(22.dp), tint = fg)
     }
 }
 

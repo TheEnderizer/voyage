@@ -33,5 +33,15 @@ data class PlaybackProgress(
     val eqBandsJson: String? = null,
     val isCompleted: Boolean = false,
     val completedDateMs: Long? = null,
-    val lastPausedAt: Long = 0L
+    val lastPausedAt: Long = 0L,
+    // ── Ebook reading position ───────────────────────────────────────────────
+    val textSpineIndex: Int? = null,      // epub spine item last read; null = never read
+    val textFraction: Float? = null,      // scroll fraction (0..1) within that spine item
+    // Whole-book reading fraction, denormalized so grid progress bars never need to parse the
+    // epub or its chapter map. Written by the reader as (spineIndex + fraction) / spineCount.
+    val textOverallFraction: Float = 0f,
+    // Which position is freshest — "AUDIO" | "TEXT". Drives which side to convert FROM when the
+    // other mode is opened (e.g. opening the reader while lastMode == AUDIO re-derives the text
+    // locator from the current audio position instead of using a stale stored one).
+    val lastMode: String = "AUDIO"
 )

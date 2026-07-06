@@ -88,6 +88,11 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books WHERE seriesId = :seriesId")
     suspend fun countBooksInSeries(seriesId: Long): Int
 
+    /** Books whose effective author (authorOverride ?: author) matches [name] — used to delete a
+     *  whole author from the library grid. */
+    @Query("SELECT * FROM books WHERE COALESCE(authorOverride, author) = :name AND isIgnored = 0")
+    suspend fun getBooksByEffectiveAuthorOnce(name: String): List<Book>
+
     // Distinct non-blank author names across the (non-ignored) library — for the Authors view.
     @Query("SELECT DISTINCT author FROM books WHERE isIgnored = 0 AND author != ''")
     fun getDistinctAuthors(): Flow<List<String>>
@@ -163,4 +168,27 @@ interface BookDao {
     // listening_sessions, skip_events and book_group_members via their FKs.
     @Query("DELETE FROM books")
     suspend fun deleteAll()
+
+    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
+    // Connecting/disconnecting an epub always nulls chapterMapJson — the audio↔spine alignment is
+    // only valid for the epub it was computed against.
+    @Query("UPDATE books SET ebookPath = :path, ebookSpineCount = :spineCount, chapterMapJson = NULL WHERE id = :id")
+    suspend fun setEbook(id: Long, path: String?, spineCount: Int)
+
+    /** Repoint an already-connected epub after an on-disk move — the file itself is unchanged, so
+     *  (unlike [setEbook]) the chapter alignment map is preserved. */
+    @Query("UPDATE books SET ebookPath = :path WHERE id = :id")
+    suspend fun updateEbookPath(id: Long, path: String)
+
+    @Query("UPDATE books SET ebookSpineCount = :spineCount WHERE id = :id")
+    suspend fun updateEbookSpineCount(id: Long, spineCount: Int)
+
+    @Query("UPDATE books SET chapterMapJson = :json WHERE id = :id")
+    suspend fun setChapterMap(id: Long, json: String?)
+
+    @Query("SELECT * FROM books WHERE ebookPath IS NOT NULL")
+    suspend fun getAllWithEbookOnce(): List<Book>
+
+    @Query("SELECT * FROM books WHERE ebookPath = :path LIMIT 1")
+    suspend fun getBookByEbookPath(path: String): Book?
 }

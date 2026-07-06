@@ -1,4 +1,4 @@
-package com.betteraudio.ui.home
+﻿package com.betteraudio.ui.home
 
 import android.Manifest
 import android.content.Context
@@ -55,8 +55,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
-import com.betteraudio.playback.PlaybackState
-import com.betteraudio.ui.components.CircleIconButton
 import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
@@ -71,6 +69,7 @@ fun HomeScreen(
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (Long) -> Unit = {},
     onOpenAuthor: (String) -> Unit = {},
+    onOpenReader: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -78,10 +77,9 @@ fun HomeScreen(
     var showStorageRationale by remember { mutableStateOf(false) }
     var showSortFilter by remember { mutableStateOf(false) }
     var showStructureDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
-    val currentBook by viewModel.currentlyPlayingBook.collectAsStateWithLifecycle()
-    val resumeBook by viewModel.resumeBook.collectAsStateWithLifecycle()
     val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
     val visibleItems by viewModel.visibleGridItems.collectAsStateWithLifecycle()
     val libraryTab by viewModel.libraryTab.collectAsStateWithLifecycle()
@@ -90,13 +88,14 @@ fun HomeScreen(
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
     val structureChosen by viewModel.structureChosen.collectAsStateWithLifecycle()
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
-    val selectedBookIds by viewModel.selectedBookIds.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
     val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
     val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
+    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
 
-    val isSelectionMode = selectedBookIds.isNotEmpty()
+    val isSelectionMode = selection.isNotEmpty()
 
     val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
         Manifest.permission.READ_MEDIA_AUDIO
@@ -122,9 +121,6 @@ fun HomeScreen(
             else -> showScanSheet = true
         }
     }
-
-    val nowPlaying = playbackState.bookId != -1L && playbackState.bookTitle.isNotBlank()
-    val showResumeCard = !nowPlaying && resumeBook != null
 
     // First launch: pick the library structure, then auto-open the folder picker. Both
     // savedFolder and structureChosen are null until DataStore emits, so we only act once the
@@ -156,11 +152,17 @@ fun HomeScreen(
         )
     }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    // Transparent container: the app-wide blurred-cover backdrop shows through. contentColor
+    // must be explicit — contentColorFor(Transparent) falls back to the default (black) and
+    // would render headings unreadable on the dark backdrop.
+    Scaffold(
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onBackground
+    ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
 
             // ── Scrolling library ──────────────────────────────────────────
-            if (gridItems.isEmpty() && !nowPlaying && !showResumeCard) {
+            if (gridItems.isEmpty()) {
                 EmptyLibrary(
                     onScan = ::onScanClick,
                     onOpenSettings = onOpenSettings,
@@ -176,7 +178,7 @@ fun HomeScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp
+                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp
                     ),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -185,36 +187,13 @@ fun HomeScreen(
                     // Header — stays put; the selection bar floats over it as an overlay
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         HomeHeader(
+                            itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
+                            viewMode = homeViewMode,
                             scanning = scan.status == ScanStatus.Running,
                             onSearch = onOpenSearch,
                             onSort = { showSortFilter = true },
                             onSettings = onOpenSettings
                         )
-                    }
-
-                    // Featured now-playing card (active) or resume card (last played, after restart)
-                    if (nowPlaying) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            FeaturedNowPlaying(
-                                state = playbackState,
-                                book = currentBook,
-                                onPlayPause = { viewModel.playerController.togglePlayPause() },
-                                onSkipForward = { viewModel.playerController.skipForward() },
-                                onExpand = {
-                                    val id = playbackState.bookId
-                                    if (id != -1L) onOpenBook(id)
-                                }
-                            )
-                        }
-                    } else if (showResumeCard) {
-                        val bwp = resumeBook!!
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            ResumeCard(
-                                bwp = bwp,
-                                onPlay = { viewModel.playResumeBook(bwp) },
-                                onExpand = { onOpenBook(bwp.book.id) }
-                            )
-                        }
                     }
 
                     // View-mode switch (Books / Series / Authors)
@@ -254,49 +233,74 @@ fun HomeScreen(
                         when (gridItem) {
                             is HomeGridItem.SingleBook -> {
                                 item(key = "book_${gridItem.bwp.book.id}") {
+                                    val key = SelKey.BookK(gridItem.bwp.book.id)
+                                    val ebookOnly = gridItem.bwp.isEbookOnly
                                     BookGridCard(
                                         modifier = Modifier.animateItem(),
                                         bwp = gridItem.bwp,
-                                        isSelected = gridItem.bwp.book.id in selectedBookIds,
+                                        isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         isNowPlaying = playbackState.bookId == gridItem.bwp.book.id && playbackState.groupId == -1L,
+                                        useReadingProgress = homeViewMode == HomeViewMode.EBOOKS || ebookOnly,
                                         onClick = {
-                                            if (isSelectionMode)
-                                                viewModel.toggleBookSelection(gridItem.bwp.book.id)
-                                            else onOpenBookInfo(gridItem.bwp.book.id)
+                                            when {
+                                                isSelectionMode -> viewModel.toggleSelection(key)
+                                                // The user chose the reading lens (or this row has no
+                                                // audio at all) — tap always opens the reader.
+                                                homeViewMode == HomeViewMode.EBOOKS || ebookOnly ->
+                                                    onOpenReader(gridItem.bwp.book.id)
+                                                else -> onOpenBookInfo(gridItem.bwp.book.id)
+                                            }
                                         },
-                                        onPlayClick = { onOpenBook(gridItem.bwp.book.id) },
-                                        onLongClick = { viewModel.enterBookSelection(gridItem.bwp.book.id) }
+                                        // Play in place (mini bar), do NOT open the full player —
+                                        // unless this row has no audio, in which case play = read.
+                                        onPlayClick = {
+                                            if (ebookOnly) onOpenReader(gridItem.bwp.book.id)
+                                            else viewModel.playResumeBook(gridItem.bwp)
+                                        },
+                                        onLongClick = { viewModel.toggleSelection(key) }
                                     )
                                 }
                             }
 
                             is HomeGridItem.SeriesItem -> {
                                 item(key = "series_${gridItem.series.id}") {
+                                    val key = SelKey.SeriesK(gridItem.series.id)
                                     CollectionGridCard(
                                         modifier = Modifier.animateItem(),
                                         title = gridItem.series.name,
                                         subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
                                         coverPath = gridItem.coverPath,
                                         isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
-                                        onClick = { onOpenSeries(gridItem.series.id) },
+                                        isSelected = key in selection,
+                                        isSelectionMode = isSelectionMode,
+                                        onClick = {
+                                            if (isSelectionMode) viewModel.toggleSelection(key)
+                                            else onOpenSeries(gridItem.series.id)
+                                        },
                                         onPlayClick = { viewModel.playSeries(gridItem.series.id) },
-                                        onLongClick = { viewModel.openSeriesCoverSearch(gridItem.series.id, gridItem.series.name) }
+                                        onLongClick = { viewModel.toggleSelection(key) }
                                     )
                                 }
                             }
 
                             is HomeGridItem.AuthorItem -> {
                                 item(key = "author_${gridItem.name}") {
+                                    val key = SelKey.AuthorK(gridItem.name)
                                     CollectionGridCard(
                                         modifier = Modifier.animateItem(),
                                         title = gridItem.name,
                                         subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
                                         coverPath = gridItem.coverPath,
                                         isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
-                                        onClick = { onOpenAuthor(gridItem.name) },
+                                        isSelected = key in selection,
+                                        isSelectionMode = isSelectionMode,
+                                        onClick = {
+                                            if (isSelectionMode) viewModel.toggleSelection(key)
+                                            else onOpenAuthor(gridItem.name)
+                                        },
                                         onPlayClick = null,
-                                        onLongClick = { viewModel.openAuthorCoverSearch(gridItem.name) }
+                                        onLongClick = { viewModel.toggleSelection(key) }
                                     )
                                 }
                             }
@@ -308,6 +312,11 @@ fun HomeScreen(
 
 
             // ── Selection bar — floats over the top, doesn't push content down ──
+            val single = selection.singleOrNull()
+            val selectedSeries = selection.filterIsInstance<SelKey.SeriesK>()
+            val selectedBooks = selection.filterIsInstance<SelKey.BookK>()
+            val selectedAuthors = selection.filterIsInstance<SelKey.AuthorK>()
+            val showAddToSeries = selectedSeries.size == 1 && selectedBooks.isNotEmpty() && selectedAuthors.isEmpty()
             AnimatedVisibility(
                 visible = isSelectionMode,
                 enter = slideInVertically { -it } + fadeIn(),
@@ -315,16 +324,73 @@ fun HomeScreen(
                 modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp)
             ) {
                 SelectionHeader(
-                    selectedCount = selectedBookIds.size,
-                    showOptions = selectedBookIds.size == 1,
+                    selectedCount = selection.size,
+                    single = single,
+                    showAddToSeries = showAddToSeries,
                     onClear = viewModel::clearSelection,
-                    onOptions = { selectedBookIds.firstOrNull()?.let { viewModel.openBookOptions(it) } }
+                    onDelete = { showDeleteConfirm = true },
+                    onAddToSeries = {
+                        val sid = selectedSeries.first().id
+                        viewModel.addSelectedBooksToSeries(sid)
+                        onOpenSeries(sid)
+                    },
+                    onCoverSearch = {
+                        when (val s = single) {
+                            is SelKey.BookK -> viewModel.openCoverSearch(s.id)
+                            is SelKey.SeriesK -> gridItems.filterIsInstance<HomeGridItem.SeriesItem>()
+                                .find { it.series.id == s.id }
+                                ?.let { viewModel.openSeriesCoverSearch(it.series.id, it.series.name) }
+                            is SelKey.AuthorK -> viewModel.openAuthorCoverSearch(s.name)
+                            null -> {}
+                        }
+                    },
+                    onBookOptions = { (single as? SelKey.BookK)?.let { viewModel.openBookOptions(it.id) } }
                 )
             }
         }
     }
 
     // Dialogs
+    ebookError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissEbookError() },
+            title = { Text("Couldn't connect ebook") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        var deleteFiles by remember { mutableStateOf(false) }
+        val count = selection.size
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            icon = { Icon(Icons.Default.DeleteSweep, null) },
+            title = { Text("Delete $count item${if (count != 1) "s" else ""}?") },
+            text = {
+                Column {
+                    Text("Selected series and authors will delete all of their books. This can't be undone.")
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().clickable { deleteFiles = !deleteFiles },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = deleteFiles, onCheckedChange = { deleteFiles = it })
+                        Spacer(Modifier.width(4.dp))
+                        Text("Also delete files from storage")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteSelection(deleteFiles)
+                    showDeleteConfirm = false
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+        )
+    }
+
     if (showStorageRationale) {
         AlertDialog(
             onDismissRequest = { showStorageRationale = false },
@@ -384,7 +450,10 @@ fun HomeScreen(
                 onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
                 onDeletePermanently = { deleteFiles ->
                     viewModel.deleteBook(optionsBwp.book.id, deleteFiles)
-                }
+                },
+                onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
+                onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
+                onOpenReader = { onOpenReader(optionsBwp.book.id) }
             )
         }
     }
@@ -423,6 +492,8 @@ fun HomeScreen(
 
 @Composable
 private fun HomeHeader(
+    itemCount: Int,
+    viewMode: HomeViewMode,
     scanning: Boolean,
     onSearch: () -> Unit,
     onSort: () -> Unit,
@@ -431,38 +502,64 @@ private fun HomeHeader(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(top = 4.dp, bottom = 4.dp),
+            .padding(top = 10.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "Library",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold
+            )
+            val noun = when (viewMode) {
+                HomeViewMode.BOOKS -> "book"
+                HomeViewMode.SERIES -> "title"
+                HomeViewMode.AUTHORS -> "author"
+                HomeViewMode.EBOOKS -> "ebook"
+            }
+            Text(
+                if (scanning) "Scanning library…"
+                else "$itemCount $noun${if (itemCount != 1) "s" else ""}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         if (scanning) {
             CircularProgressIndicator(
-                Modifier.size(20.dp).padding(start = 4.dp),
+                Modifier.size(18.dp),
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.primary
             )
+            Spacer(Modifier.width(10.dp))
         }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onSearch) {
-            Icon(
-                Icons.Default.Search, "Search",
-                Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+        HeaderIconButton(Icons.Default.Search, "Search", onSearch)
+        Spacer(Modifier.width(8.dp))
+        HeaderIconButton(Icons.AutoMirrored.Filled.Sort, "Sort & filter", onSort)
+        Spacer(Modifier.width(8.dp))
+        HeaderIconButton(Icons.Default.Settings, "Settings", onSettings)
+    }
+}
+
+/** Circular translucent icon button — reads well over the blurred-cover backdrop. */
+@Composable
+private fun HeaderIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    cd: String,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+                    alpha = if (com.betteraudio.ui.theme.immersive()) 0.38f else 1f
+                )
             )
-        }
-        IconButton(onClick = onSort) {
-            Icon(
-                Icons.AutoMirrored.Filled.Sort, "Sort & filter",
-                Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        IconButton(onClick = onSettings) {
-            Icon(
-                Icons.Default.Settings, "Settings",
-                Modifier.size(22.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(icon, cd, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
     }
 }
 
@@ -495,9 +592,13 @@ private fun LibraryTabRow(
 @Composable
 private fun SelectionHeader(
     selectedCount: Int,
-    showOptions: Boolean,
+    single: SelKey?,
+    showAddToSeries: Boolean,
     onClear: () -> Unit,
-    onOptions: () -> Unit
+    onDelete: () -> Unit,
+    onAddToSeries: () -> Unit,
+    onCoverSearch: () -> Unit,
+    onBookOptions: () -> Unit
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -518,329 +619,81 @@ private fun SelectionHeader(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f)
             )
-            // Single-book selection → overflow menu with that book's options
-            if (showOptions) {
-                IconButton(onClick = onOptions) { Icon(Icons.Default.MoreVert, "Book options") }
+            // One series + some books → add those books to the series.
+            if (showAddToSeries) {
+                IconButton(onClick = onAddToSeries) {
+                    Icon(Icons.Default.PlaylistAdd, "Add to series")
+                }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+            }
+            // Single selection → overflow (cover search + book options).
+            if (single != null) {
+                var showMenu by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(Icons.Default.MoreVert, "More options")
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Search cover online") },
+                            leadingIcon = { Icon(Icons.Default.Search, null) },
+                            onClick = { showMenu = false; onCoverSearch() }
+                        )
+                        if (single is SelKey.BookK) {
+                            DropdownMenuItem(
+                                text = { Text("Book options") },
+                                leadingIcon = { Icon(Icons.Default.Tune, null) },
+                                onClick = { showMenu = false; onBookOptions() }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/** Books / Series / Authors segmented switch shown above the status tabs. */
+/** Books / Series / Authors segmented switch — one pill container with a sliding selection. */
 @Composable
 private fun HomeViewModeRow(
-    selected: com.betteraudio.ui.home.HomeViewMode,
-    onSelect: (com.betteraudio.ui.home.HomeViewMode) -> Unit
+    selected: HomeViewMode,
+    onSelect: (HomeViewMode) -> Unit
 ) {
     val modes = listOf(
-        com.betteraudio.ui.home.HomeViewMode.BOOKS to "Books",
-        com.betteraudio.ui.home.HomeViewMode.SERIES to "Series",
-        com.betteraudio.ui.home.HomeViewMode.AUTHORS to "Authors"
+        HomeViewMode.BOOKS to "Books",
+        HomeViewMode.SERIES to "Series",
+        HomeViewMode.AUTHORS to "Authors",
+        HomeViewMode.EBOOKS to "Ebooks"
     )
-    Row(
-        Modifier.fillMaxWidth().padding(top = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        modes.forEach { (mode, label) ->
-            val isSel = mode == selected
-            Surface(
-                onClick = { onSelect(mode) },
-                shape = Pill,
-                color = if (isSel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelLarge,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
-                )
-            }
-        }
-    }
-}
-
-// ─── Featured now-playing card ────────────────────────────────────────────────
-
-@Composable
-private fun FeaturedNowPlaying(
-    state: PlaybackState,
-    book: Book?,
-    onPlayPause: () -> Unit,
-    onSkipForward: () -> Unit,
-    onExpand: () -> Unit
-) {
-    val progress = if (state.bookTotalDurationMs > 0)
-        (state.bookPositionMs.toFloat() / state.bookTotalDurationMs).coerceIn(0f, 1f) else 0f
-    val timeLeft = state.bookTotalDurationMs - state.bookPositionMs
-    val coverPath = book?.coverArtPath ?: state.coverArtUri?.removePrefix("file://")
-    val title = if (state.groupId != -1L) state.groupName else state.bookTitle
-
-    Surface(
-        onClick = onExpand,
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // The book cover is the card background.
-        Box(Modifier.clip(MaterialTheme.shapes.extraLarge)) {
-            // The book cover IS the card background.
-            AsyncImage(
-                model = coverPath?.let { File(it) } ?: state.coverArtUri,
-                contentDescription = "Now playing cover",
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize()
-            )
-            // Scrim so the controls stay legible over arbitrary cover art.
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.78f))
-                        )
-                    )
-            )
-            Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.GraphicEq, null, Modifier.size(14.dp), tint = Color.White)
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (state.isPlaying) "NOW PLAYING" else "PAUSED",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (state.author.isNotBlank()) {
-                    Text(
-                        state.author,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
-                    color = Color.White,
-                    trackColor = Color.White.copy(alpha = 0.25f)
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
-                    Text(
-                        "${formatDurationHero(timeLeft)} left",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = onPlayPause,
-                        shape = Pill,
-                        modifier = Modifier.weight(1f).height(50.dp)
-                    ) {
-                        Icon(
-                            if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            null
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (state.isPlaying) "Pause" else "Play")
-                    }
-                    FilledTonalIconButton(
-                        onClick = onSkipForward,
-                        shape = Pill,
-                        modifier = Modifier.size(50.dp)
-                    ) { Icon(Icons.Default.FastForward, "Skip forward") }
-                    FilledTonalIconButton(
-                        onClick = onExpand,
-                        shape = Pill,
-                        modifier = Modifier.size(50.dp)
-                    ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
-                }
-            }
-        }
-    }
-}
-
-// ─── Floating now-playing pill ────────────────────────────────────────────────
-
-@Composable
-private fun NowPlayingPill(
-    state: PlaybackState,
-    coverPath: String?,
-    onPlayPause: () -> Unit,
-    onSkipForward: () -> Unit,
-    onExpand: () -> Unit
-) {
-    val title = if (state.groupId != -1L) state.groupName else state.bookTitle
     Surface(
         shape = Pill,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
-        shadowElevation = 10.dp,
-        modifier = Modifier.fillMaxWidth()
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+            alpha = if (com.betteraudio.ui.theme.immersive()) 0.32f else 1f
+        ),
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
     ) {
-        Row(
-            Modifier
-                .clickable(onClick = onExpand)
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AsyncImage(
-                model = coverPath?.let { File(it) } ?: state.coverArtUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(44.dp).clip(CircleShape)
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        Row(Modifier.fillMaxWidth().padding(4.dp)) {
+            modes.forEach { (mode, label) ->
+                val isSel = mode == selected
+                val bg by animateColorAsState(
+                    if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
+                    tween(220), label = "modeBg"
                 )
-                if (state.author.isNotBlank()) {
-                    Text(
-                        state.author,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-            IconButton(onClick = onPlayPause) {
-                Icon(
-                    if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    if (state.isPlaying) "Pause" else "Play"
-                )
-            }
-            IconButton(onClick = onSkipForward) {
-                Icon(Icons.Default.FastForward, "Skip forward")
-            }
-            Spacer(Modifier.width(4.dp))
-        }
-    }
-}
-
-// ─── Resume card (last played book, shown after app restart when not playing) ──
-
-@Composable
-private fun ResumeCard(
-    bwp: BookWithProgress,
-    onPlay: () -> Unit,
-    onExpand: () -> Unit
-) {
-    val progress = bwp.progressFraction.coerceIn(0f, 1f)
-    val timeLeft = ((1f - progress) * bwp.book.totalDurationMs).toLong()
-
-    Surface(
-        onClick = onExpand,
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // The book cover is the card background.
-        Box(Modifier.clip(MaterialTheme.shapes.extraLarge)) {
-            // Cover fills the card as its background.
-            AsyncImage(
-                model = bwp.book.coverArtPath?.let { File(it) },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize()
-            )
-            Box(
-                Modifier
-                    .matchParentSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Black.copy(alpha = 0.30f), Color.Black.copy(alpha = 0.78f))
-                        )
-                    )
-            )
-            Column(Modifier.padding(16.dp)) {
-                Text(
-                    bwp.book.displayTitle,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (bwp.book.displayAuthor.isNotBlank()) {
-                    Text(
-                        bwp.book.displayAuthor,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Spacer(Modifier.height(14.dp))
-                LinearProgressIndicator(
-                    progress = { progress },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(Pill),
-                    color = Color.White,
-                    trackColor = Color.White.copy(alpha = 0.25f)
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(
-                        "${(progress * 100).toInt()}%",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
-                    if (bwp.book.totalDurationMs > 0) {
-                        Text(
-                            "${formatDurationHero(timeLeft)} left",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.White.copy(alpha = 0.75f)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Surface(
+                    onClick = { onSelect(mode) },
+                    shape = Pill,
+                    color = bg,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Button(
-                        onClick = onPlay,
-                        shape = Pill,
-                        modifier = Modifier.weight(1f).height(50.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Resume")
-                    }
-                    FilledTonalIconButton(
-                        onClick = onExpand,
-                        shape = Pill,
-                        modifier = Modifier.size(50.dp)
-                    ) { Icon(Icons.Default.OpenInFull, "Open player", Modifier.size(20.dp)) }
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)
+                    )
                 }
             }
         }
@@ -860,7 +713,8 @@ private fun BookGridCard(
     onClick: () -> Unit,
     onPlayClick: () -> Unit,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    useReadingProgress: Boolean = false
 ) {
     val book = bwp.book
     val borderColor by animateColorAsState(
@@ -909,7 +763,7 @@ private fun BookGridCard(
                 Text(
                     book.displayTitle,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
+                    color = com.betteraudio.ui.theme.scrimTextColor(),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -917,11 +771,11 @@ private fun BookGridCard(
                     Text(
                         book.displayAuthor,
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.8f),
+                        color = com.betteraudio.ui.theme.scrimTextColor(muted = true),
                         maxLines = 1
                     )
                 }
-                val prog = bwp.progressFraction
+                val prog = if (useReadingProgress) bwp.readingFraction else bwp.progressFraction
                 if (prog > 0f) {
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
@@ -1009,10 +863,16 @@ private fun CollectionGridCard(
     onClick: () -> Unit,
     onPlayClick: (() -> Unit)?,
     onLongClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    isSelectionMode: Boolean = false
 ) {
     val borderColor by animateColorAsState(
-        if (isNowPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.7f) else Color.Transparent,
+        when {
+            isSelected -> MaterialTheme.colorScheme.primary
+            isNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            else -> Color.Transparent
+        },
         tween(150), label = "collectionBorder"
     )
 
@@ -1020,10 +880,10 @@ private fun CollectionGridCard(
         modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
-            .pressScale()
+            .pressScale(enabled = !isSelectionMode)
             .clip(MaterialTheme.shapes.large)
             .border(
-                width = if (isNowPlaying) 2.5.dp else 0.dp,
+                width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
                 shape = MaterialTheme.shapes.large
             )
@@ -1056,13 +916,15 @@ private fun CollectionGridCard(
                 Text(
                     title,
                     style = MaterialTheme.typography.titleSmall,
-                    color = Color.White,
+                    color = com.betteraudio.ui.theme.scrimTextColor(),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
         }
-        if (onPlayClick != null) {
+        if (isSelectionMode) {
+            SelectionCheck(isSelected, Modifier.padding(8.dp).align(Alignment.TopEnd))
+        } else if (onPlayClick != null) {
             FilledIconButton(
                 onClick = onPlayClick,
                 modifier = Modifier.padding(8.dp).align(Alignment.TopEnd).size(36.dp)
@@ -1106,7 +968,14 @@ private fun EmptyLibrary(
     onOpenSearch: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
-        HomeHeader(scanning = false, onSearch = onOpenSearch, onSort = {}, onSettings = onOpenSettings)
+        HomeHeader(
+            itemCount = 0,
+            viewMode = HomeViewMode.BOOKS,
+            scanning = false,
+            onSearch = onOpenSearch,
+            onSort = {},
+            onSettings = onOpenSettings
+        )
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(
@@ -1142,13 +1011,6 @@ private fun EmptyLibrary(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-private fun formatDurationHero(ms: Long): String {
-    val s = ms / 1000
-    val h = s / 3600
-    val m = (s % 3600) / 60
-    return if (h > 0) "${h}h ${m}m" else "${m}m"
-}
 
 private fun needsAllFilesAccess(): Boolean =
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()

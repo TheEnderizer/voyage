@@ -61,8 +61,13 @@ fun BookInfoPanel(
     onShowHistory: (() -> Unit)? = null
 ) {
     val accent      = MaterialTheme.colorScheme.primary
-    val onScrim     = Color.White
-    val onScrimMuted = Color.White.copy(alpha = 0.62f)
+    // Immersive: accent-tinted near-white over the cover scrim. Material You: the panel sits
+    // on the tonal player background, so use standard onSurface text.
+    val isImmersive = com.betteraudio.ui.theme.immersive()
+    val onScrim     = if (isImmersive) com.betteraudio.ui.theme.scrimTextColor()
+                      else MaterialTheme.colorScheme.onSurface
+    val onScrimMuted = if (isImmersive) com.betteraudio.ui.theme.scrimTextColor(muted = true)
+                       else MaterialTheme.colorScheme.onSurfaceVariant
 
     Column(modifier.fillMaxWidth()) {
         seriesLabel?.takeIf { it.isNotBlank() }?.let {
@@ -123,7 +128,8 @@ fun BookInfoPanel(
                 progress = { progressFraction },
                 modifier = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
                 color = accent,
-                trackColor = Color.White.copy(alpha = 0.22f)
+                trackColor = if (isImmersive) Color.White.copy(alpha = 0.22f)
+                             else MaterialTheme.colorScheme.surfaceVariant
             )
         }
 
@@ -168,7 +174,10 @@ fun BookInfoPanel(
                     }
                 }
                 if (index < parts.lastIndex) {
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+                    HorizontalDivider(
+                        color = if (isImmersive) Color.White.copy(alpha = 0.12f)
+                                else MaterialTheme.colorScheme.outlineVariant
+                    )
                 }
             }
         }

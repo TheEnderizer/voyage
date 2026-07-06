@@ -27,17 +27,28 @@ class SynopsisService @Inject constructor(
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    suspend fun generateSynopsis(title: String, author: String): SynopsisResult =
+    suspend fun generateSynopsis(title: String, author: String): SynopsisResult {
+        val prompt = if (author.isNotBlank())
+            "Write a 2-3 sentence synopsis of \"$title\" by $author in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
+        else
+            "Write a 2-3 sentence synopsis of \"$title\" in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
+        return runPrompt(prompt)
+    }
+
+    /** Synopsis for a whole series — same voice-matching style, but covering the series arc. */
+    suspend fun generateSeriesSynopsis(name: String, author: String?): SynopsisResult {
+        val byAuthor = author?.takeIf { it.isNotBlank() }?.let { " by $it" } ?: ""
+        val prompt =
+            "Write a 2-3 sentence synopsis of the book series \"$name\"$byAuthor in the same voice and tone as the series itself — capture its overall arc and atmosphere while staying factual and engaging."
+        return runPrompt(prompt)
+    }
+
+    private suspend fun runPrompt(prompt: String): SynopsisResult =
         withContext(Dispatchers.IO) {
             val apiKey = settings.currentGeminiApiKey
             if (apiKey.isBlank()) return@withContext SynopsisResult.Error("No API key — add one in Settings → AI Synopsis")
 
             try {
-                val prompt = if (author.isNotBlank())
-                    "Write a 2-3 sentence synopsis of \"$title\" by $author in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
-                else
-                    "Write a 2-3 sentence synopsis of \"$title\" in the same voice and tone as the book itself — maintain its atmosphere and style while staying factual and engaging."
-
                 val body = JSONObject()
                     .put("contents", JSONArray().put(
                         JSONObject().put("parts", JSONArray().put(

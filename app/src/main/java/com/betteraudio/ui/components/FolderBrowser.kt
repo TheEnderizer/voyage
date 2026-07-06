@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
@@ -30,7 +31,13 @@ private val AUDIO_EXTS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus"
 fun FolderBrowser(
     startPath: String,
     onSelect: (String) -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    // File-pick mode: when set, matching non-hidden files are listed after sub-folders and
+    // tapping one immediately calls [onSelectFile] (the bottom "Select" button is hidden — there's
+    // nothing to "select" but a folder in that mode). null = folders-only (original behavior).
+    fileExtensions: Set<String>? = null,
+    onSelectFile: ((String) -> Unit)? = null,
+    title: String = "Choose Folder"
 ) {
     val start = remember {
         File(startPath).takeIf { it.isDirectory } ?: File("/storage/emulated/0")
@@ -39,7 +46,10 @@ fun FolderBrowser(
 
     Dialog(
         onDismissRequest = onCancel,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        // decorFitsSystemWindows = false: without it a Dialog window doesn't draw edge-to-edge,
+        // so navigationBarsPadding()/safeDrawing below report ZERO insets and the Cancel/Select
+        // buttons get clipped under the gesture bar. This opts the dialog into real insets.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
@@ -48,7 +58,7 @@ fun FolderBrowser(
                     TopAppBar(
                         title = {
                             Column {
-                                Text("Choose Folder", style = MaterialTheme.typography.titleMedium)
+                                Text(title, style = MaterialTheme.typography.titleMedium)
                                 Text(
                                     current.absolutePath,
                                     style = MaterialTheme.typography.bodySmall,
@@ -75,28 +85,36 @@ fun FolderBrowser(
                     )
                 },
                 bottomBar = {
-                    Surface(tonalElevation = 3.dp) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                // The dialog draws edge-to-edge (usePlatformDefaultWidth = false),
-                                // so keep the buttons clear of the gesture/nav bar and the IME.
-                                .navigationBarsPadding()
-                                .imePadding()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = onCancel,
-                                modifier = Modifier.weight(1f)
-                            ) { Text("Cancel") }
-                            Button(
-                                onClick = { onSelect(current.absolutePath) },
-                                modifier = Modifier.weight(1f)
+                    if (fileExtensions == null) {
+                        Surface(tonalElevation = 3.dp) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    // The dialog draws edge-to-edge (usePlatformDefaultWidth = false),
+                                    // so keep the buttons clear of the gesture/nav bar and the IME.
+                                    .navigationBarsPadding()
+                                    .imePadding()
+                                    .padding(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Icon(Icons.Default.Check, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Select")
+                                OutlinedButton(
+                                    onClick = onCancel,
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Cancel") }
+                                Button(
+                                    onClick = { onSelect(current.absolutePath) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.Check, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Select")
+                                }
+                            }
+                        }
+                    } else {
+                        Surface(tonalElevation = 3.dp) {
+                            Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp)) {
+                                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                             }
                         }
                     }
@@ -108,8 +126,15 @@ fun FolderBrowser(
                         ?.sortedBy { it.name.lowercase() }
                         ?: emptyList()
                 }
+                val matchingFiles = remember(current, fileExtensions) {
+                    if (fileExtensions == null) emptyList()
+                    else current.listFiles()
+                        ?.filter { it.isFile && !it.name.startsWith(".") && it.extension.lowercase() in fileExtensions }
+                        ?.sortedBy { it.name.lowercase() }
+                        ?: emptyList()
+                }
 
-                if (subDirs.isEmpty()) {
+                if (subDirs.isEmpty() && matchingFiles.isEmpty()) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -121,6 +146,8 @@ fun FolderBrowser(
                         Text(
                             if (!readable)
                                 "Can't read this folder. Make sure all-files access is granted."
+                            else if (fileExtensions != null)
+                                "Nothing here matching .${fileExtensions.joinToString("/.")}"
                             else
                                 "No sub-folders here.\nTap Select to scan this folder.",
                             style = MaterialTheme.typography.bodyMedium,
@@ -133,8 +160,12 @@ fun FolderBrowser(
                             .fillMaxSize()
                             .padding(padding)
                     ) {
-                        items(subDirs, key = { it.absolutePath }) { dir ->
+                        items(subDirs, key = { "dir:${it.absolutePath}" }) { dir ->
                             FolderRow(dir = dir, onClick = { current = dir })
+                            HorizontalDivider()
+                        }
+                        items(matchingFiles, key = { "file:${it.absolutePath}" }) { file ->
+                            FileRow(file = file, onClick = { onSelectFile?.invoke(file.absolutePath) })
                             HorizontalDivider()
                         }
                     }
@@ -142,6 +173,15 @@ fun FolderBrowser(
             }
         }
     }
+}
+
+@Composable
+private fun FileRow(file: File, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingContent = { Icon(Icons.Default.Description, null) },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

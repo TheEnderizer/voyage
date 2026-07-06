@@ -15,10 +15,11 @@ object AudioCascade {
     fun speed(bookSpeed: Float?, seriesSpeed: Float?, globalDefault: Float): Float =
         bookSpeed?.takeIf { it != 1.0f } ?: seriesSpeed ?: globalDefault
 
-    fun boost(bookBoost: Int?, seriesBoost: Int?): Int =
-        bookBoost?.takeIf { it != 0 } ?: seriesBoost ?: 0
+    fun boost(bookBoost: Int?, seriesBoost: Int?, globalDefault: Int = 0): Int =
+        bookBoost?.takeIf { it != 0 } ?: seriesBoost ?: globalDefault
 
-    fun eq(bookEq: String?, seriesEq: String?): String? = bookEq ?: seriesEq
+    fun eq(bookEq: String?, seriesEq: String?, globalDefault: String? = null): String? =
+        bookEq ?: seriesEq ?: globalDefault
 
     fun skipSilence(bookSkip: Boolean, seriesSkip: Boolean?): Boolean = bookSkip || (seriesSkip == true)
 

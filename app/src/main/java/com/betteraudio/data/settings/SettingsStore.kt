@@ -55,6 +55,19 @@ class SettingsStore @Inject constructor(
         // In the player, for a book that belongs to a series: show the series cover (true) instead
         // of the book's own cover (false, default).
         val PLAYER_SHOW_SERIES_COVER     = booleanPreferencesKey("player_show_series_cover")
+        // "" = not chosen yet (drives the first-launch theme prompt); otherwise an AppTheme name
+        // (MATERIAL_YOU | IMMERSIVE). Blank renders as MATERIAL_YOU behind the prompt.
+        val APP_THEME                    = stringPreferencesKey("app_theme")
+        // Colour source for the Material You theme: WALLPAPER (dynamic colour, API 31+) | COVER.
+        val THEME_COLOR_SOURCE           = stringPreferencesKey("theme_color_source")
+        // Absolute path of the cover image the home-screen widget shows when nothing is playing
+        // ("" = none → the built-in placeholder). The widget reads the file directly.
+        val WIDGET_DEFAULT_COVER_PATH    = stringPreferencesKey("widget_default_cover_path")
+        // Separate root folder scanned ONLY for standalone .epub files (no matching audiobook).
+        // Mirrors LIBRARY_FOLDER; "" = not set.
+        val EBOOK_FOLDER                 = stringPreferencesKey("ebook_folder")
+        // Reader text size, as a percentage (100 = default CSS font-size).
+        val READER_FONT_SIZE             = intPreferencesKey("reader_font_size")
     }
 
     companion object {
@@ -89,6 +102,11 @@ class SettingsStore @Inject constructor(
     val skippedUpdateVersion: Flow<String>    = context.dataStore.data.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }
     val playerShowSeriesCover: Flow<Boolean>  = context.dataStore.data.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }
     val homeViewMode: Flow<String>            = context.dataStore.data.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }
+    val appTheme: Flow<String>                = context.dataStore.data.map { it[Keys.APP_THEME] ?: "" }
+    val themeColorSource: Flow<String>        = context.dataStore.data.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }
+    val widgetDefaultCoverPath: Flow<String>  = context.dataStore.data.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }
+    val ebookFolder: Flow<String>              = context.dataStore.data.map { it[Keys.EBOOK_FOLDER] ?: "" }
+    val readerFontSize: Flow<Int>              = context.dataStore.data.map { it[Keys.READER_FONT_SIZE] ?: 100 }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -130,6 +148,12 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.GEMINI_API_KEY]          = key }.let { }
     suspend fun setDefaultAudioPresetId(id: Long) =
         context.dataStore.edit { it[Keys.DEFAULT_AUDIO_PRESET_ID] = id }.let { }
+    suspend fun setWidgetDefaultCoverPath(path: String) =
+        context.dataStore.edit { it[Keys.WIDGET_DEFAULT_COVER_PATH] = path }.let { }
+    suspend fun setEbookFolder(path: String) =
+        context.dataStore.edit { it[Keys.EBOOK_FOLDER] = path }.let { }
+    suspend fun setReaderFontSize(pct: Int) =
+        context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }.let { }
     suspend fun setSort(option: String, direction: String) =
         context.dataStore.edit {
             it[Keys.SORT_OPTION]    = option
@@ -157,4 +181,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.HOME_VIEW_MODE] = mode }.let { }
     suspend fun setPlayerShowSeriesCover(enabled: Boolean) =
         context.dataStore.edit { it[Keys.PLAYER_SHOW_SERIES_COVER] = enabled }.let { }
+    suspend fun setAppTheme(name: String) =
+        context.dataStore.edit { it[Keys.APP_THEME] = name }.let { }
+    suspend fun setThemeColorSource(name: String) =
+        context.dataStore.edit { it[Keys.THEME_COLOR_SOURCE] = name }.let { }
 }

@@ -48,4 +48,18 @@ interface PlaybackProgressDao {
         WHERE bookId = :bookId
     """)
     suspend fun markCompleted(bookId: Long, completedMs: Long)
+
+    // ── Ebook reading position ───────────────────────────────────────────────
+    // Returns affected-row count (0 = no progress row yet for this book) so the repository can
+    // fall back to an upsert, mirroring the existing touchLastPlayed pattern.
+    @Query("""
+        UPDATE playback_progress
+        SET textSpineIndex = :spineIndex, textFraction = :fraction,
+            textOverallFraction = :overallFraction, lastMode = 'TEXT', lastPlayedMs = :ts
+        WHERE bookId = :bookId
+    """)
+    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float, ts: Long): Int
+
+    @Query("UPDATE playback_progress SET lastMode = 'AUDIO' WHERE bookId = :bookId")
+    suspend fun setLastModeAudio(bookId: Long): Int
 }

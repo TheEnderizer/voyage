@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.betteraudio.BuildConfig
+import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
@@ -20,14 +21,18 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 
 sealed class SettingsSection {
     object Root : SettingsSection()
+    object Theme : SettingsSection()
     object Library : SettingsSection()
     object Playback : SettingsSection()
+    object Presets : SettingsSection()
+    object Widget : SettingsSection()
     object AI : SettingsSection()
     object Updates : SettingsSection()
     object About : SettingsSection()
@@ -55,6 +60,7 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val settings: SettingsStore,
     private val scanner: AudioFileScanner,
+    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     private val updateChecker: UpdateChecker,
     private val repository: AudiobookRepository,
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer
@@ -101,6 +107,15 @@ class SettingsViewModel @Inject constructor(
 
     val libraryFolder: StateFlow<String> =
         settings.libraryFolder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    val ebookFolder: StateFlow<String> =
+        settings.ebookFolder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** Persist the standalone-ebook root and immediately scan it. */
+    fun setEbookFolder(path: String) = viewModelScope.launch {
+        settings.setEbookFolder(path)
+        ebookScanner.scanEbookDirectory(path)
+    }
 
     val skipForwardMs: StateFlow<Long> =
         settings.skipForwardMs.stateIn(
@@ -176,6 +191,78 @@ class SettingsViewModel @Inject constructor(
 
     val geminiApiKey: StateFlow<String> =
         settings.geminiApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    // ── Audio presets (unified bundles + global default) ──────────────────────
+    val presets: StateFlow<List<AudioPreset>> =
+        repository.getAllAudioPresets()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Insert a new preset (id == 0) or update an existing one. */
+    fun savePreset(preset: AudioPreset) = viewModelScope.launch {
+        if (preset.id == 0L) repository.insertAudioPreset(preset) else repository.updateAudioPreset(preset)
+    }
+
+    fun deletePreset(id: Long) = viewModelScope.launch { repository.deleteAudioPreset(id) }
+
+    /** Make [id] the global default applied to every book unless the book overrides it. */
+    fun setDefaultPreset(id: Long) = viewModelScope.launch {
+        repository.setDefaultAudioPreset(id)
+        settings.setDefaultAudioPresetId(id)
+    }
+
+    fun clearDefaultPreset() = viewModelScope.launch {
+        repository.clearDefaultAudioPreset()
+        settings.setDefaultAudioPresetId(-1L)
+    }
+
+    // ── Widget default cover ──────────────────────────────────────────────────
+    val widgetDefaultCover: StateFlow<String> =
+        settings.widgetDefaultCoverPath
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** Copy the picked image to a fixed file the widget process can read, then persist the path. */
+    fun setWidgetDefaultCover(uri: android.net.Uri) = viewModelScope.launch {
+        val path = withContext(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val dest = java.io.File(appContext.filesDir, "widget_default_cover.jpg")
+                appContext.contentResolver.openInputStream(uri)?.use { input ->
+                    dest.outputStream().use { input.copyTo(it) }
+                }
+                dest.absolutePath
+            } catch (_: Exception) { null }
+        }
+        if (path != null) {
+            settings.setWidgetDefaultCoverPath(path)
+            com.betteraudio.widget.WidgetRender.refresh(appContext)
+        }
+    }
+
+    fun clearWidgetDefaultCover() = viewModelScope.launch {
+        withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { java.io.File(appContext.filesDir, "widget_default_cover.jpg").delete() }
+        }
+        settings.setWidgetDefaultCoverPath("")
+        com.betteraudio.widget.WidgetRender.refresh(appContext)
+    }
+
+    // ── App theme ────────────────────────────────────────────────────────────
+    val appTheme: StateFlow<com.betteraudio.ui.theme.AppTheme> =
+        settings.appTheme
+            .map { com.betteraudio.ui.theme.AppTheme.from(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU)
+
+    val themeColorSource: StateFlow<com.betteraudio.ui.theme.ThemeColorSource> =
+        settings.themeColorSource
+            .map { com.betteraudio.ui.theme.ThemeColorSource.from(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.theme.ThemeColorSource.WALLPAPER)
+
+    fun setAppTheme(theme: com.betteraudio.ui.theme.AppTheme) =
+        viewModelScope.launch { settings.setAppTheme(theme.name) }
+
+    fun setThemeColorSource(source: com.betteraudio.ui.theme.ThemeColorSource) =
+        viewModelScope.launch { settings.setThemeColorSource(source.name) }
 
     private val _updateState = MutableStateFlow(UpdateUiState())
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()

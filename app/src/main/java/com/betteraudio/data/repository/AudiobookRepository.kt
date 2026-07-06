@@ -215,6 +215,87 @@ class AudiobookRepository @Inject constructor(
         bookDao.deleteById(bookId)
     }
 
+    /** All books by an effective author name (for deleting a whole author from the grid). */
+    suspend fun getBooksByEffectiveAuthorOnce(name: String): List<com.betteraudio.data.db.entities.Book> =
+        bookDao.getBooksByEffectiveAuthorOnce(name)
+
+    /** Remove an author's cover-meta row (after its books are deleted). */
+    suspend fun deleteAuthorMeta(name: String) = authorMetaDao.deleteByName(name)
+
+    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
+
+    /** Connect (or disconnect, path = null) an epub to an existing book. Always clears the stale
+     *  chapter-alignment map — it only makes sense for the epub it was computed against. */
+    suspend fun setEbook(bookId: Long, path: String?, spineCount: Int) =
+        bookDao.setEbook(bookId, path, spineCount)
+
+    suspend fun updateEbookSpineCount(bookId: Long, spineCount: Int) =
+        bookDao.updateEbookSpineCount(bookId, spineCount)
+
+    /** Repoint a connected epub's path after a library-restructure move (keeps the chapter map). */
+    suspend fun updateEbookPath(bookId: Long, path: String) = bookDao.updateEbookPath(bookId, path)
+
+    suspend fun setChapterMap(bookId: Long, json: String?) = bookDao.setChapterMap(bookId, json)
+
+    /** Every book with a connected/standalone ebook (for reconciliation and the Ebooks view). */
+    suspend fun getAllWithEbookOnce(): List<Book> = bookDao.getAllWithEbookOnce()
+
+    suspend fun getBookByEbookPath(path: String): Book? = bookDao.getBookByEbookPath(path)
+
+    /** Upsert a standalone ebook-only Book row keyed by its synthetic `::epub::` folderPath —
+     *  create on first scan, refresh spine count (never clobber user overrides) on later scans. */
+    suspend fun upsertEbookOnlyBook(
+        folderPath: String, title: String, author: String, coverArtPath: String?, ebookPath: String,
+        spineCount: Int
+    ): Long {
+        val existing = bookDao.getBookByFolder(folderPath)
+        return if (existing != null) {
+            bookDao.updateEbookSpineCount(existing.id, spineCount)
+            existing.id
+        } else {
+            bookDao.upsert(
+                Book(
+                    title = title, author = author, folderPath = folderPath,
+                    coverArtPath = coverArtPath, ebookPath = ebookPath, ebookSpineCount = spineCount,
+                    fileCount = 0, totalDurationMs = 0
+                )
+            )
+        }
+    }
+
+    /** Persist the reader's scroll position and mark text as the freshest mode. Creates the
+     *  progress row on first read, mirroring [touchLastPlayed]'s upsert-if-missing pattern. */
+    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float) {
+        val now = System.currentTimeMillis()
+        if (progressDao.updateTextPosition(bookId, spineIndex, fraction, overallFraction, now) == 0) {
+            progressDao.upsert(
+                PlaybackProgress(
+                    bookId = bookId, textSpineIndex = spineIndex, textFraction = fraction,
+                    textOverallFraction = overallFraction, lastMode = "TEXT", lastPlayedMs = now
+                )
+            )
+        }
+    }
+
+    /** Mark audio as the freshest mode (called when starting/resuming playback from the reader or
+     *  the normal player, so the next mode-switch converts FROM the audio position). */
+    suspend fun setLastModeAudio(bookId: Long) {
+        if (progressDao.setLastModeAudio(bookId) == 0) {
+            progressDao.upsert(PlaybackProgress(bookId = bookId, lastMode = "AUDIO"))
+        }
+    }
+
+    /** When a standalone ebook-only row is being merged into a newly-connected audiobook, carry
+     *  its reading progress over — but only if the audiobook doesn't already have its own (a
+     *  book that was already being read/listened to keeps its own position). */
+    suspend fun mergeStandaloneEbookProgress(fromBookId: Long, toBookId: Long) {
+        val existingTarget = progressDao.getProgressForBookOnce(toBookId)
+        if (existingTarget?.textSpineIndex != null) return
+        val source = progressDao.getProgressForBookOnce(fromBookId) ?: return
+        val spine = source.textSpineIndex ?: return
+        updateTextPosition(toBookId, spine, source.textFraction ?: 0f, source.textOverallFraction)
+    }
+
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */
     suspend fun touchLastPlayed(bookId: Long) {
         val now = System.currentTimeMillis()
@@ -263,6 +344,10 @@ class AudiobookRepository @Inject constructor(
         audioPresetDao.clearDefault()
         audioPresetDao.setDefault(id)
     }
+    /** The global default preset (applied to every book unless the book overrides it), or null. */
+    suspend fun getDefaultAudioPreset(): AudioPreset? = audioPresetDao.getDefault()
+    /** Clear the global default flag without deleting any preset. */
+    suspend fun clearDefaultAudioPreset() = audioPresetDao.clearDefault()
     suspend fun getProgressForBookOnce(bookId: Long): PlaybackProgress? =
         progressDao.getProgressForBookOnce(bookId)
 

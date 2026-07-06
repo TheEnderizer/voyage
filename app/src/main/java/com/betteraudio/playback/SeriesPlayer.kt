@@ -84,18 +84,22 @@ class SeriesPlayer @Inject constructor(
             files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0) else 0
         val startPos = if (resume && explicitPositionMs == null && progress?.isCompleted != true)
             progress?.positionMs ?: 0L else 0L
-        // Effective audio: book override → series default → global.
-        val speed = AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, settings.currentDefaultSpeed)
+        // Effective audio: book override → series default → global default preset → scalar fallback.
+        val gPreset = repository.getDefaultAudioPreset()
+        val speed = AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
         playerController.playBook(
             book = bwp.book, files = files, startFileIndex = startIndex, startPositionMs = startPos,
             speed = speed, seriesId = seriesId, seriesBookIds = orderedIds
         )
         // Seek to an exact within-book position once the timeline is loaded (chapter pick).
         if (explicitPositionMs != null) playerController.bookSeekTo(explicitPositionMs)
-        playerController.setVolumeBoost(AudioCascade.boost(progress?.boostDb, series?.boostDb))
-        playerController.setEqBands(AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson))
+        playerController.setVolumeBoost(AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
+        playerController.setEqBands(AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson))
         playerController.setSkipSilence(AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
         repository.touchLastPlayed(bwp.book.id)
         settings.setLastPlayedBookId(bwp.book.id)
+        // Playing through the series path shows the SERIES cover in the player (and themes the
+        // app from it). Opening a book directly from the Books view resets this to false.
+        settings.setPlayerShowSeriesCover(true)
     }
 }

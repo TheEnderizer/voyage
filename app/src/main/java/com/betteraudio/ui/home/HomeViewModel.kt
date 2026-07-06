@@ -71,7 +71,14 @@ enum class LibraryTab(val label: String) {
 
 /** Items shown in the home library grid */
 /** How the home library is grouped. */
-enum class HomeViewMode { BOOKS, SERIES, AUTHORS }
+enum class HomeViewMode { BOOKS, SERIES, AUTHORS, EBOOKS }
+
+/** A selected library item — books, series and authors can be multi-selected together. */
+sealed interface SelKey {
+    data class BookK(val id: Long) : SelKey
+    data class SeriesK(val id: Long) : SelKey
+    data class AuthorK(val name: String) : SelKey
+}
 
 /** Target of a per-view (series/author) cover search. */
 sealed class CoverCollectionTarget {
@@ -117,6 +124,7 @@ class HomeViewModel @Inject constructor(
     private val seriesRepository: SeriesRepository,
     private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val scanner: AudioFileScanner,
+    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
     val playerController: PlayerController
@@ -148,6 +156,23 @@ class HomeViewModel @Inject constructor(
 
     fun deleteBook(bookId: Long, deleteFiles: Boolean) {
         viewModelScope.launch { repository.deleteBook(bookId, deleteFiles) }
+    }
+
+    // ── Ebook (EPUB) connect/disconnect ─────────────────────────────────────
+
+    private val _ebookError = MutableStateFlow<String?>(null)
+    val ebookError: StateFlow<String?> = _ebookError.asStateFlow()
+    fun dismissEbookError() { _ebookError.value = null }
+
+    fun connectEpub(bookId: Long, epubPath: String) {
+        viewModelScope.launch {
+            val ok = runCatching { ebookScanner.attachEpubToBook(bookId, File(epubPath)) }.getOrDefault(false)
+            if (!ok) _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
+        }
+    }
+
+    fun disconnectEpub(bookId: Long) {
+        viewModelScope.launch { repository.setEbook(bookId, null, 0) }
     }
 
     // ── Online cover search ────────────────────────────────────────────────
@@ -223,26 +248,46 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { repository.regenerateCoverFx(bookId) }
     }
 
-    // ── Selection mode ──────────────────────────────────────────────────────
+    // ── Selection mode (books, series and authors) ────────────────────────────
 
-    private val _selectedBookIds = MutableStateFlow<Set<Long>>(emptySet())
-    val selectedBookIds: StateFlow<Set<Long>> = _selectedBookIds.asStateFlow()
+    private val _selection = MutableStateFlow<Set<SelKey>>(emptySet())
+    val selection: StateFlow<Set<SelKey>> = _selection.asStateFlow()
 
-    val isSelectionMode: Boolean
-        get() = _selectedBookIds.value.isNotEmpty()
-
-    fun enterBookSelection(bookId: Long) {
-        _selectedBookIds.value = setOf(bookId)
+    fun toggleSelection(key: SelKey) {
+        _selection.update { if (key in it) it - key else it + key }
     }
 
-    fun toggleBookSelection(bookId: Long) {
-        _selectedBookIds.update { current ->
-            if (bookId in current) current - bookId else current + bookId
+    fun clearSelection() { _selection.value = emptySet() }
+
+    /** Delete every selected item. A selected book deletes directly; a selected series or author
+     *  deletes ALL of its member books (and the series row / author cover-meta). */
+    fun deleteSelection(deleteFiles: Boolean) {
+        val keys = _selection.value
+        viewModelScope.launch {
+            for (k in keys) when (k) {
+                is SelKey.BookK -> repository.deleteBook(k.id, deleteFiles)
+                is SelKey.SeriesK -> {
+                    seriesRepository.getBooksInSeriesOnce(k.id)
+                        .forEach { repository.deleteBook(it.id, deleteFiles) }
+                    seriesRepository.deleteSeries(k.id)
+                }
+                is SelKey.AuthorK -> {
+                    repository.getBooksByEffectiveAuthorOnce(k.name)
+                        .forEach { repository.deleteBook(it.id, deleteFiles) }
+                    repository.deleteAuthorMeta(k.name)
+                }
+            }
+            clearSelection()
         }
     }
 
-    fun clearSelection() {
-        _selectedBookIds.value = emptySet()
+    /** Add the selected single books into [seriesId], then leave selection mode. */
+    fun addSelectedBooksToSeries(seriesId: Long) {
+        val bookIds = _selection.value.filterIsInstance<SelKey.BookK>().map { it.id }
+        viewModelScope.launch {
+            bookIds.forEach { seriesRepository.addBookToSeries(it, seriesId) }
+            clearSelection()
+        }
     }
 
     // ── Grid items ───────────────────────────────────────────────────────────
@@ -348,6 +393,12 @@ class HomeViewModel @Inject constructor(
                     result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))
                 }
             }
+
+            // Every book with a connected or standalone ebook — audiobooks-with-epub AND
+            // ebook-only rows both show here, flat (no series/author grouping in this lens).
+            HomeViewMode.EBOOKS ->
+                bwpList.filter { it.book.ebookPath != null }
+                    .forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
         }
 
         // Sort using the user-selected SortFilter
@@ -424,9 +475,14 @@ class HomeViewModel @Inject constructor(
             val progress = bwp.progress
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
             val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-            val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            // Effective audio: book override → series default → global default preset → fallback.
+            val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
+            val gPreset = repository.getDefaultAudioPreset()
+            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
-            playerController.setVolumeBoost(progress?.boostDb ?: 0)
+            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
+            playerController.setEqBands(com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson))
+            playerController.setSkipSilence(com.betteraudio.playback.AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
         }

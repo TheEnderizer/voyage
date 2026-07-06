@@ -3,6 +3,22 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.0b] - 2026-07-06
+
+### Added
+- Ebook reader: attach an EPUB to any audiobook (or drop standalone EPUBs in a separate ebook folder), then read or listen and always continue from the same spot — "Read from here" and "Listen from here" convert your position between the two automatically. Includes a new Ebooks tab in the library, chapter alignment (auto + manual), font size control, and a locked-down in-app reader with no network access
+- Two full app themes in Settings → Theme, chosen on first launch: Material You (tonal, wallpaper or cover colors) and Immersive (blurred full-bleed cover behind everything, all text tinted to match)
+- Audio presets are now full bundles (speed + volume boost + EQ); one preset can be set as the library-wide default so new and existing books get consistent audio unless individually tuned. Manage them from Settings → Audio presets
+- Multi-select in the library: long-press any book, series, or author (mixed selections supported) to delete, add books to a series, or reach cover search/book options from one selection bar
+- Home-screen widget: set a custom default cover shown when nothing is playing (Settings → Widget)
+- Hold a skip button in the player to change its interval; swipe the mini player down to close the current book
+
+### Fixed
+- Mini player now reliably restores after a cold app launch
+- Mini player no longer shows on the Settings screen
+- Folder picker's Cancel/Select buttons were sometimes clipped by the gesture bar
+- Tapping a book's play button in the library no longer opens the full player
+
 ## [1.7.1b] - 2026-07-03
 
 ### Changed

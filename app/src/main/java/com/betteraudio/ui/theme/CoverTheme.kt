@@ -26,10 +26,17 @@ import java.io.File
  * Returns null until the bitmap is decoded, or if [coverPath] is null/unreadable.
  */
 @Composable
-fun rememberCoverScheme(coverPath: String?, base: ColorScheme, darkTheme: Boolean): ColorScheme? {
-    var scheme by remember(coverPath, darkTheme, base) { mutableStateOf<ColorScheme?>(null) }
+fun rememberCoverScheme(
+    coverPath: String?,
+    base: ColorScheme,
+    darkTheme: Boolean,
+    // Immersive theme tints text (on*) colours toward the cover accent too; Material You keeps
+    // the base text colours for stock M3 contrast.
+    tintText: Boolean = true
+): ColorScheme? {
+    var scheme by remember(coverPath, darkTheme, base, tintText) { mutableStateOf<ColorScheme?>(null) }
 
-    LaunchedEffect(coverPath, darkTheme, base) {
+    LaunchedEffect(coverPath, darkTheme, base, tintText) {
         if (coverPath.isNullOrBlank()) { scheme = null; return@LaunchedEffect }
         val palette = withContext(Dispatchers.IO) {
             try {
@@ -40,7 +47,7 @@ fun rememberCoverScheme(coverPath: String?, base: ColorScheme, darkTheme: Boolea
                 Palette.from(bmp).maximumColorCount(16).generate()
             } catch (_: Exception) { null }
         } ?: run { scheme = null; return@LaunchedEffect }
-        scheme = base.recolouredFrom(palette, darkTheme)
+        scheme = base.recolouredFrom(palette, darkTheme, tintText)
     }
 
     return scheme
@@ -56,10 +63,14 @@ fun rememberAnimatedScheme(target: ColorScheme): ColorScheme {
     val onPrimaryContainer by animateColorAsState(target.onPrimaryContainer, spec, label = "onPrimaryContainer")
     val secondary by animateColorAsState(target.secondary, spec, label = "secondary")
     val secondaryContainer by animateColorAsState(target.secondaryContainer, spec, label = "secondaryContainer")
+    val onSecondaryContainer by animateColorAsState(target.onSecondaryContainer, spec, label = "onSecondaryContainer")
     val tertiary by animateColorAsState(target.tertiary, spec, label = "tertiary")
     val background by animateColorAsState(target.background, spec, label = "background")
+    val onBackground by animateColorAsState(target.onBackground, spec, label = "onBackground")
     val surface by animateColorAsState(target.surface, spec, label = "surface")
+    val onSurface by animateColorAsState(target.onSurface, spec, label = "onSurface")
     val surfaceVariant by animateColorAsState(target.surfaceVariant, spec, label = "surfaceVariant")
+    val onSurfaceVariant by animateColorAsState(target.onSurfaceVariant, spec, label = "onSurfaceVariant")
     val surfaceContainer by animateColorAsState(target.surfaceContainer, spec, label = "surfaceContainer")
     val surfaceContainerHigh by animateColorAsState(target.surfaceContainerHigh, spec, label = "surfaceContainerHigh")
     val surfaceContainerHighest by animateColorAsState(target.surfaceContainerHighest, spec, label = "surfaceContainerHighest")
@@ -71,10 +82,14 @@ fun rememberAnimatedScheme(target: ColorScheme): ColorScheme {
         onPrimaryContainer = onPrimaryContainer,
         secondary = secondary,
         secondaryContainer = secondaryContainer,
+        onSecondaryContainer = onSecondaryContainer,
         tertiary = tertiary,
         background = background,
+        onBackground = onBackground,
         surface = surface,
+        onSurface = onSurface,
         surfaceVariant = surfaceVariant,
+        onSurfaceVariant = onSurfaceVariant,
         surfaceContainer = surfaceContainer,
         surfaceContainerHigh = surfaceContainerHigh,
         surfaceContainerHighest = surfaceContainerHighest,
@@ -82,7 +97,7 @@ fun rememberAnimatedScheme(target: ColorScheme): ColorScheme {
     )
 }
 
-private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean): ColorScheme {
+private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean, tintText: Boolean): ColorScheme {
     val fallback = if (dark) 0xFFFFA552.toInt() else 0xFFE07B3E.toInt()
     // Prefer light swatches so accents are legible on the dark background
     val primary = palette.lightVibrantSwatch?.rgb?.let { Color(it) }
@@ -95,6 +110,16 @@ private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean): ColorSc
     val bgTint = if (dark) 0.13f else 0.07f
     val surfTint = if (dark) 0.17f else 0.10f
 
+    // Text follows the cover too (Immersive only): body text shifts toward a legible tint of
+    // the accent (lightened on dark, darkened on light), muted text a touch more so hierarchy
+    // holds. With tintText off the base text colours pass straight through.
+    val textAccent = if (dark) primary.lighten(0.62f) else primary.darken(0.5f)
+    val mutedAccent = if (dark) primary.lighten(0.45f) else primary.darken(0.38f)
+    val tintedOn = if (tintText) lerp(onSurface, textAccent, 0.35f) else onSurface
+    val tintedOnMuted = if (tintText) lerp(onSurfaceVariant, mutedAccent, 0.42f) else onSurfaceVariant
+    val tintedOnSecondaryContainer =
+        if (tintText) lerp(onSecondaryContainer, textAccent, 0.35f) else onSecondaryContainer
+
     return copy(
         primary = primary,
         onPrimary = onColorFor(primary),
@@ -103,11 +128,15 @@ private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean): ColorSc
         secondary = secondary,
         onSecondary = onColorFor(secondary),
         secondaryContainer = if (dark) secondary.darken(0.5f) else secondary.lighten(0.6f),
+        onSecondaryContainer = tintedOnSecondaryContainer,
         tertiary = tertiary,
         onTertiary = onColorFor(tertiary),
         background = lerp(background, primary, bgTint),
+        onBackground = tintedOn,
         surface = lerp(surface, primary, bgTint),
+        onSurface = tintedOn,
         surfaceVariant = lerp(surfaceVariant, primary, surfTint),
+        onSurfaceVariant = tintedOnMuted,
         surfaceContainer = lerp(surfaceContainer, primary, surfTint),
         surfaceContainerHigh = lerp(surfaceContainerHigh, primary, surfTint),
         surfaceContainerHighest = lerp(surfaceContainerHighest, primary, surfTint),

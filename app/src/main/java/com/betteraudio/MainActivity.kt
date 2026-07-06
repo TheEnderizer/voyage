@@ -12,8 +12,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +35,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -89,11 +92,18 @@ class MainActivity : ComponentActivity() {
         // Captured before composition so the restore effect reads it before the route-tracking
         // effect (which writes -1 for the initial "home" route) can overwrite it.
         val initialBookId = runBlocking { settings.lastOpenBookId.first() }
+        // Theme read synchronously so the first frame renders in the right theme (no flash).
+        // "" = never chosen → the first-launch theme prompt is shown over the app.
+        val initialThemeRaw = runBlocking { settings.appTheme.first() }
+        val initialColorSource = runBlocking { settings.themeColorSource.first() }
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
         val coldStartBookId = if (openPlayerFromWidget)
             (runBlocking { settings.lastPlayedBookId.first() }.takeIf { it != -1L } ?: initialBookId)
         else initialBookId
+        // The last book that actually played — used to restore the collapsed mini bar even when the
+        // player was collapsed at close (LAST_OPEN_BOOK_ID is -1 then, so it alone can't restore it).
+        val lastPlayedBookId = runBlocking { settings.lastPlayedBookId.first() }
         setContent {
             val playbackState by playerController.playbackState.collectAsStateWithLifecycle()
             // When nothing is actively loaded, keep the app themed by the last-played book's cover
@@ -125,14 +135,30 @@ class MainActivity : ComponentActivity() {
                     .collectLatest { value = it }
             }
             val coverPath = seriesThemeCover ?: activeCover ?: lastPlayedCover
-            VoyageTheme(coverArtPath = coverPath) {
+            val appThemeRaw by settings.appTheme.collectAsStateWithLifecycle(initialThemeRaw)
+            val colorSourceRaw by settings.themeColorSource.collectAsStateWithLifecycle(initialColorSource)
+            val appTheme = com.betteraudio.ui.theme.AppTheme.from(appThemeRaw)
+            val colorSource = com.betteraudio.ui.theme.ThemeColorSource.from(colorSourceRaw)
+            VoyageTheme(appTheme = appTheme, colorSource = colorSource, coverArtPath = coverPath) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
+                val uiScope = androidx.compose.runtime.rememberCoroutineScope()
 
-                // Trace navigation so the in-app log shows the screen flow leading to a bug.
+                // Opening a book DIRECTLY (Books view, search, author page) always shows the
+                // book's own cover; the series cover appears only when playing via the series
+                // path (SeriesPlayer flips the flag back on).
+                fun openBookDirect(bookId: Long, startInfo: Boolean = false) {
+                    uiScope.launch { settings.setPlayerShowSeriesCover(false) }
+                    sheetController.open(bookId = bookId, startInfo = startInfo)
+                }
+
+                // Trace navigation so the in-app log shows the screen flow leading to a bug, and
+                // track the current route so the mini bar can be hidden on Settings.
+                var currentRoute by androidx.compose.runtime.remember { mutableStateOf<String?>("home") }
                 DisposableEffect(navController) {
                     val listener = NavController.OnDestinationChangedListener { _, dest, _ ->
                         AppLog.i("Nav", "→ ${dest.route}")
+                        currentRoute = dest.route
                     }
                     navController.addOnDestinationChangedListener(listener)
                     onDispose { navController.removeOnDestinationChangedListener(listener) }
@@ -141,8 +167,15 @@ class MainActivity : ComponentActivity() {
                 // Restore the player the user last had open (or, from a widget tap, the active one).
                 // startPlaying = false on a cold-start restore so the player shows the last book
                 // without automatically starting playback — the user must tap Play themselves.
+                // If nothing was left EXPANDED but a book was last played, restore the collapsed mini
+                // bar so it shows that book (fixes the mini bar being empty after a cold launch).
                 LaunchedEffect(Unit) {
-                    if (coldStartBookId != -1L) sheetController.open(bookId = coldStartBookId, startPlaying = false)
+                    when {
+                        coldStartBookId != -1L ->
+                            sheetController.open(bookId = coldStartBookId, startPlaying = false)
+                        lastPlayedBookId != -1L ->
+                            sheetController.restore(lastPlayedBookId)
+                    }
                 }
 
                 // Warm-start widget taps (singleTask onNewIntent) expand the player sheet.
@@ -164,6 +197,18 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
 
                 Box(Modifier.fillMaxSize()) {
+                // Immersive: the playing/last-played cover under a very heavy blur fills the
+                // app. Material You: a plain opaque background (Home's scaffold is transparent
+                // and relies on this layer).
+                if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+                    com.betteraudio.ui.components.AppBlurredBackdrop(coverPath = coverPath)
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                    )
+                }
                 NavHost(
                     navController = navController,
                     startDestination = "home",
@@ -176,11 +221,12 @@ class MainActivity : ComponentActivity() {
                     composable("home") {
                         HomeScreen(
                             onOpenSettings = { navController.navigate("settings") },
-                            onOpenBook = { bookId -> sheetController.open(bookId = bookId) },
-                            onOpenBookInfo = { bookId -> sheetController.open(bookId = bookId, startInfo = true) },
+                            onOpenBook = { bookId -> openBookDirect(bookId) },
+                            onOpenBookInfo = { bookId -> openBookDirect(bookId, startInfo = true) },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { seriesId -> navController.navigate("series/$seriesId") },
-                            onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") }
+                            onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") },
+                            onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                         )
                     }
 
@@ -191,7 +237,7 @@ class MainActivity : ComponentActivity() {
                     composable("search") {
                         SearchScreen(
                             onBack = { navController.popBackStack() },
-                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
+                            onBookClick = { bookId -> openBookDirect(bookId) }
                         )
                     }
 
@@ -213,7 +259,19 @@ class MainActivity : ComponentActivity() {
                         AuthorDetailScreen(
                             authorName = name,
                             onBack = { navController.popBackStack() },
-                            onBookClick = { bookId -> sheetController.open(bookId = bookId) }
+                            onBookClick = { bookId -> openBookDirect(bookId) }
+                        )
+                    }
+
+                    composable(
+                        route = "reader/{bookId}",
+                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                    ) {
+                        com.betteraudio.ui.reader.EbookReaderScreen(
+                            onBack = { navController.popBackStack() },
+                            // The reader VM already started playback (readFromHere's cascade); just
+                            // expand the sheet over the reader — it stays on the back stack beneath it.
+                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) }
                         )
                     }
 
@@ -239,7 +297,29 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                PlayerSheet(controller = sheetController, playerController = playerController)
+                PlayerSheet(
+                    controller = sheetController,
+                    playerController = playerController,
+                    hideMiniBar = currentRoute == "settings" || currentRoute?.startsWith("reader/") == true,
+                    onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
+                )
+
+                // First launch (or first run after this update): let the user pick the app
+                // theme. "" = never chosen; confirming (or dismissing) writes a value so the
+                // prompt never reappears.
+                if (appThemeRaw.isEmpty()) {
+                    com.betteraudio.ui.components.ThemePickerDialog(
+                        initial = com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU,
+                        onConfirm = { chosen ->
+                            uiScope.launch { settings.setAppTheme(chosen.name) }
+                        },
+                        onDismiss = {
+                            uiScope.launch {
+                                settings.setAppTheme(com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU.name)
+                            }
+                        }
+                    )
+                }
 
                 // Launch-time update gate: draws over everything when a new release is found
                 // (and the user hasn't skipped that exact version).

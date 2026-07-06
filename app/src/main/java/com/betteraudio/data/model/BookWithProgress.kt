@@ -25,4 +25,12 @@ data class BookWithProgress(
     }
 
     val lastPlayedMs: Long get() = progress?.lastPlayedMs ?: book.addedDateMs
+
+    /** Whole-book reading progress (0..1), for the Ebooks view and ebook-only cards. */
+    val readingFraction: Float get() = progress?.textOverallFraction ?: 0f
+
+    /** True for a standalone ebook row with no audio at all (as opposed to an audiobook that also
+     *  has a connected epub). Its grid card should show reading progress, and its play button
+     *  should open the reader instead of starting playback. */
+    val isEbookOnly: Boolean get() = book.ebookPath != null && book.totalDurationMs == 0L
 }

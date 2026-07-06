@@ -387,6 +387,29 @@ class PlayerController @Inject constructor(
         controller?.let { if (it.isPlaying) it.pause() else it.play() }
     }
 
+    /** Close the current book entirely: save its resume position, stop playback and clear the
+     *  queue, then wipe the last-played/last-open markers so the mini bar disappears and nothing
+     *  is restored on next launch. Called when the user swipes the mini bar down. */
+    fun stop() {
+        saveCurrentProgress()
+        controller?.let {
+            it.pause()
+            it.clearMediaItems()
+            it.stop()
+        }
+        currentBookId = -1L
+        currentGroupId = -1L
+        currentGroupName = ""
+        currentSeriesId = -1L
+        currentSeriesBookIds = emptyList()
+        stopPositionTicker()
+        _playbackState.value = PlaybackState()
+        scope.launch {
+            settings.setLastPlayedBookId(-1L)
+            settings.setLastOpenBookId(-1L)
+        }
+    }
+
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
     fun skipForward() {

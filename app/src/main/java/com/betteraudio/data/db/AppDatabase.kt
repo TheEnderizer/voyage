@@ -34,9 +34,11 @@ import com.betteraudio.data.db.entities.SkipEvent
 // Version 11: listening_sessions.endBookPositionMs (resume-from-session)
 // Version 12: first-class series — `series` + `author_meta` tables, Book.seriesId; series
 //             seeded from existing seriesName; stale groupId nulled out (grouping retired).
+// Version 13: EPUB reader — Book.ebookPath/ebookSpineCount/chapterMapJson;
+//             PlaybackProgress text position (textSpineIndex/textFraction/textOverallFraction/lastMode).
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -207,6 +209,19 @@ abstract class AppDatabase : RoomDatabase() {
                 // queries (which filter groupId IS NULL) show them all. The now-empty group tables
                 // are dropped in a later cleanup migration once their Room entities are removed.
                 db.execSQL("UPDATE `books` SET `groupId` = NULL")
+            }
+        }
+
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 12 → 13 (epub reader)")
+                db.execSQL("ALTER TABLE books ADD COLUMN ebookPath TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN ebookSpineCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE books ADD COLUMN chapterMapJson TEXT")
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN textSpineIndex INTEGER")
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN textFraction REAL")
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN textOverallFraction REAL NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN lastMode TEXT NOT NULL DEFAULT 'AUDIO'")
             }
         }
     }

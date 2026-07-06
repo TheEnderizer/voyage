@@ -33,8 +33,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,8 +45,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +102,14 @@ class PlayerSheetController {
         if (target == null) target = PlayerTarget(bookId, groupId, startInfo = false)
     }
 
+    /** Cold-start restore of the mini bar (collapsed): load the last-played book PAUSED so the
+     *  mini bar shows it even when the playback service was killed. Unlike [prime], this forces
+     *  startPlaying = false so reopening the app never auto-resumes. */
+    fun restore(bookId: Long) {
+        if (target == null && bookId != -1L)
+            target = PlayerTarget(bookId = bookId, startInfo = false, startPlaying = false)
+    }
+
     /** Open a book/group in the full player (expands the sheet). */
     fun open(bookId: Long = -1L, groupId: Long = -1L, startInfo: Boolean = false, startPlaying: Boolean = true) {
         target = PlayerTarget(bookId, groupId, startInfo, startPlaying)
@@ -113,6 +126,9 @@ class PlayerSheetController {
             target = PlayerTarget(bookId = bookId, startPlaying = false)
         }
     }
+
+    /** Drop the loaded book so the sheet (and mini bar) disappear — used when the book is closed. */
+    fun clear() { target = null }
 }
 
 @Composable
@@ -130,7 +146,13 @@ private const val MINI_HEIGHT_DP = 64
 fun PlayerSheet(
     controller: PlayerSheetController,
     playerController: PlayerController,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    // Hide the collapsed mini bar on screens that shouldn't show it (e.g. Settings). The expanded
+    // player can't coexist with those routes, so only the collapsed bar needs gating.
+    hideMiniBar: Boolean = false,
+    // "Read from here" (player overflow) needs to collapse this sheet and navigate to the reader
+    // route underneath it — that navigation lives outside the sheet's own nested NavHost.
+    onOpenReader: (Long) -> Unit = {}
 ) {
     val playback by playerController.playbackState.collectAsStateWithLifecycle()
     val target = controller.target
@@ -170,56 +192,110 @@ fun PlayerSheet(
             progressAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
     }
 
-    val expanded = progressAnim.value > 0.5f
+    // derivedStateOf: recompose only when the threshold flips, not every animation frame.
+    val expanded by remember { derivedStateOf { progressAnim.value > 0.5f } }
     LaunchedEffect(expanded) { controller.setExpanded(expanded) }
 
+    // Shared-element morph plumbing: expansion progress + the mini bar's element bounds,
+    // all as State so the full player reads them inside graphicsLayer lambdas only.
+    val progressState = remember { derivedStateOf { progressAnim.value } }
+    val miniCoverRect = remember { mutableStateOf(Rect.Zero) }
+    val miniTitleRect = remember { mutableStateOf(Rect.Zero) }
+    val miniControlsRect = remember { mutableStateOf(Rect.Zero) }
+    val transition = remember {
+        PlayerExpandTransition(progressState, miniCoverRect, miniTitleRect, miniControlsRect)
+    }
+
+    fun settle(velocity: Float) {
+        val goExpand = velocity < -1000f || (velocity <= 1000f && progressAnim.value > 0.5f)
+        scope.launch {
+            progressAnim.animateTo(
+                if (goExpand) 1f else 0f,
+                spring(dampingRatio = 0.85f, stiffness = 380f)
+            )
+        }
+    }
 
     Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height }) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .graphicsLayer { translationY = travelPx * (1f - progressAnim.value) }
-        ) {
-            // ── Full player (fades in as it expands) ───────────────────────────
-            if (target != null) {
-                val nested = rememberNavController()
-                LaunchedEffect(target) {
-                    nested.navigate(
-                        "player?bookId=${target!!.bookId}&groupId=${target!!.groupId}" +
-                        "&startInfo=${target!!.startInfo}&startPlaying=${target!!.startPlaying}"
-                    ) {
-                        // Clear the entire nested back stack so every book switch gets a fresh
-                        // ViewModel. launchSingleTop is intentionally NOT set — it matches on
-                        // route pattern, not the URL, so it would reuse the old book's entry.
-                        popUpTo(0) { inclusive = true }
+        // ── Mini bar — docked at the bottom, drawn UNDER the full player so the morphing
+        // cover/title/controls (which start exactly on top of their mini counterparts) read as
+        // the same element travelling, not a crossfade. The mini content hides the moment the
+        // morph takes over; only the pill surface fades out.
+        if (!(hideMiniBar && !expanded)) MiniPlayerBar(
+            title = if (playback.groupId != -1L) playback.groupName else playback.bookTitle,
+            coverPath = playback.coverArtUri?.removePrefix("file://"),
+            isPlaying = playback.isPlaying,
+            progress = if (playback.bookTotalDurationMs > 0)
+                (playback.bookPositionMs.toFloat() / playback.bookTotalDurationMs).coerceIn(0f, 1f) else 0f,
+            enabled = !expanded,
+            onTap = {
+                if (playback.groupId != -1L) controller.open(groupId = playback.groupId)
+                else if (playback.bookId != -1L) controller.open(bookId = playback.bookId)
+                else controller.expandCurrent()
+            },
+            onPlayPause = { playerController.togglePlayPause() },
+            onSkip = { playerController.skipForward() },
+            onCoverBounds = { miniCoverRect.value = it },
+            onTitleBounds = { miniTitleRect.value = it },
+            onControlsBounds = { miniControlsRect.value = it },
+            expandProgress = progressState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = bottomNavInset + 20.dp)
+                .graphicsLayer { alpha = (1f - progressAnim.value * 2.5f).coerceIn(0f, 1f) }
+                .draggable(
+                    orientation = Orientation.Vertical,
+                    state = rememberDraggableState { delta ->
+                        scope.launch {
+                            progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
+                        }
+                    },
+                    // A firm downward fling while collapsed closes the book (stops playback and
+                    // dismisses the mini bar); otherwise settle open/closed as usual.
+                    onDragStopped = { velocity ->
+                        if (velocity > 1800f && progressAnim.value < 0.15f) {
+                            playerController.stop()
+                            controller.clear()
+                        } else settle(velocity)
                     }
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer { alpha = progressAnim.value }
-                        // draggable on the container — activates only after the touch-slop
-                        // threshold, so buttons/menus inside still receive their own taps.
-                        .draggable(
-                            enabled = expanded,
-                            orientation = Orientation.Vertical,
-                            state = rememberDraggableState { delta ->
-                                scope.launch {
-                                    progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
-                                }
-                            },
-                            onDragStopped = { velocity ->
-                                // velocity > 0 = downward fling → collapse
-                                val goExpand = velocity < -1000f || (velocity <= 1000f && progressAnim.value > 0.5f)
-                                scope.launch {
-                                    progressAnim.animateTo(
-                                        if (goExpand) 1f else 0f,
-                                        spring(dampingRatio = 0.85f, stiffness = 380f)
-                                    )
-                                }
-                            }
-                        )
+                )
+        )
+
+        // ── Full player — fixed full-screen; its elements morph out of the mini bar. When
+        // fully collapsed it's parked offscreen so the app underneath stays interactive.
+        if (target != null) {
+            val nested = rememberNavController()
+            LaunchedEffect(target) {
+                nested.navigate(
+                    "player?bookId=${target!!.bookId}&groupId=${target!!.groupId}" +
+                    "&startInfo=${target!!.startInfo}&startPlaying=${target!!.startPlaying}"
                 ) {
+                    // Clear the entire nested back stack so every book switch gets a fresh
+                    // ViewModel. launchSingleTop is intentionally NOT set — it matches on
+                    // route pattern, not the URL, so it would reuse the old book's entry.
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        translationY = if (progressAnim.value <= 0.001f) heightPx.toFloat() else 0f
+                    }
+                    // draggable on the container — activates only after the touch-slop
+                    // threshold, so buttons/menus inside still receive their own taps.
+                    .draggable(
+                        enabled = expanded,
+                        orientation = Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            scope.launch {
+                                progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
+                            }
+                        },
+                        onDragStopped = { velocity -> settle(velocity) }
+                    )
+            ) {
+                CompositionLocalProvider(LocalPlayerExpand provides transition) {
                     NavHost(
                         navController = nested,
                         startDestination = "blank",
@@ -241,48 +317,15 @@ fun PlayerSheet(
                             PlayerContent(
                                 onCollapse = { controller.collapse() },
                                 initiallyShowInfo = it.arguments?.getBoolean("startInfo") ?: false,
-                                startPlaying = it.arguments?.getBoolean("startPlaying") ?: true
+                                startPlaying = it.arguments?.getBoolean("startPlaying") ?: true,
+                                onOpenReader = { bookId -> controller.collapse(); onOpenReader(bookId) }
                             )
                         }
                     }
                 }
             }
-
-            // ── Mini bar (fades out as it expands; only interactive when collapsed) ──
-            MiniPlayerBar(
-                title = if (playback.groupId != -1L) playback.groupName else playback.bookTitle,
-                coverPath = playback.coverArtUri?.removePrefix("file://"),
-                isPlaying = playback.isPlaying,
-                progress = if (playback.bookTotalDurationMs > 0)
-                    (playback.bookPositionMs.toFloat() / playback.bookTotalDurationMs).coerceIn(0f, 1f) else 0f,
-                enabled = !expanded,
-                onTap = {
-                    if (playback.groupId != -1L) controller.open(groupId = playback.groupId)
-                    else if (playback.bookId != -1L) controller.open(bookId = playback.bookId)
-                    else controller.expandCurrent()
-                },
-                onPlayPause = { playerController.togglePlayPause() },
-                onSkip = { playerController.skipForward() },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .graphicsLayer { alpha = (1f - progressAnim.value * 2f).coerceIn(0f, 1f) }
-                    .draggable(
-                        orientation = Orientation.Vertical,
-                        state = rememberDraggableState { delta ->
-                            scope.launch {
-                                progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
-                            }
-                        },
-                        onDragStopped = { velocity ->
-                            val goExpand = velocity < -1000f || (velocity <= 1000f && progressAnim.value > 0.5f)
-                            scope.launch {
-                                progressAnim.animateTo(if (goExpand) 1f else 0f,
-                                    spring(dampingRatio = 0.85f, stiffness = 380f))
-                            }
-                        }
-                    )
-            )
         }
+
     }
 }
 
@@ -296,8 +339,17 @@ private fun MiniPlayerBar(
     onTap: () -> Unit,
     onPlayPause: () -> Unit,
     onSkip: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onCoverBounds: (Rect) -> Unit = {},
+    onTitleBounds: (Rect) -> Unit = {},
+    onControlsBounds: (Rect) -> Unit = {},
+    expandProgress: androidx.compose.runtime.State<Float>? = null
 ) {
+    // The mini content disappears the instant the full player's morphing counterparts (which
+    // start exactly on top of it) take over — so the cover/title/play button visibly TRAVEL.
+    val handOff = Modifier.graphicsLayer {
+        alpha = if ((expandProgress?.value ?: 0f) > 0.02f) 0f else 1f
+    }
     Surface(
         shape = Pill,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -312,12 +364,18 @@ private fun MiniPlayerBar(
     ) {
         Box {
             Row(
-                Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                Modifier.fillMaxSize().padding(start = 8.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // handOff must precede background(): a graphicsLayer only affects what is drawn
+                // by LATER modifiers + content, so placed after background() the fill would
+                // stay visible (a ghost circle/square) while only the content hid.
                 Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier
+                        .then(handOff)
+                        .size(48.dp).clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .onGloballyPositioned { onCoverBounds(it.boundsInRoot()) }
                 ) {
                     AsyncImage(
                         model = coverPath?.let { File(it) },
@@ -332,13 +390,46 @@ private fun MiniPlayerBar(
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .onGloballyPositioned { onTitleBounds(it.boundsInRoot()) }
+                        .then(handOff)
                 )
-                IconButton(onClick = onPlayPause, enabled = enabled) {
-                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play/pause")
+                Spacer(Modifier.width(8.dp))
+                // Skip-forward: a quiet secondary control — reveals into the full transport.
+                Box(
+                    Modifier
+                        .then(handOff)
+                        .size(38.dp)
+                        .clip(Pill)
+                        .clickable(enabled = enabled, onClick = onSkip),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.FastForward, "Skip forward",
+                        Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                IconButton(onClick = onSkip, enabled = enabled) {
-                    Icon(Icons.Default.FastForward, "Skip forward")
+                Spacer(Modifier.width(6.dp))
+                // Round accent play/pause — the SAME visual as the full player's big play
+                // button, so it grows straight into it during the morph.
+                Box(
+                    Modifier
+                        .then(handOff)
+                        .size(44.dp)
+                        .clip(Pill)
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable(enabled = enabled, onClick = onPlayPause)
+                        .onGloballyPositioned { onControlsBounds(it.boundsInRoot()) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (isPlaying) "Pause" else "Play",
+                        Modifier.size(26.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
             LinearProgressIndicator(

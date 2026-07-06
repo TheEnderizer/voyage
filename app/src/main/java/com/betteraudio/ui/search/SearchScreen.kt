@@ -42,7 +42,12 @@ fun SearchScreen(
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    Scaffold(containerColor = MaterialTheme.colorScheme.background) { padding ->
+    // Transparent in the Immersive theme so the blurred cover shows through; explicit
+    // contentColor since contentColorFor(Transparent) falls back to black.
+    Scaffold(
+        containerColor = com.betteraudio.ui.theme.appSurfaceColor(),
+        contentColor = MaterialTheme.colorScheme.onBackground
+    ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             // Search bar row
             Row(
@@ -144,7 +149,8 @@ private fun SearchResultRow(book: Book, onClick: () -> Unit, modifier: Modifier 
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        color = com.betteraudio.ui.theme.appCardColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = modifier.fillMaxWidth().pressScale()
     ) {
         Row(

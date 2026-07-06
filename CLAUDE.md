@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Better Audio (released as "Voyage") is a native Android audiobook player: it scans a local folder for audio files, groups them into books/series, plays multi-file books as one seamless timeline, tracks per-book resume position, and integrates with the lock screen, a home-screen widget, and (optionally) Gemini AI for auto-generated synopses. Single Gradle module (`app/`), package `com.betteraudio`. Kotlin + Jetpack Compose + Media3 + Room + Hilt, MVVM.
+Better Audio (released as "Voyage") is a native Android audiobook player: it scans a local folder for audio files, organizes them into books, **series**, and authors, plays multi-file books (and whole series) as one resumable timeline, tracks per-book resume position, and integrates with the lock screen, a home-screen widget, and (optionally) Gemini AI for auto-generated synopses. Single Gradle module (`app/`), package `com.betteraudio`. Kotlin + Jetpack Compose + Media3 + Room + Hilt, MVVM. `minSdk = 26`, `compileSdk`/`targetSdk = 35`.
 
 ## Build / run / deploy
 
-The custom `gradlew.bat` in this repo is **not** the stock Gradle wrapper script — its box-drawing comment characters get mis-parsed by `cmd.exe`, so `./gradlew` and `gradlew.bat` often fail with `ClassNotFoundException: GradleWrapperMain`. Always invoke the wrapper jar directly:
+The custom `gradlew.bat` is **not** the stock wrapper script — its box-drawing comment characters get mis-parsed by `cmd.exe`, so `./gradlew`/`gradlew.bat` often fail with `ClassNotFoundException: GradleWrapperMain`. Always invoke the wrapper jar directly:
 
 ```powershell
 $env:JAVA_HOME = "C:\Program Files\Android\Android Studio\jbr"   # bundled JBR 21
@@ -19,103 +19,88 @@ Set-Location 'D:\code\better audio'
     org.gradle.wrapper.GradleWrapperMain :app:compileDebugKotlin --console=plain
 ```
 
-Common tasks: `:app:compileDebugKotlin` (fastest error check), `:app:assembleDebug` (installable APK), `:app:installDebug` (install on connected device). Pipe output to a file (`*> build_out.txt`) — PowerShell mangles the native stderr stream inline.
+From the Bash tool, the equivalent one-liner (used throughout this repo):
+```bash
+cd "D:/code/better audio" && export JAVA_HOME="C:\Program Files\Android\Android Studio\jbr" && \
+"$JAVA_HOME/bin/java.exe" -Dorg.gradle.appname=gradlew \
+  -classpath "D:\code\better audio\gradle\wrapper\gradle-wrapper.jar" \
+  org.gradle.wrapper.GradleWrapperMain :app:compileDebugKotlin --console=plain
+```
 
-**Releases**: always build with `:app:assembleDebug` — the release variant produces an unsigned APK that Android rejects. Publish with `gh release create`; `gh` CLI is at `C:\Program Files\GitHub CLI\gh.exe`.
+Common tasks: `:app:compileDebugKotlin` (fastest error check), `:app:assembleDebug` (installable APK at `app/build/outputs/apk/debug/app-debug.apk`), `:app:installDebug` (install on connected device). There is **no test suite**.
 
-## Branch & release workflow
+`adb` is not on PATH; it lives at `C:\Users\hajmo\AppData\Local\Android\Sdk\platform-tools\adb.exe`. The dev device may be attached over USB or wireless debugging; if `adb devices` is empty, ask the user to reconnect. Its idle screen-off relocks the phone during slow screenshot loops — extend with `adb shell settings put system screen_off_timeout 600000`.
 
-- All development happens on the **`beta`** branch.
-- **`main`** is only updated (merged from beta) when explicitly asked to make a stable release.
-- Beta APKs are GitHub pre-releases (`--prerelease` flag); stable APKs are standard releases.
-- **Version naming**: beta builds end with `b` (e.g. `1.2.5b`); stable builds do not (e.g. `1.2.3`). The `b` suffix is how the update checker and changelog picker detect the channel at runtime — never omit it on beta builds.
-- The update checker (`data/update/UpdateChecker.kt`) reads `installedVersionName()` at runtime: versions ending in `b` query `/releases?per_page=10` and take the first entry where `prerelease == true`; all others query `/releases/latest`. This keeps the two channels from cross-notifying.
+## Releases & channels
+
+- **Beta APKs** are GitHub **pre-releases** (`--prerelease`, `--target beta`); **stable APKs** are standard releases (`--latest`, `--target main`). Both are built with `:app:assembleDebug` — the `release` variant is unsigned and Android rejects it. Attach the APK renamed `Voyage-<version>.apk`. `gh` is at `C:\Program Files\GitHub CLI\gh.exe`; repo is `TheEnderizer/voyage`.
+- **Version naming decides the channel at runtime**: beta `versionName` ends in `b` (e.g. `1.7.1b`); stable does not (e.g. `1.7`). Never omit the `b` on a beta build. Bump `versionCode` on every release. As of this writing: stable = **1.7** (code 38), beta = **1.7.1b** (code 39).
+- **`data/update/UpdateChecker.kt`** reads `installedVersionName()` from the PackageManager at runtime. A `b` version → beta channel (only prereleases); otherwise → stable. It fetches `/releases?per_page=30` and selects the **highest semantic version** for that channel that has an APK asset — NOT the first entry. This is deliberate: GitHub orders `/releases` by `created_at` (the tag's commit date, not publish date or version), so a release cut from an older tag sorts low; the old "take first prerelease" logic silently missed newer releases. When cutting a release, create a **fresh tag on the current HEAD** so its `created_at` is now.
+- Branch workflow: develop on **`beta`**; **`main`** is fast-forwarded/merged from beta only when making a stable release. (Both currently point at the same v1.7 commit.) `changelog_beta.txt` / `changelog_stable.txt` (in `res/raw/`) are shown in Settings → About, picked by the version suffix; add a top entry per release, Keep-a-Changelog format.
 
 ## Storage model
 
-Full-filesystem access via `MANAGE_EXTERNAL_STORAGE` ("All files access") and plain `java.io.File` paths everywhere — no SAF / `DocumentFile` / tree URIs. File paths are stored directly in the DB (`Book.folderPath`, `AudioFile.filePath`, `Book.coverArtPath`). Cover art is extracted from audio tags and written next to the audio as `.cover.jpg`; a `.nomedia` file is written to the same folder to hide covers from the phone gallery.
+Full-filesystem access via `MANAGE_EXTERNAL_STORAGE` and plain `java.io.File` paths — no SAF/`DocumentFile`/tree URIs. Paths are stored in the DB (`Book.folderPath`, `AudioFile.filePath`, `Book.coverArtPath`). Cover art is written **next to the audio** as a hidden file (scanner writes `.cover.jpg`; online-search covers write `.cover_<ts>.jpg` into the book's own folder so they travel with the files), plus a `.nomedia` to hide it from the gallery. `LibraryRestructurer` relies on this (it moves whole folders and rewrites the DB paths). Only online covers for **series/author** (which have no single folder) go to internal `filesDir/covers/`.
 
 ## Architecture
 
 ### Data layer (`data/`)
 
-**Room DB** `betteraudio.db` (`data/db/AppDatabase.kt`), currently **version 8**. Entities: `Book`, `AudioFile`, `PlaybackProgress`, `BookGroup`, `BookGroupMember`, `Chapter`, `Bookmark`, `AudioPreset`. `fallbackToDestructiveMigration()` is the safety net but **explicit migrations must always be written** and registered in both `AppDatabase.kt` and `AppModule.kt`. Existing migrations: `MIGRATION_3_4`, `MIGRATION_4_5`, `MIGRATION_5_6`, `MIGRATION_6_7` (`lastPausedAt`), `MIGRATION_7_8` (`coverFxPath`).
+**Room DB** `betteraudio.db` (`data/db/AppDatabase.kt`), **version 12**. `fallbackToDestructiveMigration()` is the safety net but **write explicit migrations** and register them in both `AppDatabase.kt` and `di/AppModule.kt`. A present-but-wrong migration crashes on launch (Room validates the resulting schema); it does NOT fall back destructively. To verify a hand-written migration offline: temporarily set `exportSchema = true` + `ksp { arg("room.schemaLocation", "$projectDir/schemas") }`, build `:app:kspDebugKotlin`, and diff your `CREATE TABLE`s against the generated `schemas/.../<v>.json` (Room compares columns by name/type/nullability, not ordinal, so an `ALTER TABLE ADD COLUMN` at the end is fine).
 
-Key fields added in recent migrations:
-- `PlaybackProgress.boostDb` — per-book volume boost level
-- `PlaybackProgress.eqBandsJson` — per-book EQ (JSON int array of millibel values, null = flat)
-- `Book.titleOverride` / `Book.authorOverride` — in-app metadata overrides; scanner never writes these
-- `Book.isIgnored` — soft-delete flag; all library queries filter `WHERE isIgnored = 0`
-- `Book.coverFxPath` — path to the pre-baked cover background (see `CoverEffectBaker` below); null = not yet baked / invalidated by a cover change
-- `AudioPreset.type` — `"SPEED"`, `"BOOST"`, or `"EQ"`; constants on `AudioPreset.Companion`
+Entities: `Book`, `AudioFile`, `PlaybackProgress`, `Chapter`, `Bookmark`, `AudioPreset`, `ListeningSession`, `SkipEvent`, `Series`, `AuthorMeta`, and the now-inert `BookGroup`/`BookGroupMember`.
 
-**Repositories**: `AudiobookRepository` and `BookGroupRepository` are the only things ViewModels/playback should touch — DAOs are never accessed directly outside these.
+**First-class Series (the core of the current design):**
+- `Series` — id, name, `author?`/`narrator?` and nullable cascade defaults (`playbackSpeed?`, `boostDb?`, `eqBandsJson?`, `skipSilenceEnabled?`), plus its own `coverArtPath?`/`coverFxPath?`/`description?`. `AuthorMeta` — keyed by author name, holds a per-author `coverArtPath` (authors are a lightweight cover-only grouping).
+- `Book.seriesId` (indexed, no hard FK; integrity managed in the repo) is the source of truth for membership; `seriesName`/`seriesOrder` are kept as a denormalized cache. `Book.groupId`/`manualGrouping` are **dead columns** — the old join-group feature is retired (`AutoJoiner` deleted; `BookGroup*`/`BookGroupRepository`/`ui/join/*` are inert leftovers, and the migration nulls out `groupId` and seeds `series` from distinct `seriesName`). Room still lists the `BookGroup` entities, so the empty group tables can't be dropped until those entities are removed.
+- `SeriesRepository` owns series CRUD, membership (`getOrCreateSeriesByName`, add/remove/reorder via `seriesOrder`), cover/cascade setters, and `getAudioFilesForBooks` (flatten for playback). `AudiobookRepository` + `BookGroupRepository` are otherwise the only DAO gateways; DAOs aren't touched directly elsewhere.
 
-**`SettingsStore`** wraps DataStore. Every key needs **three things**: a `Flow` property, a `@Volatile current*` snapshot field (for synchronous reads in playback code), and a collector in `init`. Current keys include `LIBRARY_FOLDER`, `SKIP_FORWARD_MS`, `SKIP_BACK_MS`, `DEFAULT_SPEED`, `GEMINI_API_KEY`, `DEFAULT_AUDIO_PRESET_ID`, `SORT_OPTION`/`SORT_DIRECTION`, `LAST_OPEN_BOOK_ID`, `LAST_PLAYED_BOOK_ID`.
+**Cascade resolution** — `playback/AudioCascade.kt` resolves a member book's effective audio: a per-book value that differs from neutral (speed ≠ 1.0, boost ≠ 0, non-null EQ, skip-silence on) wins; else the series default; else the **global default preset**; else the scalar fallback. This is a deliberate heuristic that avoids an override-flag migration. Series **author/narrator** are propagated onto the member books (written to `authorOverride`/`narrator`) when Series options are saved, so they show everywhere — and grouping/queries use the **effective** author (`displayAuthor` = `authorOverride ?: author`; some queries use `COALESCE(authorOverride, author)`), not the raw scanned author.
 
-`savedFolder` in `HomeViewModel` uses `StateFlow<String?>` with `null` as the initial value (meaning "DataStore not yet loaded"). Code that triggers on folder state must guard against `null` to avoid acting before DataStore emits — `""` means loaded-but-not-set, non-blank means a folder has been chosen.
+**Audio presets** (`AudioPreset`) are unified **bundles** (speed + boost + EQ together); the `type` column is inert legacy. Exactly one preset can be `isDefault` — it is the **global default** fed into `AudioCascade` at play time (in `PlayerViewModel.play()`, `SeriesPlayer`, and `HomeViewModel.playResumeBook`), so it applies to every book unless the book overrides it. Managed in Settings → Audio presets (full CRUD) and the player's `AudioSettingsSheet` (save/apply the whole bundle). There is no longer a standalone "default speed" setting — it lives in the default preset.
+
+**`SettingsStore`** wraps DataStore. Each key needs a `Flow`, (usually) a `@Volatile current*` snapshot for synchronous playback reads, a collector in `init`, and a setter. Keys include `LIBRARY_FOLDER`, `IMPORT_STRUCTURE` (`""` = not chosen → first-run prompt), `APP_THEME` (`""` = not chosen → first-launch theme prompt) / `THEME_COLOR_SOURCE`, `HOME_VIEW_MODE`, `PLAYER_SHOW_SERIES_COVER`, `SKIPPED_UPDATE_VERSION`, skip/rewind/skip-silence config, `DEFAULT_AUDIO_PRESET_ID`, `WIDGET_DEFAULT_COVER_PATH`, `LAST_OPEN_BOOK_ID`, `LAST_PLAYED_BOOK_ID`, `GEMINI_API_KEY`.
 
 ### Scanner (`data/scanner/`)
 
-`AudioFileScanner` applies a folder-structure heuristic recursively. A folder of only sub-folders with >1 child is a series container. For a folder's direct audio files, `groupFilesIntoBooks` decides the split: **embedded ALBUM tags win** — every file tagged with ≥2 distinct albums → one book per album; a single shared album → exactly one book (never shattered); untagged/mixed → fall back to `clusterBySimilarName` (filename-stem heuristic, splits only when ≥2 genuine ≥2-file sequences exist). The album pre-pass costs one extra `MediaMetadataRetriever` ALBUM read per loose file at scan time. When a folder yields multiple books, each book's `folderPath` is a synthetic `"<dir>::<stem-or-album>"` key — never do `File(folderPath)` on it without checking for `::`.
+`AudioFileScanner.scanDirectory` dispatches on the user-selected `ImportStructure` (read via `settings.importStructure.first()`):
+- **`AUTO`** — the heuristic `scanFolder`: embedded ALBUM tags win (≥2 distinct albums → one book each; one shared album → one book), else `clusterBySimilarName` (filename-stem clustering, splits only on ≥2 genuine ≥2-file sequences), plus single-file volume splitting and disc-split-folder merging. Multi-book folders get a synthetic `"<dir>::<stem-or-album>"` `folderPath` — never `File()` it without checking for `::`.
+- **`AUTHOR_SERIES_BOOK`** (`root/author/[series/]book/files`) and **`AUTHOR_DASH_SERIES_BOOK`** (`root/(author - series)/book/files`) — explicit structured walkers; every audio-bearing folder is exactly one book, its files are the chapters (no tag splitting), and it resolves/creates a `Series` for `seriesId`.
 
-**Chapters**: `ChapterExtractor` hand-rolls an MP4 `moov/udta/chpl` Nero-atom reader for M4B/M4A. `buildChapters` uses embedded markers where present; otherwise one row per file, **except** a chapterless file longer than `SYNTHETIC_CHAPTER_MIN_FILE_MS` (20 min) is sliced into `SYNTHETIC_CHAPTER_INTERVAL_MS` (~10 min) "Chapter N" rows (`source = "synthetic"`) so a single long MP3 still gets a usable TOC. Chapters are only rebuilt when the file set changed or `chapterCount == 0`, so existing books won't gain synthetic chapters until a rescan that changes their files.
-
-`AutoJoiner` runs only on explicit user scans (`autoJoin = true`) and buckets books by immediate parent directory before merging — books in different subdirectories are never auto-merged.
+Every scan also runs **`reconcileAgainstDisk`**: missing files are dropped (chapters rebuilt), and a book whose files are all gone is hidden (`isIgnored = true`, progress kept) rather than deleted. Guarded so a revoked permission can't mass-hide the library. **`LibraryRestructurer`** (`data/files/`) is the inverse: it moves each book folder to the target computed from the chosen structure + effective author/series, via **copy → verify (file set + sizes) → update DB paths → delete original** (so an interrupted move never loses data), then removes now-empty folders. Chapters: `ChapterExtractor` hand-rolls an MP4 `moov/udta/chpl` Nero-atom reader; `buildChapters` uses embedded markers or one row per file.
 
 ### Playback (`playback/`)
 
-**`PlaybackService`** — Media3 `MediaSessionService` owning the single `ExoPlayer`. Hosts two `AudioEffect` instances that **must live on the real ExoPlayer audio session** (a remote `MediaController` never receives `onAudioSessionIdChanged`):
-- `LoudnessEnhancer` — volume boost via `CMD_SET_BOOST` / `KEY_BOOST_MB` custom `SessionCommand`
-- `Equalizer` — 5-band EQ via `CMD_SET_EQ` / `KEY_EQ_BANDS_JSON` custom `SessionCommand` (JSON int array of millibel levels; empty/null = flat)
+**`PlaybackService`** — Media3 `MediaSessionService` owning the single `ExoPlayer`, with a `LoudnessEnhancer` + `Equalizer` that must live on the real ExoPlayer audio session (custom `SessionCommand`s `CMD_SET_BOOST`/`CMD_SET_EQ`). The `MediaSession` is fed a `ForwardingPlayer` whose next/previous seek by time; keep the direct `exoPlayer` ref for effects (do not cast `mediaSession.player`).
 
-The `MediaSession` is fed a `ForwardingPlayer` whose next/previous overrides seek by time instead of changing files (headphone/Bluetooth/lock-screen transport = time skip). Keep a direct `exoPlayer` reference for audio effects — do **not** cast `mediaSession.player as ExoPlayer`, it's the `ForwardingPlayer`.
+**`PlayerController`** (`@Singleton`) — app-side `MediaController` wrapper exposing `PlaybackState`. Syncs in `playerListener` + a 500 ms **position ticker that must run on `Dispatchers.Main`** (MediaController is main-thread-only). `playBook(..., seriesId, seriesBookIds)` carries series-continuation context; on `STATE_ENDED` it marks the book finished and, if in a series, invokes `onSeriesBookEnded` and emits `seriesAdvanced`.
 
-**`PlayerController`** (`@Singleton`) — app-side `MediaController` wrapper. Exposes `PlaybackState` StateFlow. Syncs state in `playerListener` (a `Player.Listener`) and via a **position ticker** — a coroutine on `Dispatchers.Main` that calls `syncState()` every 500 ms while playing. The ticker **must** run on the main thread because `MediaController` is main-thread only; launching it on any other dispatcher causes an immediate crash.
-
-**Per-book audio settings**: `play()` in `PlayerViewModel` restores both `boostDb` and `eqBandsJson` from `PlaybackProgress` every time a book starts. `setEqBands()` persists the new value immediately. This is how EQ and boost stay per-book rather than bleeding across sessions.
-
-**Joined groups**: `playBookGroup()` flattens all member files into one `MediaItem` list with `bookId` + `groupId` in `MediaMetadata.extras`. No group-level progress row — resume uses the most-recently-played member's `PlaybackProgress`.
+**Series playback is the normal book player, one book at a time** (`playback/SeriesPlayer.kt`, a `@Singleton`): it plays the resume/tapped member as a plain book with the series context; when a book ends, `onSeriesBookEnded` loads and plays the next member, and `PlayerSheet` follows into it (`controller.follow(bookId)` re-targets the open player via the `seriesAdvanced` flow). So there is **one player UI** for books and series — the old flattened-`playBookGroup` path is unused for series. `playSeriesBookAt` jumps to a chapter in another member book (from the whole-series chapter list). `AudioCascade` is applied at play time in both `SeriesPlayer` and `PlayerViewModel.play()`.
 
 ### UI (`ui/`)
 
-**Navigation**: single-Activity (`MainActivity`) with Compose `NavHost`. Routes: `home`, `player/{bookId}`, `search`, `series/{seriesName}`, `settings`, `join_options?bookIds=&groupId=`. The home screen renders its own floating pill nav (no bottom-nav graph). Cold start restores the last-open player screen from `LAST_OPEN_BOOK_ID` via `runBlocking` before composition. A widget tap carries `WidgetRender.EXTRA_OPEN_PLAYER`; `MainActivity` routes to the active book's player on both cold start and `onNewIntent` (warm, via a `playerNavRequest` state).
+Single-Activity (`MainActivity`) with a Compose `NavHost`. Routes: `home`, `settings`, `search`, `series/{seriesId}` (Long), `author/{authorName}`; the full player lives in a persistent draggable **`PlayerSheet`** (its own nested NavHost, route `player?bookId=&groupId=`). Cold start restores the expanded player from `LAST_OPEN_BOOK_ID`, or — if the app was closed with only the mini bar showing — restores the collapsed mini bar from `LAST_PLAYED_BOOK_ID` (`PlayerSheetController.restore`, loads paused). The mini bar is hidden on the `settings` route (`PlayerSheet(hideMiniBar=…)`), and a firm downward fling on it calls `PlayerController.stop()` to close the book. The stale `join_options` route/`ui/join` is dead.
 
-**Theme**: `VoyageTheme(coverArtPath)` (in `ui/theme/Theme.kt`) wraps the whole `NavHost` in `MainActivity`, so the cover-driven recolor is **app-wide, not player-only**. `MainActivity` feeds it the active book's cover, falling back to the **last-played** book's cover (`LAST_PLAYED_BOOK_ID` → `repository.getBookById`) when nothing is loaded, so the app stays themed while idle. `rememberCoverScheme` extracts accents via `androidx.palette`; `dynamicColor` is off; screens inherit the ambient scheme and do not self-theme. Exception: the full-bleed player and home cover overlays hardcode `Color.White`/`Color.Black` for scrim legibility over arbitrary art — those are intentionally outside the theme tokens.
+- **Theme** — two looks chosen on first launch (and in Settings → Theme), driven by `AppTheme` + `LocalAppTheme` (`ui/theme/AppTheme.kt`): **Material You** (opaque tonal M3; colors from the system wallpaper on API 31+, or the cover, per `ThemeColorSource`) and **Immersive** (the blurred full-screen cover behind translucent screens, with all text accent-tinted). `VoyageTheme(appTheme, colorSource, coverArtPath)` in `MainActivity` applies it; screens branch via the `immersive()` / `appSurfaceColor()` / `appCardColor()` / `scrimTextColor()` helpers (don't add per-screen theme params). When `PLAYER_SHOW_SERIES_COVER` is on and the playing book is in a series, the theme (and player backdrop) use the **series** cover.
+- **Home** (`ui/home/`) — a **Books / Series / Authors** view switch (`HomeViewMode`, persisted). `HomeViewModel.buildGridItems` groups `HomeGridItem.{SingleBook,SeriesItem,AuthorItem}` per mode; per-view covers resolve `Series.coverArtPath` / `AuthorMeta.coverArtPath` / book cover. **Multi-select**: long-press any card (books, series, authors — mixed) toggles a typed `SelKey` selection; the selection bar offers Delete (series/authors cascade to all member books, with a delete-files toggle), Add-to-series (1 series + books → adds them and opens the series manager), and a single-selection ⋮ overflow (cover search + book options). A book card's play button starts playback in place (`playResumeBook`) without opening the full player. Status tabs (All/Listening/Not started/Finished) + resume card as before.
+- **Series screen** (`ui/series/SeriesDetailScreen`, keyed by `seriesId`) — a manager: Play series, add/remove/reorder/rename, and **Series options** (`SeriesOptionsSheet`: speed/boost/skip-silence/author/narrator). Tapping a member plays the series from that book (`openPlayer` event → `sheetController.open(bookId)`). `ui/author/AuthorDetailScreen` lists a (effective) author's books.
+- **Player** (`ui/player/`) — full-bleed cover backdrop (`ReflectedProgressiveBlurCover` + baked `CoverEffectBaker` WebP in `filesDir/cover_fx/`). Overflow menu has a book↔series **cover toggle** when the book is in a series. The chapter list (`ChapterSheet`/`ChapterOverlay`) spans **all member books** when a series is playing (headers per book); tapping a chapter in another book switches to it.
+- **Updates** — `ui/update/UpdateGateViewModel` checks once per launch and shows `UpdateAvailableScreen` (Install / Skip; Skip records `SKIPPED_UPDATE_VERSION` so only that version is suppressed). The manual checker in Settings → About is separate.
+- Cascade-of-data caveat: because grouping/queries are override-aware, changing an author/series in the app is reflected live; a `Book.author`-based grouping would not be. Use `displayTitle`/`displayAuthor`, never raw `title`/`author`.
 
-**Home screen** (`ui/home/`):
-- Grid shows `HomeGridItem.SingleBook` and `HomeGridItem.Group` items. Groups come from `BookGroupRepository`; ungrouped books from `getAllBooksWithProgressUngrouped()` (already filtered for `isIgnored = 0`).
-- **Library status tabs**: a chip row (All / Listening / Not started / Finished, with live counts). `HomeViewModel` exposes `libraryTab`, `visibleGridItems` (filtered), and `tabCounts`; status is derived from `Book.status`, and a group is classified from its members.
-- **Resume card**: when nothing is actively playing but `LAST_PLAYED_BOOK_ID` is set, a `ResumeCard` composable shows the last-played book in the same paused-state UI as `FeaturedNowPlaying`.
-- **Long press = select only** (single threshold, `combinedClickable`). The selection bar (`SelectionHeader`) floats as a top overlay (`AnimatedVisibility` aligned `TopCenter`) so it doesn't push the grid down; when exactly one book is selected it shows a `⋮` that opens `BookOptionsSheet` for that book. (The old 1500 ms second-hold gesture was removed.)
-- `BookOptionsSheet` provides in-app metadata editing (`titleOverride` / `authorOverride`), series name + position, reading status, online cover search, hide-from-library (`isIgnored`), and permanent delete with optional file removal.
-- Scanning has no nav button — it runs on first launch (auto-prompt when `savedFolder` is `""`) and on pull-to-refresh.
+### App icon
 
-**Settings screen** (`ui/settings/`): two-level navigation via `AnimatedContent` (sealed class `SettingsSection`). The **About** section contains both the update checker UI and the per-channel changelog (read from `res/raw/changelog_beta.txt` or `res/raw/changelog_stable.txt` based on version suffix). The `LazyListScope` extension functions receive all their data as parameters — do not call `collectAsStateWithLifecycle()` inside them (not a `@Composable` context).
-
-**Audio settings** (`ui/player/AudioSettingsSheet.kt`): 3-tab sheet (Speed / Boost / EQ). Each tab shows only presets of its own type (`AudioPreset.TYPE_SPEED`, `TYPE_BOOST`, `TYPE_EQ`). `PlayerViewModel` exposes three separate typed `StateFlow`s: `speedPresets`, `boostPresets`, `eqPresets`. Long-press on a preset chip calls `overwritePreset()` which updates the stored value to the current slider position.
-
-**Cover background effect** (`ui/components/ReflectedProgressiveBlurCover.kt` + `data/covers/CoverEffectBaker.kt`): the player and book-info screens share one full-bleed backdrop — the cover with a vertically-flipped reflection below it, a continuous top-to-bottom progressive blur, and a fade to black. `CoverEffectBaker` pre-renders this whole composite to a single WebP in `filesDir/cover_fx/` (a genuine per-row continuous blur via repeated box-blur accumulation) so the UI draws one cached bitmap instead of ~7 live blur passes per frame. `ReflectedProgressiveBlurCover` draws `book.coverFxPath` when present and **live-renders** the layered approximation as a fallback while a bake is missing/in-progress. Baking is lazy: `repository.ensureCoverFx(bookId)` runs from the Player/BookInfo ViewModels' init when a cover exists but `coverFxPath` is null. `updateCoverArt()` sets `coverFxPath = null` to invalidate on any cover change. The 3-dot menus expose "Refresh cover effect" → `regenerateCoverFx()` (force re-bake; also the way to roll out an algorithm change — bump `CoverEffectBaker.VERSION`).
-
-**Player screen** (`ui/player/`): full-bleed layout — the cover fills the screen behind a bottom scrim that holds the controls (chapter context line, title/author, return/confirm jump-history pills, scrubber, transport, secondary row). Skip buttons render the configured seconds from `PlayerViewModel.skipForwardMs`/`skipBackMs` (not a fixed number). Position history stack (`_positionStack`, capped at 20) pushed before bookmark jumps, chapter seeks, and scrubber drags > 5 min. The redesign dropped the inline synopsis + metadata chips from this screen (synopsis still generates and persists; it's destined for a future book-info screen).
-
-### Changelogs
-
-`app/src/main/res/raw/changelog_beta.txt` and `changelog_stable.txt` follow the [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) format — `## [x.y.z] - YYYY-MM-DD` headers with `Added`, `Changed`, `Fixed`, `Security` subsections. Add a new entry at the top for every release.
+Adaptive icon (`mipmap-anydpi-v26/ic_launcher*.xml`): navy gradient `@drawable/ic_launcher_background` + a raster foreground `@mipmap/ic_launcher_fg` (the sailboat/book, extracted from the source art and centered on navy at 5 densities). Regenerate the foregrounds with PIL if the art changes. `minSdk 26` means the density-specific legacy vector `ic_launcher.xml`s are never used.
 
 ### Widget & AI
 
-Widgets (`widget/`) — three sizes sharing `BaseNowPlayingWidget` + `WidgetRender`. All dynamic visuals are drawn to bitmaps — `RemoteViews` can't use a Compose theme. `PlaybackService.broadcastWidgetUpdate` fires the update broadcast. The container tap (`WidgetCommon.openAppIntent`) sets `EXTRA_OPEN_PLAYER` to deep-link to the active player (handled in `MainActivity`). Widgets are **not** Compose-themed, so the app-wide cover recolor does not reach them.
+Widgets (`widget/`) draw all visuals to bitmaps (RemoteViews can't use a Compose theme); `PlaybackService.broadcastWidgetUpdate` fires updates, and a widget tap deep-links to the active player. When nothing is playing, `WidgetRender.decodeCover` falls back to the user's default cover at `filesDir/widget_default_cover.jpg` (set in Settings → Widget; `WidgetRender.refresh` re-renders after a change) before the built-in placeholder. `SynopsisService` calls Gemini via the DataStore-stored `GEMINI_API_KEY` (never hardcode the `AIzaSy...` key). `CoverSearchService` searches online covers (Google Books → OpenLibrary) and writes book covers into the book's folder.
 
-`SynopsisService` calls Gemini AI via the key stored in `SettingsStore` under `GEMINI_API_KEY` (never hardcoded). Triggered from `PlayerViewModel` when `book.synopsis == null` and the key is set.
-
-`CoverSearchService` (`data/covers/`) searches book cover art online — Google Books API first (no key), OpenLibrary fallback — and downloads the chosen image to internal storage with a timestamped filename (so Coil reloads it). Driven from `HomeViewModel` (`searchCovers` / `setBookCoverFromUrl`) via `CoverSearchSheet`.
+`SettingsScreen` sections are a `SettingsSection` sealed class dispatched in one `AnimatedContent` `when` (Root, Theme, Library, Playback, Presets, Widget, AI, Updates, About, Diagnostics) — each is a `LazyListScope` extension; adding a section means updating the sealed class, the nav row, the title `when`, and the content `when` together.
 
 ## Conventions
 
-- All DI is Hilt; new singletons/DAOs go through `di/AppModule`. ViewModels are `@HiltViewModel`.
-- Reactive UI: Room/DataStore `Flow` → `stateIn`; one-shot reads use `*Once` repository methods (or `.first()` on a Flow).
-- Media3 APIs require `@UnstableApi`; Compose APIs often need `@OptIn(ExperimentalMaterial3Api::class)` — match opt-ins already present on the surrounding function.
-- `MutableStateFlow.update { }` requires `import kotlinx.coroutines.flow.update` (not auto-imported).
-- `Book.displayTitle` / `Book.displayAuthor` are computed properties that return the override if set, falling back to the scanned value. Use these everywhere in the UI — never `book.title` / `book.author` directly.
-- The Gemini API key (`AIzaSy...`) is stored in DataStore under `gemini_api_key` and must never be embedded in code.
+- Hilt for all DI; new singletons/DAOs go through `di/AppModule`; ViewModels are `@HiltViewModel`.
+- Room/DataStore `Flow` → `stateIn` for reactive UI; one-shot reads via `*Once` repo methods or `.first()`.
+- Media3 APIs need `@UnstableApi`; experimental flow operators (`flatMapLatest`) need `@OptIn(ExperimentalCoroutinesApi::class)`; `MutableStateFlow.update {}` needs `import kotlinx.coroutines.flow.update`.
+- `LazyListScope` extension "section" functions in `SettingsScreen` receive data as params — don't `collectAsStateWithLifecycle()` in the extension body (do it inside an `item {}`, which is `@Composable`).

@@ -34,9 +34,7 @@ fun AudioSettingsSheet(
     onDismiss: () -> Unit
 ) {
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
-    val speedPresets by viewModel.speedPresets.collectAsStateWithLifecycle()
-    val boostPresets by viewModel.boostPresets.collectAsStateWithLifecycle()
-    val eqPresets by viewModel.eqPresets.collectAsStateWithLifecycle()
+    val allPresets by viewModel.allPresets.collectAsStateWithLifecycle()
     val eqBands by viewModel.eqBandsMillibels.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -138,13 +136,8 @@ fun AudioSettingsSheet(
 
             HorizontalDivider()
 
-            // Preset section — only shows presets for the active tab type
-            val activePresets = when (selectedTab) {
-                0 -> speedPresets
-                1 -> boostPresets
-                else -> eqPresets
-            }
-
+            // Presets are whole bundles (speed + boost + EQ). Tapping one applies all three to
+            // this book; saving captures the current speed + boost + EQ together.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -158,9 +151,9 @@ fun AudioSettingsSheet(
                 }
             }
 
-            if (activePresets.isEmpty()) {
+            if (allPresets.isEmpty()) {
                 Text(
-                    "No saved presets — tap + to save the current value",
+                    "No saved presets — tap + to save the current speed, boost & EQ",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -171,7 +164,7 @@ fun AudioSettingsSheet(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.padding(bottom = 12.dp)
                 ) {
-                    items(activePresets, key = { it.id }) { preset ->
+                    items(allPresets, key = { it.id }) { preset ->
                         PresetChip(
                             preset = preset,
                             onLoad = { viewModel.loadAudioPreset(preset) },
@@ -188,27 +181,30 @@ fun AudioSettingsSheet(
     }
 
     if (showSaveDialog) {
-        val tabType = when (selectedTab) {
-            0 -> AudioPreset.TYPE_SPEED
-            1 -> AudioPreset.TYPE_BOOST
-            else -> AudioPreset.TYPE_EQ
-        }
         AlertDialog(
             onDismissRequest = { showSaveDialog = false },
             title = { Text("Save preset") },
             text = {
-                OutlinedTextField(
-                    value = presetName,
-                    onValueChange = { presetName = it },
-                    label = { Text("Preset name") },
-                    singleLine = true
-                )
+                Column {
+                    Text(
+                        "Captures the current speed, boost & EQ as one preset.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = presetName,
+                        onValueChange = { presetName = it },
+                        label = { Text("Preset name") },
+                        singleLine = true
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (presetName.isNotBlank()) {
-                            viewModel.saveAudioPreset(presetName, tabType)
+                            viewModel.saveAudioPreset(presetName)
                         }
                         showSaveDialog = false
                     }

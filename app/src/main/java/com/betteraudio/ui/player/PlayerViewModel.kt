@@ -22,6 +22,7 @@ import com.betteraudio.data.synopsis.SynopsisService
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
@@ -42,6 +44,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -127,18 +130,15 @@ class PlayerViewModel @Inject constructor(
     val skipBackMs: StateFlow<Long> =
         settings.skipBackMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_BACK_MS)
 
-    // ── Audio presets (type-specific) ────────────────────────────────────────
-    val speedPresets: StateFlow<List<AudioPreset>> =
-        repository.getAudioPresetsByType(AudioPreset.TYPE_SPEED)
+    // ── Audio presets (unified bundles: speed + boost + EQ) ───────────────────
+    val allPresets: StateFlow<List<AudioPreset>> =
+        repository.getAllAudioPresets()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    val boostPresets: StateFlow<List<AudioPreset>> =
-        repository.getAudioPresetsByType(AudioPreset.TYPE_BOOST)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val eqPresets: StateFlow<List<AudioPreset>> =
-        repository.getAudioPresetsByType(AudioPreset.TYPE_EQ)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** The global default preset (drives a book's audio when it has no override of its own). */
+    val defaultPreset: StateFlow<AudioPreset?> =
+        allPresets.map { list -> list.firstOrNull { it.isDefault } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _eqBandsMillibels = MutableStateFlow<IntArray?>(null)  // null = flat/bypass
     val eqBandsMillibels: StateFlow<IntArray?> = _eqBandsMillibels.asStateFlow()
@@ -220,51 +220,52 @@ class PlayerViewModel @Inject constructor(
     }
 
     // ── Per-book "local preset" reset: clear this book's override back to defaults ────────
-    /** The global default speed — what a book falls back to when its override is cleared. */
-    val defaultSpeed: Float get() = settings.currentDefaultSpeed
+    /** The global default speed — the default preset's speed, else the scalar fallback. */
+    val defaultSpeed: Float get() = defaultPreset.value?.speedMult ?: settings.currentDefaultSpeed
     /** Reset this book's playback speed to the global default. */
-    fun clearBookSpeed() = setSpeed(settings.currentDefaultSpeed)
+    fun clearBookSpeed() = setSpeed(defaultSpeed)
     /** Reset this book's volume boost to 0 dB. */
     fun clearBookBoost() = setVolumeBoost(0)
     /** Reset this book's EQ to flat (falls back to the global default). */
     fun clearBookEq() = setEqBands(null)
 
-    fun saveAudioPreset(name: String, type: String) {
-        val preset = when (type) {
-            AudioPreset.TYPE_SPEED -> AudioPreset(name = name.trim(), type = type, speedMult = playbackState.value.speed)
-            AudioPreset.TYPE_BOOST -> AudioPreset(name = name.trim(), type = type, boostDb = playerController.currentVolumeBoostDb)
-            AudioPreset.TYPE_EQ   -> AudioPreset(name = name.trim(), type = type, eqBandsJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() })
-            else -> return
-        }
+    /** Snapshot the live speed + boost + EQ as a full preset bundle. */
+    private fun currentEqJson(): String? =
+        _eqBandsMillibels.value?.takeIf { it.any { b -> b != 0 } }?.let { JSONArray(it.toList()).toString() }
+
+    fun saveAudioPreset(name: String) {
+        val preset = AudioPreset(
+            name = name.trim(),
+            type = AudioPreset.TYPE_BUNDLE,
+            speedMult = playbackState.value.speed,
+            boostDb = playerController.currentVolumeBoostDb,
+            eqBandsJson = currentEqJson()
+        )
         viewModelScope.launch { repository.insertAudioPreset(preset) }
     }
 
+    /** Apply a whole preset bundle (speed + boost + EQ) to the current book and persist it. */
     fun loadAudioPreset(preset: AudioPreset) {
-        when (preset.type) {
-            AudioPreset.TYPE_SPEED -> setSpeed(preset.speedMult)
-            AudioPreset.TYPE_BOOST -> {
-                playerController.setVolumeBoost(preset.boostDb)
-                viewModelScope.launch { repository.updateBoostDb(bookId, preset.boostDb) }
-            }
-            AudioPreset.TYPE_EQ -> {
-                val bands = preset.eqBandsJson?.let { json ->
-                    try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
-                    catch (_: Exception) { null }
-                }
-                _eqBandsMillibels.value = bands
-                playerController.setEqBands(preset.eqBandsJson?.takeIf { it.isNotEmpty() })
-                viewModelScope.launch { repository.updateEqBands(bookId, preset.eqBandsJson) }
-            }
+        setSpeed(preset.speedMult)
+        playerController.setVolumeBoost(preset.boostDb)
+        val bands = preset.eqBandsJson?.let { json ->
+            try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
+            catch (_: Exception) { null }
+        }
+        _eqBandsMillibels.value = bands
+        playerController.setEqBands(preset.eqBandsJson?.takeIf { it.isNotEmpty() })
+        viewModelScope.launch {
+            repository.updateBoostDb(bookId, preset.boostDb)
+            repository.updateEqBands(bookId, preset.eqBandsJson)
         }
     }
 
     fun overwritePreset(preset: AudioPreset) {
-        val updated = when (preset.type) {
-            AudioPreset.TYPE_SPEED -> preset.copy(speedMult = playbackState.value.speed)
-            AudioPreset.TYPE_BOOST -> preset.copy(boostDb = playerController.currentVolumeBoostDb)
-            AudioPreset.TYPE_EQ   -> preset.copy(eqBandsJson = _eqBandsMillibels.value?.let { JSONArray(it.toList()).toString() })
-            else -> return
-        }
+        val updated = preset.copy(
+            speedMult = playbackState.value.speed,
+            boostDb = playerController.currentVolumeBoostDb,
+            eqBandsJson = currentEqJson()
+        )
         viewModelScope.launch { repository.updateAudioPreset(updated) }
     }
 
@@ -596,16 +597,19 @@ class PlayerViewModel @Inject constructor(
             // Never rewind past the chapter/file boundary: if the saved position is shorter than
             // the rewind amount, resume from the saved position instead of the file start.
             val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
-            // A book in a series inherits the series' audio defaults unless it has its own.
+            // A book inherits, in order: its own override → its series default → the global
+            // default preset → the scalar fallback. The default preset makes global speed/boost/EQ
+            // apply to every book that hasn't been individually tuned.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
-            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, settings.currentDefaultSpeed)
+            val gPreset = repository.getDefaultAudioPreset()
+            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
             AppLog.i("Player", "play() book=${bwp.book.id}" +
                 " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                 " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
             playerController.playBook(bwp.book, files, startIndex, startPos, speed)
-            // Restore per-book (or inherited series) boost and EQ so they don't bleed from other books
-            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb))
-            val savedEq = com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson)
+            // Restore per-book (or inherited series/global) boost and EQ so they don't bleed between books
+            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
+            val savedEq = com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson)
             _eqBandsMillibels.value = savedEq?.let { json ->
                 try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
                 catch (_: Exception) { null }
@@ -656,9 +660,49 @@ class PlayerViewModel @Inject constructor(
     fun togglePlayPause() = playerController.togglePlayPause()
     fun skipForward()     = playerController.skipForward()
     fun skipBack()        = playerController.skipBack()
+
+    /** Change the global skip intervals (from long-pressing the transport skip buttons). */
+    fun setSkipForwardMs(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }
+    fun setSkipBackMs(ms: Long)    = viewModelScope.launch { settings.setSkipBackMs(ms) }
     fun seekTo(posMs: Long) = playerController.seekTo(posMs)
     fun bookSeekTo(bookPosMs: Long) = playerController.bookSeekTo(bookPosMs)
     fun jumpToFile(index: Int) = playerController.jumpToFile(index)
+
+    /**
+     * "Read from here": converts the current audio position into a text locator via
+     * [com.betteraudio.sync.PositionBridge] and persists it, then invokes [onReady] with the book
+     * id so the caller can navigate to the reader. No-op if this book has no connected epub.
+     */
+    fun readFromHere(onReady: (Long) -> Unit) {
+        if (bookId == -1L) return
+        val book = bookWithProgress.value?.book ?: return
+        val epubPath = book.ebookPath ?: return
+        viewModelScope.launch {
+            val files = repository.getAudioFilesOnce(bookId)
+            if (files.isEmpty()) return@launch
+            val chapterEntities = repository.getChaptersForBookOnce(bookId)
+            val spans = com.betteraudio.sync.AudioSpanBuilder.build(files, chapterEntities)
+            if (spans.isEmpty()) return@launch
+
+            val info = withContext(Dispatchers.IO) {
+                runCatching { com.betteraudio.data.ebook.EpubParser(java.io.File(epubPath)).use { it.parse() } }.getOrNull()
+            }
+            if (info == null || info.encrypted || info.spine.isEmpty()) return@launch
+
+            val map = com.betteraudio.sync.ChapterMap.fromJson(book.chapterMapJson) ?: run {
+                val matched = com.betteraudio.sync.ChapterMatcher.autoMatch(spans, info.spine)
+                repository.setChapterMap(bookId, matched.toJson())
+                matched
+            }
+
+            val bookPosMs = playbackState.value.bookPositionMs
+            val locator = com.betteraudio.sync.PositionBridge.audioToText(bookPosMs, spans, map, info.spine.size)
+            val overall = (locator.spineIndex + locator.fraction) / info.spine.size
+            repository.updateTextPosition(bookId, locator.spineIndex, locator.fraction, overall)
+            AppLog.i("Player", "readFromHere book=$bookId pos=${bookPosMs}ms -> spine=${locator.spineIndex} frac=${locator.fraction}")
+            onReady(bookId)
+        }
+    }
 
     fun setSpeed(speed: Float) {
         playerController.setSpeed(speed)

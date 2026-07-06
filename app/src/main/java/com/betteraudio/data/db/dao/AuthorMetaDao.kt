@@ -23,4 +23,7 @@ interface AuthorMetaDao {
 
     @Query("UPDATE author_meta SET coverFxPath = :path WHERE name = :name")
     suspend fun updateCoverFx(name: String, path: String?)
+
+    @Query("DELETE FROM author_meta WHERE name = :name")
+    suspend fun deleteByName(name: String)
 }

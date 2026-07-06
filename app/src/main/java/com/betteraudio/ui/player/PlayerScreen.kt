@@ -5,8 +5,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -16,15 +19,18 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.PartItem
 import com.betteraudio.ui.components.ReflectedCoverBackdrop
@@ -35,6 +41,7 @@ import com.betteraudio.ui.history.BookHistoryOverlay
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.PlaybackOptions
 import com.betteraudio.ui.theme.Pill
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,6 +50,7 @@ fun PlayerContent(
     onCollapse: () -> Unit,
     initiallyShowInfo: Boolean = false,
     startPlaying: Boolean = true,
+    onOpenReader: (Long) -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val onBack = onCollapse
@@ -82,6 +90,8 @@ fun PlayerContent(
     var showAudioSettings  by remember { mutableStateOf(false) }
     var showOverflow       by remember { mutableStateOf(false) }
     var showHistory        by remember { mutableStateOf(false) }
+    // null = closed; true = editing skip-forward; false = editing skip-back (long-press a skip button)
+    var skipEditForward    by remember { mutableStateOf<Boolean?>(null) }
 
     // Scrubber drag state. While dragging, the thumb follows the finger but playback keeps
     // running from the original spot; the seek happens only on release (onValueChangeFinished).
@@ -113,8 +123,13 @@ fun PlayerContent(
 
     DisposableEffect(Unit) { onDispose { viewModel.saveProgress() } }
 
+    // Shared-element expansion from the mini player: 0 = mini bar, 1 = full player. The cover,
+    // title and transport morph from their mini counterparts; everything else reveals.
+    val expand = LocalPlayerExpand.current
+    val expandProgress = expand.progress
+
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color.Transparent
     ) { padding ->
         val loading = if (isGroup) groupInfo == null else bwp == null
         if (loading) {
@@ -124,9 +139,15 @@ fun PlayerContent(
             return@Scaffold
         }
 
-        val onScrim = Color.White
-        val onScrimMuted = Color.White.copy(alpha = 0.62f)
         val accent = MaterialTheme.colorScheme.primary
+        // Immersive: full-bleed cover player, near-white accent-tinted text over the scrim.
+        // Material You: tonal player (rounded cover card on an opaque background), standard
+        // onSurface text.
+        val isImmersive = com.betteraudio.ui.theme.immersive()
+        val onScrim = if (isImmersive) com.betteraudio.ui.theme.scrimTextColor()
+                      else MaterialTheme.colorScheme.onSurface
+        val onScrimMuted = if (isImmersive) com.betteraudio.ui.theme.scrimTextColor(muted = true)
+                           else MaterialTheme.colorScheme.onSurfaceVariant
 
         // For a book in a series, optionally show the series cover instead of the book's own.
         val useSeriesCover = inSeries && showSeriesCover && seriesCover != null
@@ -174,19 +195,54 @@ fun PlayerContent(
             .filter { it.bookId == -1L || it.bookId == state.bookId }
         val cur = currentChapter(items, bookPos, bookTotal)
 
+        val trackColor = if (isImmersive) Color.White.copy(alpha = 0.24f)
+                         else MaterialTheme.colorScheme.surfaceVariant
         val sliderColors = SliderDefaults.colors(
             thumbColor = accent,
             activeTrackColor = accent,
-            inactiveTrackColor = Color.White.copy(alpha = 0.24f)
+            inactiveTrackColor = trackColor
         )
 
-        Box(Modifier.fillMaxSize().frostedWhenVisible(showHistory || showChapters)) {
-            // ── Cover + reflection + progressive scrim ────────────────────
+        val dimColor = if (isImmersive) Color.Black else MaterialTheme.colorScheme.background
+        Box(
+            Modifier
+                .fillMaxSize()
+                // Dim/solidify as the player opens (deferred read — no per-frame recompose).
+                .drawBehind {
+                    val p = expandProgress.value.coerceIn(0f, 1f)
+                    drawRect(dimColor.copy(alpha = p * p))
+                }
+                .frostedWhenVisible(showHistory || showChapters)
+        ) {
+            if (isImmersive) {
+            // ── Cover + reflection + progressive scrim — grows out of the mini cover ──
             ReflectedCoverBackdrop(
                 coverPath = coverPath,
                 bakedPath = bakedPath,
-                modifier  = Modifier.fillMaxSize()
+                modifier  = Modifier
+                    .fillMaxSize()
+                    .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true, fadeIn = true)
             )
+            // Sharp copy of the cover that physically TRAVELS from the mini player's slot up
+            // into the backdrop's cover area while the (blurred/reflected) backdrop fades in
+            // underneath it; it dissolves into the backdrop at the end of the gesture. The mini
+            // bar hides its own cover as soon as the drag starts, so this is the one the eye
+            // follows.
+            AsyncImage(
+                model = coverPath?.let { File(it) },
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true)
+                    .graphicsLayer {
+                        val p = expandProgress.value
+                        alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
+                    }
+                    .clip(RoundedCornerShape(12.dp))
+            )
+            }
 
             Column(
                 Modifier
@@ -196,10 +252,10 @@ fun PlayerContent(
             ) {
                 // ── Top bar ─────────────────────────────────────────────
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(expandProgress),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = onBack)
+                    ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = !isImmersive, onClick = onBack)
                     Spacer(Modifier.weight(1f))
                     val topLabel = if (isGroup)
                         groupInfo?.name?.takeIf { it.isNotBlank() }
@@ -217,7 +273,7 @@ fun PlayerContent(
                     }
                     Spacer(Modifier.weight(1f))
                     Box {
-                        ScrimButton(Icons.Default.MoreVert, "More") { showOverflow = true }
+                        ScrimButton(Icons.Default.MoreVert, "More", tonal = !isImmersive) { showOverflow = true }
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
                             if (!isGroup) {
                                 DropdownMenuItem(
@@ -245,6 +301,16 @@ fun PlayerContent(
                                     onClick = { showOverflow = false; showHistory = true }
                                 )
                             }
+                            if (!isGroup && book?.ebookPath != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Read from here") },
+                                    leadingIcon = { Icon(Icons.Default.MenuBook, null) },
+                                    onClick = {
+                                        showOverflow = false
+                                        viewModel.readFromHere { bookId -> onOpenReader(bookId) }
+                                    }
+                                )
+                            }
                             if (!isGroup) {
                                 DropdownMenuItem(
                                     text = { Text("Refresh cover effect") },
@@ -256,11 +322,34 @@ fun PlayerContent(
                     }
                 }
 
-                Spacer(Modifier.weight(1f))
+                // ── Material You: large rounded cover card in the leftover space — the SAME
+                // element that travels out of the mini player's cover slot (it stays as the
+                // player cover instead of dissolving into a full-bleed backdrop). ──
+                if (!isImmersive) {
+                    Box(
+                        Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = coverPath?.let { File(it) },
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                // Largest square that fits the leftover space.
+                                .aspectRatio(1f)
+                                .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true)
+                                .clip(RoundedCornerShape(28.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
 
                 // ── Bottom: info panel OR player controls (crossfade, background stays static) ──
                 Crossfade(targetState = showInfoState.value, animationSpec = tween(280)) { isInfo: Boolean ->
                 if (isInfo) {
+                    Box(Modifier.expandReveal(expandProgress)) {
                     if (isGroup && groupInfo != null) {
                         val gi = groupInfo!!
                         BookInfoPanel(
@@ -295,6 +384,7 @@ fun PlayerContent(
                             onShowHistory    = { showHistory = true }
                         )
                     }
+                    } // end Box (info reveal)
                 } else {
                 // ── Player controls ─────────────────────────────────────────────────
                 Column(Modifier.fillMaxWidth()) {
@@ -304,6 +394,7 @@ fun PlayerContent(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
+                            .expandReveal(expandProgress)
                             .clip(com.betteraudio.ui.theme.Pill)
                             .clickable { showChapters = true }
                             .padding(horizontal = 6.dp, vertical = 3.dp)
@@ -327,7 +418,8 @@ fun PlayerContent(
                     color = onScrim,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth()
+                    // Moves/enlarges out of the mini player's title as the sheet opens.
+                    modifier = Modifier.fillMaxWidth().morphFrom(expand.miniTitle, expandProgress, anchorTopLeft = true)
                 )
                 if (!effectiveAuthor.isNullOrBlank()) {
                     Spacer(Modifier.height(2.dp))
@@ -337,14 +429,17 @@ fun PlayerContent(
                         color = onScrimMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().expandReveal(expandProgress)
                     )
                 }
 
                 // ── Return / Confirm jump-history pills ─────────────────
                 if (positionStack.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.expandReveal(expandProgress)
+                    ) {
                         Box {
                             ScrimPill(
                                 icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -376,7 +471,8 @@ fun PlayerContent(
 
                 Spacer(Modifier.height(16.dp))
 
-                // ── Scrubber ────────────────────────────────────────────
+                // ── Scrubber (reveals as the sheet opens) ───────────────
+                Column(Modifier.fillMaxWidth().expandReveal(expandProgress)) {
                 if (chapters.hasChapters && cur != null) {
                     val chDur = (cur.endMs - cur.startMs).coerceAtLeast(1L)
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
@@ -404,7 +500,7 @@ fun PlayerContent(
                     )
                     TimeRow(formatDuration(chDisplayPos), "-${formatDuration(chDur - chDisplayPos)}", onScrimMuted)
                     Spacer(Modifier.height(2.dp))
-                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted) { viewModel.bookSeekTo(it) }
+                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor) { viewModel.bookSeekTo(it) }
                 } else {
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
@@ -431,10 +527,12 @@ fun PlayerContent(
                     )
                     TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
                 }
+                } // end Column (scrubber reveal)
 
                 Spacer(Modifier.height(10.dp))
 
-                // ── Transport ───────────────────────────────────────────
+                // ── Transport — the play button GROWS out of the mini player's accent play
+                // button (same round accent visual); the skip controls reveal around it. ──
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -442,16 +540,25 @@ fun PlayerContent(
                 ) {
                     if (state.totalFiles > 1) {
                         val enabled = state.currentFileIndex > 0
-                        IconButton(onClick = { viewModel.playerController.prevFile() }, enabled = enabled) {
+                        IconButton(
+                            onClick = { viewModel.playerController.prevFile() },
+                            enabled = enabled,
+                            modifier = Modifier.expandReveal(expandProgress)
+                        ) {
                             Icon(Icons.Default.SkipPrevious, "Previous part", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
                     }
-                    SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim) { viewModel.skipBack() }
+                    Box(Modifier.expandReveal(expandProgress)) {
+                        SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim,
+                            onLongPress = { skipEditForward = false }) { viewModel.skipBack() }
+                    }
                     Box(
-                        Modifier.size(72.dp).clip(Pill).background(accent).clickable {
-                            if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause()
-                        },
+                        Modifier
+                            .morphFrom(expand.miniControls, expandProgress)
+                            .size(72.dp).clip(Pill).background(accent).clickable {
+                                if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause()
+                            },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -461,10 +568,17 @@ fun PlayerContent(
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim) { viewModel.skipForward() }
+                    Box(Modifier.expandReveal(expandProgress)) {
+                        SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim,
+                            onLongPress = { skipEditForward = true }) { viewModel.skipForward() }
+                    }
                     if (state.totalFiles > 1) {
                         val enabled = state.currentFileIndex < state.totalFiles - 1
-                        IconButton(onClick = { viewModel.playerController.nextFile() }, enabled = enabled) {
+                        IconButton(
+                            onClick = { viewModel.playerController.nextFile() },
+                            enabled = enabled,
+                            modifier = Modifier.expandReveal(expandProgress)
+                        ) {
                             Icon(Icons.Default.SkipNext, "Next part", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
@@ -475,7 +589,7 @@ fun PlayerContent(
 
                 // ── Secondary actions ───────────────────────────────────
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth().expandReveal(expandProgress),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -631,6 +745,19 @@ fun PlayerContent(
             )
         }
 
+        skipEditForward?.let { forward ->
+            SkipValueDialog(
+                forward = forward,
+                currentSeconds = ((if (forward) skipForwardMs else skipBackMs) / 1000).toInt(),
+                onConfirm = { secs ->
+                    if (forward) viewModel.setSkipForwardMs(secs * 1000L)
+                    else viewModel.setSkipBackMs(secs * 1000L)
+                    skipEditForward = null
+                },
+                onDismiss = { skipEditForward = null }
+            )
+        }
+
         BookHistoryOverlay(
             visible = showHistory,
             sessions = sessions,
@@ -664,6 +791,7 @@ private fun CompactBookProgress(
     totalMs: Long,
     accent: Color,
     muted: Color,
+    trackColor: Color,
     onSeek: (Long) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -679,7 +807,7 @@ private fun CompactBookProgress(
                 progress = { frac },
                 modifier = Modifier.weight(1f).height(4.dp).clip(Pill),
                 color = accent,
-                trackColor = Color.White.copy(alpha = 0.22f)
+                trackColor = trackColor
             )
             Spacer(Modifier.width(10.dp))
             Text("${(frac * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = muted)
@@ -700,7 +828,7 @@ private fun CompactBookProgress(
                 colors = SliderDefaults.colors(
                     thumbColor = accent,
                     activeTrackColor = accent,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.24f)
+                    inactiveTrackColor = trackColor
                 ),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -716,11 +844,20 @@ private fun TimeRow(left: String, right: String, color: Color) {
     }
 }
 
-/** A circular skip control that shows the configured seconds in its centre. */
+/** A circular skip control that shows the configured seconds in its centre. Long-press to change
+ *  the skip amount. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SkipButton(seconds: Int, forward: Boolean, tint: Color, onClick: () -> Unit) {
+private fun SkipButton(
+    seconds: Int,
+    forward: Boolean,
+    tint: Color,
+    onLongPress: () -> Unit = {},
+    onClick: () -> Unit
+) {
     Box(
-        Modifier.size(56.dp).clip(Pill).clickable(onClick = onClick),
+        Modifier.size(56.dp).clip(Pill)
+            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -740,6 +877,38 @@ private fun SkipButton(seconds: Int, forward: Boolean, tint: Color, onClick: () 
             modifier = Modifier.offset(x = 0.5.dp, y = 1.5.dp)
         )
     }
+}
+
+/** Stepper dialog to change a skip interval (opened by long-pressing a skip button). */
+@Composable
+private fun SkipValueDialog(
+    forward: Boolean,
+    currentSeconds: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var secs by remember { mutableStateOf(currentSeconds.coerceIn(5, 300)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (forward) "Skip forward" else "Skip back") },
+        text = {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalIconButton(onClick = { secs = (secs - 5).coerceAtLeast(5) }) {
+                    Icon(Icons.Default.Remove, "Less")
+                }
+                Text("$secs s", style = MaterialTheme.typography.headlineSmall)
+                FilledTonalIconButton(onClick = { secs = (secs + 5).coerceAtMost(300) }) {
+                    Icon(Icons.Default.Add, "More")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

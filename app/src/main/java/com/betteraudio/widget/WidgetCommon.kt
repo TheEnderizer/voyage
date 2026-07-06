@@ -47,6 +47,19 @@ object WidgetRender {
     /** Cached so resize/options-change re-renders keep the current track. */
     @Volatile var lastState: WidgetState = WidgetState()
 
+    /** Re-render all widgets from the cached state (e.g. after the default cover changes). */
+    fun refresh(context: Context) {
+        val s = lastState
+        val intent = Intent(ACTION_UPDATE_WIDGET).apply {
+            setPackage(context.packageName)
+            putExtra(EXTRA_IS_PLAYING, s.isPlaying)
+            putExtra(EXTRA_BOOK_TITLE, s.title)
+            putExtra(EXTRA_BOOK_AUTHOR, s.author)
+            putExtra(EXTRA_COVER_ART_URI, s.coverArtUri ?: "")
+        }
+        context.sendBroadcast(intent)
+    }
+
     fun stateFrom(intent: Intent) = WidgetState(
         title = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "",
         author = intent.getStringExtra(EXTRA_BOOK_AUTHOR) ?: "",
@@ -149,12 +162,22 @@ object WidgetRender {
     }
 
     fun decodeCover(context: Context, coverUri: String?): Bitmap? {
-        if (coverUri.isNullOrBlank()) return null
-        return try {
-            context.contentResolver.openInputStream(Uri.parse(coverUri))?.use { stream ->
-                BitmapFactory.decodeStream(stream)
-            }
-        } catch (_: Exception) { null }
+        if (!coverUri.isNullOrBlank()) {
+            val decoded = try {
+                context.contentResolver.openInputStream(Uri.parse(coverUri))?.use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            } catch (_: Exception) { null }
+            if (decoded != null) return decoded
+        }
+        // Nothing playing (or no cover): fall back to the user-chosen default widget cover, if set.
+        return decodeDefaultCover(context)
+    }
+
+    /** The user's default widget cover (Settings → Widget), or null if none was set. */
+    private fun decodeDefaultCover(context: Context): Bitmap? {
+        val f = java.io.File(context.filesDir, "widget_default_cover.jpg")
+        return if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
     }
 
     fun renderPlaceholder(context: Context, size: Int): Bitmap {

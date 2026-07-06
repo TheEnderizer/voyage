@@ -52,9 +52,10 @@ fun BookInfoScreen(
             return@Box
         }
 
-        val onScrim      = Color.White
-        val onScrimMuted = Color.White.copy(alpha = 0.62f)
         val accent       = MaterialTheme.colorScheme.primary
+        // Scrim text; tinted toward the accent in the Immersive theme.
+        val onScrim      = com.betteraudio.ui.theme.scrimTextColor()
+        val onScrimMuted = com.betteraudio.ui.theme.scrimTextColor(muted = true)
 
         // ── Cover + reflection background (identical to PlayerScreen) ──────────
         Box(Modifier.fillMaxSize().clipToBounds()) {

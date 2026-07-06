@@ -6,6 +6,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -15,9 +17,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.model.BookWithProgress
+import com.betteraudio.ui.components.FolderBrowser
 import kotlin.math.roundToInt
 
 /** Playback controls to display when the sheet is opened from a player context. */
@@ -41,7 +45,10 @@ fun BookOptionsSheet(
     onRefreshCoverEffect: () -> Unit,
     onIgnore: () -> Unit,
     onDeletePermanently: (deleteFiles: Boolean) -> Unit,
-    playback: PlaybackOptions? = null
+    playback: PlaybackOptions? = null,
+    onConnectEpub: (path: String) -> Unit = {},
+    onDisconnectEpub: () -> Unit = {},
+    onOpenReader: () -> Unit = {}
 ) {
     val book = bwp.book
     var titleInput by remember { mutableStateOf(book.titleOverride ?: book.title) }
@@ -184,6 +191,58 @@ fun BookOptionsSheet(
                     Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Refresh cover effect")
+                }
+            }
+
+            // ── Ebook (EPUB) ─────────────────────────────────────────────
+            OptionsSection("Ebook") {
+                if (book.ebookPath != null) {
+                    Text(
+                        java.io.File(book.ebookPath).name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { onOpenReader(); onDismiss() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.MenuBook, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Open reader")
+                        }
+                        OutlinedButton(onClick = onDisconnectEpub, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.LinkOff, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Disconnect")
+                        }
+                    }
+                } else {
+                    var showEpubPicker by remember { mutableStateOf(false) }
+                    OutlinedButton(
+                        onClick = { showEpubPicker = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.MenuBook, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Connect EPUB…")
+                    }
+                    if (showEpubPicker) {
+                        val startPath = remember(book.folderPath) {
+                            val real = java.io.File(book.folderPath.substringBefore("::"))
+                            (if (real.isDirectory) real else real.parentFile)?.absolutePath
+                                ?: "/storage/emulated/0"
+                        }
+                        FolderBrowser(
+                            startPath = startPath,
+                            onSelect = {},
+                            onCancel = { showEpubPicker = false },
+                            fileExtensions = setOf("epub"),
+                            onSelectFile = { path -> onConnectEpub(path); showEpubPicker = false },
+                            title = "Choose EPUB"
+                        )
+                    }
                 }
             }
 
