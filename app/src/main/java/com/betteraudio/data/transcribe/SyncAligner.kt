@@ -99,15 +99,16 @@ class SyncAligner @Inject constructor(
         val cumStart = LongArray(files.size)
         run { var t = 0L; files.forEachIndexed { i, f -> cumStart[i] = t; t += f.durationMs } }
 
-        setProgress(bookId) { AlignProgress(true, 0, spans.size, 0) }
+        val totalSteps = spans.size * 2
+        setProgress(bookId) { AlignProgress(true, 0, totalSteps, 0) }
 
         val model = runCatching { Model(modelDir.absolutePath) }.getOrNull()
-            ?: run { parser.close(); setProgress(bookId) { AlignProgress(false, 0, spans.size, 0, error = "Could not load speech model") }; return }
+            ?: run { parser.close(); setProgress(bookId) { AlignProgress(false, 0, totalSteps, 0, error = "Could not load speech model") }; return }
 
-        // Whole-book token stream + inverted index (token → positions), built once. Anchoring
-        // searches ALL of the book's text rather than trusting the chapter map to point at the
-        // right spine — so an approximate/wrong chapter map can't prevent matches (each snippet
-        // finds its true location; the matched token carries its own spine/paragraph/char offset).
+        // Whole-book token stream + inverted index (token → positions), built once. Pass 1 below
+        // searches ALL of this rather than trusting the chapter map to point at the right spine —
+        // so an approximate/wrong chapter map can't prevent matches (each snippet finds its true
+        // location; the matched token carries its own spine/paragraph/char offset).
         val bookToks = ArrayList<TokenPos>()
         for (s in info.spine.indices) {
             coroutineContext.ensureActive()
@@ -117,25 +118,51 @@ class SyncAligner @Inject constructor(
         val tokenIndex = HashMap<String, MutableList<Int>>()
         bookToks.forEachIndexed { i, tp -> tokenIndex.getOrPut(tp.token) { ArrayList() }.add(i) }
 
-        val accepted = ArrayList<SyncAnchor>()
+        val raw = ArrayList<SyncAnchor>()
         try {
-            spans.forEachIndexed { doneIdx, span ->
+            // Pass 1: probe the START of every audio span (chapter/"Part" file) with a whole-book
+            // search, to find where each one begins in the text. Audiobooks are frequently split
+            // into narration parts with no 1:1 correspondence to epub chapters, so doing this first
+            // establishes a real per-span text range — pass 2 then only has to search that (small)
+            // range instead of the whole book on every single probe, which is what makes it fast.
+            val startBookTokIdx = arrayOfNulls<Int>(spans.size)
+            spans.forEachIndexed { i, span ->
                 coroutineContext.ensureActive()
-                setProgress(bookId) { it.copy(chaptersDone = doneIdx, currentChapter = span.title, anchorsFound = accepted.size) }
-                for (probeStartMs in probeOffsets(span)) {
+                setProgress(bookId) { it.copy(chaptersDone = i, currentChapter = span.title, anchorsFound = raw.size) }
+                val startMs = probeOffsets(span).firstOrNull() ?: return@forEachIndexed
+                probe(files, cumStart, startMs, bookToks, tokenIndex, model)?.let { r ->
+                    startBookTokIdx[i] = r.windowStart
+                    raw.add(r.anchor.copy(bookId = bookId))
+                    setProgress(bookId) { it.copy(anchorsFound = raw.size) }
+                }
+            }
+            val ranges = spanSearchRanges(spans.size, startBookTokIdx, bookToks.size)
+
+            // Pass 2: the remaining probes per span, restricted to that span's range.
+            spans.forEachIndexed { i, span ->
+                coroutineContext.ensureActive()
+                setProgress(bookId) { it.copy(chaptersDone = spans.size + i, currentChapter = span.title, anchorsFound = raw.size) }
+                for (probeStartMs in probeOffsets(span).drop(1)) {
                     coroutineContext.ensureActive()
-                    val anchor = probe(files, cumStart, probeStartMs, bookToks, tokenIndex, model)
-                    if (anchor != null && (accepted.isEmpty() || isMonotonic(accepted.last(), anchor))) {
-                        accepted.add(anchor.copy(bookId = bookId))
-                        setProgress(bookId) { it.copy(anchorsFound = accepted.size) }
+                    probe(files, cumStart, probeStartMs, bookToks, tokenIndex, model, ranges[i])?.let { r ->
+                        raw.add(r.anchor.copy(bookId = bookId))
+                        setProgress(bookId) { it.copy(anchorsFound = raw.size) }
                     }
                 }
+            }
+
+            // Anchors must advance in both audio time and text position; the two passes above
+            // don't add them in audio-time order (pass 1 = one per span, pass 2 = the rest), so
+            // sort first and then keep only what's monotonic.
+            val accepted = ArrayList<SyncAnchor>()
+            for (a in raw.sortedBy { it.audioMs }) {
+                if (accepted.isEmpty() || isMonotonic(accepted.last(), a)) accepted.add(a)
             }
 
             // Replace-all on success only (cancellation throws before this and keeps old anchors).
             repository.deleteSyncAnchors(bookId)
             if (accepted.isNotEmpty()) repository.insertSyncAnchors(accepted)
-            setProgress(bookId) { AlignProgress(false, spans.size, spans.size, accepted.size) }
+            setProgress(bookId) { AlignProgress(false, totalSteps, totalSteps, accepted.size) }
             AppLog.i("Aligner", "book=$bookId anchors=${accepted.size} across ${spans.size} chapters")
         } finally {
             runCatching { model.close() }
@@ -143,16 +170,21 @@ class SyncAligner @Inject constructor(
         }
     }
 
-    /** Decode one snippet, transcribe it, and (on a confident text match) return an anchor. */
+    private data class ProbeResult(val anchor: SyncAnchor, val windowStart: Int)
+
+    /** Decode one snippet, transcribe it, and (on a confident text match) return an anchor plus
+     *  the matched book-token index (used to bootstrap per-span search ranges). [range], when
+     *  given, restricts the text search to that slice of [bookToks] instead of the whole book. */
     private suspend fun probe(
         files: List<com.betteraudio.data.db.entities.AudioFile>,
         cumStart: LongArray,
         probeStartMs: Long,
         bookToks: List<TokenPos>,
         tokenIndex: Map<String, MutableList<Int>>,
-        model: Model
-    ): SyncAnchor? {
-        // Locate the file containing this book-ms and clamp the 25 s window to that file.
+        model: Model,
+        range: IntRange? = null
+    ): ProbeResult? {
+        // Locate the file containing this book-ms and clamp the snippet window to that file.
         val fi = cumStart.indices.lastOrNull { probeStartMs >= cumStart[it] } ?: return null
         val inFileOffset = probeStartMs - cumStart[fi]
         val fileDur = files[fi].durationMs
@@ -186,7 +218,7 @@ class SyncAligner @Inject constructor(
             val meanConf = confSum / words.length()
             if (transcript.size < MIN_WORDS || meanConf < MIN_MEAN_CONF) return null
 
-            val (windowStart, score) = matchTranscript(bookToks, tokenIndex, transcript) ?: return null
+            val (windowStart, score) = matchTranscript(bookToks, tokenIndex, transcript, range) ?: return null
             AppLog.i("Aligner", "probe @${probeStartMs}ms words=${transcript.size} conf=${"%.2f".format(meanConf)} bestScore=${"%.2f".format(score)}")
             if (score < ACCEPT_SCORE) return null
             val tp = bookToks[windowStart]
@@ -203,10 +235,11 @@ class SyncAligner @Inject constructor(
                     "  epub:       $matchedEpubText"
             )
 
-            return SyncAnchor(
+            val anchor = SyncAnchor(
                 bookId = 0L, audioMs = audioMs, spineIndex = tp.spineIndex,
                 paragraphIndex = tp.paragraphIndex, charOffset = tp.charOffset, confidence = score
             )
+            return ProbeResult(anchor, windowStart)
         } finally {
             runCatching { recognizer.close() }
         }
@@ -228,29 +261,40 @@ class SyncAligner @Inject constructor(
         return out
     }
 
-    /** Finds where [transcript] best matches the whole-book token stream, using the inverted index
-     *  to bound the search to windows anchored on the transcript's rarest (most discriminative)
-     *  tokens. Returns the best (windowStartIndex, score); the caller applies [ACCEPT_SCORE]. */
+    /** Finds where [transcript] best matches the book token stream, using the inverted index to
+     *  bound the search to windows anchored on the transcript's rarest (most discriminative)
+     *  tokens. When [range] is given, only positions inside it are considered (the token position
+     *  lists are ascending, so this is a binary-search bound, not a full rescan) — this is what
+     *  makes pass-2 probing cheap instead of re-searching the whole book every time. Returns the
+     *  best (windowStartIndex, score); the caller applies [ACCEPT_SCORE]. */
     private fun matchTranscript(
         bookToks: List<TokenPos>,
         tokenIndex: Map<String, MutableList<Int>>,
-        transcript: List<String>
+        transcript: List<String>,
+        range: IntRange? = null
     ): Pair<Int, Float>? {
         val w = transcript.size
         if (w < MIN_WORDS || bookToks.size < w) return null
         val transSet = transcript.toHashSet()
 
+        val searchStart = (range?.first ?: 0).coerceAtLeast(0)
+        val searchEndExclusive = ((range?.last?.plus(1)) ?: bookToks.size).coerceAtMost(bookToks.size)
+        if (searchEndExclusive - searchStart < w) return null
+
         // Candidate window starts: for each of the transcript's rarest tokens, every book position
-        // it occurs at implies a window start (position − token's index within the transcript).
+        // it occurs at (within range) implies a window start (position − token's transcript index).
         val distinct = transSet.mapNotNull { t -> tokenIndex[t]?.let { t to it } }.sortedBy { it.second.size }
         val candidates = HashSet<Int>()
         var used = 0
         for ((tok, positions) in distinct) {
             if (positions.size > 300) break        // too common to be discriminative
             val ti = transcript.indexOf(tok)
-            for (p in positions) {
+            val lo = positions.binarySearch(searchStart).let { if (it < 0) -(it + 1) else it }
+            for (idx in lo until positions.size) {
+                val p = positions[idx]
+                if (p >= searchEndExclusive) break
                 val start = p - ti
-                if (start in 0..(bookToks.size - w)) candidates.add(start)
+                if (start in searchStart..(searchEndExclusive - w)) candidates.add(start)
             }
             if (++used >= 6 || candidates.size > 6000) break
         }
@@ -282,6 +326,23 @@ class SyncAligner @Inject constructor(
         next.audioMs > prev.audioMs &&
             (next.spineIndex > prev.spineIndex || (next.spineIndex == prev.spineIndex && next.charOffset > prev.charOffset))
 
+    /** Per-span book-token search range for pass 2, bracketed by the nearest span-start matches
+     *  (in either direction) found in pass 1, padded a little for slack (a start-probe fires ~15s
+     *  into its span, so the span's true start in the text sits a bit before the matched window).
+     *  A span whose own start-probe failed just inherits the bracket of its nearest known
+     *  neighbors — still far smaller than the whole book unless failures are widespread. Falls
+     *  back to the whole book only at the very ends where there's no known neighbor at all. */
+    private fun spanSearchRanges(spanCount: Int, starts: Array<Int?>, bookTokCount: Int): Array<IntRange> {
+        val knownIdx = starts.indices.filter { starts[it] != null }
+        return Array(spanCount) { i ->
+            val lo = knownIdx.lastOrNull { it <= i }
+            val hi = knownIdx.firstOrNull { it > i }
+            val rangeStart = ((lo?.let { starts[it]!! } ?: 0) - RANGE_PAD_TOKENS).coerceIn(0, bookTokCount)
+            val rangeEnd = ((hi?.let { starts[it]!! } ?: bookTokCount) + RANGE_PAD_TOKENS).coerceIn(0, bookTokCount)
+            rangeStart..rangeEnd
+        }
+    }
+
     private fun probeOffsets(span: AudioChapterSpan): List<Long> {
         val out = ArrayList<Long>()
         var t = span.absStartMs + 15_000
@@ -298,10 +359,11 @@ class SyncAligner @Inject constructor(
     }
 
     companion object {
-        private const val SNIPPET_MS = 25_000L
+        private const val SNIPPET_MS = 15_000L
         private const val PROBE_INTERVAL_MS = 150_000L
         private const val MIN_WORDS = 12
         private const val MIN_MEAN_CONF = 0.5
         private const val ACCEPT_SCORE = 0.55f
+        private const val RANGE_PAD_TOKENS = 800
     }
 }

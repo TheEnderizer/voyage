@@ -3,6 +3,11 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.2b] - 2026-07-07
+
+### Changed
+- On-device sync alignment ("Improve sync") is significantly faster: it now locates each audio chapter/part's start in the book first, then only searches that part's own section of text instead of the whole book on every check. Snippet length also reduced from 25s to 15s
+
 ## [1.8.1b] - 2026-07-07
 
 ### Added
