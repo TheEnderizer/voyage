@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
@@ -801,6 +803,55 @@ private fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVie
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+    item {
+        val modelState by viewModel.voskModelState.collectAsStateWithLifecycle()
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconBadge(Icons.Default.GraphicEq, MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Listen ↔ read sync model", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "On-device speech model for paragraph-accurate ebook sync",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                when (val s = modelState) {
+                    is com.betteraudio.data.transcribe.ModelState.Ready -> {
+                        Text("Downloaded · ${"%.0f".format(s.sizeBytes / 1_000_000.0)} MB",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { viewModel.deleteVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete model")
+                        }
+                    }
+                    is com.betteraudio.data.transcribe.ModelState.Downloading -> {
+                        Text("Downloading… ${s.pct}%", style = MaterialTheme.typography.bodySmall)
+                        LinearProgressIndicator(progress = { s.pct / 100f }, modifier = Modifier.fillMaxWidth())
+                    }
+                    com.betteraudio.data.transcribe.ModelState.Unzipping ->
+                        Text("Preparing…", style = MaterialTheme.typography.bodySmall)
+                    is com.betteraudio.data.transcribe.ModelState.Error -> {
+                        Text(s.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        FilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                            Text("Retry download (~45 MB)")
+                        }
+                    }
+                    com.betteraudio.data.transcribe.ModelState.NotDownloaded ->
+                        FilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Download, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Download model (~45 MB, English)")
+                        }
+                }
             }
         }
     }

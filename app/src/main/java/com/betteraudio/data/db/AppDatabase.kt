@@ -28,6 +28,8 @@ import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.db.entities.SkipEvent
+import com.betteraudio.data.db.entities.SyncAnchor
+import com.betteraudio.data.db.dao.SyncAnchorDao
 
 // Version 9: manualGrouping on books (user-locked join/split, ignored by AutoJoiner)
 // Version 10: Book.skipSilenceEnabled + listening_sessions / skip_events history tables
@@ -36,9 +38,10 @@ import com.betteraudio.data.db.entities.SkipEvent
 //             seeded from existing seriesName; stale groupId nulled out (grouping retired).
 // Version 13: EPUB reader — Book.ebookPath/ebookSpineCount/chapterMapJson;
 //             PlaybackProgress text position (textSpineIndex/textFraction/textOverallFraction/lastMode).
+// Version 14: sync_anchors table — verified paragraph-resolution listen↔read alignment points.
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class],
-    version = 13,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class],
+    version = 14,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -53,6 +56,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun listeningHistoryDao(): ListeningHistoryDao
     abstract fun seriesDao(): SeriesDao
     abstract fun authorMetaDao(): AuthorMetaDao
+    abstract fun syncAnchorDao(): SyncAnchorDao
 
     companion object {
         val MIGRATION_3_4 = object : Migration(3, 4) {
@@ -222,6 +226,26 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE playback_progress ADD COLUMN textFraction REAL")
                 db.execSQL("ALTER TABLE playback_progress ADD COLUMN textOverallFraction REAL NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE playback_progress ADD COLUMN lastMode TEXT NOT NULL DEFAULT 'AUDIO'")
+            }
+        }
+
+        val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 13 → 14 (sync anchors)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `sync_anchors` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `bookId` INTEGER NOT NULL,
+                        `audioMs` INTEGER NOT NULL,
+                        `spineIndex` INTEGER NOT NULL,
+                        `paragraphIndex` INTEGER NOT NULL,
+                        `charOffset` INTEGER NOT NULL,
+                        `confidence` REAL NOT NULL,
+                        `createdAtMs` INTEGER NOT NULL,
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_anchors_bookId` ON `sync_anchors` (`bookId`)")
             }
         }
     }

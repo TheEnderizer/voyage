@@ -66,6 +66,8 @@ class SettingsStore @Inject constructor(
         // Separate root folder scanned ONLY for standalone .epub files (no matching audiobook).
         // Mirrors LIBRARY_FOLDER; "" = not set.
         val EBOOK_FOLDER                 = stringPreferencesKey("ebook_folder")
+        // Top-level home section: AUDIO (default) | EBOOKS.
+        val HOME_SECTION                 = stringPreferencesKey("home_section")
         // Reader text size, as a percentage (100 = default CSS font-size).
         val READER_FONT_SIZE             = intPreferencesKey("reader_font_size")
     }
@@ -107,6 +109,7 @@ class SettingsStore @Inject constructor(
     val widgetDefaultCoverPath: Flow<String>  = context.dataStore.data.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }
     val ebookFolder: Flow<String>              = context.dataStore.data.map { it[Keys.EBOOK_FOLDER] ?: "" }
     val readerFontSize: Flow<Int>              = context.dataStore.data.map { it[Keys.READER_FONT_SIZE] ?: 100 }
+    val homeSection: Flow<String>              = context.dataStore.data.map { it[Keys.HOME_SECTION] ?: "AUDIO" }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -154,6 +157,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.EBOOK_FOLDER] = path }.let { }
     suspend fun setReaderFontSize(pct: Int) =
         context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }.let { }
+    suspend fun setHomeSection(name: String) =
+        context.dataStore.edit { it[Keys.HOME_SECTION] = name }.let { }
     suspend fun setSort(option: String, direction: String) =
         context.dataStore.edit {
             it[Keys.SORT_OPTION]    = option

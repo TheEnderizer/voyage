@@ -1,8 +1,6 @@
 package com.betteraudio.sync
 
 import com.betteraudio.data.ebook.SpineItem
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.round
 
 /**
@@ -94,45 +92,14 @@ object ChapterMatcher {
         return ChapterMap(result)
     }
 
-    // ── text normalization + similarity (hand-rolled, no dependency) ──────────
+    // ── text helpers (normalization + similarity live in the shared TextSimilarity) ──
 
     private val NUMBER_REGEX = Regex("""\d+""")
-    private val PUNCT_REGEX = Regex("""[^a-z0-9\s]""")
-    private val WHITESPACE_REGEX = Regex("""\s+""")
 
     private fun extractNumber(title: String): Int? =
         NUMBER_REGEX.find(title)?.value?.toIntOrNull()
 
-    private fun normalize(title: String): String =
-        PUNCT_REGEX.replace(title.lowercase(), " ").let { WHITESPACE_REGEX.replace(it, " ") }.trim()
-
-    private fun tokenJaccard(a: String, b: String): Float {
-        val ta = a.split(' ').filter { it.isNotEmpty() }.toSet()
-        val tb = b.split(' ').filter { it.isNotEmpty() }.toSet()
-        if (ta.isEmpty() || tb.isEmpty()) return 0f
-        val intersection = ta.intersect(tb).size
-        val union = ta.union(tb).size
-        return intersection.toFloat() / union
-    }
-
-    private fun levenshteinRatio(a: String, b: String): Float {
-        val maxLen = max(a.length, b.length)
-        if (maxLen == 0) return 1f
-        return 1f - (levenshtein(a, b).toFloat() / maxLen)
-    }
-
-    private fun levenshtein(a: String, b: String): Int {
-        val dp = IntArray(b.length + 1) { it }
-        for (i in 1..a.length) {
-            var prev = dp[0]
-            dp[0] = i
-            for (j in 1..b.length) {
-                val temp = dp[j]
-                dp[j] = if (a[i - 1] == b[j - 1]) prev
-                        else 1 + min(prev, min(dp[j], dp[j - 1]))
-                prev = temp
-            }
-        }
-        return dp[b.length]
-    }
+    private fun normalize(title: String): String = TextSimilarity.normalize(title)
+    private fun tokenJaccard(a: String, b: String): Float = TextSimilarity.tokenJaccard(a, b)
+    private fun levenshteinRatio(a: String, b: String): Float = TextSimilarity.levenshteinRatio(a, b)
 }

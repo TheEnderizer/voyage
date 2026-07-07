@@ -70,8 +70,12 @@ enum class LibraryTab(val label: String) {
 }
 
 /** Items shown in the home library grid */
-/** How the home library is grouped. */
-enum class HomeViewMode { BOOKS, SERIES, AUTHORS, EBOOKS }
+/** How the home library is grouped (within the Audio section). */
+enum class HomeViewMode { BOOKS, SERIES, AUTHORS }
+
+/** Top-level home section — Audio (audiobooks) vs Ebooks (anything with a connected/standalone
+ *  EPUB). Persisted; the Audio/Ebooks switch sits above the Books/Series/Authors pill. */
+enum class HomeSection { AUDIO, EBOOKS }
 
 /** A selected library item — books, series and authors can be multi-selected together. */
 sealed interface SelKey {
@@ -125,6 +129,7 @@ class HomeViewModel @Inject constructor(
     private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val scanner: AudioFileScanner,
     private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
+    private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
     val playerController: PlayerController
@@ -166,13 +171,17 @@ class HomeViewModel @Inject constructor(
 
     fun connectEpub(bookId: Long, epubPath: String) {
         viewModelScope.launch {
+            paragraphCache.invalidate(bookId)
             val ok = runCatching { ebookScanner.attachEpubToBook(bookId, File(epubPath)) }.getOrDefault(false)
             if (!ok) _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
         }
     }
 
     fun disconnectEpub(bookId: Long) {
-        viewModelScope.launch { repository.setEbook(bookId, null, 0) }
+        viewModelScope.launch {
+            repository.setEbook(bookId, null, 0)   // also clears anchors + chapter map
+            paragraphCache.invalidate(bookId)
+        }
     }
 
     // ── Online cover search ────────────────────────────────────────────────
@@ -309,15 +318,43 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { settings.setHomeViewMode(mode.name) }
     }
 
+    // ── Top-level home section (Audio / Ebooks) ───────────────────────────────
+    val homeSection: StateFlow<HomeSection> =
+        settings.homeSection
+            .map { runCatching { HomeSection.valueOf(it) }.getOrDefault(HomeSection.AUDIO) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeSection.AUDIO)
+
+    fun setHomeSection(section: HomeSection) {
+        viewModelScope.launch { settings.setHomeSection(section.name) }
+    }
+
+    init {
+        // Migration for users who lived in the old "Ebooks" view-mode pill: move them to the new
+        // top-level Ebooks section and reset the (now 3-way) view mode. Runs once — the stale
+        // "EBOOKS" string otherwise just falls back to BOOKS via the valueOf guard above.
+        viewModelScope.launch {
+            if (settings.homeViewMode.first() == "EBOOKS") {
+                settings.setHomeSection(HomeSection.EBOOKS.name)
+                settings.setHomeViewMode(HomeViewMode.BOOKS.name)
+            }
+        }
+    }
+
+    /** True when the library has any book at all (audio or ebook) — drives the empty-state gate so
+     *  a user with only ebooks (or only audiobooks) isn't shown the full EmptyLibrary screen. */
+    val hasAnyBooks: StateFlow<Boolean> =
+        repository.getAllBooksWithProgressUngrouped().map { it.isNotEmpty() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     val gridItems: StateFlow<List<HomeGridItem>> =
         combine(
             repository.getAllBooksWithProgressUngrouped(),
             seriesRepository.getAllSeries(),
             repository.getAllAuthorMeta(),
-            homeViewMode,
+            combine(homeViewMode, homeSection) { mode, section -> mode to section },
             _sortFilter
-        ) { bwpList, seriesList, authorMetas, mode, sf ->
-            buildGridItems(bwpList, seriesList, authorMetas, mode, sf)
+        ) { bwpList, seriesList, authorMetas, (mode, section), sf ->
+            buildGridItems(bwpList, seriesList, authorMetas, mode, section, sf)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Library status tabs ──────────────────────────────────────────────────
@@ -364,41 +401,46 @@ class HomeViewModel @Inject constructor(
         seriesList: List<Series>,
         authorMetas: List<AuthorMeta>,
         mode: HomeViewMode,
+        section: HomeSection,
         sf: SortFilter
     ): List<HomeGridItem> {
         val result = mutableListOf<HomeGridItem>()
 
-        when (mode) {
-            HomeViewMode.BOOKS ->
-                bwpList.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
+        if (section == HomeSection.EBOOKS) {
+            // The Ebooks section is a flat list of everything with a connected/standalone EPUB
+            // (audiobooks-with-epub AND ebook-only rows); the Books/Series/Authors mode is ignored.
+            bwpList.filter { it.book.ebookPath != null }
+                .forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
+        } else {
+            // Audio section: exclude ebook-only rows (they have no audio) — this single filter also
+            // keeps them out of visibleGridItems and tabCounts, which both derive from gridItems.
+            val audioList = bwpList.filter { !it.isEbookOnly }
+            when (mode) {
+                HomeViewMode.BOOKS ->
+                    audioList.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
 
-            HomeViewMode.SERIES -> {
-                val seriesById = seriesList.associateBy { it.id }
-                val (inSeries, standalone) = bwpList.partition { it.book.seriesId != null && seriesById.containsKey(it.book.seriesId) }
-                inSeries.groupBy { it.book.seriesId!! }.forEach { (sid, members) ->
-                    val series = seriesById.getValue(sid)
-                    val ordered = members.sortedWith(compareBy({ it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
-                    val cover = series.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
-                    result.add(HomeGridItem.SeriesItem(series, ordered, cover, ordered.maxOfOrNull { it.lastPlayedMs } ?: series.createdAtMs))
+                HomeViewMode.SERIES -> {
+                    val seriesById = seriesList.associateBy { it.id }
+                    val (inSeries, standalone) = audioList.partition { it.book.seriesId != null && seriesById.containsKey(it.book.seriesId) }
+                    inSeries.groupBy { it.book.seriesId!! }.forEach { (sid, members) ->
+                        val series = seriesById.getValue(sid)
+                        val ordered = members.sortedWith(compareBy({ it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
+                        val cover = series.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                        result.add(HomeGridItem.SeriesItem(series, ordered, cover, ordered.maxOfOrNull { it.lastPlayedMs } ?: series.createdAtMs))
+                    }
+                    standalone.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
                 }
-                standalone.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
-            }
 
-            HomeViewMode.AUTHORS -> {
-                val metaByName = authorMetas.associateBy { it.name }
-                // Group by the effective author (override-aware) so an author you change is reflected.
-                bwpList.groupBy { it.book.displayAuthor.ifBlank { "Unknown" } }.forEach { (name, members) ->
-                    val ordered = members.sortedWith(compareBy({ it.book.seriesName ?: "" }, { it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
-                    val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
-                    result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))
+                HomeViewMode.AUTHORS -> {
+                    val metaByName = authorMetas.associateBy { it.name }
+                    // Group by the effective author (override-aware) so an author you change is reflected.
+                    audioList.groupBy { it.book.displayAuthor.ifBlank { "Unknown" } }.forEach { (name, members) ->
+                        val ordered = members.sortedWith(compareBy({ it.book.seriesName ?: "" }, { it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
+                        val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                        result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))
+                    }
                 }
             }
-
-            // Every book with a connected or standalone ebook — audiobooks-with-epub AND
-            // ebook-only rows both show here, flat (no series/author grouping in this lens).
-            HomeViewMode.EBOOKS ->
-                bwpList.filter { it.book.ebookPath != null }
-                    .forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
         }
 
         // Sort using the user-selected SortFilter
@@ -411,7 +453,10 @@ class HomeViewModel @Inject constructor(
             SortOption.DATE_ADDED -> members(item).maxOf { it.book.addedDateMs }.toDouble()
             SortOption.DURATION -> members(item).sumOf { it.book.totalDurationMs }.toDouble()
             SortOption.LAST_PLAYED -> item.lastPlayedMs.toDouble()
-            SortOption.PROGRESS -> members(item).maxOf { it.progressFraction.toDouble() }
+            // In the Ebooks section, PROGRESS sorts by reading progress, not audio position.
+            SortOption.PROGRESS ->
+                if (section == HomeSection.EBOOKS) members(item).maxOf { it.readingFraction.toDouble() }
+                else members(item).maxOf { it.progressFraction.toDouble() }
             else -> 0.0
         }
         fun textKey(item: HomeGridItem): String = when (item) {

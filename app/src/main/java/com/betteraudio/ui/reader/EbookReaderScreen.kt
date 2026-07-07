@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
@@ -94,6 +96,7 @@ private fun BoxScope.ReaderContent(
     var showFontSize by remember { mutableStateOf(false) }
     var showAlign by remember { mutableStateOf(false) }
     var showOverflow by remember { mutableStateOf(false) }
+    var showSyncDialog by remember { mutableStateOf(false) }
 
     val bg = MaterialTheme.colorScheme.background
     val fg = MaterialTheme.colorScheme.onBackground
@@ -180,6 +183,17 @@ private fun BoxScope.ReaderContent(
                             leadingIcon = { Icon(Icons.Default.Rule, null) },
                             onClick = { showOverflow = false; showAlign = true }
                         )
+                        val aligning = state.alignProgress?.running == true
+                        DropdownMenuItem(
+                            text = { Text(if (state.anchorCount > 0) "Re-align sync" else "Improve sync (on device)") },
+                            leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
+                            enabled = !aligning,
+                            onClick = {
+                                showOverflow = false
+                                if (state.modelState is com.betteraudio.data.transcribe.ModelState.Ready) viewModel.improveSync()
+                                else showSyncDialog = true
+                            }
+                        )
                     }
                 }
             },
@@ -225,18 +239,58 @@ private fun BoxScope.ReaderContent(
         }
     }
 
-    if (state.chapterMapApproximate && state.hasAudio) {
-        Surface(
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.tertiaryContainer
-        ) {
-            Text(
-                "Approximate chapter alignment — tap ⋮ > Align chapters to fix",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-            )
+    // ── Sync status (priority: aligning → model downloading → synced → approximate) ──
+    val align = state.alignProgress
+    val model = state.modelState
+    Box(Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 12.dp, end = 12.dp)) {
+        when {
+            align?.running == true -> {
+                val total = align.chaptersTotal.coerceAtLeast(1)
+                Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer, tonalElevation = 2.dp) {
+                    Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column {
+                            Text("Improving sync… ${align.chaptersDone}/$total · ${align.anchorsFound} anchors",
+                                style = MaterialTheme.typography.labelMedium)
+                            LinearProgressIndicator(
+                                progress = { align.chaptersDone.toFloat() / total },
+                                modifier = Modifier.width(180.dp).padding(top = 2.dp)
+                            )
+                        }
+                        IconButton(onClick = { viewModel.cancelSync() }) { Icon(Icons.Default.Close, "Cancel") }
+                    }
+                }
+            }
+            model is com.betteraudio.data.transcribe.ModelState.Downloading ->
+                StatusChip("Downloading speech model… ${model.pct}%", MaterialTheme.colorScheme.secondaryContainer)
+            model is com.betteraudio.data.transcribe.ModelState.Unzipping ->
+                StatusChip("Preparing speech model…", MaterialTheme.colorScheme.secondaryContainer)
+            state.hasAudio && state.anchorCount > 0 ->
+                StatusChip("Synced · ${state.anchorCount} anchors", MaterialTheme.colorScheme.tertiaryContainer)
+            state.chapterMapApproximate && state.hasAudio ->
+                StatusChip("Approximate alignment — ⋮ to align chapters or improve sync", MaterialTheme.colorScheme.tertiaryContainer)
         }
+    }
+
+    if (showSyncDialog) {
+        AlertDialog(
+            onDismissRequest = { showSyncDialog = false },
+            title = { Text("Improve listen ↔ read sync") },
+            text = {
+                Text(
+                    "This transcribes short snippets of the audiobook on your device and matches them " +
+                        "to the ebook text, pinning exact reference points so switching between reading and " +
+                        "listening lands on the right paragraph.\n\nIt needs a one-time ~45 MB English speech " +
+                        "model (works with English audiobooks for now) and runs in the background — you can " +
+                        "keep reading. Wi-Fi recommended for the download."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showSyncDialog = false; viewModel.improveSync() }) {
+                    Text(if (state.modelState is com.betteraudio.data.transcribe.ModelState.Ready) "Start" else "Download & start")
+                }
+            },
+            dismissButton = { TextButton(onClick = { showSyncDialog = false }) { Text("Cancel") } }
+        )
     }
 
     if (showToc) {
@@ -286,6 +340,17 @@ private fun TocSheet(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun StatusChip(text: String, color: Color) {
+    Surface(shape = MaterialTheme.shapes.small, color = color, tonalElevation = 2.dp) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+        )
     }
 }
 

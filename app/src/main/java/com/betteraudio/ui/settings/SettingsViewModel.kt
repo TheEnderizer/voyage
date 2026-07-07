@@ -63,8 +63,18 @@ class SettingsViewModel @Inject constructor(
     private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     private val updateChecker: UpdateChecker,
     private val repository: AudiobookRepository,
-    private val restructurer: com.betteraudio.data.files.LibraryRestructurer
+    private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
+    private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager
 ) : ViewModel() {
+
+    // ── Listen↔read sync speech model ─────────────────────────────────────────
+    val voskModelState: StateFlow<com.betteraudio.data.transcribe.ModelState> =
+        voskModelManager.state.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            com.betteraudio.data.transcribe.ModelState.NotDownloaded
+        )
+    fun downloadVoskModel() = viewModelScope.launch { voskModelManager.download() }
+    fun deleteVoskModel() = voskModelManager.delete()
 
     // ── File restructure ─────────────────────────────────────────────────────
     data class RestructureUi(

@@ -684,20 +684,54 @@ class PlayerViewModel @Inject constructor(
             val spans = com.betteraudio.sync.AudioSpanBuilder.build(files, chapterEntities)
             if (spans.isEmpty()) return@launch
 
-            val info = withContext(Dispatchers.IO) {
-                runCatching { com.betteraudio.data.ebook.EpubParser(java.io.File(epubPath)).use { it.parse() } }.getOrNull()
-            }
-            if (info == null || info.encrypted || info.spine.isEmpty()) return@launch
-
-            val map = com.betteraudio.sync.ChapterMap.fromJson(book.chapterMapJson) ?: run {
-                val matched = com.betteraudio.sync.ChapterMatcher.autoMatch(spans, info.spine)
-                repository.setChapterMap(bookId, matched.toJson())
-                matched
-            }
-
             val bookPosMs = playbackState.value.bookPositionMs
-            val locator = com.betteraudio.sync.PositionBridge.audioToText(bookPosMs, spans, map, info.spine.size)
-            val overall = (locator.spineIndex + locator.fraction) / info.spine.size
+            val anchors = repository.getSyncAnchorsOnce(bookId)
+                .map { com.betteraudio.sync.AnchorPoint(it.audioMs, it.spineIndex, it.charOffset) }
+
+            // Parse + resolve inside a single parser session (transient — the reader has its own).
+            val locator = withContext(Dispatchers.IO) {
+                com.betteraudio.data.ebook.EpubParser(java.io.File(epubPath)).use { parser ->
+                    val info = runCatching { parser.parse() }.getOrNull()
+                    if (info == null || info.encrypted || info.spine.isEmpty()) return@use null
+                    val paraCache = HashMap<Int, com.betteraudio.data.ebook.SpineParagraphs?>()
+                    fun paragraphsFor(idx: Int): com.betteraudio.data.ebook.SpineParagraphs? =
+                        paraCache.getOrPut(idx) {
+                            info.spine.getOrNull(idx)?.href?.let { href ->
+                                parser.readEntry(href)?.let { com.betteraudio.data.ebook.ParagraphExtractor.extract(it) }
+                            }
+                        }
+
+                    // Prefer the anchors alone (immune to a ChapterMap that's wrong because the
+                    // audio is split into narration "Parts" rather than actual chapters).
+                    if (anchors.size >= 2) {
+                        com.betteraudio.sync.PositionBridge.audioToCharAnchored(bookPosMs, anchors) { idx -> paragraphsFor(idx)?.totalChars ?: 0 }
+                            ?.let { (spineIdx, charOffset) ->
+                                val paras = paragraphsFor(spineIdx)
+                                if (paras != null && paras.totalChars > 0) {
+                                    return@use com.betteraudio.sync.TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
+                                }
+                            }
+                    }
+
+                    val map = com.betteraudio.sync.ChapterMap.fromJson(book.chapterMapJson) ?: run {
+                        val matched = com.betteraudio.sync.ChapterMatcher.autoMatch(spans, info.spine)
+                        repository.setChapterMap(bookId, matched.toJson())
+                        matched
+                    }
+                    val coarse = com.betteraudio.sync.PositionBridge.audioToText(bookPosMs, spans, map, info.spine.size)
+                    val paras = paragraphsFor(coarse.spineIndex)
+                    if (paras == null || paras.totalChars == 0) coarse
+                    else {
+                        val (spineIdx, charOffset) = com.betteraudio.sync.PositionBridge.audioToChar(
+                            bookPosMs, spans, map, info.spine.size, paras.totalChars, anchors
+                        )
+                        com.betteraudio.sync.TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
+                    }
+                }
+            } ?: return@launch
+
+            val spineCount = book.ebookSpineCount.coerceAtLeast(locator.spineIndex + 1)
+            val overall = (locator.spineIndex + locator.fraction) / spineCount
             repository.updateTextPosition(bookId, locator.spineIndex, locator.fraction, overall)
             AppLog.i("Player", "readFromHere book=$bookId pos=${bookPosMs}ms -> spine=${locator.spineIndex} frac=${locator.fraction}")
             onReady(bookId)

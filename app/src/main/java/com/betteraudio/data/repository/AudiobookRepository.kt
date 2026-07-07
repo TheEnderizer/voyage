@@ -34,6 +34,7 @@ class AudiobookRepository @Inject constructor(
     private val listeningHistoryDao: ListeningHistoryDao,
     private val bookGroupDao: com.betteraudio.data.db.dao.BookGroupDao,
     private val authorMetaDao: com.betteraudio.data.db.dao.AuthorMetaDao,
+    private val syncAnchorDao: com.betteraudio.data.db.dao.SyncAnchorDao,
     private val coverEffectBaker: CoverEffectBaker
 ) {
 
@@ -225,9 +226,20 @@ class AudiobookRepository @Inject constructor(
     // ── Ebook (EPUB) support ─────────────────────────────────────────────────
 
     /** Connect (or disconnect, path = null) an epub to an existing book. Always clears the stale
-     *  chapter-alignment map — it only makes sense for the epub it was computed against. */
-    suspend fun setEbook(bookId: Long, path: String?, spineCount: Int) =
-        bookDao.setEbook(bookId, path, spineCount)
+     *  chapter-alignment map AND the forced-alignment anchors — both are specific to the epub they
+     *  were computed against. */
+    suspend fun setEbook(bookId: Long, path: String?, spineCount: Int) {
+        bookDao.setEbook(bookId, path, spineCount)   // also nulls chapterMapJson
+        syncAnchorDao.deleteForBook(bookId)
+    }
+
+    // ── Sync anchors (paragraph-resolution alignment points) ──────────────────
+    suspend fun getSyncAnchorsOnce(bookId: Long): List<com.betteraudio.data.db.entities.SyncAnchor> =
+        syncAnchorDao.getForBookOnce(bookId)
+    fun syncAnchorCount(bookId: Long): kotlinx.coroutines.flow.Flow<Int> = syncAnchorDao.countForBook(bookId)
+    suspend fun insertSyncAnchors(anchors: List<com.betteraudio.data.db.entities.SyncAnchor>) =
+        syncAnchorDao.insertAll(anchors)
+    suspend fun deleteSyncAnchors(bookId: Long) = syncAnchorDao.deleteForBook(bookId)
 
     suspend fun updateEbookSpineCount(bookId: Long, spineCount: Int) =
         bookDao.updateEbookSpineCount(bookId, spineCount)

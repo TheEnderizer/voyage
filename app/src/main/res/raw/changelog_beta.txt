@@ -3,6 +3,15 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.1b] - 2026-07-07
+
+### Added
+- Ebooks are now a top-level section of their own (Audio | Ebooks switch on the home screen) instead of a view inside the audio library
+- Listen ↔ read sync now goes down to the paragraph: an optional, fully on-device speech-recognition pass (Settings → AI, or "Improve sync" in the reader) finds verified reference points through the chapter so "Read from here" / "Listen from here" land much closer to the exact spot, even with no internet connection
+
+### Fixed
+- Paragraph-resolution sync no longer trusts the (sometimes wrong) audio-chapter-to-epub-chapter mapping once it has verified reference points — audiobooks split into narration "Parts" rather than real chapters could otherwise throw the sync off
+
 ## [1.8.0b] - 2026-07-06
 
 ### Added

@@ -14,9 +14,12 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "1.8.0b"
+        versionCode = 41
+        versionName = "1.8.1b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
+        // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     buildTypes {
@@ -87,6 +90,11 @@ dependencies {
 
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
+
+    // Vosk — offline (on-device) speech recognition for paragraph-resolution sync.
+    // JNA must be the AAR packaging (Vosk loads its native libs through it).
+    implementation(libs.vosk.android)
+    implementation(variantOf(libs.jna) { artifactType("aar") })
 
     debugImplementation(libs.androidx.ui.tooling)
 }

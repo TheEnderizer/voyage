@@ -93,6 +93,8 @@ fun HomeScreen(
     val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
     val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
+    val homeSection by viewModel.homeSection.collectAsStateWithLifecycle()
+    val hasAnyBooks by viewModel.hasAnyBooks.collectAsStateWithLifecycle()
     val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
 
     val isSelectionMode = selection.isNotEmpty()
@@ -162,7 +164,9 @@ fun HomeScreen(
         Box(Modifier.fillMaxSize().padding(padding)) {
 
             // ── Scrolling library ──────────────────────────────────────────
-            if (gridItems.isEmpty()) {
+            // Only the truly-empty library shows the full onboarding screen; a library that has
+            // books but none in the CURRENT section falls through to a per-section empty message.
+            if (!hasAnyBooks) {
                 EmptyLibrary(
                     onScan = ::onScanClick,
                     onOpenSettings = onOpenSettings,
@@ -184,11 +188,20 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
+                    // Top-level Audio | Ebooks switch — sits above the header as the section selector.
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        HomeSectionRow(
+                            selected = homeSection,
+                            onSelect = { viewModel.setHomeSection(it) }
+                        )
+                    }
+
                     // Header — stays put; the selection bar floats over it as an overlay
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         HomeHeader(
                             itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
                             viewMode = homeViewMode,
+                            section = homeSection,
                             scanning = scan.status == ScanStatus.Running,
                             onSearch = onOpenSearch,
                             onSort = { showSortFilter = true },
@@ -196,12 +209,14 @@ fun HomeScreen(
                         )
                     }
 
-                    // View-mode switch (Books / Series / Authors)
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        HomeViewModeRow(
-                            selected = homeViewMode,
-                            onSelect = { viewModel.setHomeViewMode(it) }
-                        )
+                    // View-mode switch (Books / Series / Authors) — only within the Audio section.
+                    if (homeSection == HomeSection.AUDIO) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            HomeViewModeRow(
+                                selected = homeViewMode,
+                                onSelect = { viewModel.setHomeViewMode(it) }
+                            )
+                        }
                     }
 
                     // Library status tabs
@@ -220,7 +235,9 @@ fun HomeScreen(
                                     LibraryTab.LISTENING -> "Nothing in progress yet"
                                     LibraryTab.NOT_STARTED -> "No unstarted books"
                                     LibraryTab.FINISHED -> "No finished books yet"
-                                    LibraryTab.ALL -> "Your library is empty"
+                                    LibraryTab.ALL -> if (homeSection == HomeSection.EBOOKS)
+                                        "No ebooks yet — connect an EPUB from a book's options, or set an ebook folder in Settings"
+                                    else "No audiobooks yet"
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -241,13 +258,13 @@ fun HomeScreen(
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         isNowPlaying = playbackState.bookId == gridItem.bwp.book.id && playbackState.groupId == -1L,
-                                        useReadingProgress = homeViewMode == HomeViewMode.EBOOKS || ebookOnly,
+                                        useReadingProgress = homeSection == HomeSection.EBOOKS,
                                         onClick = {
                                             when {
                                                 isSelectionMode -> viewModel.toggleSelection(key)
-                                                // The user chose the reading lens (or this row has no
-                                                // audio at all) — tap always opens the reader.
-                                                homeViewMode == HomeViewMode.EBOOKS || ebookOnly ->
+                                                // In the Ebooks section (or an audio-less ebook row)
+                                                // a tap opens the reader.
+                                                homeSection == HomeSection.EBOOKS || ebookOnly ->
                                                     onOpenReader(gridItem.bwp.book.id)
                                                 else -> onOpenBookInfo(gridItem.bwp.book.id)
                                             }
@@ -494,6 +511,7 @@ fun HomeScreen(
 private fun HomeHeader(
     itemCount: Int,
     viewMode: HomeViewMode,
+    section: HomeSection,
     scanning: Boolean,
     onSearch: () -> Unit,
     onSort: () -> Unit,
@@ -507,15 +525,14 @@ private fun HomeHeader(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                "Library",
+                if (section == HomeSection.EBOOKS) "Ebooks" else "Library",
                 style = MaterialTheme.typography.headlineLarge,
                 fontWeight = FontWeight.Bold
             )
-            val noun = when (viewMode) {
+            val noun = if (section == HomeSection.EBOOKS) "ebook" else when (viewMode) {
                 HomeViewMode.BOOKS -> "book"
                 HomeViewMode.SERIES -> "title"
                 HomeViewMode.AUTHORS -> "author"
-                HomeViewMode.EBOOKS -> "ebook"
             }
             Text(
                 if (scanning) "Scanning library…"
@@ -655,34 +672,65 @@ private fun SelectionHeader(
     }
 }
 
+/** Top-level Audio | Ebooks segmented switch — narrower/centred so it reads as a higher-level
+ *  selector than the Books/Series/Authors pill below it. */
+@Composable
+private fun HomeSectionRow(
+    selected: HomeSection,
+    onSelect: (HomeSection) -> Unit
+) {
+    Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
+        SegmentedPillRow(
+            options = listOf(HomeSection.AUDIO to "Audio", HomeSection.EBOOKS to "Ebooks"),
+            selected = selected,
+            onSelect = onSelect,
+            modifier = Modifier.fillMaxWidth(0.62f)
+        )
+    }
+}
+
 /** Books / Series / Authors segmented switch — one pill container with a sliding selection. */
 @Composable
 private fun HomeViewModeRow(
     selected: HomeViewMode,
     onSelect: (HomeViewMode) -> Unit
 ) {
-    val modes = listOf(
-        HomeViewMode.BOOKS to "Books",
-        HomeViewMode.SERIES to "Series",
-        HomeViewMode.AUTHORS to "Authors",
-        HomeViewMode.EBOOKS to "Ebooks"
+    SegmentedPillRow(
+        options = listOf(
+            HomeViewMode.BOOKS to "Books",
+            HomeViewMode.SERIES to "Series",
+            HomeViewMode.AUTHORS to "Authors"
+        ),
+        selected = selected,
+        onSelect = onSelect,
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
     )
+}
+
+/** Shared pill-container segmented control with a sliding accent selection. */
+@Composable
+private fun <T> SegmentedPillRow(
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier
+) {
     Surface(
         shape = Pill,
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
             alpha = if (com.betteraudio.ui.theme.immersive()) 0.32f else 1f
         ),
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+        modifier = modifier
     ) {
         Row(Modifier.fillMaxWidth().padding(4.dp)) {
-            modes.forEach { (mode, label) ->
-                val isSel = mode == selected
+            options.forEach { (value, label) ->
+                val isSel = value == selected
                 val bg by animateColorAsState(
                     if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    tween(220), label = "modeBg"
+                    tween(220), label = "segBg"
                 )
                 Surface(
-                    onClick = { onSelect(mode) },
+                    onClick = { onSelect(value) },
                     shape = Pill,
                     color = bg,
                     modifier = Modifier.weight(1f)
@@ -971,6 +1019,7 @@ private fun EmptyLibrary(
         HomeHeader(
             itemCount = 0,
             viewMode = HomeViewMode.BOOKS,
+            section = HomeSection.AUDIO,
             scanning = false,
             onSearch = onOpenSearch,
             onSort = {},

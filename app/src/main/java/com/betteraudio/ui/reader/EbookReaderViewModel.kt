@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -55,6 +58,10 @@ data class ReaderUiState(
     val fontSizePct: Int = 100,
     val hasAudio: Boolean = false,
     val chapterMapApproximate: Boolean = false,
+    // Tier-2 sync state: number of verified anchors, live alignment progress, and the model status.
+    val anchorCount: Int = 0,
+    val alignProgress: com.betteraudio.data.transcribe.AlignProgress? = null,
+    val modelState: com.betteraudio.data.transcribe.ModelState = com.betteraudio.data.transcribe.ModelState.NotDownloaded,
     val error: ReaderError? = null
 ) {
     val currentSpineTitle: String?
@@ -67,7 +74,10 @@ class EbookReaderViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
     private val settings: SettingsStore,
-    private val playerController: PlayerController
+    private val playerController: PlayerController,
+    private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache,
+    private val syncAligner: com.betteraudio.data.transcribe.SyncAligner,
+    private val modelManager: com.betteraudio.data.transcribe.VoskModelManager
 ) : ViewModel() {
 
     private val bookId: Long = savedStateHandle["bookId"] ?: -1L
@@ -78,13 +88,34 @@ class EbookReaderViewModel @Inject constructor(
     private var parser: EpubParser? = null
     private var cachedSpans: List<AudioChapterSpan> = emptyList()
     private var cachedMap: ChapterMap = ChapterMap(emptyList())
+    // Verified alignment anchors (Tier 2). Empty until "Improve sync" has run — Phase-5 populates.
+    private var cachedAnchors: List<com.betteraudio.sync.AnchorPoint> = emptyList()
+    private var spineList: List<SpineItem> = emptyList()
     private var saveJob: Job? = null
+
+    /** Parsed paragraphs for a spine item (cached across the session); null if unreadable. */
+    private fun paragraphsFor(spineIndex: Int): com.betteraudio.data.ebook.SpineParagraphs? {
+        val href = spineList.getOrNull(spineIndex)?.href ?: return null
+        val p = parser ?: return null
+        return paragraphCache.get(bookId, spineIndex) { p.readEntry(href) }
+    }
 
     init {
         if (bookId == -1L) {
             _state.value = ReaderUiState(loading = false, error = ReaderError.MISSING_FILE)
         } else {
             viewModelScope.launch { load() }
+            // Live sync state → UI. The aligner is a singleton, so a run started here keeps going
+            // (and stays observable) even after the reader is closed and re-opened.
+            repository.syncAnchorCount(bookId)
+                .onEach { count -> _state.update { it.copy(anchorCount = count) } }
+                .launchIn(viewModelScope)
+            syncAligner.progress
+                .onEach { m -> _state.update { it.copy(alignProgress = m[bookId]) } }
+                .launchIn(viewModelScope)
+            modelManager.state
+                .onEach { s -> _state.update { it.copy(modelState = s) } }
+                .launchIn(viewModelScope)
         }
     }
 
@@ -119,6 +150,7 @@ class EbookReaderViewModel @Inject constructor(
         if (book.ebookSpineCount != info.spine.size) {
             runCatching { repository.updateEbookSpineCount(book.id, info.spine.size) }
         }
+        spineList = info.spine
 
         val hasAudio = book.fileCount > 0
         val progress = repository.getProgressForBookOnce(bookId)
@@ -130,14 +162,16 @@ class EbookReaderViewModel @Inject constructor(
             val files = repository.getAudioFilesOnce(bookId)
             val chapters = repository.getChaptersForBookOnce(bookId)
             cachedSpans = AudioSpanBuilder.build(files, chapters)
+            cachedAnchors = repository.getSyncAnchorsOnce(bookId)
+                .map { com.betteraudio.sync.AnchorPoint(it.audioMs, it.spineIndex, it.charOffset) }
             if (cachedSpans.isNotEmpty()) {
                 cachedMap = ensureChapterMap(book, cachedSpans, info.spine)
                 approximate = isApproximate(cachedMap)
                 if (progress?.lastMode == "AUDIO") {
                     // Continue where you left off listening: derive the text locator from the
-                    // live audio position rather than a (possibly stale) stored text position.
+                    // live audio position (paragraph-resolution via char offsets + anchors).
                     val bookPosMs = bookPositionMsFromProgress(progress, files)
-                    val locator = PositionBridge.audioToText(bookPosMs, cachedSpans, cachedMap, info.spine.size)
+                    val locator = audioPositionToLocator(bookPosMs, info.spine.size)
                     initialSpine = locator.spineIndex
                     initialFraction = locator.fraction
                 }
@@ -285,8 +319,7 @@ class EbookReaderViewModel @Inject constructor(
             cachedMap = ensureChapterMap(book, cachedSpans, s.spine)
         }
 
-        val locator = TextLocator(s.currentSpineIndex, s.restoreFraction)
-        val targetMs = PositionBridge.textToAudio(locator, cachedSpans, cachedMap)
+        val targetMs = locatorToAudio(s.currentSpineIndex, s.restoreFraction)
 
         val progress = repository.getProgressForBookOnce(book.id)
         val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
@@ -305,6 +338,64 @@ class EbookReaderViewModel @Inject constructor(
         AppLog.i("Reader", "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=${s.restoreFraction} -> ${targetMs}ms")
         return book.id
     }
+
+    /** Audio book-position → text locator at paragraph resolution (char offset + anchors), with a
+     *  fallback to the coarse chapter-fraction mapping when the spine has no extractable text. */
+    private fun audioPositionToLocator(bookPosMs: Long, spineCount: Int): TextLocator {
+        // Prefer the anchors alone: they were each verified against the WHOLE book's text, so
+        // they're immune to a ChapterMap that's wrong because the audio is split into narration
+        // "Parts" rather than actual chapters (see PositionBridge.audioToCharAnchored).
+        if (cachedAnchors.size >= 2) {
+            PositionBridge.audioToCharAnchored(bookPosMs, cachedAnchors) { idx -> paragraphsFor(idx)?.totalChars ?: 0 }
+                ?.let { (spineIdx, charOffset) ->
+                    val paras = paragraphsFor(spineIdx)
+                    if (paras != null && paras.totalChars > 0) {
+                        return TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
+                    }
+                }
+        }
+        val coarse = PositionBridge.audioToText(bookPosMs, cachedSpans, cachedMap, spineCount)
+        val paras = paragraphsFor(coarse.spineIndex)
+        if (paras == null || paras.totalChars == 0) return coarse
+        val (spineIdx, charOffset) = PositionBridge.audioToChar(
+            bookPosMs, cachedSpans, cachedMap, spineCount, paras.totalChars, cachedAnchors
+        )
+        return TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
+    }
+
+    /** Text scroll position → audio book-position (char offset + anchors), with the coarse
+     *  chapter-fraction fallback. */
+    private fun locatorToAudio(spineIndex: Int, fraction: Float): Long {
+        val paras = paragraphsFor(spineIndex)
+        if (paras == null || paras.totalChars == 0) {
+            return PositionBridge.textToAudio(TextLocator(spineIndex, fraction), cachedSpans, cachedMap)
+        }
+        val charOffset = paras.charOffsetForFraction(fraction)
+        if (cachedAnchors.size >= 2) {
+            PositionBridge.charToAudioAnchored(spineIndex, charOffset, cachedAnchors) { idx -> paragraphsFor(idx)?.totalChars ?: 0 }
+                ?.let { return it }
+        }
+        return PositionBridge.charToAudio(spineIndex, charOffset, paras.totalChars, cachedSpans, cachedMap, cachedAnchors)
+    }
+
+    // ── Tier-2 sync (on-device forced alignment) ────────────────────────────────
+
+    /** "Improve sync": align now if the model is ready, otherwise download it first then align. */
+    fun improveSync() {
+        val s = _state.value
+        if (!s.hasAudio || s.book == null) return
+        when (s.modelState) {
+            is com.betteraudio.data.transcribe.ModelState.Ready -> syncAligner.start(bookId)
+            is com.betteraudio.data.transcribe.ModelState.Downloading,
+            com.betteraudio.data.transcribe.ModelState.Unzipping -> { /* already in progress */ }
+            else -> viewModelScope.launch {
+                modelManager.download()
+                if (modelManager.modelDirOrNull() != null) syncAligner.start(bookId)
+            }
+        }
+    }
+
+    fun cancelSync() = syncAligner.cancel(bookId)
 
     // ── Manual chapter alignment ────────────────────────────────────────────────
 
