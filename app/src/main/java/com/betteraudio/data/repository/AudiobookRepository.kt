@@ -298,14 +298,21 @@ class AudiobookRepository @Inject constructor(
     }
 
     /** When a standalone ebook-only row is being merged into a newly-connected audiobook, carry
-     *  its reading progress over — but only if the audiobook doesn't already have its own (a
-     *  book that was already being read/listened to keeps its own position). */
+     *  its reading progress AND its reading/listening history over — this is what makes the two
+     *  books' history "merged" once linked, rather than the standalone row's history being lost to
+     *  cascade delete when it's removed. The *position* carry-over only applies if the audiobook
+     *  doesn't already have its own (a book already being read/listened to keeps its own position),
+     *  but history (skip events, listening sessions) is always reassigned regardless. */
     suspend fun mergeStandaloneEbookProgress(fromBookId: Long, toBookId: Long) {
         val existingTarget = progressDao.getProgressForBookOnce(toBookId)
-        if (existingTarget?.textSpineIndex != null) return
-        val source = progressDao.getProgressForBookOnce(fromBookId) ?: return
-        val spine = source.textSpineIndex ?: return
-        updateTextPosition(toBookId, spine, source.textFraction ?: 0f, source.textOverallFraction)
+        if (existingTarget?.textSpineIndex == null) {
+            progressDao.getProgressForBookOnce(fromBookId)?.textSpineIndex?.let { spine ->
+                val source = progressDao.getProgressForBookOnce(fromBookId)!!
+                updateTextPosition(toBookId, spine, source.textFraction ?: 0f, source.textOverallFraction)
+            }
+        }
+        listeningHistoryDao.reassignSkipsToBook(fromBookId, toBookId)
+        listeningHistoryDao.reassignSessionsToBook(fromBookId, toBookId)
     }
 
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */

@@ -94,6 +94,10 @@ fun FolderBrowser(
                                     // so keep the buttons clear of the gesture/nav bar and the IME.
                                     .navigationBarsPadding()
                                     .imePadding()
+                                    // Extra fixed cushion beyond the computed inset — some OEM skins
+                                    // under-report the gesture-nav inset for Dialog windows, which
+                                    // otherwise leaves these buttons sitting right at the edge.
+                                    .padding(bottom = 8.dp)
                                     .padding(16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
@@ -113,7 +117,7 @@ fun FolderBrowser(
                         }
                     } else {
                         Surface(tonalElevation = 3.dp) {
-                            Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(16.dp)) {
+                            Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(bottom = 8.dp).padding(16.dp)) {
                                 OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                             }
                         }

@@ -3,6 +3,19 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.3b] - 2026-07-08
+
+### Added
+- Listening and reading are now linked: play the audiobook after reading and it picks up from where you stopped reading (and vice versa) — whichever you did more recently wins
+- "Listen from here", "Read from here", and chapter/TOC jumps in the reader now show up in a book's History, alongside the existing listening skips — and if a standalone ebook gets connected to its audiobook, their two histories merge into one instead of the ebook's being lost
+
+### Fixed
+- The mini player now shows the last-played book immediately on a cold app launch, instead of staying blank until you open the full player
+- Cover art: a `cover.png` dropped into a book's own folder now takes priority over the auto-extracted embedded cover; covers set from the in-app search are also saved as `cover.png` so they're easy to find/replace
+- Fixed the ebook reader sometimes forgetting your exact scroll position if you closed the book right after scrolling
+- Paragraph-resolution sync alignment can now be exported/imported as a `mapping.json` file inside a book's folder — carried over automatically on a rescan, or on demand from the reader's overflow menu
+- Folder picker: Cancel/Select buttons pushed further clear of the gesture bar on some devices
+
 ## [1.8.2b] - 2026-07-07
 
 ### Changed

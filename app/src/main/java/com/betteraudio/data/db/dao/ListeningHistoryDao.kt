@@ -29,6 +29,12 @@ interface ListeningHistoryDao {
     @Query("DELETE FROM listening_sessions WHERE bookId = :bookId")
     suspend fun deleteSessionsForBook(bookId: Long)
 
+    // Re-parent a standalone ebook-only book's history onto the audiobook row it's being merged
+    // into (see AudiobookRepository.mergeStandaloneEbookProgress) — otherwise it would be lost to
+    // the standalone row's cascade delete instead of being "merged" as expected.
+    @Query("UPDATE listening_sessions SET bookId = :toBookId WHERE bookId = :fromBookId")
+    suspend fun reassignSessionsToBook(fromBookId: Long, toBookId: Long)
+
     // ── Confirmed skips ────────────────────────────────────────────────────
     @Insert
     suspend fun insertSkip(skip: SkipEvent): Long
@@ -38,4 +44,7 @@ interface ListeningHistoryDao {
 
     @Query("DELETE FROM skip_events WHERE bookId = :bookId")
     suspend fun deleteSkipsForBook(bookId: Long)
+
+    @Query("UPDATE skip_events SET bookId = :toBookId WHERE bookId = :fromBookId")
+    suspend fun reassignSkipsToBook(fromBookId: Long, toBookId: Long)
 }

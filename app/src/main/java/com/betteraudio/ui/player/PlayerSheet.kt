@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -162,6 +163,18 @@ fun PlayerSheet(
         if (playback.bookId != -1L) controller.prime(playback.bookId, playback.groupId)
     }
 
+    // Cold-start restore (PlayerSheetController.restore): `target` is set to the last-played book,
+    // but PlayerController.playbackState stays empty until playback actually starts — which is why
+    // the mini bar used to render blank while the full player (which loads its book straight from
+    // Room) worked fine. Load that same book/progress data here as a fallback the mini bar can show
+    // until real playback state takes over.
+    val restoreVm: MiniPlayerRestoreViewModel = hiltViewModel()
+    val usingLivePlayback = playback.bookId != -1L || playback.groupId != -1L
+    LaunchedEffect(target?.bookId, usingLivePlayback) {
+        restoreVm.setBookId(if (!usingLivePlayback) target?.bookId ?: -1L else -1L)
+    }
+    val restoreInfo by restoreVm.info.collectAsStateWithLifecycle()
+
     // When a series auto-advances into the next book, follow it in the open full player.
     LaunchedEffect(Unit) {
         playerController.seriesAdvanced.collect { nextBookId ->
@@ -222,11 +235,19 @@ fun PlayerSheet(
         // the same element travelling, not a crossfade. The mini content hides the moment the
         // morph takes over; only the pill surface fades out.
         if (!(hideMiniBar && !expanded)) MiniPlayerBar(
-            title = if (playback.groupId != -1L) playback.groupName else playback.bookTitle,
-            coverPath = playback.coverArtUri?.removePrefix("file://"),
-            isPlaying = playback.isPlaying,
-            progress = if (playback.bookTotalDurationMs > 0)
-                (playback.bookPositionMs.toFloat() / playback.bookTotalDurationMs).coerceIn(0f, 1f) else 0f,
+            title = when {
+                usingLivePlayback && playback.groupId != -1L -> playback.groupName
+                usingLivePlayback -> playback.bookTitle
+                else -> restoreInfo?.title.orEmpty()
+            },
+            coverPath = if (usingLivePlayback) playback.coverArtUri?.removePrefix("file://") else restoreInfo?.coverArtPath,
+            isPlaying = usingLivePlayback && playback.isPlaying,
+            progress = when {
+                usingLivePlayback && playback.bookTotalDurationMs > 0 ->
+                    (playback.bookPositionMs.toFloat() / playback.bookTotalDurationMs).coerceIn(0f, 1f)
+                usingLivePlayback -> 0f
+                else -> restoreInfo?.progress ?: 0f
+            },
             enabled = !expanded,
             onTap = {
                 if (playback.groupId != -1L) controller.open(groupId = playback.groupId)

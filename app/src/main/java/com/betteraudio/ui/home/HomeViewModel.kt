@@ -201,16 +201,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val book = repository.getBookById(bookId).first()
             val folder = book?.folderPath?.let { File(it) }
-            // Prefer storing the cover INSIDE the book's folder (a timestamped ".cover_*.jpg") so it
-            // persists with the audio and travels with a restructure move. Fall back to internal
-            // storage for synthetic multi-book folders ("dir::stem", not a real directory).
+            // Prefer storing the cover INSIDE the book's folder as "cover.png" — a stable, visible
+            // name (rather than a timestamped hidden file) so it persists with the audio, travels
+            // with a restructure move, AND is itself the top of the cover-resolution priority the
+            // scanner checks on every rescan (see AudioFileScanner). Fall back to internal storage
+            // for synthetic multi-book folders ("dir::stem", not a real directory).
             val path = if (folder != null && folder.isDirectory) {
-                val target = File(folder, ".cover_${System.currentTimeMillis()}.jpg")
+                val target = File(folder, "cover.png")
                 if (coverSearchService.downloadTo(imageUrl, target)) {
                     // Remove a previous app-written cover in the same folder to avoid clutter.
                     book.coverArtPath?.let { old ->
                         val f = File(old)
-                        if (f.parentFile == folder && f.name.startsWith(".cover")) runCatching { f.delete() }
+                        if (f.parentFile == folder && f.name.startsWith(".cover") && f != target) runCatching { f.delete() }
                     }
                     target.absolutePath
                 } else null
@@ -518,13 +520,22 @@ class HomeViewModel @Inject constructor(
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
             val progress = bwp.progress
-            val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-            val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            // If reading is the freshest activity (lastMode == TEXT) and an epub is connected,
+            // resume from the equivalent converted audio position instead of the stale audio spot
+            // — the audio-side half of the two-way listen↔read resume link (mirrors PlayerViewModel.play()).
+            val bridgedMs = com.betteraudio.sync.TextToAudioResume.resolve(bwp.book, progress, files, repository)
             // Effective audio: book override → series default → global default preset → fallback.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
             val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
-            playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+            if (bridgedMs != null) {
+                playerController.playBook(bwp.book, files, 0, 0L, speed)
+                playerController.bookSeekTo(bridgedMs)
+            } else {
+                val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
+                val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+                playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+            }
             playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
             playerController.setEqBands(com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson))
             playerController.setSkipSilence(com.betteraudio.playback.AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))

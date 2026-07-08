@@ -62,6 +62,10 @@ data class ReaderUiState(
     val anchorCount: Int = 0,
     val alignProgress: com.betteraudio.data.transcribe.AlignProgress? = null,
     val modelState: com.betteraudio.data.transcribe.ModelState = com.betteraudio.data.transcribe.ModelState.NotDownloaded,
+    // A bundled "mapping.json" (see MappingFileIO) sitting in the book's folder — lets the user
+    // manually (re)import it instead of waiting for the next scan to pick it up.
+    val mappingFileAvailable: Boolean = false,
+    val mappingImportMessage: String? = null,
     val error: ReaderError? = null
 ) {
     val currentSpineTitle: String?
@@ -92,6 +96,12 @@ class EbookReaderViewModel @Inject constructor(
     private var cachedAnchors: List<com.betteraudio.sync.AnchorPoint> = emptyList()
     private var spineList: List<SpineItem> = emptyList()
     private var saveJob: Job? = null
+    // Live top-of-viewport scroll fraction for the current spine — updated immediately on every
+    // scroll event (unlike `state.restoreFraction`, which is a one-shot "restore to on load" value
+    // that's only set when a chapter loads/jumps and is never touched by scrolling). "Listen from
+    // here" must read this, not restoreFraction, or it always seeks to wherever the chapter was
+    // last opened at rather than where the reader is actually scrolled to.
+    private var liveScrollFraction: Float = 0f
 
     /** Parsed paragraphs for a spine item (cached across the session); null if unreadable. */
     private fun paragraphsFor(spineIndex: Int): com.betteraudio.data.ebook.SpineParagraphs? {
@@ -184,6 +194,12 @@ class EbookReaderViewModel @Inject constructor(
             }
         }
 
+        val mappingAvailable = hasAudio && File(book.folderPath).let { dir ->
+            dir.isDirectory && com.betteraudio.data.sync.MappingFileIO.mappingFile(dir).isFile
+        }
+
+        liveScrollFraction = initialFraction
+
         _state.value = ReaderUiState(
             loading = false,
             book = book,
@@ -192,6 +208,7 @@ class EbookReaderViewModel @Inject constructor(
             restoreFraction = initialFraction,
             hasAudio = hasAudio,
             chapterMapApproximate = approximate,
+            mappingFileAvailable = mappingAvailable,
             fontSizePct = settings.readerFontSize.first()
         )
     }
@@ -233,6 +250,7 @@ class EbookReaderViewModel @Inject constructor(
         val next = (s.currentSpineIndex + 1).coerceAtMost(s.spine.size - 1)
         if (next == s.currentSpineIndex) return
         flushNow(s.currentSpineIndex, 1f)
+        recordTextSkip(s.currentSpineIndex, liveScrollFraction, next, 0f)
         jumpToSpine(next, 0f)
     }
 
@@ -241,17 +259,20 @@ class EbookReaderViewModel @Inject constructor(
         val prev = (s.currentSpineIndex - 1).coerceAtLeast(0)
         if (prev == s.currentSpineIndex) return
         flushNow(s.currentSpineIndex, 0f)
+        recordTextSkip(s.currentSpineIndex, liveScrollFraction, prev, 0f)
         jumpToSpine(prev, 0f)
     }
 
     fun openSpine(index: Int) {
         val s = _state.value
         val clamped = index.coerceIn(0, s.spine.size - 1)
-        flushNow(s.currentSpineIndex, s.restoreFraction)
+        flushNow(s.currentSpineIndex, liveScrollFraction)
+        if (clamped != s.currentSpineIndex) recordTextSkip(s.currentSpineIndex, liveScrollFraction, clamped, 0f)
         jumpToSpine(clamped, 0f)
     }
 
     private fun jumpToSpine(index: Int, fraction: Float) {
+        liveScrollFraction = fraction
         _state.value = _state.value.copy(
             currentSpineIndex = index, restoreFraction = fraction,
             restoreToken = _state.value.restoreToken + 1
@@ -267,8 +288,11 @@ class EbookReaderViewModel @Inject constructor(
 
     // ── Position persistence ────────────────────────────────────────────────────
 
-    /** Called by the WebView as the user scrolls; debounced ~1s. */
+    /** Called by the WebView as the user scrolls. The DB write is debounced ~1s, but
+     *  [liveScrollFraction] updates immediately so "Listen from here" always reads the reader's
+     *  true current position, not a stale/unsaved one. */
     fun onScrollFraction(spineIndex: Int, fraction: Float) {
+        liveScrollFraction = fraction
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             delay(1_000)
@@ -281,6 +305,15 @@ class EbookReaderViewModel @Inject constructor(
     fun flushNow(spineIndex: Int, fraction: Float) {
         saveJob?.cancel()
         viewModelScope.launch(NonCancellable) { persist(spineIndex, fraction) }
+    }
+
+    /** Immediate save of the current spine + the live scroll position — this is what "closing the
+     *  book" should call. Using `state.restoreFraction` there instead would save the wrong spot:
+     *  it's a one-shot "restore to on load" value that scrolling never updates, so closing shortly
+     *  after scrolling (before the ~1s debounced auto-save in [onScrollFraction] fires) would
+     *  silently overwrite a good pending save with a stale one. */
+    fun flushCurrent() {
+        flushNow(_state.value.currentSpineIndex, liveScrollFraction)
     }
 
     private suspend fun persist(spineIndex: Int, fraction: Float) {
@@ -319,7 +352,7 @@ class EbookReaderViewModel @Inject constructor(
             cachedMap = ensureChapterMap(book, cachedSpans, s.spine)
         }
 
-        val targetMs = locatorToAudio(s.currentSpineIndex, s.restoreFraction)
+        val targetMs = locatorToAudio(s.currentSpineIndex, liveScrollFraction)
 
         val progress = repository.getProgressForBookOnce(book.id)
         val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
@@ -332,11 +365,46 @@ class EbookReaderViewModel @Inject constructor(
         playerController.setSkipSilence(AudioCascade.skipSilence(book.skipSilenceEnabled, series?.skipSilenceEnabled))
         playerController.bookSeekTo(targetMs)
 
+        val fromMs = progress?.let { bookPositionMsFromProgress(it, files) } ?: 0L
+        recordAudioSkip(book.id, fromMs, targetMs)
+
         repository.touchLastPlayed(book.id)
         settings.setLastPlayedBookId(book.id)
         repository.setLastModeAudio(book.id)
-        AppLog.i("Reader", "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=${s.restoreFraction} -> ${targetMs}ms")
+        AppLog.i("Reader", "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveScrollFraction -> ${targetMs}ms")
         return book.id
+    }
+
+    /** Confirmed audio-side jump (kind = "AUDIO") — used for "Listen from here". Mirrors
+     *  `PlayerViewModel.recordSkip`, kept local since the reader has its own [cachedSpans] rather
+     *  than that ViewModel's `ChapterRow` list. */
+    private fun recordAudioSkip(bookId: Long, fromMs: Long, toMs: Long) {
+        val active = cachedSpans.lastOrNull { it.absStartMs <= toMs }
+        val idx = active?.let { cachedSpans.indexOf(it) } ?: -1
+        viewModelScope.launch {
+            repository.insertSkipEvent(
+                com.betteraudio.data.db.entities.SkipEvent(
+                    bookId = bookId, kind = "AUDIO",
+                    fromPositionMs = fromMs, toPositionMs = toMs,
+                    chapterIndex = idx, chapterName = active?.title ?: ""
+                )
+            )
+        }
+    }
+
+    /** Confirmed text-side jump (kind = "TEXT") — reader chapter/TOC navigation. */
+    private fun recordTextSkip(fromSpine: Int, fromFraction: Float, toSpine: Int, toFraction: Float) {
+        val bookId = _state.value.book?.id ?: return
+        viewModelScope.launch {
+            repository.insertSkipEvent(
+                com.betteraudio.data.db.entities.SkipEvent(
+                    bookId = bookId, kind = "TEXT",
+                    fromSpineIndex = fromSpine, fromFraction = fromFraction,
+                    toSpineIndex = toSpine, toFraction = toFraction,
+                    toSpineTitle = spineList.getOrNull(toSpine)?.title
+                )
+            )
+        }
     }
 
     /** Audio book-position → text locator at paragraph resolution (char offset + anchors), with a
@@ -396,6 +464,36 @@ class EbookReaderViewModel @Inject constructor(
     }
 
     fun cancelSync() = syncAligner.cancel(bookId)
+
+    /** Manually (re)import "mapping.json" from the book's folder (see MappingFileIO) — e.g. after
+     *  the user drops in a mapping file obtained elsewhere, or to restore one after a rescan
+     *  missed it. Unlike the automatic scan-time import, this always replaces any existing
+     *  anchors, since the user explicitly asked for it. */
+    fun importMappingFile() {
+        val s = _state.value
+        val book = s.book ?: return
+        if (!s.hasAudio || book.ebookPath == null) return
+        viewModelScope.launch {
+            val folder = File(book.folderPath)
+            val mapping = if (folder.isDirectory) com.betteraudio.data.sync.MappingFileIO.read(folder) else null
+            if (mapping == null) {
+                _state.update { it.copy(mappingImportMessage = "No mapping.json found in this book's folder") }
+                return@launch
+            }
+            mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }
+            repository.deleteSyncAnchors(bookId)
+            if (mapping.anchors.isNotEmpty()) {
+                repository.insertSyncAnchors(mapping.anchors.map { it.copy(bookId = bookId) })
+                mapping.chapterMapJson?.let { ChapterMap.fromJson(it) }?.let { cachedMap = it }
+                cachedAnchors = mapping.anchors.map { com.betteraudio.sync.AnchorPoint(it.audioMs, it.spineIndex, it.charOffset) }
+            }
+            _state.update { it.copy(mappingImportMessage = "Imported ${mapping.anchors.size} anchors from mapping.json") }
+        }
+    }
+
+    fun clearMappingImportMessage() {
+        _state.update { it.copy(mappingImportMessage = null) }
+    }
 
     // ── Manual chapter alignment ────────────────────────────────────────────────
 

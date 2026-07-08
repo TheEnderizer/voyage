@@ -417,7 +417,17 @@ class AudioFileScanner @Inject constructor(
             buildChapters(bookId, embeddedByPath)
         }
 
-        if (existing?.coverArtPath == null) {
+        // Cover priority: an explicit "cover.png" dropped in the book's own folder always wins
+        // (checked on every scan, not just import, so adding one later and rescanning picks it
+        // up) — otherwise fall back to the embedded-metadata extraction, done once. Skipped for
+        // multi-book folders (a synthetic "::" split): one cover.png there is ambiguous as to
+        // which of the cluster's books it belongs to, same as the epub auto-attach below.
+        val explicitCover = if (!multiBook) File(folder, "cover.png").takeIf { it.isFile } else null
+        if (explicitCover != null) {
+            if (existing?.coverArtPath != explicitCover.absolutePath) {
+                repository.updateCoverArt(bookId, explicitCover.absolutePath)
+            }
+        } else if (existing?.coverArtPath == null) {
             val coverName = if (multiBook) ".cover_${folderKey.substringAfterLast("::").safeFileName()}.jpg" else ".cover.jpg"
             extractCoverArt(sortedFiles.firstOrNull(), bookId, folder, coverName)
         }
@@ -430,6 +440,27 @@ class AudioFileScanner @Inject constructor(
                 runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
                     .onFailure { AppLog.e("Scan", "auto-attach epub failed for book=$bookId", it) }
             }
+        }
+
+        // Auto-import a bundled "mapping.json" (paragraph-resolution sync data — see
+        // MappingFileIO) sitting in the book's folder, once an epub is connected and only while
+        // the book has no anchors yet, so a bundled file is picked up without overwriting a
+        // fresher on-device alignment the user already ran. Same multi-book caveat as above.
+        if (!multiBook) {
+            runCatching { importMappingFileIfPresent(bookId, folder) }
+                .onFailure { AppLog.e("Scan", "mapping.json import failed for book=$bookId", it) }
+        }
+    }
+
+    private suspend fun importMappingFileIfPresent(bookId: Long, folder: File) {
+        val mapping = com.betteraudio.data.sync.MappingFileIO.read(folder) ?: return
+        val book = repository.getBookById(bookId).first() ?: return
+        if (book.ebookPath == null) return
+        if (repository.syncAnchorCount(bookId).first() > 0) return
+        mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }
+        if (mapping.anchors.isNotEmpty()) {
+            repository.insertSyncAnchors(mapping.anchors.map { it.copy(bookId = bookId) })
+            AppLog.i("Scan", "imported mapping.json for book=$bookId anchors=${mapping.anchors.size}")
         }
     }
 

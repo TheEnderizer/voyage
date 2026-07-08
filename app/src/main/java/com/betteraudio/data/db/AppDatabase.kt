@@ -39,9 +39,12 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // Version 13: EPUB reader — Book.ebookPath/ebookSpineCount/chapterMapJson;
 //             PlaybackProgress text position (textSpineIndex/textFraction/textOverallFraction/lastMode).
 // Version 14: sync_anchors table — verified paragraph-resolution listen↔read alignment points.
+// Version 15: skip_events gains `kind` + text-side columns, so reading-side jumps (reader chapter/
+//             TOC navigation, "Listen from here" / "Read from here") share the same merged,
+//             time-ordered history table as audio-side skips for a linked audio+epub book.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -246,6 +249,18 @@ abstract class AppDatabase : RoomDatabase() {
                     )
                 """.trimIndent())
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_anchors_bookId` ON `sync_anchors` (`bookId`)")
+            }
+        }
+
+        val MIGRATION_14_15 = object : Migration(14, 15) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 14 → 15 (skip_events text-side jumps)")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN kind TEXT NOT NULL DEFAULT 'AUDIO'")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN fromSpineIndex INTEGER")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN fromFraction REAL")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN toSpineIndex INTEGER")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN toFraction REAL")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN toSpineTitle TEXT")
             }
         }
     }

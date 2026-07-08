@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.List
@@ -55,7 +56,7 @@ fun EbookReaderScreen(
         window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            viewModel.flushNow(state.currentSpineIndex, state.restoreFraction)
+            viewModel.flushCurrent()
         }
     }
 
@@ -194,6 +195,17 @@ private fun BoxScope.ReaderContent(
                                 else showSyncDialog = true
                             }
                         )
+                        // Prominent when a bundled mapping.json (see MappingFileIO) was found next
+                        // to the audio — lets the user pull in a mapping obtained elsewhere (or
+                        // restore one a rescan missed) without re-running on-device alignment.
+                        if (state.mappingFileAvailable) {
+                            DropdownMenuItem(
+                                text = { Text("Import Mapping Data") },
+                                leadingIcon = { Icon(Icons.Default.FileDownload, null) },
+                                enabled = !aligning,
+                                onClick = { showOverflow = false; viewModel.importMappingFile() }
+                            )
+                        }
                     }
                 }
             },
@@ -290,6 +302,17 @@ private fun BoxScope.ReaderContent(
                 }
             },
             dismissButton = { TextButton(onClick = { showSyncDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    state.mappingImportMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearMappingImportMessage() },
+            title = { Text("Import Mapping Data") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearMappingImportMessage() }) { Text("OK") }
+            }
         )
     }
 

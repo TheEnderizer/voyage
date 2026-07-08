@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -69,7 +70,7 @@ fun BookHistoryOverlay(
                     Icon(Icons.Default.History, null, Modifier.size(22.dp), tint = accent)
                     Spacer(Modifier.width(10.dp))
                     Text(
-                        "Listening history",
+                        "History",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = onScrim
@@ -83,7 +84,7 @@ fun BookHistoryOverlay(
                 if (sessions.isEmpty() && skips.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
                         Text(
-                            "No listening history yet.\nPlay this book and it will show up here.",
+                            "No history yet.\nListen or read this book and it will show up here.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = onScrimMuted
                         )
@@ -161,6 +162,7 @@ private fun SessionRow(s: ListeningSession, onScrim: Color, muted: Color, accent
 
 @Composable
 private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
+    val isText = k.kind == "TEXT"
     Row(
         Modifier
             .fillMaxWidth()
@@ -168,21 +170,34 @@ private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
             .padding(vertical = 8.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(Icons.Default.GraphicEq, null, Modifier.size(18.dp).clip(Pill), tint = accent)
+        Icon(
+            if (isText) Icons.Default.MenuBook else Icons.Default.GraphicEq, null,
+            Modifier.size(18.dp).clip(Pill), tint = accent
+        )
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "${hms(k.fromPositionMs)} → ${hms(k.toPositionMs)}",
+                if (isText) "${spineLabel(k.fromSpineIndex, k.fromFraction)} → ${spineLabel(k.toSpineIndex, k.toFraction)}"
+                else "${hms(k.fromPositionMs)} → ${hms(k.toPositionMs)}",
                 style = MaterialTheme.typography.bodyMedium, color = onScrim
             )
             val sub = buildString {
-                append(chapterLabel(k.chapterIndex, k.chapterName)).append(" · ")
-                append("${dayLabel(k.atMs)} ${clock(k.atMs)}")
+                if (isText) append(k.toSpineTitle?.takeIf { it.isNotBlank() } ?: chapterLabel(k.toSpineIndex ?: -1, ""))
+                else append(chapterLabel(k.chapterIndex, k.chapterName))
+                append(" · ${dayLabel(k.atMs)} ${clock(k.atMs)}")
             }
             Text(sub, style = MaterialTheme.typography.labelSmall, color = muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
+}
+
+/** e.g. "Ch 5 · 40%" for a text-side jump endpoint; "—" when the spine/fraction is unknown
+ *  (a "from" endpoint before the book was ever read). */
+private fun spineLabel(spineIndex: Int?, fraction: Float?): String {
+    if (spineIndex == null) return "—"
+    val pct = ((fraction ?: 0f) * 100).toInt()
+    return "${chapterLabel(spineIndex, "")} · $pct%"
 }
 
 // ── Formatting helpers ──────────────────────────────────────────────────────
