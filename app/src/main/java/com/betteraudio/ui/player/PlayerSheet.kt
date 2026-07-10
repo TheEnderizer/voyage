@@ -98,6 +98,12 @@ class PlayerSheetController {
         private set
     internal fun setExpanded(v: Boolean) { isExpanded = v }
 
+    /** Live expand progress (0 collapsed → 1 expanded), mirrored from the sheet's drag anim.
+     *  For chrome that must move in lockstep with the sheet (the floating nav pill) — read it
+     *  only inside graphicsLayer/draw lambdas to avoid per-frame recomposition. */
+    val expandProgress: androidx.compose.runtime.MutableFloatState =
+        androidx.compose.runtime.mutableFloatStateOf(0f)
+
     /** Set the target without expanding (used to show the mini bar for the last-played book). */
     fun prime(bookId: Long = -1L, groupId: Long = -1L) {
         if (target == null) target = PlayerTarget(bookId, groupId, startInfo = false)
@@ -151,6 +157,9 @@ fun PlayerSheet(
     // Hide the collapsed mini bar on screens that shouldn't show it (e.g. Settings). The expanded
     // player can't coexist with those routes, so only the collapsed bar needs gating.
     hideMiniBar: Boolean = false,
+    // On routes showing the floating nav pill (home), the mini bar floats above the pill instead
+    // of hugging the bottom edge.
+    liftForNavPill: Boolean = false,
     // "Read from here" (player overflow) needs to collapse this sheet and navigate to the reader
     // route underneath it — that navigation lives outside the sheet's own nested NavHost.
     onOpenReader: (Long) -> Unit = {}
@@ -190,6 +199,13 @@ fun PlayerSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val progressAnim = remember { Animatable(0f) }   // 0 = collapsed, 1 = expanded
+
+    // Mirror the drag/expand progress onto the controller so MainActivity-level chrome (the
+    // floating nav pill) can slide in lockstep with the sheet.
+    LaunchedEffect(progressAnim) {
+        androidx.compose.runtime.snapshotFlow { progressAnim.value }
+            .collect { controller.expandProgress.floatValue = it }
+    }
 
     var heightPx by remember { mutableStateOf(0) }
     val miniPx = with(density) { MINI_HEIGHT_DP.dp.toPx() }
@@ -267,7 +283,17 @@ fun PlayerSheet(
             expandProgress = progressState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = bottomNavInset + 20.dp)
+                .padding(
+                    bottom = bottomNavInset + androidx.compose.animation.core.animateDpAsState(
+                        // Float NAV_PILL_GAP above the pill on home; hug the bottom elsewhere.
+                        if (liftForNavPill)
+                            com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING +
+                                com.betteraudio.ui.components.NAV_PILL_HEIGHT +
+                                com.betteraudio.ui.components.NAV_PILL_GAP
+                        else 20.dp,
+                        label = "miniBarLift"
+                    ).value
+                )
                 .graphicsLayer { alpha = (1f - progressAnim.value * 2.5f).coerceIn(0f, 1f) }
                 .draggable(
                     orientation = Orientation.Vertical,

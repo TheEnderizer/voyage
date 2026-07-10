@@ -14,7 +14,12 @@ import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -317,10 +322,50 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Floating nav pill (ArchiveTune style) — home route only; the player sheet
+                // draws over it and it slides away in lockstep with the sheet's expansion.
+                val homeSectionRaw by settings.homeSection.collectAsStateWithLifecycle("AUDIO")
+                val homeViewModeRaw by settings.homeViewMode.collectAsStateWithLifecycle("BOOKS")
+                val pillSection = runCatching {
+                    com.betteraudio.ui.home.HomeSection.valueOf(homeSectionRaw)
+                }.getOrDefault(com.betteraudio.ui.home.HomeSection.AUDIO)
+                val pillViewMode = runCatching {
+                    com.betteraudio.ui.home.HomeViewMode.valueOf(homeViewModeRaw)
+                }.getOrDefault(com.betteraudio.ui.home.HomeViewMode.BOOKS)
+                val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = currentRoute == "home",
+                    enter = androidx.compose.animation.fadeIn() +
+                        androidx.compose.animation.slideInVertically { it },
+                    exit = androidx.compose.animation.fadeOut() +
+                        androidx.compose.animation.slideOutVertically { it },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = navInset + com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING)
+                ) {
+                    com.betteraudio.ui.components.FloatingNavPill(
+                        section = pillSection,
+                        viewMode = pillViewMode,
+                        onSelectSection = { s -> uiScope.launch { settings.setHomeSection(s.name) } },
+                        onCycleViewMode = {
+                            val next = when (pillViewMode) {
+                                com.betteraudio.ui.home.HomeViewMode.BOOKS -> com.betteraudio.ui.home.HomeViewMode.SERIES
+                                com.betteraudio.ui.home.HomeViewMode.SERIES -> com.betteraudio.ui.home.HomeViewMode.AUTHORS
+                                com.betteraudio.ui.home.HomeViewMode.AUTHORS -> com.betteraudio.ui.home.HomeViewMode.BOOKS
+                            }
+                            uiScope.launch { settings.setHomeViewMode(next.name) }
+                        },
+                        onSearch = { navController.navigate("search") },
+                        onSettings = { navController.navigate("settings") },
+                        expandProgress = sheetController.expandProgress
+                    )
+                }
+
                 PlayerSheet(
                     controller = sheetController,
                     playerController = playerController,
                     hideMiniBar = currentRoute == "settings" || currentRoute?.startsWith("reader/") == true,
+                    liftForNavPill = currentRoute == "home",
                     onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )
 

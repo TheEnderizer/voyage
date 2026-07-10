@@ -90,6 +90,8 @@ fun HomeScreen(
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
+    val splitCandidate by viewModel.splitCandidate.collectAsStateWithLifecycle()
+    val splitProgress by viewModel.splitProgress.collectAsStateWithLifecycle()
     val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
     val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
@@ -182,41 +184,24 @@ fun HomeScreen(
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 120.dp
+                        // Bottom clears the floating nav pill + mini player stacked above the
+                        // nav inset (see FloatingNavPill / PlayerSheet).
+                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 184.dp
                     ),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    // Top-level Audio | Ebooks switch — sits above the header as the section selector.
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        HomeSectionRow(
-                            selected = homeSection,
-                            onSelect = { viewModel.setHomeSection(it) }
-                        )
-                    }
-
-                    // Header — stays put; the selection bar floats over it as an overlay
+                    // Header — stays put; the selection bar floats over it as an overlay.
+                    // Section (Audio/Ebooks) + view-mode switching moved to the floating nav pill.
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         HomeHeader(
                             itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
                             viewMode = homeViewMode,
                             section = homeSection,
                             scanning = scan.status == ScanStatus.Running,
-                            onSearch = onOpenSearch,
-                            onSort = { showSortFilter = true },
-                            onSettings = onOpenSettings
+                            onSort = { showSortFilter = true }
                         )
-                    }
-
-                    // View-mode switch (Books / Series / Authors) — only within the Audio section.
-                    if (homeSection == HomeSection.AUDIO) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            HomeViewModeRow(
-                                selected = homeViewMode,
-                                onSelect = { viewModel.setHomeViewMode(it) }
-                            )
-                        }
                     }
 
                     // Library status tabs
@@ -470,7 +455,10 @@ fun HomeScreen(
                 },
                 onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
                 onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
-                onOpenReader = { onOpenReader(optionsBwp.book.id) }
+                onOpenReader = { onOpenReader(optionsBwp.book.id) },
+                splitCandidate = splitCandidate?.takeIf { it.bookId == optionsBwp.book.id },
+                splitProgress = splitProgress,
+                onSplitLargeFile = { viewModel.startSplit() }
             )
         }
     }
@@ -513,9 +501,7 @@ private fun HomeHeader(
     viewMode: HomeViewMode,
     section: HomeSection,
     scanning: Boolean,
-    onSearch: () -> Unit,
-    onSort: () -> Unit,
-    onSettings: () -> Unit
+    onSort: () -> Unit
 ) {
     Row(
         Modifier
@@ -549,11 +535,8 @@ private fun HomeHeader(
             )
             Spacer(Modifier.width(10.dp))
         }
-        HeaderIconButton(Icons.Default.Search, "Search", onSearch)
-        Spacer(Modifier.width(8.dp))
+        // Search + Settings moved to the floating nav pill; only Sort stays contextual here.
         HeaderIconButton(Icons.AutoMirrored.Filled.Sort, "Sort & filter", onSort)
-        Spacer(Modifier.width(8.dp))
-        HeaderIconButton(Icons.Default.Settings, "Settings", onSettings)
     }
 }
 
@@ -671,83 +654,6 @@ private fun SelectionHeader(
         }
     }
 }
-
-/** Top-level Audio | Ebooks segmented switch — narrower/centred so it reads as a higher-level
- *  selector than the Books/Series/Authors pill below it. */
-@Composable
-private fun HomeSectionRow(
-    selected: HomeSection,
-    onSelect: (HomeSection) -> Unit
-) {
-    Box(Modifier.fillMaxWidth().padding(top = 4.dp), contentAlignment = Alignment.Center) {
-        SegmentedPillRow(
-            options = listOf(HomeSection.AUDIO to "Audio", HomeSection.EBOOKS to "Ebooks"),
-            selected = selected,
-            onSelect = onSelect,
-            modifier = Modifier.fillMaxWidth(0.62f)
-        )
-    }
-}
-
-/** Books / Series / Authors segmented switch — one pill container with a sliding selection. */
-@Composable
-private fun HomeViewModeRow(
-    selected: HomeViewMode,
-    onSelect: (HomeViewMode) -> Unit
-) {
-    SegmentedPillRow(
-        options = listOf(
-            HomeViewMode.BOOKS to "Books",
-            HomeViewMode.SERIES to "Series",
-            HomeViewMode.AUTHORS to "Authors"
-        ),
-        selected = selected,
-        onSelect = onSelect,
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-    )
-}
-
-/** Shared pill-container segmented control with a sliding accent selection. */
-@Composable
-private fun <T> SegmentedPillRow(
-    options: List<Pair<T, String>>,
-    selected: T,
-    onSelect: (T) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        shape = Pill,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-            alpha = if (com.betteraudio.ui.theme.immersive()) 0.32f else 1f
-        ),
-        modifier = modifier
-    ) {
-        Row(Modifier.fillMaxWidth().padding(4.dp)) {
-            options.forEach { (value, label) ->
-                val isSel = value == selected
-                val bg by animateColorAsState(
-                    if (isSel) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    tween(220), label = "segBg"
-                )
-                Surface(
-                    onClick = { onSelect(value) },
-                    shape = Pill,
-                    color = bg,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.labelLarge,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        color = if (isSel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)
-                    )
-                }
-            }
-        }
-    }
-}
-
 
 // ─── Book grid card ───────────────────────────────────────────────────────────
 
@@ -1021,9 +927,7 @@ private fun EmptyLibrary(
             viewMode = HomeViewMode.BOOKS,
             section = HomeSection.AUDIO,
             scanning = false,
-            onSearch = onOpenSearch,
-            onSort = {},
-            onSettings = onOpenSettings
+            onSort = {}
         )
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
