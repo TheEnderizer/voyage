@@ -1,5 +1,6 @@
 package com.betteraudio.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -40,6 +41,9 @@ fun FrostedOverlay(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
+    // Composed inside the host page (player/book-info), so this registers after — and wins
+    // over — MainActivity's collapse-player BackHandler while the overlay is visible.
+    BackHandler(enabled = visible) { onDismiss() }
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(MotionTokens.floatEffects),

@@ -63,16 +63,38 @@ class VoskModelManager @Inject constructor(
 
     init { refreshState() }
 
-    /** A model is "ready" once its acoustic model file exists (proves the unzip completed). */
-    fun modelDirOrNull(model: VoskModel = VoskModel.EN_SMALL): File? =
-        modelDir(model).takeIf { File(it, "am/final.mdl").exists() || File(it, "conf/model.conf").exists() }
+    /** A directory is a usable model once its acoustic model file exists (proves the unzip completed). */
+    private fun looksLikeModelDir(dir: File): Boolean =
+        File(dir, "am/final.mdl").exists() || File(dir, "conf/model.conf").exists()
+
+    /**
+     * Finds the model on disk: the expected dir first, then a shallow breadth-first scan of
+     * `filesDir/vosk/` — the zip's top-level folder name isn't guaranteed to match [VoskModel.dirName]
+     * (mirror repacks, double-nesting), and a name drift must not read as "not downloaded".
+     */
+    private fun scanForModelDir(model: VoskModel): File? {
+        modelDir(model).takeIf(::looksLikeModelDir)?.let { return it }
+        var level = voskRoot.listFiles()?.filter { it.isDirectory } ?: return null
+        repeat(3) {
+            level.firstOrNull(::looksLikeModelDir)?.let { return it }
+            level = level.flatMap { it.listFiles()?.filter { f -> f.isDirectory } ?: emptyList() }
+            if (level.isEmpty()) return null
+        }
+        return null
+    }
+
+    fun modelDirOrNull(model: VoskModel = VoskModel.EN_SMALL): File? = scanForModelDir(model)
+
+    private fun sizeOfDir(dir: File): Long =
+        dir.takeIf { it.exists() }?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
 
     fun sizeOnDiskBytes(model: VoskModel = VoskModel.EN_SMALL): Long =
-        modelDir(model).takeIf { it.exists() }?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: 0L
+        sizeOfDir(modelDirOrNull(model) ?: modelDir(model))
 
-    private fun refreshState() {
+    /** Re-probes the filesystem; call when the UI that offers the download (re)appears. */
+    fun refreshState() {
         val dir = modelDirOrNull()
-        _state.value = if (dir != null) ModelState.Ready(dir, sizeOnDiskBytes()) else ModelState.NotDownloaded
+        _state.value = if (dir != null) ModelState.Ready(dir, sizeOfDir(dir)) else ModelState.NotDownloaded
     }
 
     suspend fun download(model: VoskModel = VoskModel.EN_SMALL) = withContext(Dispatchers.IO) {
@@ -108,9 +130,19 @@ class VoskModelManager @Inject constructor(
             unzip(zip, voskRoot)
             zip.delete()
 
-            val dir = modelDirOrNull(model)
-            if (dir != null) _state.value = ModelState.Ready(dir, sizeOnDiskBytes(model))
-            else { deleteDir(modelDir(model)); _state.value = ModelState.Error("Model archive was incomplete") }
+            var dir = modelDirOrNull(model)
+            if (dir != null) {
+                // Normalize a drifted top-level folder name to the expected one so future probes
+                // hit it directly; if the rename fails, the scanned path works as-is.
+                if (dir != modelDir(model) && dir.renameTo(modelDir(model))) dir = modelDir(model)
+                _state.value = ModelState.Ready(dir, sizeOfDir(dir))
+            } else {
+                // Never delete here: a probe miss on a good extraction would otherwise orphan the
+                // files and re-prompt (and re-download) forever. Log what actually got extracted.
+                val tree = voskRoot.walkTopDown().take(50).joinToString("\n") { it.relativeTo(voskRoot).path }
+                AppLog.e("Vosk", "model probe failed after unzip; extracted tree:\n$tree")
+                _state.value = ModelState.Error("Model extracted but not recognized — try again or report this")
+            }
         } catch (e: Exception) {
             AppLog.e("Vosk", "model download failed", e)
             _state.value = ModelState.Error(e.message ?: "Download failed")
@@ -118,6 +150,7 @@ class VoskModelManager @Inject constructor(
     }
 
     fun delete(model: VoskModel = VoskModel.EN_SMALL) {
+        modelDirOrNull(model)?.let(::deleteDir)
         deleteDir(modelDir(model))
         refreshState()
     }
@@ -128,7 +161,9 @@ class VoskModelManager @Inject constructor(
         ZipInputStream(zip.inputStream().buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
-                val outFile = File(targetRoot, entry.name)
+                // Normalize backslash-pathed entries (some packers) so they nest instead of
+                // producing literal "a\b" filenames — which would also fail the model probe.
+                val outFile = File(targetRoot, entry.name.replace('\\', '/'))
                 // Zip-slip guard: refuse any entry that escapes the target root.
                 if (!outFile.canonicalPath.startsWith(targetRoot.canonicalPath + File.separator)) {
                     throw SecurityException("Zip entry outside target: ${entry.name}")

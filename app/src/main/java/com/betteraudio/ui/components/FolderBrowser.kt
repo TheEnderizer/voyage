@@ -14,10 +14,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.io.File
 
 private val AUDIO_EXTS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus", "wav")
@@ -46,11 +50,37 @@ fun FolderBrowser(
 
     Dialog(
         onDismissRequest = onCancel,
-        // decorFitsSystemWindows = false: without it a Dialog window doesn't draw edge-to-edge,
-        // so navigationBarsPadding()/safeDrawing below report ZERO insets and the Cancel/Select
-        // buttons get clipped under the gesture bar. This opts the dialog into real insets.
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        // The gesture-bar clearance for this dialog's bottom bar.
+        //
+        // Compose's WindowInsets are useless here: the host Activity's window already excludes the
+        // navigation bar, so navigationBars/safeDrawing report 0 everywhere in the app — but this
+        // Dialog uses decorFitsSystemWindows = false, so *its* window is edge-to-edge and its
+        // Scaffold lays out one nav-bar-height below the visible screen.
+        //
+        // Listen on the dialog's own decor view for live insets (a one-shot read of the Activity's
+        // decor can be 0 or stale — rotation, nav-mode changes, some OEMs), and keep a 16dp floor
+        // so the buttons are never flush with the screen edge even if the inset reports 0.
+        val density = LocalDensity.current
+        val view = LocalView.current
+        var navBottomPx by remember { mutableIntStateOf(0) }
+        DisposableEffect(view) {
+            val root = view.rootView
+            ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+                // Take the larger of the nav-bar and the gesture inset: on a gesture-nav device
+                // the nav-bar inset can be 0 but there's still a pill at the bottom edge.
+                navBottomPx = maxOf(
+                    insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom,
+                    insets.getInsets(WindowInsetsCompat.Type.mandatorySystemGestures()).bottom
+                )
+                insets
+            }
+            ViewCompat.requestApplyInsets(root)
+            onDispose { ViewCompat.setOnApplyWindowInsetsListener(root, null) }
+        }
+        val navBottom = maxOf(with(density) { navBottomPx.toDp() }, 16.dp)
+
         Surface(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 contentWindowInsets = WindowInsets.safeDrawing,
@@ -85,22 +115,15 @@ fun FolderBrowser(
                     )
                 },
                 bottomBar = {
-                    if (fileExtensions == null) {
-                        Surface(tonalElevation = 3.dp) {
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    // The dialog draws edge-to-edge (usePlatformDefaultWidth = false),
-                                    // so keep the buttons clear of the gesture/nav bar and the IME.
-                                    .navigationBarsPadding()
-                                    .imePadding()
-                                    // Extra fixed cushion beyond the computed inset — some OEM skins
-                                    // under-report the gesture-nav inset for Dialog windows, which
-                                    // otherwise leaves these buttons sitting right at the edge.
-                                    .padding(bottom = 8.dp)
-                                    .padding(16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
+                    Surface(tonalElevation = 3.dp) {
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .imePadding()
+                                .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = navBottom + 32.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            if (fileExtensions == null) {
                                 OutlinedButton(
                                     onClick = onCancel,
                                     modifier = Modifier.weight(1f)
@@ -113,11 +136,9 @@ fun FolderBrowser(
                                     Spacer(Modifier.width(6.dp))
                                     Text("Select")
                                 }
-                            }
-                        }
-                    } else {
-                        Surface(tonalElevation = 3.dp) {
-                            Row(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(bottom = 8.dp).padding(16.dp)) {
+                            } else {
+                                // File-pick mode: tapping a file selects it, so there's nothing to
+                                // confirm — only Cancel.
                                 OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                             }
                         }

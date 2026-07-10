@@ -123,6 +123,9 @@ class EbookReaderViewModel @Inject constructor(
             syncAligner.progress
                 .onEach { m -> _state.update { it.copy(alignProgress = m[bookId]) } }
                 .launchIn(viewModelScope)
+            // Re-probe the filesystem on open so a model already on disk (or restored/pushed
+            // outside the app) is detected without a process restart.
+            modelManager.refreshState()
             modelManager.state
                 .onEach { s -> _state.update { it.copy(modelState = s) } }
                 .launchIn(viewModelScope)
