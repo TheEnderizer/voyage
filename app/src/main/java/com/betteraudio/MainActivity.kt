@@ -20,6 +20,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -96,6 +97,9 @@ class MainActivity : ComponentActivity() {
         // "" = never chosen → the first-launch theme prompt is shown over the app.
         val initialThemeRaw = runBlocking { settings.appTheme.first() }
         val initialColorSource = runBlocking { settings.themeColorSource.first() }
+        val initialCustomThemeColor = runBlocking { settings.customThemeColor.first() }
+        val initialDarkMode = runBlocking { settings.darkMode.first() }
+        val initialPureBlack = runBlocking { settings.pureBlack.first() }
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
         val coldStartBookId = if (openPlayerFromWidget)
@@ -137,9 +141,25 @@ class MainActivity : ComponentActivity() {
             val coverPath = seriesThemeCover ?: activeCover ?: lastPlayedCover
             val appThemeRaw by settings.appTheme.collectAsStateWithLifecycle(initialThemeRaw)
             val colorSourceRaw by settings.themeColorSource.collectAsStateWithLifecycle(initialColorSource)
+            val customThemeColor by settings.customThemeColor.collectAsStateWithLifecycle(initialCustomThemeColor)
+            val darkModeRaw by settings.darkMode.collectAsStateWithLifecycle(initialDarkMode)
+            val pureBlack by settings.pureBlack.collectAsStateWithLifecycle(initialPureBlack)
             val appTheme = com.betteraudio.ui.theme.AppTheme.from(appThemeRaw)
             val colorSource = com.betteraudio.ui.theme.ThemeColorSource.from(colorSourceRaw)
-            VoyageTheme(appTheme = appTheme, colorSource = colorSource, coverArtPath = coverPath) {
+            val darkMode = com.betteraudio.ui.theme.DarkMode.from(darkModeRaw)
+            val darkTheme = when (darkMode) {
+                com.betteraudio.ui.theme.DarkMode.ON -> true
+                com.betteraudio.ui.theme.DarkMode.OFF -> false
+                com.betteraudio.ui.theme.DarkMode.AUTO -> isSystemInDarkTheme()
+            }
+            VoyageTheme(
+                darkTheme = darkTheme,
+                appTheme = appTheme,
+                colorSource = colorSource,
+                customThemeColor = customThemeColor,
+                pureBlack = pureBlack,
+                coverArtPath = coverPath
+            ) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
                 val uiScope = androidx.compose.runtime.rememberCoroutineScope()

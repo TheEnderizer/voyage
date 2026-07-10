@@ -20,6 +20,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -63,6 +64,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -105,9 +107,13 @@ fun SettingsScreen(
     val autoRewindThresholdMinutes by viewModel.autoRewindThresholdMinutes.collectAsStateWithLifecycle()
     val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
     val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
+    val skipSilencePaddingMs      by viewModel.skipSilencePaddingMs.collectAsStateWithLifecycle()
     val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
     val appTheme                  by viewModel.appTheme.collectAsStateWithLifecycle()
     val themeColorSource          by viewModel.themeColorSource.collectAsStateWithLifecycle()
+    val customThemeColor          by viewModel.customThemeColor.collectAsStateWithLifecycle()
+    val darkMode                  by viewModel.darkMode.collectAsStateWithLifecycle()
+    val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
 
@@ -199,7 +205,9 @@ fun SettingsScreen(
             ) {
                 when (section) {
                     SettingsSection.Root -> rootSection(viewModel)
-                    SettingsSection.Theme -> themeSection(appTheme, themeColorSource, viewModel)
+                    SettingsSection.Theme -> themeSection(
+                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, viewModel
+                    )
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
                         coverRefreshRunning, resetRunning, ignoredBooks, importStructure,
@@ -209,7 +217,7 @@ fun SettingsScreen(
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
                         autoRewindSeconds, autoRewindThresholdMinutes,
-                        skipSilenceMinMs, skipSilenceThreshold, viewModel
+                        skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs, viewModel
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
                     SettingsSection.Widget -> widgetSection(widgetDefaultCover, viewModel)
@@ -246,9 +254,20 @@ private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
+// Curated accent swatches for the custom-color picker (kept small and self-contained rather than
+// porting ArchiveTune's full ~68-preset Theme Creator screen).
+private val CUSTOM_COLOR_PRESETS = listOf(
+    0xFFFFA552, 0xFFED5564, 0xFFE91E63, 0xFF9C27B0, 0xFF673AB7, 0xFF3F51B5,
+    0xFF2196F3, 0xFF03A9F4, 0xFF00BCD4, 0xFF009688, 0xFF4CAF50, 0xFF8BC34A,
+    0xFFCDDC39, 0xFFFFC107, 0xFFFF9800, 0xFFFF5722,
+).map { androidx.compose.ui.graphics.Color(it.toInt()) }
+
 private fun LazyListScope.themeSection(
     appTheme: com.betteraudio.ui.theme.AppTheme,
     colorSource: com.betteraudio.ui.theme.ThemeColorSource,
+    customThemeColor: String,
+    darkMode: com.betteraudio.ui.theme.DarkMode,
+    pureBlack: Boolean,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -269,6 +288,7 @@ private fun LazyListScope.themeSection(
     // Colour source only applies to the Material You theme (Immersive always follows the cover).
     item {
         AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+            var showColorPicker by remember { mutableStateOf(false) }
             CardContainer {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Color source", style = MaterialTheme.typography.titleSmall)
@@ -290,9 +310,131 @@ private fun LazyListScope.themeSection(
                     ThemeRadioRow(
                         title = "Book cover",
                         detail = "Colors from the playing book's cover art.",
-                        selected = !wallpaperAvailable ||
-                            colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER,
+                        selected = colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER,
                         onSelect = { viewModel.setThemeColorSource(com.betteraudio.ui.theme.ThemeColorSource.COVER) }
+                    )
+                    ThemeRadioRow(
+                        title = "Custom color",
+                        detail = "Pick a fixed accent color for the whole app.",
+                        selected = colorSource == com.betteraudio.ui.theme.ThemeColorSource.CUSTOM,
+                        onSelect = {
+                            viewModel.setThemeColorSource(com.betteraudio.ui.theme.ThemeColorSource.CUSTOM)
+                            showColorPicker = true
+                        }
+                    )
+                    if (colorSource == com.betteraudio.ui.theme.ThemeColorSource.CUSTOM) {
+                        TextButton(onClick = { showColorPicker = true }) { Text("Change custom color") }
+                    }
+                }
+            }
+            if (showColorPicker) {
+                CustomThemeColorDialog(
+                    current = customThemeColor,
+                    onSelect = { hex -> viewModel.setCustomThemeColor(hex) },
+                    onDismiss = { showColorPicker = false }
+                )
+            }
+        }
+    }
+
+    // Dark mode + pure black apply to both looks (Immersive's own backdrop is the blurred cover,
+    // so pure black there would have no visible effect — hidden unless Material You is active).
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Dark mode", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        com.betteraudio.ui.theme.DarkMode.AUTO to "Auto",
+                        com.betteraudio.ui.theme.DarkMode.ON to "On",
+                        com.betteraudio.ui.theme.DarkMode.OFF to "Off",
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = darkMode == mode,
+                            onClick = { viewModel.setDarkMode(mode) },
+                            label = { Text(label) }
+                        )
+                    }
+                }
+                AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Pure black", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "AMOLED-black surfaces when dark.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(checked = pureBlack, onCheckedChange = { viewModel.setPureBlack(it) })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomThemeColorDialog(current: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    var hexInput by remember(current) {
+        mutableStateOf(current.takeIf { it.startsWith("#") } ?: "")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom color") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRowSwatches(current = current, onPick = { color ->
+                    val hex = String.format("#%08X", color.toArgb())
+                    hexInput = hex
+                    onSelect(hex)
+                    onDismiss()
+                })
+                OutlinedTextField(
+                    value = hexInput,
+                    onValueChange = { hexInput = it },
+                    label = { Text("Hex (#AARRGGBB or #RRGGBB)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val normalized = hexInput.trim().let { if (it.startsWith("#")) it else "#$it" }
+                if (runCatching { android.graphics.Color.parseColor(normalized) }.isSuccess) {
+                    onSelect(normalized)
+                    onDismiss()
+                }
+            }) { Text("Apply") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun FlowRowSwatches(current: String, onPick: (androidx.compose.ui.graphics.Color) -> Unit) {
+    val rows = CUSTOM_COLOR_PRESETS.chunked(8)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        rows.forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { color ->
+                    val selected = current == String.format("#%08X", color.toArgb())
+                    Box(
+                        Modifier
+                            .size(32.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(color)
+                            .border(
+                                width = if (selected) 3.dp else 0.dp,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                shape = androidx.compose.foundation.shape.CircleShape
+                            )
+                            .clickable { onPick(color) }
                     )
                 }
             }
@@ -568,6 +710,7 @@ private fun LazyListScope.playbackSection(
     autoRewindThresholdMinutes: Int,
     skipSilenceMinMs: Long,
     skipSilenceThreshold: Int,
+    skipSilencePaddingMs: Long,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -746,8 +889,28 @@ private fun LazyListScope.playbackSection(
                     valueRange = 256f..4096f,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // How much of each skipped silence is left in place, so word onsets aren't clipped.
+                var keepSlider by remember(skipSilencePaddingMs) { mutableFloatStateOf(skipSilencePaddingMs / 1000f) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Silence to keep", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${"%.1f".format(keepSlider)} s",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                Slider(
+                    value = keepSlider,
+                    onValueChange = { keepSlider = (it / 0.1f).roundToInt() * 0.1f },
+                    onValueChangeFinished = { viewModel.setSkipSilencePaddingMs((keepSlider * 1000).toLong()) },
+                    valueRange = 0f..2.0f,
+                    steps = 19,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Text(
-                    "Changes apply the next time playback starts.",
+                    "How much of each trimmed pause is left in, so words aren't cut off. " +
+                        "Changes apply immediately.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

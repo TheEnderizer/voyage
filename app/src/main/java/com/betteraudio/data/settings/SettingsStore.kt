@@ -44,6 +44,8 @@ class SettingsStore @Inject constructor(
         val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
         val SKIP_SILENCE_MIN_MS          = longPreferencesKey("skip_silence_min_ms")
         val SKIP_SILENCE_THRESHOLD       = intPreferencesKey("skip_silence_threshold")
+        // How much of a skipped silence to leave in place, so word onsets aren't clipped.
+        val SKIP_SILENCE_PADDING_MS      = longPreferencesKey("skip_silence_padding_ms")
         // "" = not chosen yet (drives the first-run structure prompt); otherwise an
         // ImportStructure name. Blank is treated as AUTO at scan time.
         val IMPORT_STRUCTURE             = stringPreferencesKey("import_structure")
@@ -70,6 +72,13 @@ class SettingsStore @Inject constructor(
         val HOME_SECTION                 = stringPreferencesKey("home_section")
         // Reader text size, as a percentage (100 = default CSS font-size).
         val READER_FONT_SIZE             = intPreferencesKey("reader_font_size")
+        // Material You seed: "default" (system/cover per THEME_COLOR_SOURCE) | "#AARRGGBB" |
+        // a built-in preset id | "seedPalette:<base64>" (custom 4-role palette).
+        val CUSTOM_THEME_COLOR           = stringPreferencesKey("custom_theme_color")
+        // ON | OFF | AUTO (follow system). Applies to both app looks.
+        val DARK_MODE                    = stringPreferencesKey("dark_mode")
+        // AMOLED-black surfaces when dark + Material You.
+        val PURE_BLACK                   = booleanPreferencesKey("pure_black")
     }
 
     companion object {
@@ -78,11 +87,13 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SPEED           = 1.0f
         const val DEFAULT_AUTO_REWIND_SECONDS           = 10
         const val DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES = 30
-        // Skip-silence engine config. Threshold is the SilenceSkippingAudioProcessor PCM level
-        // below which audio counts as silence (higher = more aggressive). Applied when the
-        // playback service builds its audio pipeline.
-        const val DEFAULT_SKIP_SILENCE_MIN_MS    = 1_000L
-        const val DEFAULT_SKIP_SILENCE_THRESHOLD = 1024
+        // Skip-silence engine config. Threshold is the PCM level below which audio counts as
+        // silence (higher = more aggressive). Padding is how much of each skipped silence is left
+        // in place so word onsets aren't clipped. All three apply live (see
+        // playback/LiveSilenceSkippingProcessor).
+        const val DEFAULT_SKIP_SILENCE_MIN_MS     = 1_000L
+        const val DEFAULT_SKIP_SILENCE_THRESHOLD  = 1024
+        const val DEFAULT_SKIP_SILENCE_PADDING_MS = 300L
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -100,6 +111,7 @@ class SettingsStore @Inject constructor(
     val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
     val skipSilenceMinMs: Flow<Long>          = context.dataStore.data.map { it[Keys.SKIP_SILENCE_MIN_MS] ?: DEFAULT_SKIP_SILENCE_MIN_MS }
     val skipSilenceThreshold: Flow<Int>       = context.dataStore.data.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }
+    val skipSilencePaddingMs: Flow<Long>      = context.dataStore.data.map { it[Keys.SKIP_SILENCE_PADDING_MS] ?: DEFAULT_SKIP_SILENCE_PADDING_MS }
     val importStructure: Flow<String>         = context.dataStore.data.map { it[Keys.IMPORT_STRUCTURE] ?: "" }
     val skippedUpdateVersion: Flow<String>    = context.dataStore.data.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }
     val playerShowSeriesCover: Flow<Boolean>  = context.dataStore.data.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }
@@ -110,6 +122,9 @@ class SettingsStore @Inject constructor(
     val ebookFolder: Flow<String>              = context.dataStore.data.map { it[Keys.EBOOK_FOLDER] ?: "" }
     val readerFontSize: Flow<Int>              = context.dataStore.data.map { it[Keys.READER_FONT_SIZE] ?: 100 }
     val homeSection: Flow<String>              = context.dataStore.data.map { it[Keys.HOME_SECTION] ?: "AUDIO" }
+    val customThemeColor: Flow<String>         = context.dataStore.data.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }
+    val darkMode: Flow<String>                 = context.dataStore.data.map { it[Keys.DARK_MODE] ?: "AUTO" }
+    val pureBlack: Flow<Boolean>               = context.dataStore.data.map { it[Keys.PURE_BLACK] ?: false }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -122,6 +137,7 @@ class SettingsStore @Inject constructor(
     @Volatile var currentAppStoppedAt               = 0L;                                     private set
     @Volatile var currentSkipSilenceMinMs           = DEFAULT_SKIP_SILENCE_MIN_MS;            private set
     @Volatile var currentSkipSilenceThreshold       = DEFAULT_SKIP_SILENCE_THRESHOLD;         private set
+    @Volatile var currentSkipSilencePaddingMs       = DEFAULT_SKIP_SILENCE_PADDING_MS;        private set
     @Volatile var currentImportStructure            = "";                                     private set
 
     init {
@@ -136,6 +152,7 @@ class SettingsStore @Inject constructor(
         scope.launch { appStoppedAt.collect              { currentAppStoppedAt              = it } }
         scope.launch { skipSilenceMinMs.collect          { currentSkipSilenceMinMs          = it } }
         scope.launch { skipSilenceThreshold.collect      { currentSkipSilenceThreshold      = it } }
+        scope.launch { skipSilencePaddingMs.collect      { currentSkipSilencePaddingMs      = it } }
         scope.launch { importStructure.collect           { currentImportStructure           = it } }
     }
 
@@ -178,6 +195,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.SKIP_SILENCE_MIN_MS] = ms }.let { }
     suspend fun setSkipSilenceThreshold(level: Int) =
         context.dataStore.edit { it[Keys.SKIP_SILENCE_THRESHOLD] = level }.let { }
+    suspend fun setSkipSilencePaddingMs(ms: Long) =
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_PADDING_MS] = ms.coerceIn(0L, 2_000L) }.let { }
     suspend fun setImportStructure(name: String) =
         context.dataStore.edit { it[Keys.IMPORT_STRUCTURE] = name }.let { }
     suspend fun setSkippedUpdateVersion(version: String) =
@@ -190,4 +209,10 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.APP_THEME] = name }.let { }
     suspend fun setThemeColorSource(name: String) =
         context.dataStore.edit { it[Keys.THEME_COLOR_SOURCE] = name }.let { }
+    suspend fun setCustomThemeColor(value: String) =
+        context.dataStore.edit { it[Keys.CUSTOM_THEME_COLOR] = value }.let { }
+    suspend fun setDarkMode(mode: String) =
+        context.dataStore.edit { it[Keys.DARK_MODE] = mode }.let { }
+    suspend fun setPureBlack(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.PURE_BLACK] = enabled }.let { }
 }

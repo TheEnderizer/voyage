@@ -53,50 +53,6 @@ fun rememberCoverScheme(
     return scheme
 }
 
-/** Animates [target] toward — used so the whole app transitions smoothly between books. */
-@Composable
-fun rememberAnimatedScheme(target: ColorScheme): ColorScheme {
-    val spec = tween<Color>(700)
-    val primary by animateColorAsState(target.primary, spec, label = "primary")
-    val onPrimary by animateColorAsState(target.onPrimary, spec, label = "onPrimary")
-    val primaryContainer by animateColorAsState(target.primaryContainer, spec, label = "primaryContainer")
-    val onPrimaryContainer by animateColorAsState(target.onPrimaryContainer, spec, label = "onPrimaryContainer")
-    val secondary by animateColorAsState(target.secondary, spec, label = "secondary")
-    val secondaryContainer by animateColorAsState(target.secondaryContainer, spec, label = "secondaryContainer")
-    val onSecondaryContainer by animateColorAsState(target.onSecondaryContainer, spec, label = "onSecondaryContainer")
-    val tertiary by animateColorAsState(target.tertiary, spec, label = "tertiary")
-    val background by animateColorAsState(target.background, spec, label = "background")
-    val onBackground by animateColorAsState(target.onBackground, spec, label = "onBackground")
-    val surface by animateColorAsState(target.surface, spec, label = "surface")
-    val onSurface by animateColorAsState(target.onSurface, spec, label = "onSurface")
-    val surfaceVariant by animateColorAsState(target.surfaceVariant, spec, label = "surfaceVariant")
-    val onSurfaceVariant by animateColorAsState(target.onSurfaceVariant, spec, label = "onSurfaceVariant")
-    val surfaceContainer by animateColorAsState(target.surfaceContainer, spec, label = "surfaceContainer")
-    val surfaceContainerHigh by animateColorAsState(target.surfaceContainerHigh, spec, label = "surfaceContainerHigh")
-    val surfaceContainerHighest by animateColorAsState(target.surfaceContainerHighest, spec, label = "surfaceContainerHighest")
-    val surfaceContainerLow by animateColorAsState(target.surfaceContainerLow, spec, label = "surfaceContainerLow")
-    return target.copy(
-        primary = primary,
-        onPrimary = onPrimary,
-        primaryContainer = primaryContainer,
-        onPrimaryContainer = onPrimaryContainer,
-        secondary = secondary,
-        secondaryContainer = secondaryContainer,
-        onSecondaryContainer = onSecondaryContainer,
-        tertiary = tertiary,
-        background = background,
-        onBackground = onBackground,
-        surface = surface,
-        onSurface = onSurface,
-        surfaceVariant = surfaceVariant,
-        onSurfaceVariant = onSurfaceVariant,
-        surfaceContainer = surfaceContainer,
-        surfaceContainerHigh = surfaceContainerHigh,
-        surfaceContainerHighest = surfaceContainerHighest,
-        surfaceContainerLow = surfaceContainerLow
-    )
-}
-
 private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean, tintText: Boolean): ColorScheme {
     val fallback = if (dark) 0xFFFFA552.toInt() else 0xFFE07B3E.toInt()
     // Prefer light swatches so accents are legible on the dark background

@@ -24,10 +24,22 @@ enum class AppTheme {
 
 /** Where the Material You theme takes its colors from. */
 enum class ThemeColorSource {
-    WALLPAPER, COVER;
+    WALLPAPER, COVER,
+    // A user-picked color: a preset, a hex value, or a custom 4-role palette from the Theme
+    // Creator (see SettingsStore.customThemeColor / ThemeSeedPaletteCodec).
+    CUSTOM;
 
     companion object {
         fun from(s: String): ThemeColorSource = entries.find { it.name == s } ?: WALLPAPER
+    }
+}
+
+/** Dark-mode preference; AUTO follows the system setting. Applies to both app looks. */
+enum class DarkMode {
+    ON, OFF, AUTO;
+
+    companion object {
+        fun from(s: String): DarkMode = entries.find { it.name == s } ?: AUTO
     }
 }
 

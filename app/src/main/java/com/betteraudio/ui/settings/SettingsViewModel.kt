@@ -274,6 +274,27 @@ class SettingsViewModel @Inject constructor(
     fun setThemeColorSource(source: com.betteraudio.ui.theme.ThemeColorSource) =
         viewModelScope.launch { settings.setThemeColorSource(source.name) }
 
+    val customThemeColor: StateFlow<String> =
+        settings.customThemeColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "default")
+
+    val darkMode: StateFlow<com.betteraudio.ui.theme.DarkMode> =
+        settings.darkMode
+            .map { com.betteraudio.ui.theme.DarkMode.from(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.theme.DarkMode.AUTO)
+
+    val pureBlack: StateFlow<Boolean> =
+        settings.pureBlack.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setCustomThemeColor(value: String) =
+        viewModelScope.launch { settings.setCustomThemeColor(value) }
+
+    fun setDarkMode(mode: com.betteraudio.ui.theme.DarkMode) =
+        viewModelScope.launch { settings.setDarkMode(mode.name) }
+
+    fun setPureBlack(enabled: Boolean) =
+        viewModelScope.launch { settings.setPureBlack(enabled) }
+
     private val _updateState = MutableStateFlow(UpdateUiState())
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
 
@@ -324,8 +345,11 @@ class SettingsViewModel @Inject constructor(
         settings.skipSilenceMinMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_MIN_MS)
     val skipSilenceThreshold: StateFlow<Int> =
         settings.skipSilenceThreshold.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_THRESHOLD)
+    val skipSilencePaddingMs: StateFlow<Long> =
+        settings.skipSilencePaddingMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_PADDING_MS)
     fun setSkipSilenceMinMs(ms: Long) = viewModelScope.launch { settings.setSkipSilenceMinMs(ms) }
     fun setSkipSilenceThreshold(level: Int) = viewModelScope.launch { settings.setSkipSilenceThreshold(level) }
+    fun setSkipSilencePaddingMs(ms: Long) = viewModelScope.launch { settings.setSkipSilencePaddingMs(ms) }
 
     fun rescan() {
         val path = libraryFolder.value
