@@ -23,7 +23,6 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -41,6 +40,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -75,8 +75,8 @@ class PlaybackService : MediaSessionService() {
     private var positionSaverJob: Job? = null
 
     // Silence-skipping audio processor — lives in the decode→sink chain (separate from the
-    // session-id audio effects above). Configured once from settings; toggled per book.
-    private var silenceProcessor: SilenceSkippingAudioProcessor? = null
+    // session-id audio effects above). Toggled per book; its tuning follows the settings live.
+    private var silenceProcessor: LiveSilenceSkippingProcessor? = null
 
     companion object {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.betteraudio.action.WIDGET_PLAY_PAUSE"
@@ -93,24 +93,36 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        AppLog.i("Service", "onCreate — building player (skipSilence min=${settings.currentSkipSilenceMinMs}ms thr=${settings.currentSkipSilenceThreshold})")
+        AppLog.i("Service", "onCreate — building player (skipSilence min=${settings.currentSkipSilenceMinMs}ms keep=${settings.currentSkipSilencePaddingMs}ms thr=${settings.currentSkipSilenceThreshold})")
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
             .build()
 
-        // Build a silence-skipping processor from the saved config. It sits in the audio
-        // pipeline ahead of Sonic (which handles playback speed/pitch), starts disabled, and is
-        // toggled per book via CMD_SET_SKIP_SILENCE. Sensitivity/min-length apply at build time.
-        val silence = SilenceSkippingAudioProcessor(
-            /* minimumSilenceDurationUs = */ settings.currentSkipSilenceMinMs * 1_000L,
-            /* silenceRetentionRatio    = */ 0.2f,
-            /* maxSilenceToKeepDurationUs= */ (settings.currentSkipSilenceMinMs * 1_000L).coerceAtMost(100_000L),
-            /* minVolumeToKeepPercentageWhenMuting = */ 0,
-            /* silenceThresholdLevel     = */ settings.currentSkipSilenceThreshold.toShort()
+        // Silence-skipping sits in the audio pipeline ahead of Sonic (playback speed/pitch), starts
+        // disabled, and is toggled per book via CMD_SET_SKIP_SILENCE. Unlike Media3's processor this
+        // one stays in the sink's active chain permanently and re-reads its tuning on the fly, so
+        // both the toggle and the Settings sliders take effect immediately (see the class doc).
+        val silence = LiveSilenceSkippingProcessor()
+        silence.setParams(
+            minSilenceUs = settings.currentSkipSilenceMinMs * 1_000L,
+            silenceKeepUs = settings.currentSkipSilencePaddingMs * 1_000L,
+            thresholdLevel = settings.currentSkipSilenceThreshold.toShort()
         )
         silence.setEnabled(false)
         silenceProcessor = silence
+
+        // Keep the processor's tuning in sync with Settings while audio is playing.
+        serviceScope.launch {
+            combine(
+                settings.skipSilenceMinMs,
+                settings.skipSilencePaddingMs,
+                settings.skipSilenceThreshold
+            ) { minMs, padMs, thr -> Triple(minMs, padMs, thr) }.collect { (minMs, padMs, thr) ->
+                silence.setParams(minMs * 1_000L, padMs * 1_000L, thr.toShort())
+                nudgeAudioPipeline()
+            }
+        }
 
         val renderersFactory = object : DefaultRenderersFactory(this) {
             override fun buildAudioSink(
@@ -252,9 +264,9 @@ class PlaybackService : MediaSessionService() {
     }
 
     /**
-     * Toggle silence skipping for the current book. The processor's [isActive] only changes on a
-     * flush, so after toggling we nudge a seek to the current position to force the audio sink to
-     * reconfigure immediately. No-op if the state is unchanged.
+     * Toggle silence skipping for the current book. [LiveSilenceSkippingProcessor] stays in the
+     * sink's active chain permanently, so the toggle only needs a flush (not a reconfigure) —
+     * which is exactly what the seek nudge provides. No-op if the state is unchanged.
      */
     private fun applySkipSilence(enabled: Boolean) {
         val proc = silenceProcessor ?: return
@@ -262,6 +274,11 @@ class PlaybackService : MediaSessionService() {
         skipSilenceEnabled = enabled
         AppLog.i("Service", "applySkipSilence=$enabled")
         proc.setEnabled(enabled)
+        nudgeAudioPipeline()
+    }
+
+    /** Force the audio sink to flush so a changed silence-skipping state takes effect now. */
+    private fun nudgeAudioPipeline() {
         exoPlayer?.let { if (it.mediaItemCount > 0) it.seekTo(it.currentPosition) }
     }
 
@@ -301,7 +318,7 @@ class PlaybackService : MediaSessionService() {
         if (positionSaverJob?.isActive == true) return
         positionSaverJob = serviceScope.launch {
             while (isActive) {
-                delay(2_000)
+                delay(5_000)
                 saveCurrentPosition()
             }
         }
@@ -361,10 +378,11 @@ class PlaybackService : MediaSessionService() {
             val items = files.map { file ->
                 MediaItem.Builder()
                     .setMediaId(file.id.toString())
-                    .setUri(Uri.parse("file://${file.filePath}"))
+                    // Uri.fromFile percent-encodes; "file://$path" breaks on '%' or '#' in a name.
+                    .setUri(Uri.fromFile(java.io.File(file.filePath)))
                     .setRequestMetadata(
                         MediaItem.RequestMetadata.Builder()
-                            .setMediaUri(Uri.parse("file://${file.filePath}"))
+                            .setMediaUri(Uri.fromFile(java.io.File(file.filePath)))
                             .build()
                     )
                     .setMediaMetadata(

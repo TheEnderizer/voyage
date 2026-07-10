@@ -21,6 +21,7 @@ import com.betteraudio.data.synopsis.SynopsisResult
 import com.betteraudio.data.synopsis.SynopsisService
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.playback.PositionState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -101,6 +102,7 @@ class PlayerViewModel @Inject constructor(
             MutableStateFlow(null)
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
+    val positionState: StateFlow<PositionState> = playerController.positionState
 
     // Series cover mode: when true, a book that belongs to a series shows the SERIES cover in the
     // player instead of the book's own cover. Persisted globally; toggled from the overflow menu.
@@ -416,13 +418,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     init {
-        // Periodic progress save
-        viewModelScope.launch {
-            while (isActive) {
-                delay(5_000)
-                saveProgressIfActive()
-            }
-        }
+        // Periodic progress save lives in PlaybackService's saver (survives the UI dying);
+        // this ViewModel still saves on pause/dispose (saveProgress) and on demand.
 
         // Wait for both book data and Gemini key before attempting generation.
         combine(bookWithProgress, settings.geminiApiKey) { bwp, key -> Pair(bwp, key) }
@@ -457,16 +454,17 @@ class PlayerViewModel @Inject constructor(
 
     fun addBookmark(comment: String) {
         val state = playbackState.value
+        val pos = positionState.value
         val bwp = bookWithProgress.value ?: return
         val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
         val currentFile = files.getOrNull(state.currentFileIndex) ?: return
-        val absPos = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs
+        val absPos = if (pos.bookTotalDurationMs > 0) pos.bookPositionMs else pos.currentPositionMs
         viewModelScope.launch {
             repository.addBookmark(
                 Bookmark(
                     bookId = bookId,
                     fileId = currentFile.id,
-                    positionInFileMs = state.currentPositionMs,
+                    positionInFileMs = pos.currentPositionMs,
                     absolutePositionMs = absPos,
                     comment = comment.trim()
                 )
@@ -475,10 +473,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun jumpToBookmark(bookmark: Bookmark) {
-        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
-            playbackState.value.bookPositionMs
+        val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
+            positionState.value.bookPositionMs
         else
-            playbackState.value.currentPositionMs
+            positionState.value.currentPositionMs
         pushPosition(currentAbsPos)
         recordSkip(currentAbsPos, bookmark.absolutePositionMs)
         playerController.bookSeekTo(bookmark.absolutePositionMs)
@@ -490,10 +488,10 @@ class PlayerViewModel @Inject constructor(
      */
     fun resumeFromHistory(endBookPositionMs: Long) {
         AppLog.i("History", "resumeFromHistory target=${endBookPositionMs}ms book=$bookId")
-        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
-            playbackState.value.bookPositionMs
+        val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
+            positionState.value.bookPositionMs
         else
-            playbackState.value.currentPositionMs
+            positionState.value.currentPositionMs
         // Start playback if this book isn't loaded yet, then seek.
         if (playbackState.value.bookId != bookId) play()
         pushPosition(currentAbsPos)
@@ -549,10 +547,10 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun seekToChapter(absMs: Long) {
-        val currentAbsPos = if (playbackState.value.bookTotalDurationMs > 0)
-            playbackState.value.bookPositionMs
+        val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
+            positionState.value.bookPositionMs
         else
-            playbackState.value.currentPositionMs
+            positionState.value.currentPositionMs
         pushPosition(currentAbsPos)
         recordSkip(currentAbsPos, absMs)
         playerController.bookSeekTo(absMs)
@@ -696,7 +694,7 @@ class PlayerViewModel @Inject constructor(
             val spans = com.betteraudio.sync.AudioSpanBuilder.build(files, chapterEntities)
             if (spans.isEmpty()) return@launch
 
-            val bookPosMs = playbackState.value.bookPositionMs
+            val bookPosMs = positionState.value.bookPositionMs
             val prevProgress = repository.getProgressForBookOnce(bookId)
             val anchors = repository.getSyncAnchorsOnce(bookId)
                 .map { com.betteraudio.sync.AnchorPoint(it.audioMs, it.spineIndex, it.charOffset) }
@@ -806,20 +804,6 @@ class PlayerViewModel @Inject constructor(
         if (positionMs <= 0L) return
         // NonCancellable: this runs from onDispose where viewModelScope may be cancelled imminently.
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
-            repository.updatePosition(bookId, currentFile.id, positionMs)
-        }
-    }
-
-    private fun saveProgressIfActive() {
-        if (bookId == -1L) return
-        val state = playbackState.value
-        if (state.bookId != bookId) return
-        val bwp = bookWithProgress.value ?: return
-        val sortedFiles = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        val currentFile = sortedFiles.getOrNull(state.currentFileIndex) ?: return
-        val positionMs = playerController.currentPositionMs
-        if (positionMs <= 0L) return
-        viewModelScope.launch {
             repository.updatePosition(bookId, currentFile.id, positionMs)
         }
     }

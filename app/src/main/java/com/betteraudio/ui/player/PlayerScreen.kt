@@ -58,6 +58,7 @@ fun PlayerContent(
     val bwp               by viewModel.bookWithProgress.collectAsStateWithLifecycle()
     val groupInfo         by viewModel.groupInfo.collectAsStateWithLifecycle()
     val state             by viewModel.playbackState.collectAsStateWithLifecycle()
+    val position          by viewModel.positionState.collectAsStateWithLifecycle()
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
@@ -169,12 +170,12 @@ fun PlayerContent(
 
         val bookTotal: Long
         val bookPos: Long
-        if (serviceHasBook && state.bookTotalDurationMs > 0) {
-            bookTotal = state.bookTotalDurationMs
-            bookPos = state.bookPositionMs
+        if (serviceHasBook && position.bookTotalDurationMs > 0) {
+            bookTotal = position.bookTotalDurationMs
+            bookPos = position.bookPositionMs
         } else if (serviceHasBook) {
-            bookTotal = state.durationMs
-            bookPos = state.currentPositionMs
+            bookTotal = position.durationMs
+            bookPos = position.currentPositionMs
         } else {
             // Service doesn't have this book (e.g. cold start, info-panel open before first play).
             // Show the saved position from the DB so the scrubber reflects where reading left off.
@@ -635,13 +636,13 @@ fun PlayerContent(
                     }
                     SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
                     SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
-                    if (state.sleepTimerRemainingMs > 0L) {
+                    if (position.sleepTimerRemainingMs > 0L) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.clip(Pill).clickable { showSleepTimer = true }.padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
-                            Text(formatDuration(state.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
+                            Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
                         }
                     } else {
                         SecondaryIcon(Icons.Default.Bedtime, "Sleep timer", onScrim) { showSleepTimer = true }
@@ -656,10 +657,10 @@ fun PlayerContent(
         }
 
         if (showBookmarks) {
-            val bookTotalForSheet = if (state.bookTotalDurationMs > 0) state.bookTotalDurationMs else state.durationMs
+            val bookTotalForSheet = if (position.bookTotalDurationMs > 0) position.bookTotalDurationMs else position.durationMs
             BookmarkSheet(
                 bookmarks = bookmarks,
-                currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
+                currentPositionMs = if (position.bookTotalDurationMs > 0) position.bookPositionMs else position.currentPositionMs,
                 totalDurationMs = bookTotalForSheet,
                 onJump = { viewModel.jumpToBookmark(it) },
                 onDelete = { viewModel.deleteBookmark(it) },
@@ -701,7 +702,7 @@ fun PlayerContent(
         ChapterOverlay(
             visible = showChapters && chapters.rows.isNotEmpty(),
             rows = chapters.rows,
-            currentPositionMs = if (state.bookTotalDurationMs > 0) state.bookPositionMs else state.currentPositionMs,
+            currentPositionMs = if (position.bookTotalDurationMs > 0) position.bookPositionMs else position.currentPositionMs,
             currentBookId = state.bookId,
             onSelect = { viewModel.onChapterSelected(it) },
             onDismiss = { showChapters = false }
@@ -732,7 +733,7 @@ fun PlayerContent(
 
         if (showSleepTimer) {
             SleepTimerSheet(
-                remainingMs = state.sleepTimerRemainingMs,
+                remainingMs = position.sleepTimerRemainingMs,
                 onSetTimer = { viewModel.playerController.setSleepTimer(it) },
                 onDismiss = { showSleepTimer = false }
             )

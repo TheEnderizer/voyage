@@ -156,6 +156,9 @@ fun PlayerSheet(
     onOpenReader: (Long) -> Unit = {}
 ) {
     val playback by playerController.playbackState.collectAsStateWithLifecycle()
+    // Leaf-only: only the mini bar's progress fill needs this, so its 500ms ticks recompose just
+    // that read site instead of everything above (see PlayerController.PositionState).
+    val position by playerController.positionState.collectAsStateWithLifecycle()
     val target = controller.target
 
     // Mirror the playing book into the target so the mini bar is ready to expand.
@@ -243,8 +246,8 @@ fun PlayerSheet(
             coverPath = if (usingLivePlayback) playback.coverArtUri?.removePrefix("file://") else restoreInfo?.coverArtPath,
             isPlaying = usingLivePlayback && playback.isPlaying,
             progress = when {
-                usingLivePlayback && playback.bookTotalDurationMs > 0 ->
-                    (playback.bookPositionMs.toFloat() / playback.bookTotalDurationMs).coerceIn(0f, 1f)
+                usingLivePlayback && position.bookTotalDurationMs > 0 ->
+                    (position.bookPositionMs.toFloat() / position.bookTotalDurationMs).coerceIn(0f, 1f)
                 usingLivePlayback -> 0f
                 else -> restoreInfo?.progress ?: 0f
             },

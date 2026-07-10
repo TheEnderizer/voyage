@@ -40,11 +40,19 @@ data class PlaybackState(
     val bookTitle: String = "",
     val author: String = "",
     val coverArtUri: String? = null,
-    val currentPositionMs: Long = 0L,
-    val durationMs: Long = 0L,
     val speed: Float = 1f,
     val currentFileIndex: Int = 0,
     val totalFiles: Int = 0,
+)
+
+/**
+ * Fields that change on every 500ms position-ticker tick while playing. Split out of
+ * [PlaybackState] so collecting playback state at the app root (theme/nav) doesn't recompose
+ * twice a second — only leaf composables that render a scrubber/progress bar need this.
+ */
+data class PositionState(
+    val currentPositionMs: Long = 0L,
+    val durationMs: Long = 0L,
     // Book-level (cumulative) position across all files
     val bookPositionMs: Long = 0L,
     val bookTotalDurationMs: Long = 0L,
@@ -70,6 +78,9 @@ class PlayerController @Inject constructor(
 
     private val _playbackState = MutableStateFlow(PlaybackState())
     val playbackState: StateFlow<PlaybackState> = _playbackState.asStateFlow()
+
+    private val _positionState = MutableStateFlow(PositionState())
+    val positionState: StateFlow<PositionState> = _positionState.asStateFlow()
 
     private var controller: MediaController? = null
     private var currentBookId = -1L
@@ -100,12 +111,11 @@ class PlayerController @Inject constructor(
         if (positionTickerJob?.isActive == true) return
         // Must run on Main — MediaController properties are main-thread only
         positionTickerJob = scope.launch(kotlinx.coroutines.Dispatchers.Main) {
-            var tick = 0
             while (isActive) {
                 delay(500)
                 playerListener.triggerSync()
-                // Persist progress every ~5s so a swipe-kill (no onStop) can't lose the position.
-                if (++tick % 10 == 0) saveCurrentProgress()
+                // Periodic persistence lives solely in PlaybackService's saver (survives the UI
+                // dying, and swipe-kill has no onStop) — no duplicate writer needed here.
             }
         }
     }
@@ -160,7 +170,7 @@ class PlayerController @Inject constructor(
 
     // ── History session helpers ──────────────────────────────────────────────
     private fun bookPosFromState(): Long {
-        val st = _playbackState.value
+        val st = _positionState.value
         return if (st.bookTotalDurationMs > 0) st.bookPositionMs else st.currentPositionMs
     }
 
@@ -343,10 +353,11 @@ class PlayerController @Inject constructor(
         artworkPath: String?
     ) = MediaItem.Builder()
         .setMediaId(file.id.toString())
-        .setUri(Uri.parse("file://${file.filePath}"))
+        // Uri.fromFile percent-encodes; hand-building "file://$path" breaks on '%' or '#' in a name.
+        .setUri(Uri.fromFile(java.io.File(file.filePath)))
         .setRequestMetadata(
             MediaItem.RequestMetadata.Builder()
-                .setMediaUri(Uri.parse("file://${file.filePath}"))
+                .setMediaUri(Uri.fromFile(java.io.File(file.filePath)))
                 .build()
         )
         .setMediaMetadata(
@@ -404,6 +415,7 @@ class PlayerController @Inject constructor(
         currentSeriesBookIds = emptyList()
         stopPositionTicker()
         _playbackState.value = PlaybackState()
+        _positionState.value = PositionState()
         scope.launch {
             settings.setLastPlayedBookId(-1L)
             settings.setLastOpenBookId(-1L)
@@ -455,7 +467,7 @@ class PlayerController @Inject constructor(
         sleepTimerRemainingMs = durationMs
         if (durationMs <= 0L) {
             sleepTimerRemainingMs = 0L
-            _playbackState.value = _playbackState.value.copy(sleepTimerRemainingMs = 0L)
+            _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = 0L)
             return
         }
         sleepTimerJob = scope.launch {
@@ -464,12 +476,12 @@ class PlayerController @Inject constructor(
                 delay(1_000)
                 remaining -= 1_000
                 sleepTimerRemainingMs = remaining
-                _playbackState.value = _playbackState.value.copy(sleepTimerRemainingMs = remaining)
+                _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = remaining)
             }
             if (isActive) {
                 scope.launch(Dispatchers.Main) { controller?.pause() }
                 sleepTimerRemainingMs = 0L
-                _playbackState.value = _playbackState.value.copy(sleepTimerRemainingMs = 0L)
+                _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = 0L)
             }
         }
     }
@@ -565,7 +577,19 @@ class PlayerController @Inject constructor(
             // For group playback, update currentBookId to the member book currently playing
             val memberBookId = ctrl.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
             if (currentGroupId != -1L && memberBookId != -1L) currentBookId = memberBookId
-            _playbackState.value = PlaybackState(
+
+            _positionState.value = PositionState(
+                currentPositionMs = filePositionMs,
+                durationMs = ctrl.duration.takeIf { it > 0 } ?: 0L,
+                bookPositionMs = cumulativeStart + filePositionMs,
+                bookTotalDurationMs = bookTotalDurationMs,
+                sleepTimerRemainingMs = sleepTimerRemainingMs
+            )
+
+            // Data-class equality makes this a no-op write (no new emission) on the common tick
+            // where only position moved — this is what keeps app-root collectors of playbackState
+            // (theme, nav) quiet while playing instead of recomposing twice a second.
+            val newPlaybackState = PlaybackState(
                 isPlaying = ctrl.isPlaying,
                 bookId = currentBookId,
                 groupId = currentGroupId,
@@ -573,15 +597,11 @@ class PlayerController @Inject constructor(
                 bookTitle = meta?.albumTitle?.toString() ?: "",
                 author = meta?.artist?.toString() ?: "",
                 coverArtUri = meta?.artworkUri?.toString(),
-                currentPositionMs = filePositionMs,
-                durationMs = ctrl.duration.takeIf { it > 0 } ?: 0L,
                 speed = ctrl.playbackParameters.speed,
                 currentFileIndex = fileIndex,
                 totalFiles = ctrl.mediaItemCount,
-                bookPositionMs = cumulativeStart + filePositionMs,
-                bookTotalDurationMs = bookTotalDurationMs,
-                sleepTimerRemainingMs = sleepTimerRemainingMs
             )
+            if (newPlaybackState != _playbackState.value) _playbackState.value = newPlaybackState
         }
     }
 }
