@@ -156,8 +156,8 @@ fun PlayerSheet(
     onOpenReader: (Long) -> Unit = {}
 ) {
     val playback by playerController.playbackState.collectAsStateWithLifecycle()
-    // Leaf-only: only the mini bar's progress fill needs this, so its 500ms ticks recompose just
-    // that read site instead of everything above (see PlayerController.PositionState).
+    // Read ONLY inside MiniPlayerBar's deferred progress lambda — reading `position` anywhere
+    // in this composable's body would recompose the whole sheet on every 500ms tick.
     val position by playerController.positionState.collectAsStateWithLifecycle()
     val target = controller.target
 
@@ -245,11 +245,13 @@ fun PlayerSheet(
             },
             coverPath = if (usingLivePlayback) playback.coverArtUri?.removePrefix("file://") else restoreInfo?.coverArtPath,
             isPlaying = usingLivePlayback && playback.isPlaying,
-            progress = when {
-                usingLivePlayback && position.bookTotalDurationMs > 0 ->
-                    (position.bookPositionMs.toFloat() / position.bookTotalDurationMs).coerceIn(0f, 1f)
-                usingLivePlayback -> 0f
-                else -> restoreInfo?.progress ?: 0f
+            progress = {
+                when {
+                    usingLivePlayback && position.bookTotalDurationMs > 0 ->
+                        (position.bookPositionMs.toFloat() / position.bookTotalDurationMs).coerceIn(0f, 1f)
+                    usingLivePlayback -> 0f
+                    else -> restoreInfo?.progress ?: 0f
+                }
             },
             enabled = !expanded,
             onTap = {
@@ -358,7 +360,10 @@ private fun MiniPlayerBar(
     title: String,
     coverPath: String?,
     isPlaying: Boolean,
-    progress: Float,
+    // Lambda so the (500ms-ticking) position State is read only inside the progress
+    // indicator's deferred draw lambda — a plain Float param would recompose this whole bar
+    // (and the caller's scope) on every tick.
+    progress: () -> Float,
     enabled: Boolean,
     onTap: () -> Unit,
     onPlayPause: () -> Unit,
@@ -457,7 +462,7 @@ private fun MiniPlayerBar(
                 }
             }
             LinearProgressIndicator(
-                progress = { progress },
+                progress = progress,
                 modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter),
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = Color.Transparent

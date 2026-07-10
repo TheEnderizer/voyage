@@ -41,6 +41,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -113,15 +114,22 @@ class PlaybackService : MediaSessionService() {
         silenceProcessor = silence
 
         // Keep the processor's tuning in sync with Settings while audio is playing.
+        // DataStore re-emits the full snapshot on EVERY write to ANY key, and navigation writes
+        // prefs constantly (last-open-book, series-cover flag, ...) — so dedupe, and only nudge
+        // the pipeline (a seekTo that audibly flushes/rewinds the sink) when the silence params
+        // actually changed. Without both guards, plain navigation glitched live audio.
         serviceScope.launch {
             combine(
                 settings.skipSilenceMinMs,
                 settings.skipSilencePaddingMs,
                 settings.skipSilenceThreshold
-            ) { minMs, padMs, thr -> Triple(minMs, padMs, thr) }.collect { (minMs, padMs, thr) ->
-                silence.setParams(minMs * 1_000L, padMs * 1_000L, thr.toShort())
-                nudgeAudioPipeline()
-            }
+            ) { minMs, padMs, thr -> Triple(minMs, padMs, thr) }
+                .distinctUntilChanged()
+                .collect { (minMs, padMs, thr) ->
+                    if (silence.setParams(minMs * 1_000L, padMs * 1_000L, thr.toShort())) {
+                        nudgeAudioPipeline()
+                    }
+                }
         }
 
         val renderersFactory = object : DefaultRenderersFactory(this) {

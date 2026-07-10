@@ -203,17 +203,25 @@ class EbookReaderViewModel @Inject constructor(
 
         liveScrollFraction = initialFraction
 
-        _state.value = ReaderUiState(
-            loading = false,
-            book = book,
-            spine = info.spine,
-            currentSpineIndex = initialSpine,
-            restoreFraction = initialFraction,
-            hasAudio = hasAudio,
-            chapterMapApproximate = approximate,
-            mappingFileAvailable = mappingAvailable,
-            fontSizePct = settings.readerFontSize.first()
-        )
+        val fontSizePct = settings.readerFontSize.first()
+        // copy(), not a fresh ReaderUiState: the init mirrors already wrote modelState /
+        // anchorCount / alignProgress into _state, and their StateFlows won't re-emit an
+        // unchanged value — a wholesale reset here would clobber modelState back to
+        // NotDownloaded forever (the "asks to download the model again" bug).
+        _state.update {
+            it.copy(
+                loading = false,
+                error = null,
+                book = book,
+                spine = info.spine,
+                currentSpineIndex = initialSpine,
+                restoreFraction = initialFraction,
+                hasAudio = hasAudio,
+                chapterMapApproximate = approximate,
+                mappingFileAvailable = mappingAvailable,
+                fontSizePct = fontSizePct
+            )
+        }
     }
 
     private suspend fun ensureChapterMap(book: Book, spans: List<AudioChapterSpan>, spine: List<SpineItem>): ChapterMap {

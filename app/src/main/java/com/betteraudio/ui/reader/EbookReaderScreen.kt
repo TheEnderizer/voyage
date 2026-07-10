@@ -288,12 +288,18 @@ private fun BoxScope.ReaderContent(
             onDismissRequest = { showSyncDialog = false },
             title = { Text("Improve listen ↔ read sync") },
             text = {
+                val modelReady = state.modelState is com.betteraudio.data.transcribe.ModelState.Ready
                 Text(
                     "This transcribes short snippets of the audiobook on your device and matches them " +
                         "to the ebook text, pinning exact reference points so switching between reading and " +
-                        "listening lands on the right paragraph.\n\nIt needs a one-time ~45 MB English speech " +
-                        "model (works with English audiobooks for now) and runs in the background — you can " +
-                        "keep reading. Wi-Fi recommended for the download."
+                        "listening lands on the right paragraph.\n\n" +
+                        if (modelReady) {
+                            "Runs in the background — you can keep reading."
+                        } else {
+                            "It needs a one-time ~45 MB English speech model (works with English audiobooks " +
+                                "for now) and runs in the background — you can keep reading. Wi-Fi " +
+                                "recommended for the download."
+                        }
                 )
             },
             confirmButton = {

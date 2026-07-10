@@ -58,7 +58,17 @@ fun PlayerContent(
     val bwp               by viewModel.bookWithProgress.collectAsStateWithLifecycle()
     val groupInfo         by viewModel.groupInfo.collectAsStateWithLifecycle()
     val state             by viewModel.playbackState.collectAsStateWithLifecycle()
-    val position          by viewModel.positionState.collectAsStateWithLifecycle()
+    // The full player stays composed while the sheet is collapsed (parked offscreen by
+    // PlayerSheet), so only subscribe to the 500ms position ticks while actually visible —
+    // otherwise every tick recomposes this whole (hidden) screen. When collapsed we collect a
+    // frozen snapshot; on open, the live StateFlow's current value arrives immediately.
+    val expandForTicks = LocalPlayerExpand.current
+    val sheetOpen by remember { derivedStateOf { expandForTicks.progress.value > 0.01f } }
+    val positionFlow = remember(sheetOpen) {
+        if (sheetOpen) viewModel.positionState
+        else kotlinx.coroutines.flow.MutableStateFlow(viewModel.positionState.value)
+    }
+    val position          by positionFlow.collectAsStateWithLifecycle()
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
@@ -191,9 +201,12 @@ fun PlayerContent(
         }
 
         // For the chapter-context line, only the current book's chapters matter (series lists
-        // carry every book's chapters, each with positions relative to its own book).
-        val items = chapters.rows.filterIsInstance<ChapterRow.Item>()
-            .filter { it.bookId == -1L || it.bookId == state.bookId }
+        // carry every book's chapters, each with positions relative to its own book). Memoized:
+        // rebuilding this list on every position tick was O(all chapters in the series).
+        val items = remember(chapters, state.bookId) {
+            chapters.rows.filterIsInstance<ChapterRow.Item>()
+                .filter { it.bookId == -1L || it.bookId == state.bookId }
+        }
         val cur = currentChapter(items, bookPos, bookTotal)
 
         val trackColor = if (isImmersive) Color.White.copy(alpha = 0.24f)
