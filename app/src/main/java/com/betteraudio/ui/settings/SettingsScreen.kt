@@ -25,6 +25,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -64,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -87,6 +89,8 @@ import kotlin.math.roundToInt
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onCreateWidget: () -> Unit = {},
+    onEditWidget: (Long) -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -116,6 +120,8 @@ fun SettingsScreen(
     val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
+    val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
+    val customWidgets             by viewModel.customWidgets.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var showEbookBrowser by remember { mutableStateOf(false) }
@@ -220,7 +226,10 @@ fun SettingsScreen(
                         skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs, viewModel
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
-                    SettingsSection.Widget -> widgetSection(widgetDefaultCover, viewModel)
+                    SettingsSection.Widget -> widgetSection(
+                        widgetDefaultCover, widgetHideWhenIdle, customWidgets,
+                        onCreateWidget, onEditWidget, viewModel
+                    )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
                     SettingsSection.About -> aboutSection(updateState, viewModel)
@@ -256,7 +265,7 @@ private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
 
 // Curated accent swatches for the custom-color picker (kept small and self-contained rather than
 // porting ArchiveTune's full ~68-preset Theme Creator screen).
-private val CUSTOM_COLOR_PRESETS = listOf(
+internal val CUSTOM_COLOR_PRESETS = listOf(
     0xFFFFA552, 0xFFED5564, 0xFFE91E63, 0xFF9C27B0, 0xFF673AB7, 0xFF3F51B5,
     0xFF2196F3, 0xFF03A9F4, 0xFF00BCD4, 0xFF009688, 0xFF4CAF50, 0xFF8BC34A,
     0xFFCDDC39, 0xFFFFC107, 0xFFFF9800, 0xFFFF5722,
@@ -1704,7 +1713,59 @@ private fun PresetEditorDialog(
 
 // ─── Widget ─────────────────────────────────────────────────────────────────────
 
-private fun LazyListScope.widgetSection(currentCoverPath: String, viewModel: SettingsViewModel) {
+private fun LazyListScope.widgetSection(
+    currentCoverPath: String,
+    hideWhenIdle: Boolean,
+    customWidgets: List<com.betteraudio.data.db.entities.CustomWidgetDesign>,
+    onCreateWidget: () -> Unit,
+    onEditWidget: (Long) -> Unit,
+    viewModel: SettingsViewModel
+) {
+    item {
+        Button(onClick = onCreateWidget, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Create widget")
+        }
+    }
+
+    if (customWidgets.isNotEmpty()) {
+        item {
+            Text(
+                "Your widgets",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        items(customWidgets, key = { it.id }) { design ->
+            CustomWidgetRow(
+                design = design,
+                onEdit = { onEditWidget(design.id) },
+                onDelete = { viewModel.deleteCustomWidget(design.id) }
+            )
+        }
+    }
+
+    item {
+        CardContainer {
+            Row(
+                Modifier.padding(16.dp).fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Hide widgets when nothing is playing", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Custom widgets show no elements while idle, instead of a cold play button.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = hideWhenIdle, onCheckedChange = viewModel::setWidgetHideWhenIdle)
+            }
+        }
+    }
+
     item {
         val picker = rememberLauncherForActivityResult(
             ActivityResultContracts.PickVisualMedia()
@@ -1748,6 +1809,50 @@ private fun LazyListScope.widgetSection(currentCoverPath: String, viewModel: Set
                         TextButton(onClick = { viewModel.clearWidgetDefaultCover() }) { Text("Remove") }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomWidgetRow(
+    design: com.betteraudio.data.db.entities.CustomWidgetDesign,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val context = LocalContext.current
+    val bucket = remember(design.sizeBucket) {
+        runCatching { com.betteraudio.widget.custom.WidgetSizeBucket.valueOf(design.sizeBucket) }
+            .getOrDefault(com.betteraudio.widget.custom.WidgetSizeBucket.WIDE)
+    }
+    val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
+    val thumbnail = remember(design, primaryArgb) {
+        val w = 240
+        val h = (w * bucket.cellsH / bucket.cellsW).coerceAtLeast(1)
+        com.betteraudio.widget.custom.CustomWidgetRenderer.render(
+            context, design,
+            com.betteraudio.widget.WidgetState(title = "Sample", author = "Author", isPlaying = true),
+            appColor = primaryArgb,
+            hideWhenIdle = false, pxW = w, pxH = h
+        )
+    }
+    CardContainer {
+        Row(
+            Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            androidx.compose.foundation.Image(
+                bitmap = thumbnail.asImageBitmap(),
+                contentDescription = design.name,
+                modifier = Modifier
+                    .weight(1f)
+                    .aspectRatio(bucket.cellsW.toFloat() / bucket.cellsH.toFloat())
+                    .clip(RoundedCornerShape(12.dp))
+            )
+            Column {
+                TextButton(onClick = onEdit) { Text("Edit") }
+                TextButton(onClick = onDelete) { Text("Delete") }
             }
         }
     }

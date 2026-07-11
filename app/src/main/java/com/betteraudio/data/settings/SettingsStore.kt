@@ -79,6 +79,12 @@ class SettingsStore @Inject constructor(
         val DARK_MODE                    = stringPreferencesKey("dark_mode")
         // AMOLED-black surfaces when dark + Material You.
         val PURE_BLACK                   = booleanPreferencesKey("pure_black")
+        // Resolved Material You ColorScheme.primary (ARGB Int), kept in sync from VoyageTheme so
+        // themeless widget providers (no Compose context) can render an "app color" background.
+        val WIDGET_APP_COLOR             = intPreferencesKey("widget_app_color")
+        // When true, custom widgets render fully transparent (no elements) while nothing is
+        // playing, instead of showing a cold play button that revives the last book.
+        val WIDGET_HIDE_WHEN_IDLE        = booleanPreferencesKey("widget_hide_when_idle")
     }
 
     companion object {
@@ -94,6 +100,7 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SKIP_SILENCE_MIN_MS     = 1_000L
         const val DEFAULT_SKIP_SILENCE_THRESHOLD  = 1024
         const val DEFAULT_SKIP_SILENCE_PADDING_MS = 300L
+        const val DEFAULT_WIDGET_APP_COLOR = 0xFFFFA552.toInt()
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -125,6 +132,8 @@ class SettingsStore @Inject constructor(
     val customThemeColor: Flow<String>         = context.dataStore.data.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }
     val darkMode: Flow<String>                 = context.dataStore.data.map { it[Keys.DARK_MODE] ?: "AUTO" }
     val pureBlack: Flow<Boolean>               = context.dataStore.data.map { it[Keys.PURE_BLACK] ?: false }
+    val widgetAppColor: Flow<Int>              = context.dataStore.data.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }
+    val widgetHideWhenIdle: Flow<Boolean>      = context.dataStore.data.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -139,6 +148,8 @@ class SettingsStore @Inject constructor(
     @Volatile var currentSkipSilenceThreshold       = DEFAULT_SKIP_SILENCE_THRESHOLD;         private set
     @Volatile var currentSkipSilencePaddingMs       = DEFAULT_SKIP_SILENCE_PADDING_MS;        private set
     @Volatile var currentImportStructure            = "";                                     private set
+    @Volatile var currentWidgetAppColor             = DEFAULT_WIDGET_APP_COLOR;               private set
+    @Volatile var currentWidgetHideWhenIdle         = false;                                   private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -154,6 +165,8 @@ class SettingsStore @Inject constructor(
         scope.launch { skipSilenceThreshold.collect      { currentSkipSilenceThreshold      = it } }
         scope.launch { skipSilencePaddingMs.collect      { currentSkipSilencePaddingMs      = it } }
         scope.launch { importStructure.collect           { currentImportStructure           = it } }
+        scope.launch { widgetAppColor.collect            { currentWidgetAppColor            = it } }
+        scope.launch { widgetHideWhenIdle.collect        { currentWidgetHideWhenIdle        = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -215,4 +228,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.DARK_MODE] = mode }.let { }
     suspend fun setPureBlack(enabled: Boolean) =
         context.dataStore.edit { it[Keys.PURE_BLACK] = enabled }.let { }
+    suspend fun setWidgetAppColor(argb: Int) =
+        context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }.let { }
+    suspend fun setWidgetHideWhenIdle(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }.let { }
 }

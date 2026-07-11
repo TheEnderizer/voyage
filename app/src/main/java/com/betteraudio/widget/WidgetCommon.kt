@@ -25,7 +25,14 @@ data class WidgetState(
     val title: String = "",
     val author: String = "",
     val isPlaying: Boolean = false,
-    val coverArtUri: String? = null
+    val coverArtUri: String? = null,
+    val chapterTitle: String = "",
+    val seriesName: String = "",
+    val bookCoverPath: String? = null,
+    val seriesCoverPath: String? = null,
+    val speed: Float = 1.0f,
+    val boostDb: Int = 0,
+    val sleepTimerRemainingMs: Long = 0L
 )
 
 /**
@@ -41,6 +48,14 @@ object WidgetRender {
     const val EXTRA_IS_PLAYING     = "extra_is_playing"
     const val EXTRA_COVER_ART_URI  = "extra_cover_art_uri"
     const val EXTRA_OPEN_PLAYER    = "extra_open_player"
+    const val EXTRA_OPEN_WIDGET_EDITOR = "extra_open_widget_editor"
+    const val EXTRA_CHAPTER_TITLE  = "extra_chapter_title"
+    const val EXTRA_SERIES_NAME    = "extra_series_name"
+    const val EXTRA_BOOK_COVER_PATH   = "extra_book_cover_path"
+    const val EXTRA_SERIES_COVER_PATH = "extra_series_cover_path"
+    const val EXTRA_SPEED             = "extra_speed"
+    const val EXTRA_BOOST_DB          = "extra_boost_db"
+    const val EXTRA_SLEEP_REMAINING_MS = "extra_sleep_remaining_ms"
 
     private const val DEFAULT_ACCENT = 0xFFFFA552.toInt()
 
@@ -56,6 +71,13 @@ object WidgetRender {
             putExtra(EXTRA_BOOK_TITLE, s.title)
             putExtra(EXTRA_BOOK_AUTHOR, s.author)
             putExtra(EXTRA_COVER_ART_URI, s.coverArtUri ?: "")
+            putExtra(EXTRA_CHAPTER_TITLE, s.chapterTitle)
+            putExtra(EXTRA_SERIES_NAME, s.seriesName)
+            putExtra(EXTRA_BOOK_COVER_PATH, s.bookCoverPath ?: "")
+            putExtra(EXTRA_SERIES_COVER_PATH, s.seriesCoverPath ?: "")
+            putExtra(EXTRA_SPEED, s.speed)
+            putExtra(EXTRA_BOOST_DB, s.boostDb)
+            putExtra(EXTRA_SLEEP_REMAINING_MS, s.sleepTimerRemainingMs)
         }
         context.sendBroadcast(intent)
     }
@@ -64,7 +86,14 @@ object WidgetRender {
         title = intent.getStringExtra(EXTRA_BOOK_TITLE) ?: "",
         author = intent.getStringExtra(EXTRA_BOOK_AUTHOR) ?: "",
         isPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, false),
-        coverArtUri = intent.getStringExtra(EXTRA_COVER_ART_URI)
+        coverArtUri = intent.getStringExtra(EXTRA_COVER_ART_URI),
+        chapterTitle = intent.getStringExtra(EXTRA_CHAPTER_TITLE) ?: "",
+        seriesName = intent.getStringExtra(EXTRA_SERIES_NAME) ?: "",
+        bookCoverPath = intent.getStringExtra(EXTRA_BOOK_COVER_PATH)?.takeIf { it.isNotBlank() },
+        seriesCoverPath = intent.getStringExtra(EXTRA_SERIES_COVER_PATH)?.takeIf { it.isNotBlank() },
+        speed = intent.getFloatExtra(EXTRA_SPEED, 1.0f),
+        boostDb = intent.getIntExtra(EXTRA_BOOST_DB, 0),
+        sleepTimerRemainingMs = intent.getLongExtra(EXTRA_SLEEP_REMAINING_MS, 0L)
     )
 
     fun dp(context: Context, v: Int): Int =
@@ -177,6 +206,13 @@ object WidgetRender {
     /** The user's default widget cover (Settings → Widget), or null if none was set. */
     private fun decodeDefaultCover(context: Context): Bitmap? {
         val f = java.io.File(context.filesDir, "widget_default_cover.jpg")
+        return if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
+    }
+
+    /** Decodes an absolute file path (book/series cover, custom widget image), or null. */
+    fun decodeFile(path: String?): Bitmap? {
+        if (path.isNullOrBlank()) return null
+        val f = java.io.File(path)
         return if (f.exists()) try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } else null
     }
 

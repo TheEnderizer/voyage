@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="250dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="4"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_custom_host"
+    android:previewLayout="@layout/widget_custom_host"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_description"
+    android:configure="com.betteraudio.widget.custom.CustomWidgetConfigureActivity"
+    android:resizeMode="horizontal|vertical" />

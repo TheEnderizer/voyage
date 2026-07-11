@@ -26,11 +26,19 @@
     <!-- Side-load APK updates -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+      largeHeap: ExoPlayer's Mp4Extractor materialises a whole MP4's sample table on the Java heap
+      (~24 bytes/sample). Long single-file audiobooks are enormous: a 48 h m4b with 7.5M AAC frames
+      needs ~172 MB of arrays, which OOMs at the default ~192-256 MB heap. Books far past that (a
+      261 h / 22M-sample file wants ~505 MB) can't be played at all and must be split — see
+      data/files/LargeAudioSplitter.
+    -->
     <application
         android:name=".VoyageApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:largeHeap="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Voyage">
@@ -111,6 +119,61 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_now_playing_2x2_info" />
         </receiver>
+
+        <!-- Custom widget maker: 4 size-bucket providers sharing widget_custom_host.xml -->
+        <receiver
+            android:name=".widget.custom.CustomWidgetSmall"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_custom_small_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.custom.CustomWidgetWide"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_custom_wide_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.custom.CustomWidgetTall"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_custom_tall_info" />
+        </receiver>
+        <receiver
+            android:name=".widget.custom.CustomWidgetLarge"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_custom_large_info" />
+        </receiver>
+
+        <activity
+            android:name=".widget.custom.CustomWidgetConfigureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Voyage">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
 
         <!-- FileProvider for serving downloaded APK updates to the system installer -->
         <provider

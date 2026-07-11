@@ -48,6 +48,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
@@ -85,6 +86,9 @@ class MainActivity : ComponentActivity() {
     // Set when a widget tap (warm start) asks to open the active player; observed in setContent.
     private var playerNavRequest by mutableStateOf<Long?>(null)
 
+    // Set when the custom-widget configure activity's "Create new" asks to open the widget editor.
+    private var widgetEditorNavRequest by mutableStateOf(false)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
@@ -107,6 +111,7 @@ class MainActivity : ComponentActivity() {
         val initialPureBlack = runBlocking { settings.pureBlack.first() }
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
+        val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false) == true
         val coldStartBookId = if (openPlayerFromWidget)
             (runBlocking { settings.lastPlayedBookId.first() }.takeIf { it != -1L } ?: initialBookId)
         else initialBookId
@@ -169,6 +174,13 @@ class MainActivity : ComponentActivity() {
                 val sheetController = rememberPlayerSheetController()
                 val uiScope = androidx.compose.runtime.rememberCoroutineScope()
 
+                // Persist the resolved Material You primary so themeless widget providers (no
+                // Compose context) can render an "app color" background for custom widgets.
+                val widgetAppColorPrimary = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                androidx.compose.runtime.LaunchedEffect(widgetAppColorPrimary) {
+                    settings.setWidgetAppColor(widgetAppColorPrimary.toArgb())
+                }
+
                 // Opening a book DIRECTLY (Books view, search, author page) always shows the
                 // book's own cover; the series cover appears only when playing via the series
                 // path (SeriesPlayer flips the flag back on).
@@ -208,6 +220,16 @@ class MainActivity : ComponentActivity() {
                     playerNavRequest?.let { id ->
                         sheetController.open(bookId = id)
                         playerNavRequest = null
+                    }
+                }
+
+                LaunchedEffect(Unit) {
+                    if (openWidgetEditorColdStart) navController.navigate("widget_editor")
+                }
+                LaunchedEffect(widgetEditorNavRequest) {
+                    if (widgetEditorNavRequest) {
+                        navController.navigate("widget_editor")
+                        widgetEditorNavRequest = false
                     }
                 }
 
@@ -256,7 +278,18 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("settings") {
-                        SettingsScreen(onBack = { navController.popBackStack() })
+                        SettingsScreen(
+                            onBack = { navController.popBackStack() },
+                            onCreateWidget = { navController.navigate("widget_editor") },
+                            onEditWidget = { designId -> navController.navigate("widget_editor?designId=$designId") }
+                        )
+                    }
+
+                    composable(
+                        route = "widget_editor?designId={designId}",
+                        arguments = listOf(navArgument("designId") { type = NavType.LongType; defaultValue = -1L })
+                    ) {
+                        com.betteraudio.ui.widget.WidgetEditorScreen(onBack = { navController.popBackStack() })
                     }
 
                     composable("search") {
@@ -415,6 +448,9 @@ class MainActivity : ComponentActivity() {
             val id = playerController.playbackState.value.bookId.takeIf { it != -1L }
                 ?: runBlocking { settings.lastPlayedBookId.first() }
             if (id != -1L) playerNavRequest = id
+        }
+        if (intent.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false)) {
+            widgetEditorNavRequest = true
         }
     }
 

@@ -27,7 +27,9 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.repository.AudiobookRepository
+import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
 import com.betteraudio.widget.WidgetRender
@@ -53,6 +55,7 @@ import javax.inject.Inject
 class PlaybackService : MediaSessionService() {
 
     @Inject lateinit var repository: AudiobookRepository
+    @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var settings: SettingsStore
 
     private var mediaSession: MediaSession? = null
@@ -79,10 +82,26 @@ class PlaybackService : MediaSessionService() {
     // session-id audio effects above). Toggled per book; its tuning follows the settings live.
     private var silenceProcessor: LiveSilenceSkippingProcessor? = null
 
+    // Custom-widget sleep timer (independent of the in-app AudioSettingsSheet's PlayerController
+    // timer): owned here so a widget PendingIntent → startService can drive it without depending
+    // on a MediaController round-trip. Both ultimately just pause the same ExoPlayer.
+    private var widgetSleepTimerJob: Job? = null
+    private var widgetSleepTimerRemainingMs: Long = 0L
+
     companion object {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.betteraudio.action.WIDGET_PLAY_PAUSE"
         const val ACTION_SKIP_FORWARD      = "com.betteraudio.action.WIDGET_SKIP_FORWARD"
         const val ACTION_SKIP_BACK         = "com.betteraudio.action.WIDGET_SKIP_BACK"
+        const val ACTION_CHAPTER_FORWARD   = "com.betteraudio.action.WIDGET_CHAPTER_FORWARD"
+        const val ACTION_CHAPTER_BACK      = "com.betteraudio.action.WIDGET_CHAPTER_BACK"
+        const val ACTION_SPEED_UP          = "com.betteraudio.action.WIDGET_SPEED_UP"
+        const val ACTION_SPEED_DOWN        = "com.betteraudio.action.WIDGET_SPEED_DOWN"
+        const val ACTION_BOOST_UP          = "com.betteraudio.action.WIDGET_BOOST_UP"
+        const val ACTION_BOOST_DOWN        = "com.betteraudio.action.WIDGET_BOOST_DOWN"
+        const val ACTION_QUICK_BOOKMARK    = "com.betteraudio.action.WIDGET_QUICK_BOOKMARK"
+        const val ACTION_CLOSE_BOOK        = "com.betteraudio.action.WIDGET_CLOSE_BOOK"
+        const val ACTION_SLEEP_TIMER_TOGGLE = "com.betteraudio.action.WIDGET_SLEEP_TIMER_TOGGLE"
+        const val EXTRA_SLEEP_DURATION_MS  = "extra_sleep_duration_ms"
 
         const val CMD_SET_BOOST      = "com.betteraudio.command.SET_BOOST"
         const val KEY_BOOST_MB       = "boost_mb"
@@ -90,6 +109,9 @@ class PlaybackService : MediaSessionService() {
         const val KEY_EQ_BANDS_JSON  = "eq_bands_json"  // "" = flat/bypass
         const val CMD_SET_SKIP_SILENCE = "com.betteraudio.command.SET_SKIP_SILENCE"
         const val KEY_SKIP_SILENCE     = "skip_silence_enabled"
+
+        private const val SPEED_STEP = 0.1f
+        private const val BOOST_STEP_MB = 300 // 3 dB
     }
 
     override fun onCreate() {
@@ -356,8 +378,94 @@ class PlaybackService : MediaSessionService() {
             ACTION_SKIP_BACK -> player?.let {
                 it.seekTo(maxOf(0L, it.currentPosition - settings.currentSkipBackMs))
             }
+            ACTION_CHAPTER_FORWARD -> exoPlayer?.let {
+                if (it.hasNextMediaItem()) it.seekToNextMediaItem()
+                broadcastWidgetUpdate()
+            }
+            ACTION_CHAPTER_BACK -> exoPlayer?.let {
+                if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() else it.seekTo(0L)
+                broadcastWidgetUpdate()
+            }
+            ACTION_SPEED_UP -> player?.let {
+                val newSpeed = (it.playbackParameters.speed + SPEED_STEP).coerceIn(0.5f, 3.0f)
+                it.setPlaybackSpeed(newSpeed)
+                broadcastWidgetUpdate()
+            }
+            ACTION_SPEED_DOWN -> player?.let {
+                val newSpeed = (it.playbackParameters.speed - SPEED_STEP).coerceIn(0.5f, 3.0f)
+                it.setPlaybackSpeed(newSpeed)
+                broadcastWidgetUpdate()
+            }
+            ACTION_BOOST_UP -> {
+                applyBoost((boostMb + BOOST_STEP_MB).coerceIn(0, 2400))
+                broadcastWidgetUpdate()
+            }
+            ACTION_BOOST_DOWN -> {
+                applyBoost((boostMb - BOOST_STEP_MB).coerceIn(0, 2400))
+                broadcastWidgetUpdate()
+            }
+            ACTION_QUICK_BOOKMARK -> addQuickBookmark()
+            ACTION_CLOSE_BOOK -> closeBook()
+            ACTION_SLEEP_TIMER_TOGGLE -> {
+                val durationMs = intent.getLongExtra(EXTRA_SLEEP_DURATION_MS, 15 * 60_000L)
+                toggleWidgetSleepTimer(durationMs)
+            }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    /** Note-less bookmark at the current position, for the widget's quick-bookmark element. */
+    private fun addQuickBookmark() {
+        val player = exoPlayer ?: return
+        val item = player.currentMediaItem ?: return
+        val fileId = item.mediaId.toLongOrNull() ?: return
+        val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+        val positionMs = player.currentPosition
+        serviceScope.launch(Dispatchers.IO) {
+            repository.addBookmark(
+                Bookmark(
+                    bookId = bookId,
+                    fileId = fileId,
+                    positionInFileMs = positionMs,
+                    absolutePositionMs = positionMs,
+                    comment = "",
+                    createdAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    /** Stops playback and saves position, mirroring the mini-bar fling-to-close gesture. */
+    private fun closeBook() {
+        saveCurrentPosition()
+        exoPlayer?.stop()
+        exoPlayer?.clearMediaItems()
+        broadcastWidgetUpdate()
+    }
+
+    private fun toggleWidgetSleepTimer(durationMs: Long) {
+        if (widgetSleepTimerJob?.isActive == true) {
+            widgetSleepTimerJob?.cancel()
+            widgetSleepTimerJob = null
+            widgetSleepTimerRemainingMs = 0L
+            broadcastWidgetUpdate()
+            return
+        }
+        widgetSleepTimerRemainingMs = durationMs
+        broadcastWidgetUpdate()
+        widgetSleepTimerJob = serviceScope.launch {
+            var remaining = durationMs
+            while (remaining > 0 && isActive) {
+                delay(1_000)
+                remaining -= 1_000
+                widgetSleepTimerRemainingMs = remaining.coerceAtLeast(0L)
+                broadcastWidgetUpdate()
+            }
+            widgetSleepTimerRemainingMs = 0L
+            exoPlayer?.pause()
+            broadcastWidgetUpdate()
+        }
     }
 
     /**
@@ -440,6 +548,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         stopPositionSaver()
         saveCurrentPosition()
+        widgetSleepTimerJob?.cancel()
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         attachedSessionId = C.AUDIO_SESSION_ID_UNSET
@@ -459,14 +568,45 @@ class PlaybackService : MediaSessionService() {
     fun broadcastWidgetUpdate() {
         val player = mediaSession?.player ?: return
         val meta = player.currentMediaItem?.mediaMetadata
-        val intent = Intent(WidgetRender.ACTION_UPDATE_WIDGET).apply {
-            setPackage(packageName)
-            putExtra(WidgetRender.EXTRA_IS_PLAYING, player.isPlaying)
-            putExtra(WidgetRender.EXTRA_BOOK_TITLE, meta?.albumTitle?.toString() ?: "")
-            putExtra(WidgetRender.EXTRA_BOOK_AUTHOR, meta?.artist?.toString() ?: "")
-            putExtra(WidgetRender.EXTRA_COVER_ART_URI, meta?.artworkUri?.toString() ?: "")
+        val isPlaying = player.isPlaying
+        val title = meta?.albumTitle?.toString() ?: ""
+        val author = meta?.artist?.toString() ?: ""
+        val coverArtUri = meta?.artworkUri?.toString() ?: ""
+        val chapterTitle = meta?.title?.toString() ?: ""
+        val speed = player.playbackParameters.speed
+        val boostDb = boostMb / 100
+        val sleepRemaining = widgetSleepTimerRemainingMs
+        val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
+
+        serviceScope.launch(Dispatchers.IO) {
+            var seriesName = ""
+            var bookCoverPath: String? = null
+            var seriesCoverPath: String? = null
+            if (bookId != -1L) {
+                val book = repository.getBookById(bookId).first()
+                bookCoverPath = book?.coverArtPath
+                seriesName = book?.seriesName ?: ""
+                val seriesId = book?.seriesId
+                if (seriesId != null) {
+                    seriesCoverPath = seriesRepository.getSeriesOnce(seriesId)?.coverArtPath
+                }
+            }
+            val intent = Intent(WidgetRender.ACTION_UPDATE_WIDGET).apply {
+                setPackage(packageName)
+                putExtra(WidgetRender.EXTRA_IS_PLAYING, isPlaying)
+                putExtra(WidgetRender.EXTRA_BOOK_TITLE, title)
+                putExtra(WidgetRender.EXTRA_BOOK_AUTHOR, author)
+                putExtra(WidgetRender.EXTRA_COVER_ART_URI, coverArtUri)
+                putExtra(WidgetRender.EXTRA_CHAPTER_TITLE, chapterTitle)
+                putExtra(WidgetRender.EXTRA_SERIES_NAME, seriesName)
+                putExtra(WidgetRender.EXTRA_BOOK_COVER_PATH, bookCoverPath ?: "")
+                putExtra(WidgetRender.EXTRA_SERIES_COVER_PATH, seriesCoverPath ?: "")
+                putExtra(WidgetRender.EXTRA_SPEED, speed)
+                putExtra(WidgetRender.EXTRA_BOOST_DB, boostDb)
+                putExtra(WidgetRender.EXTRA_SLEEP_REMAINING_MS, sleepRemaining)
+            }
+            sendBroadcast(intent)
         }
-        sendBroadcast(intent)
     }
 
     private inner class SessionCallback : MediaSession.Callback {

@@ -12,15 +12,19 @@ import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookGroupDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
+import com.betteraudio.data.db.dao.CustomWidgetDesignDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.db.dao.SeriesDao
+import com.betteraudio.data.db.dao.WidgetBindingDao
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookGroup
 import com.betteraudio.data.db.entities.BookGroupMember
+import com.betteraudio.data.db.entities.CustomWidgetDesign
+import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
@@ -42,9 +46,10 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // Version 15: skip_events gains `kind` + text-side columns, so reading-side jumps (reader chapter/
 //             TOC navigation, "Listen from here" / "Read from here") share the same merged,
 //             time-ordered history table as audio-side skips for a linked audio+epub book.
+// Version 16: custom_widget_design + widget_binding tables for the custom widget maker.
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class],
-    version = 15,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, CustomWidgetDesign::class, WidgetBinding::class],
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,6 +65,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun seriesDao(): SeriesDao
     abstract fun authorMetaDao(): AuthorMetaDao
     abstract fun syncAnchorDao(): SyncAnchorDao
+    abstract fun customWidgetDesignDao(): CustomWidgetDesignDao
+    abstract fun widgetBindingDao(): WidgetBindingDao
 
     companion object {
         val MIGRATION_3_4 = object : Migration(3, 4) {
@@ -261,6 +268,29 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN toSpineIndex INTEGER")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN toFraction REAL")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN toSpineTitle TEXT")
+            }
+        }
+
+        val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 15 → 16 (custom widget maker)")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `custom_widget_design` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `sizeBucket` TEXT NOT NULL,
+                        `backgroundType` TEXT NOT NULL,
+                        `backgroundValue` TEXT NOT NULL DEFAULT '',
+                        `elementsJson` TEXT NOT NULL DEFAULT '[]',
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `widget_binding` (
+                        `appWidgetId` INTEGER PRIMARY KEY NOT NULL,
+                        `designId` INTEGER NOT NULL
+                    )
+                """.trimIndent())
             }
         }
     }
