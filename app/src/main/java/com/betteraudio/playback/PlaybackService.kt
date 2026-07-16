@@ -141,6 +141,13 @@ class PlaybackService : MediaSessionService() {
         const val SLEEP_MODE_COUNTDOWN      = "COUNTDOWN"
         const val SLEEP_MODE_END_OF_CHAPTER = "END_OF_CHAPTER"
 
+        // Session → controller push (the service is sole authority; a shake-extend or a
+        // schedule auto-arm happens entirely service-side, so controllers can't just poll their
+        // own local countdown — they need to be told). See MediaSession.broadcastCustomCommand /
+        // MediaController.Listener.onCustomCommand.
+        const val CMD_SLEEP_STATE_CHANGED = "com.betteraudio.command.SLEEP_STATE_CHANGED"
+        const val KEY_SLEEP_REMAINING_MS  = "sleep_remaining_ms"
+
         private const val SPEED_STEP = 0.1f
         private const val BOOST_STEP_MB = 300 // 3 dB
         private const val SHAKE_MAGNITUDE_THRESHOLD = 12f       // m/s^2, on TYPE_LINEAR_ACCELERATION
@@ -525,6 +532,21 @@ class PlaybackService : MediaSessionService() {
             }
         }
         broadcastWidgetUpdate()
+        broadcastSleepState()
+    }
+
+    /** Pushes the current sleep-timer mode + remaining time to every connected controller (the
+     *  in-app player). Needed because a shake-extend or a scheduled auto-arm happens entirely
+     *  service-side — a controller has no way to notice either just by polling its own state. */
+    private fun broadcastSleepState() {
+        val session = mediaSession ?: return
+        session.broadcastCustomCommand(
+            SessionCommand(CMD_SLEEP_STATE_CHANGED, Bundle.EMPTY),
+            Bundle().apply {
+                putString(KEY_SLEEP_MODE, sleepMode)
+                putLong(KEY_SLEEP_REMAINING_MS, sleepRemainingMsForWidget)
+            }
+        )
     }
 
     private fun startSleepTick() {
@@ -542,6 +564,7 @@ class PlaybackService : MediaSessionService() {
                     return@launch
                 }
                 broadcastWidgetUpdate()
+                broadcastSleepState()
                 delay(1_000)
             }
         }
@@ -602,6 +625,7 @@ class PlaybackService : MediaSessionService() {
         sleepRemainingMsForWidget = 0L
         AppLog.i("Player", "sleep timer fired, pausing")
         broadcastWidgetUpdate()
+        broadcastSleepState()
         if (settings.currentSleepShakeEnabled) armShakeGraceWindow()
     }
 

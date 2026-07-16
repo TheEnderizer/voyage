@@ -11,6 +11,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
@@ -113,9 +114,12 @@ class PlayerController @Inject constructor(
     // bytes-per-second rate without an async DB round-trip mid-error-handling.
     private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
 
-    // Sleep timer
-    private var sleepTimerJob: Job? = null
+    // Sleep timer — PlaybackService is sole authority (see its class doc); this only mirrors the
+    // last known state for the UI, updated optimistically on every local call AND authoritatively
+    // whenever the service pushes CMD_SLEEP_STATE_CHANGED (covers shake-extends and scheduled
+    // auto-arms, which happen entirely service-side with no local call to hook).
     private var sleepTimerRemainingMs: Long = 0L
+    private var sleepTimerIsEndOfChapter: Boolean = false
 
     // Position ticker — updates the seek bar while playback is active
     private var positionTickerJob: Job? = null
@@ -160,10 +164,26 @@ class PlayerController @Inject constructor(
     // (absStartMs, index, name) per chapter for the loaded single book; empty for groups.
     private var chapterBoundaries: List<Triple<Long, Int, String>> = emptyList()
 
+    private val controllerListener = object : MediaController.Listener {
+        override fun onCustomCommand(
+            controller: MediaController,
+            command: SessionCommand,
+            args: Bundle
+        ): com.google.common.util.concurrent.ListenableFuture<SessionResult> {
+            if (command.customAction == PlaybackService.CMD_SLEEP_STATE_CHANGED) {
+                onSleepStatePushed(
+                    mode = args.getString(PlaybackService.KEY_SLEEP_MODE, PlaybackService.SLEEP_MODE_OFF),
+                    remainingMs = args.getLong(PlaybackService.KEY_SLEEP_REMAINING_MS, 0L)
+                )
+            }
+            return com.google.common.util.concurrent.Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+        }
+    }
+
     fun connect() {
         if (controller != null) return
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
+        val future = MediaController.Builder(context, token).setListener(controllerListener).buildAsync()
         future.addListener({
             try {
                 controller = future.get()
@@ -295,7 +315,11 @@ class PlayerController @Inject constructor(
         seriesBookIds: List<Long> = emptyList()
     ) {
         closeHistorySession()  // end any session on the previously-loaded book first
-        sleepEndOfChapterTargetMs = null  // a stale target from the previous book must not linger
+        // An end-of-chapter display is meaningless once the book changes (its target position no
+        // longer applies) — clear it locally. A plain countdown is unaffected and left as-is
+        // (same as before this refactor; whether a still-armed service-side timer should also be
+        // cancelled on a book change is a separate, pre-existing behavior this doesn't alter).
+        if (sleepTimerIsEndOfChapter) updateSleepDisplay(0L, endOfChapter = false)
         AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed series=$seriesId")
         currentBookId = book.id
         currentGroupId = -1L
@@ -477,29 +501,21 @@ class PlayerController @Inject constructor(
         ctrl.seekTo(fileIndex, offsetInFile)
     }
 
-    // Absolute book-level position an END_OF_CHAPTER timer is armed to; null when not in that
-    // mode. The actual pause is done by PlaybackService (survives this process dying) — this is
-    // purely a local mirror so the UI has a live countdown, recomputed each tick in syncState().
-    private var sleepEndOfChapterTargetMs: Long? = null
-
     /** Start a fixed-duration sleep timer; pauses playback after [durationMs]. Pass 0 to cancel.
-     *  The actual pause is armed on [PlaybackService] (survives this process dying); the local
-     *  job here only mirrors a live countdown for the UI and gives an immediate local pause as a
-     *  fallback if the service's 1s tick lags a moment behind. */
+     *  [PlaybackService] is sole authority (survives this process dying, and is the one place a
+     *  shake-extend or scheduled auto-arm can happen) — this just sets an optimistic local value
+     *  for instant UI feedback, then lets the service's push (see [onSleepStatePushed]) take over. */
     fun setSleepTimer(durationMs: Long) {
-        sleepEndOfChapterTargetMs = null
-        sleepTimerJob?.cancel()
-        sleepTimerRemainingMs = durationMs
         val ctrl = controller
         if (durationMs <= 0L) {
-            sleepTimerRemainingMs = 0L
-            _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = 0L, sleepTimerEndOfChapter = false)
+            updateSleepDisplay(0L, endOfChapter = false)
             ctrl?.sendCustomCommand(
                 SessionCommand(PlaybackService.CMD_SET_SLEEP_TIMER, Bundle.EMPTY),
                 Bundle().apply { putString(PlaybackService.KEY_SLEEP_MODE, PlaybackService.SLEEP_MODE_OFF) }
             )
             return
         }
+        updateSleepDisplay(durationMs, endOfChapter = false)
         ctrl?.sendCustomCommand(
             SessionCommand(PlaybackService.CMD_SET_SLEEP_TIMER, Bundle.EMPTY),
             Bundle().apply {
@@ -507,32 +523,14 @@ class PlayerController @Inject constructor(
                 putLong(PlaybackService.KEY_SLEEP_DURATION_MS, durationMs)
             }
         )
-        sleepTimerJob = scope.launch {
-            var remaining = durationMs
-            while (isActive && remaining > 0L) {
-                delay(1_000)
-                remaining -= 1_000
-                sleepTimerRemainingMs = remaining
-                _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = remaining, sleepTimerEndOfChapter = false)
-            }
-            if (isActive) {
-                scope.launch(Dispatchers.Main) { controller?.pause() }
-                sleepTimerRemainingMs = 0L
-                _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = 0L)
-            }
-        }
     }
 
     /** Arms a sleep timer that fires when the book reaches [targetBookPositionMs] (e.g. the end
-     *  of the currently-playing chapter) instead of a fixed duration. [PlaybackService] is
-     *  authoritative for the pause; the displayed remaining-time here is recomputed every tick
-     *  from the position ticker that's already running while playing. */
+     *  of the currently-playing chapter) instead of a fixed duration. Same authority split as
+     *  [setSleepTimer]: optimistic local display, service push takes over from there. */
     fun setSleepTimerEndOfChapter(targetBookPositionMs: Long) {
-        sleepTimerJob?.cancel()
-        sleepEndOfChapterTargetMs = targetBookPositionMs
         val remaining = (targetBookPositionMs - bookPosFromState()).coerceAtLeast(0L)
-        sleepTimerRemainingMs = remaining
-        _positionState.value = _positionState.value.copy(sleepTimerRemainingMs = remaining, sleepTimerEndOfChapter = true)
+        updateSleepDisplay(remaining, endOfChapter = true)
         controller?.sendCustomCommand(
             SessionCommand(PlaybackService.CMD_SET_SLEEP_TIMER, Bundle.EMPTY),
             Bundle().apply {
@@ -542,6 +540,22 @@ class PlayerController @Inject constructor(
                 putLong(PlaybackService.KEY_SLEEP_TARGET_POSITION_MS, targetBookPositionMs)
             }
         )
+    }
+
+    private fun updateSleepDisplay(remainingMs: Long, endOfChapter: Boolean) {
+        sleepTimerRemainingMs = remainingMs
+        sleepTimerIsEndOfChapter = endOfChapter
+        _positionState.value = _positionState.value.copy(
+            sleepTimerRemainingMs = remainingMs,
+            sleepTimerEndOfChapter = endOfChapter
+        )
+    }
+
+    /** Authoritative state pushed from [PlaybackService] (CMD_SLEEP_STATE_CHANGED) — covers every
+     *  case a local call can't: shake-to-extend, the 1s countdown tick, and a scheduled auto-arm
+     *  the user never explicitly requested from this process. */
+    private fun onSleepStatePushed(mode: String, remainingMs: Long) {
+        updateSleepDisplay(remainingMs, endOfChapter = mode == PlaybackService.SLEEP_MODE_END_OF_CHAPTER)
     }
 
     fun saveCurrentProgress() {
@@ -738,22 +752,16 @@ class PlayerController @Inject constructor(
             if (currentGroupId != -1L && memberBookId != -1L) currentBookId = memberBookId
 
             val bookPos = cumulativeStart + filePositionMs
-            // End-of-chapter mode has no fixed duration to count down — recompute the remaining
-            // distance to the target every tick instead. The actual pause is service-side; once
-            // reached, just stop showing a countdown (avoids a negative/stale display).
-            val sleepRemaining = sleepEndOfChapterTargetMs?.let { target ->
-                val r = (target - bookPos).coerceAtLeast(0L)
-                if (r <= 0L) sleepEndOfChapterTargetMs = null
-                r
-            } ?: sleepTimerRemainingMs
-
+            // Sleep-timer fields are NOT recomputed here — PlaybackService is sole authority and
+            // pushes updates directly into sleepTimerRemainingMs/sleepTimerIsEndOfChapter (see
+            // onSleepStatePushed); this just carries the last-known values through.
             _positionState.value = PositionState(
                 currentPositionMs = filePositionMs,
                 durationMs = ctrl.duration.takeIf { it > 0 } ?: 0L,
                 bookPositionMs = bookPos,
                 bookTotalDurationMs = bookTotalDurationMs,
-                sleepTimerRemainingMs = sleepRemaining,
-                sleepTimerEndOfChapter = sleepEndOfChapterTargetMs != null
+                sleepTimerRemainingMs = sleepTimerRemainingMs,
+                sleepTimerEndOfChapter = sleepTimerIsEndOfChapter
             )
 
             // Data-class equality makes this a no-op write (no new emission) on the common tick
