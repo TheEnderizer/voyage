@@ -104,6 +104,19 @@ class SettingsStore @Inject constructor(
         val SLEEP_SCHEDULE_START_MINUTES = intPreferencesKey("sleep_schedule_start_minutes")
         val SLEEP_SCHEDULE_END_MINUTES   = intPreferencesKey("sleep_schedule_end_minutes")
         val SLEEP_SCHEDULE_DEFAULT_MINUTES = intPreferencesKey("sleep_schedule_default_minutes")
+        // ── Audio balance / mono (playback/ChannelMixProcessor) — global, not per-book ────────
+        val AUDIO_BALANCE = floatPreferencesKey("audio_balance")   // -1f (left) .. 1f (right)
+        val MONO_AUDIO     = booleanPreferencesKey("mono_audio")
+        // ── Headset multi-press mapping (PlaybackService.onMediaButtonEvent) ───────────────────
+        // Off by default — keeps today's zero-latency single-press behavior; enabling accepts a
+        // short press-counting delay. Action values: "play_pause" | "skip_forward" | "skip_back" |
+        // "next_chapter" | "prev_chapter" | "bookmark" | "none".
+        val HEADSET_MULTI_PRESS_ENABLED = booleanPreferencesKey("headset_multi_press_enabled")
+        val HEADSET_DOUBLE_PRESS_ACTION = stringPreferencesKey("headset_double_press_action")
+        val HEADSET_TRIPLE_PRESS_ACTION = stringPreferencesKey("headset_triple_press_action")
+        // ── Bluetooth/headphone auto-resume (PlaybackService.AudioDeviceCallback) ──────────────
+        val BT_AUTO_RESUME_ENABLED        = booleanPreferencesKey("bt_auto_resume_enabled")
+        val BT_AUTO_RESUME_WINDOW_MINUTES = intPreferencesKey("bt_auto_resume_window_minutes")
     }
 
     companion object {
@@ -126,6 +139,9 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SLEEP_SCHEDULE_START_MINUTES = 22 * 60   // 22:00
         const val DEFAULT_SLEEP_SCHEDULE_END_MINUTES = 6 * 60      // 06:00
         const val DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES = 30
+        const val DEFAULT_HEADSET_DOUBLE_PRESS_ACTION = "skip_forward"
+        const val DEFAULT_HEADSET_TRIPLE_PRESS_ACTION = "skip_back"
+        const val DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES = 15
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -171,6 +187,13 @@ class SettingsStore @Inject constructor(
     val sleepScheduleStartMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_START_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_START_MINUTES }
     val sleepScheduleEndMinutes: Flow<Int>     = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_END_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_END_MINUTES }
     val sleepScheduleDefaultMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES }
+    val audioBalance: Flow<Float>              = context.dataStore.data.map { it[Keys.AUDIO_BALANCE] ?: 0f }
+    val monoAudio: Flow<Boolean>               = context.dataStore.data.map { it[Keys.MONO_AUDIO] ?: false }
+    val headsetMultiPressEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.HEADSET_MULTI_PRESS_ENABLED] ?: false }
+    val headsetDoublePressAction: Flow<String> = context.dataStore.data.map { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] ?: DEFAULT_HEADSET_DOUBLE_PRESS_ACTION }
+    val headsetTriplePressAction: Flow<String> = context.dataStore.data.map { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] ?: DEFAULT_HEADSET_TRIPLE_PRESS_ACTION }
+    val btAutoResumeEnabled: Flow<Boolean>     = context.dataStore.data.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }
+    val btAutoResumeWindowMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -194,6 +217,13 @@ class SettingsStore @Inject constructor(
     @Volatile var currentSleepScheduleStartMinutes  = DEFAULT_SLEEP_SCHEDULE_START_MINUTES;    private set
     @Volatile var currentSleepScheduleEndMinutes    = DEFAULT_SLEEP_SCHEDULE_END_MINUTES;      private set
     @Volatile var currentSleepScheduleDefaultMinutes = DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES; private set
+    @Volatile var currentAudioBalance               = 0f;                                      private set
+    @Volatile var currentMonoAudio                  = false;                                    private set
+    @Volatile var currentHeadsetMultiPressEnabled   = false;                                    private set
+    @Volatile var currentHeadsetDoublePressAction   = DEFAULT_HEADSET_DOUBLE_PRESS_ACTION;      private set
+    @Volatile var currentHeadsetTriplePressAction   = DEFAULT_HEADSET_TRIPLE_PRESS_ACTION;      private set
+    @Volatile var currentBtAutoResumeEnabled        = false;                                    private set
+    @Volatile var currentBtAutoResumeWindowMinutes  = DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES;    private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -218,6 +248,13 @@ class SettingsStore @Inject constructor(
         scope.launch { sleepScheduleStartMinutes.collect     { currentSleepScheduleStartMinutes     = it } }
         scope.launch { sleepScheduleEndMinutes.collect       { currentSleepScheduleEndMinutes       = it } }
         scope.launch { sleepScheduleDefaultMinutes.collect   { currentSleepScheduleDefaultMinutes   = it } }
+        scope.launch { audioBalance.collect                  { currentAudioBalance                  = it } }
+        scope.launch { monoAudio.collect                     { currentMonoAudio                     = it } }
+        scope.launch { headsetMultiPressEnabled.collect      { currentHeadsetMultiPressEnabled       = it } }
+        scope.launch { headsetDoublePressAction.collect      { currentHeadsetDoublePressAction       = it } }
+        scope.launch { headsetTriplePressAction.collect      { currentHeadsetTriplePressAction       = it } }
+        scope.launch { btAutoResumeEnabled.collect           { currentBtAutoResumeEnabled            = it } }
+        scope.launch { btAutoResumeWindowMinutes.collect     { currentBtAutoResumeWindowMinutes      = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -308,4 +345,18 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_END_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
     suspend fun setSleepScheduleDefaultMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] = minutes.coerceIn(1, 180) }.let { }
+    suspend fun setAudioBalance(value: Float) =
+        context.dataStore.edit { it[Keys.AUDIO_BALANCE] = value.coerceIn(-1f, 1f) }.let { }
+    suspend fun setMonoAudio(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.MONO_AUDIO] = enabled }.let { }
+    suspend fun setHeadsetMultiPressEnabled(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.HEADSET_MULTI_PRESS_ENABLED] = enabled }.let { }
+    suspend fun setHeadsetDoublePressAction(action: String) =
+        context.dataStore.edit { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] = action }.let { }
+    suspend fun setHeadsetTriplePressAction(action: String) =
+        context.dataStore.edit { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] = action }.let { }
+    suspend fun setBtAutoResumeEnabled(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_ENABLED] = enabled }.let { }
+    suspend fun setBtAutoResumeWindowMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] = minutes.coerceIn(1, 120) }.let { }
 }

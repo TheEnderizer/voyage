@@ -91,6 +91,7 @@ fun PlayerContent(
     val showInfoState = remember { mutableStateOf(initiallyShowInfo) }
 
     var showChapters       by remember { mutableStateOf(false) }
+    var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
@@ -344,6 +345,11 @@ fun PlayerContent(
                                     onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
                                 )
                             }
+                            DropdownMenuItem(
+                                text = { Text("Lock screen") },
+                                leadingIcon = { Icon(Icons.Default.Lock, null) },
+                                onClick = { showOverflow = false; isLocked = true }
+                            )
                         }
                     }
                 }
@@ -735,6 +741,8 @@ fun PlayerContent(
             onSelect = { viewModel.onChapterSelected(it) },
             onDismiss = { showChapters = false }
         )
+
+        LockOverlay(locked = isLocked, onUnlock = { isLocked = false })
 
         if (showBookOptions && bwp != null) {
             BookOptionsSheet(

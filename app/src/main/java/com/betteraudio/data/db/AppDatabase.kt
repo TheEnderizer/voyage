@@ -47,9 +47,12 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             TOC navigation, "Listen from here" / "Read from here") share the same merged,
 //             time-ordered history table as audio-side skips for a linked audio+epub book.
 // Version 16: custom_widget_design + widget_binding tables for the custom widget maker.
+// Version 17: skip_events.source ("jump" | "skip_button" | "auto") — distinguishes confirmed
+//             jumps from coalesced skip-button taps and periodic auto-checkpoints, so the
+//             position-history UI can show/prune each differently.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, CustomWidgetDesign::class, WidgetBinding::class],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -291,6 +294,13 @@ abstract class AppDatabase : RoomDatabase() {
                         `designId` INTEGER NOT NULL
                     )
                 """.trimIndent())
+            }
+        }
+
+        val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 16 → 17 (skip_events.source)")
+                db.execSQL("ALTER TABLE skip_events ADD COLUMN source TEXT NOT NULL DEFAULT 'jump'")
             }
         }
     }

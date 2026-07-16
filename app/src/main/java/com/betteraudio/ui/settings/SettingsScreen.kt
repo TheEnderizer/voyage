@@ -120,6 +120,11 @@ fun SettingsScreen(
     val sleepScheduleStartMinutes by viewModel.sleepScheduleStartMinutes.collectAsStateWithLifecycle()
     val sleepScheduleEndMinutes   by viewModel.sleepScheduleEndMinutes.collectAsStateWithLifecycle()
     val sleepScheduleDefaultMinutes by viewModel.sleepScheduleDefaultMinutes.collectAsStateWithLifecycle()
+    val headsetMultiPressEnabled by viewModel.headsetMultiPressEnabled.collectAsStateWithLifecycle()
+    val headsetDoublePressAction by viewModel.headsetDoublePressAction.collectAsStateWithLifecycle()
+    val headsetTriplePressAction by viewModel.headsetTriplePressAction.collectAsStateWithLifecycle()
+    val btAutoResumeEnabled by viewModel.btAutoResumeEnabled.collectAsStateWithLifecycle()
+    val btAutoResumeWindowMinutes by viewModel.btAutoResumeWindowMinutes.collectAsStateWithLifecycle()
     val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
     val appTheme                  by viewModel.appTheme.collectAsStateWithLifecycle()
     val themeColorSource          by viewModel.themeColorSource.collectAsStateWithLifecycle()
@@ -235,7 +240,10 @@ fun SettingsScreen(
                         skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs,
                         sleepFadeSeconds, sleepShakeEnabled, sleepShakeResetMinutes,
                         sleepScheduleEnabled, sleepScheduleStartMinutes, sleepScheduleEndMinutes,
-                        sleepScheduleDefaultMinutes, viewModel
+                        sleepScheduleDefaultMinutes,
+                        headsetMultiPressEnabled, headsetDoublePressAction, headsetTriplePressAction,
+                        btAutoResumeEnabled, btAutoResumeWindowMinutes,
+                        viewModel
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
                     SettingsSection.Widget -> widgetSection(
@@ -741,6 +749,11 @@ private fun LazyListScope.playbackSection(
     sleepScheduleStartMinutes: Int,
     sleepScheduleEndMinutes: Int,
     sleepScheduleDefaultMinutes: Int,
+    headsetMultiPressEnabled: Boolean,
+    headsetDoublePressAction: String,
+    headsetTriplePressAction: String,
+    btAutoResumeEnabled: Boolean,
+    btAutoResumeWindowMinutes: Int,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -1076,11 +1089,118 @@ private fun LazyListScope.playbackSection(
     }
     item {
         CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Headset button mapping", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Double/triple-click the headset button for extra actions. Adds a short delay to every single press to tell them apart — behavior varies by headset.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = headsetMultiPressEnabled, onCheckedChange = { viewModel.setHeadsetMultiPressEnabled(it) })
+                }
+                if (headsetMultiPressEnabled) {
+                    HeadsetActionPicker(
+                        label = "Double press",
+                        selected = headsetDoublePressAction,
+                        onSelect = { viewModel.setHeadsetDoublePressAction(it) }
+                    )
+                    HeadsetActionPicker(
+                        label = "Triple press",
+                        selected = headsetTriplePressAction,
+                        onSelect = { viewModel.setHeadsetTriplePressAction(it) }
+                    )
+                }
+            }
+        }
+    }
+    item {
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Resume on headphones", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Automatically resume a paused book when headphones or a Bluetooth speaker connect, if it was paused recently. Only while the app is still running in the background.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = btAutoResumeEnabled, onCheckedChange = { viewModel.setBtAutoResumeEnabled(it) })
+                }
+                if (btAutoResumeEnabled) {
+                    var windowSlider by remember(btAutoResumeWindowMinutes) { mutableFloatStateOf(btAutoResumeWindowMinutes.toFloat()) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Within", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${windowSlider.toInt()} min of pausing",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = windowSlider,
+                        onValueChange = { windowSlider = it.toInt().toFloat() },
+                        onValueChangeFinished = { viewModel.setBtAutoResumeWindowMinutes(windowSlider.toInt().coerceAtLeast(1)) },
+                        valueRange = 1f..120f,
+                        steps = 118,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+    item {
+        CardContainer {
             NavRow(
                 icon = Icons.Default.Tune,
                 label = "Audio Presets — open via Tune button in player",
                 onClick = {}
             )
+        }
+    }
+}
+
+private val HEADSET_ACTIONS = listOf(
+    "play_pause" to "Play / Pause",
+    "skip_forward" to "Skip forward",
+    "skip_back" to "Skip back",
+    "next_chapter" to "Next chapter",
+    "prev_chapter" to "Previous chapter",
+    "bookmark" to "Add bookmark",
+    "none" to "Nothing",
+)
+
+@Composable
+private fun HeadsetActionPicker(label: String, selected: String, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedLabel = HEADSET_ACTIONS.firstOrNull { it.first == selected }?.second ?: "Nothing"
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            OutlinedButton(onClick = { expanded = true }) { Text(selectedLabel) }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                HEADSET_ACTIONS.forEach { (value, actionLabel) ->
+                    DropdownMenuItem(
+                        text = { Text(actionLabel) },
+                        onClick = { onSelect(value); expanded = false }
+                    )
+                }
+            }
         }
     }
 }

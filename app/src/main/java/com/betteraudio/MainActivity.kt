@@ -112,9 +112,20 @@ class MainActivity : ComponentActivity() {
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
         val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false) == true
-        val coldStartBookId = if (openPlayerFromWidget)
-            (runBlocking { settings.lastPlayedBookId.first() }.takeIf { it != -1L } ?: initialBookId)
-        else initialBookId
+        // A pinned book shortcut carries the book's folderPath (stable across a rescan/reinstall,
+        // unlike a DB row id — see BookShortcuts) rather than a bookId directly.
+        val shortcutBookPath = intent?.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)
+        val shortcutBookId = shortcutBookPath?.let { path -> runBlocking { repository.getBookByFolder(path) }?.id }
+        if (shortcutBookPath != null && shortcutBookId == null) {
+            android.widget.Toast.makeText(
+                this, "This book couldn't be found — it may have moved or been removed.", android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+        val coldStartBookId = when {
+            shortcutBookId != null -> shortcutBookId
+            openPlayerFromWidget -> (runBlocking { settings.lastPlayedBookId.first() }.takeIf { it != -1L } ?: initialBookId)
+            else -> initialBookId
+        }
         // The last book that actually played — used to restore the collapsed mini bar even when the
         // player was collapsed at close (LAST_OPEN_BOOK_ID is -1 then, so it alone can't restore it).
         val lastPlayedBookId = runBlocking { settings.lastPlayedBookId.first() }
@@ -492,6 +503,16 @@ class MainActivity : ComponentActivity() {
         }
         if (intent.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false)) {
             widgetEditorNavRequest = true
+        }
+        intent.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)?.let { path ->
+            val id = runBlocking { repository.getBookByFolder(path) }?.id
+            if (id != null) {
+                playerNavRequest = id
+            } else {
+                android.widget.Toast.makeText(
+                    this, "This book couldn't be found — it may have moved or been removed.", android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LinkOff
@@ -85,6 +86,7 @@ fun BookOptionsSheet(
     splitProgress: com.betteraudio.data.files.LargeAudioSplitter.Progress =
         com.betteraudio.data.files.LargeAudioSplitter.Progress.Idle,
     onSplitLargeFile: () -> Unit = {},
+    onPinShortcut: () -> Unit = {},
     seriesOptions: SeriesOptions? = null
 ) {
     val book = bwp?.book
@@ -392,6 +394,15 @@ fun BookOptionsSheet(
 
                 // ── Ignore / Delete ───────────────────────────────────────
                 OptionsSection("Library") {
+                    OutlinedButton(
+                        onClick = onPinShortcut,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Launch, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Pin to home screen")
+                    }
+                    Spacer(Modifier.height(4.dp))
                     OutlinedButton(
                         onClick = { showIgnoreConfirm = true },
                         modifier = Modifier.fillMaxWidth()

@@ -460,7 +460,8 @@ fun HomeScreen(
                 onOpenReader = { onOpenReader(optionsBwp.book.id) },
                 splitCandidate = splitCandidate?.takeIf { it.bookId == optionsBwp.book.id },
                 splitProgress = splitProgress,
-                onSplitLargeFile = { viewModel.startSplit() }
+                onSplitLargeFile = { viewModel.startSplit() },
+                onPinShortcut = { com.betteraudio.util.BookShortcuts.requestPin(context, optionsBwp.book) }
             )
         }
     }

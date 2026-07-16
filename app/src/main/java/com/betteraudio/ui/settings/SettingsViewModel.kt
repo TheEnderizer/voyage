@@ -404,6 +404,27 @@ class SettingsViewModel @Inject constructor(
     fun setSleepScheduleEndMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleEndMinutes(minutes) }
     fun setSleepScheduleDefaultMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleDefaultMinutes(minutes) }
 
+    // ── Headset multi-press mapping ──────────────────────────────────────────
+    val headsetMultiPressEnabled: StateFlow<Boolean> =
+        settings.headsetMultiPressEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val headsetDoublePressAction: StateFlow<String> =
+        settings.headsetDoublePressAction.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_HEADSET_DOUBLE_PRESS_ACTION)
+    val headsetTriplePressAction: StateFlow<String> =
+        settings.headsetTriplePressAction.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_HEADSET_TRIPLE_PRESS_ACTION)
+
+    fun setHeadsetMultiPressEnabled(enabled: Boolean) = viewModelScope.launch { settings.setHeadsetMultiPressEnabled(enabled) }
+    fun setHeadsetDoublePressAction(action: String) = viewModelScope.launch { settings.setHeadsetDoublePressAction(action) }
+    fun setHeadsetTriplePressAction(action: String) = viewModelScope.launch { settings.setHeadsetTriplePressAction(action) }
+
+    // ── Bluetooth/headphone auto-resume ─────────────────────────────────────
+    val btAutoResumeEnabled: StateFlow<Boolean> =
+        settings.btAutoResumeEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val btAutoResumeWindowMinutes: StateFlow<Int> =
+        settings.btAutoResumeWindowMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES)
+
+    fun setBtAutoResumeEnabled(enabled: Boolean) = viewModelScope.launch { settings.setBtAutoResumeEnabled(enabled) }
+    fun setBtAutoResumeWindowMinutes(minutes: Int) = viewModelScope.launch { settings.setBtAutoResumeWindowMinutes(minutes) }
+
     fun rescan() {
         val path = libraryFolder.value
         if (path.isBlank() || _rescanRunning.value) return

@@ -81,7 +81,15 @@ fun BookHistoryOverlay(
                     }
                 }
 
-                if (sessions.isEmpty() && skips.isEmpty()) {
+                // "jump" = confirmed chapter/bookmark/scrub navigation (the original meaning of
+                // this table); "auto"/"skip_button" are the higher-frequency, lower-confidence
+                // sources added later — kept in their own "Recent positions" section (tappable to
+                // seek) instead of diluting the Skips list.
+                val jumps = skips.filter { it.source == "jump" }
+                val recentPositions = skips.filter { it.source == "auto" || it.source == "skip_button" }
+                    .sortedByDescending { it.atMs }
+
+                if (sessions.isEmpty() && jumps.isEmpty() && recentPositions.isEmpty()) {
                     Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.TopCenter) {
                         Text(
                             "No history yet.\nListen or read this book and it will show up here.",
@@ -102,12 +110,21 @@ fun BookHistoryOverlay(
                             SessionRow(it, onScrim, onScrimMuted, accent) { onResumeSession(it.endBookPositionMs) }
                         }
                     }
-                    if (skips.isNotEmpty()) {
+                    if (recentPositions.isNotEmpty()) {
+                        item {
+                            Spacer(Modifier.height(8.dp))
+                            SectionHeader("Recent positions", accent)
+                        }
+                        items(recentPositions, key = { "r${it.id}" }) {
+                            RecentPositionRow(it, onScrim, onScrimMuted, accent) { onResumeSession(it.toPositionMs) }
+                        }
+                    }
+                    if (jumps.isNotEmpty()) {
                         item {
                             Spacer(Modifier.height(8.dp))
                             SectionHeader("Skips", accent)
                         }
-                        items(skips, key = { "k${it.id}" }) { SkipRow(it, onScrim, onScrimMuted, accent) }
+                        items(jumps, key = { "k${it.id}" }) { SkipRow(it, onScrim, onScrimMuted, accent) }
                     }
                 }
             }
@@ -161,6 +178,33 @@ private fun SessionRow(s: ListeningSession, onScrim: Color, muted: Color, accent
 }
 
 @Composable
+private fun RecentPositionRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color, onJump: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onJump)
+            .padding(vertical = 8.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Default.History, null, Modifier.size(18.dp), tint = accent)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                "${chapterLabel(k.chapterIndex, k.chapterName)} · ${hms(k.toPositionMs)}",
+                style = MaterialTheme.typography.bodyMedium, color = onScrim
+            )
+            Text(
+                relativeTimeLabel(k.atMs),
+                style = MaterialTheme.typography.labelSmall, color = muted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(Icons.Default.PlayArrow, "Jump here", Modifier.size(20.dp), tint = accent)
+    }
+}
+
+@Composable
 private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
     val isText = k.kind == "TEXT"
     Row(
@@ -206,6 +250,19 @@ private val clockFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
 
 private fun dayLabel(ms: Long): String = dayFmt.format(Date(ms))
 private fun clock(ms: Long): String = clockFmt.format(Date(ms))
+
+/** e.g. "5m ago", "3h ago", "2d ago", falling back to the day label for anything older. */
+private fun relativeTimeLabel(ms: Long): String {
+    val diff = System.currentTimeMillis() - ms
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        minutes < 24 * 60 -> "${minutes / 60}h ago"
+        minutes < 7 * 24 * 60 -> "${minutes / (24 * 60)}d ago"
+        else -> "${dayLabel(ms)} ${clock(ms)}"
+    }
+}
 
 private fun chapterLabel(index: Int, @Suppress("UNUSED_PARAMETER") name: String): String =
     if (index >= 0) "Ch ${index + 1}" else "Ch ?"

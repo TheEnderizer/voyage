@@ -42,6 +42,18 @@ interface ListeningHistoryDao {
     @Query("SELECT * FROM skip_events WHERE bookId = :bookId ORDER BY atMs DESC")
     fun getSkipsForBook(bookId: Long): Flow<List<SkipEvent>>
 
+    // Keeps only the most recent [keep] rows of [source] for [bookId] — called right after each
+    // insert so the table can't grow unbounded. "jump" events are kept generously (a user relies
+    // on them to find "where was I yesterday"); "auto"/"skip_button" are pruned tighter since
+    // they're much higher-frequency and lower-value individually.
+    @Query("""
+        DELETE FROM skip_events WHERE id IN (
+            SELECT id FROM skip_events WHERE bookId = :bookId AND source = :source
+            ORDER BY atMs DESC LIMIT -1 OFFSET :keep
+        )
+    """)
+    suspend fun pruneSkipsBySource(bookId: Long, source: String, keep: Int)
+
     @Query("DELETE FROM skip_events WHERE bookId = :bookId")
     suspend fun deleteSkipsForBook(bookId: Long)
 

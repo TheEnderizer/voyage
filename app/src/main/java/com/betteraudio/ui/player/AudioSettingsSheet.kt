@@ -36,6 +36,8 @@ fun AudioSettingsSheet(
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val allPresets by viewModel.allPresets.collectAsStateWithLifecycle()
     val eqBands by viewModel.eqBandsMillibels.collectAsStateWithLifecycle()
+    val audioBalance by viewModel.audioBalance.collectAsStateWithLifecycle()
+    val monoAudio by viewModel.monoAudio.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var speedValue by remember(playbackState.speed) { mutableFloatStateOf(playbackState.speed) }
@@ -43,6 +45,7 @@ fun AudioSettingsSheet(
     var localEqBands by remember(eqBands) {
         mutableStateOf(eqBands ?: IntArray(5) { 0 })
     }
+    var balanceValue by remember(audioBalance) { mutableFloatStateOf(audioBalance) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var presetName by remember { mutableStateOf("") }
 
@@ -59,6 +62,7 @@ fun AudioSettingsSheet(
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Speed") })
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Boost") })
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("EQ") })
+                Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Balance") })
             }
 
             Box(modifier = Modifier
@@ -89,89 +93,101 @@ fun AudioSettingsSheet(
                             viewModel.setEqBands(null)
                         }
                     )
-                }
-            }
-
-            HorizontalDivider()
-
-            // ── This book: per-book local value + reset/delete override ───────────────
-            val (thisBookValue, isOverridden, onResetBook) = when (selectedTab) {
-                0 -> Triple(
-                    "${String.format("%.2f", speedValue)}×",
-                    speedValue != viewModel.defaultSpeed,
-                    { viewModel.clearBookSpeed(); speedValue = viewModel.defaultSpeed }
-                )
-                1 -> Triple(
-                    "+${boostValue} dB",
-                    boostValue != 0,
-                    { viewModel.clearBookBoost(); boostValue = 0 }
-                )
-                else -> Triple(
-                    if (localEqBands.any { it != 0 }) "Custom" else "Flat",
-                    localEqBands.any { it != 0 },
-                    { viewModel.clearBookEq(); localEqBands = IntArray(5) { 0 } }
-                )
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text("This book", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        thisBookValue,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    3 -> BalanceTab(
+                        balanceValue = balanceValue,
+                        onBalanceChange = { balanceValue = it },
+                        onBalanceCommit = { viewModel.setAudioBalance(it) },
+                        mono = monoAudio,
+                        onMonoChange = { viewModel.setMonoAudio(it) }
                     )
                 }
-                TextButton(onClick = { onResetBook() }, enabled = isOverridden) {
-                    Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Reset")
-                }
             }
 
             HorizontalDivider()
 
-            // Presets are whole bundles (speed + boost + EQ). Tapping one applies all three to
-            // this book; saving captures the current speed + boost + EQ together.
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Presets", style = MaterialTheme.typography.labelLarge)
-                IconButton(onClick = { presetName = ""; showSaveDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Save preset")
+            // Balance/mono is global (applies to every book, not overridable per book), so it has
+            // no "This book" reset row or bundle-preset concept — those only make sense for
+            // Speed/Boost/EQ.
+            if (selectedTab != 3) {
+                // ── This book: per-book local value + reset/delete override ───────────────
+                val (thisBookValue, isOverridden, onResetBook) = when (selectedTab) {
+                    0 -> Triple(
+                        "${String.format("%.2f", speedValue)}×",
+                        speedValue != viewModel.defaultSpeed,
+                        { viewModel.clearBookSpeed(); speedValue = viewModel.defaultSpeed }
+                    )
+                    1 -> Triple(
+                        "+${boostValue} dB",
+                        boostValue != 0,
+                        { viewModel.clearBookBoost(); boostValue = 0 }
+                    )
+                    else -> Triple(
+                        if (localEqBands.any { it != 0 }) "Custom" else "Flat",
+                        localEqBands.any { it != 0 },
+                        { viewModel.clearBookEq(); localEqBands = IntArray(5) { 0 } }
+                    )
                 }
-            }
-
-            if (allPresets.isEmpty()) {
-                Text(
-                    "No saved presets — tap + to save the current speed, boost & EQ",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            } else {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 12.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(allPresets, key = { it.id }) { preset ->
-                        PresetChip(
-                            preset = preset,
-                            onLoad = { viewModel.loadAudioPreset(preset) },
-                            onOverwrite = { viewModel.overwritePreset(preset) },
-                            onDelete = { viewModel.deleteAudioPreset(preset.id) },
-                            onSetDefault = { viewModel.setAsDefaultPreset(preset.id) }
+                    Column {
+                        Text("This book", style = MaterialTheme.typography.labelLarge)
+                        Text(
+                            thisBookValue,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    TextButton(onClick = { onResetBook() }, enabled = isOverridden) {
+                        Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Reset")
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Presets are whole bundles (speed + boost + EQ). Tapping one applies all three to
+                // this book; saving captures the current speed + boost + EQ together.
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Presets", style = MaterialTheme.typography.labelLarge)
+                    IconButton(onClick = { presetName = ""; showSaveDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Save preset")
+                    }
+                }
+
+                if (allPresets.isEmpty()) {
+                    Text(
+                        "No saved presets — tap + to save the current speed, boost & EQ",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                } else {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        items(allPresets, key = { it.id }) { preset ->
+                            PresetChip(
+                                preset = preset,
+                                onLoad = { viewModel.loadAudioPreset(preset) },
+                                onOverwrite = { viewModel.overwritePreset(preset) },
+                                onDelete = { viewModel.deleteAudioPreset(preset.id) },
+                                onSetDefault = { viewModel.setAsDefaultPreset(preset.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -287,6 +303,65 @@ private fun BoostTab(
             AdjustButton(Icons.Default.Add, "More boost") {
                 onBoostChange((boostValue + 1).coerceIn(0, 24))
             }
+        }
+    }
+}
+
+@Composable
+private fun BalanceTab(
+    balanceValue: Float,
+    onBalanceChange: (Float) -> Unit,
+    onBalanceCommit: (Float) -> Unit,
+    mono: Boolean,
+    onMonoChange: (Boolean) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            "Applies to the whole app, not just this book.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = when {
+                balanceValue < -0.02f -> "Left ${(-balanceValue * 100).roundToInt()}%"
+                balanceValue > 0.02f -> "Right ${(balanceValue * 100).roundToInt()}%"
+                else -> "Centered"
+            },
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.align(Alignment.CenterHorizontally)
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("L", style = MaterialTheme.typography.labelLarge)
+            Slider(
+                value = balanceValue,
+                onValueChange = onBalanceChange,
+                onValueChangeFinished = { onBalanceCommit(balanceValue) },
+                valueRange = -1f..1f,
+                enabled = !mono,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            )
+            Text("R", style = MaterialTheme.typography.labelLarge)
+        }
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Mono", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Play both channels through both speakers/earbuds.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = mono, onCheckedChange = onMonoChange)
         }
     }
 }

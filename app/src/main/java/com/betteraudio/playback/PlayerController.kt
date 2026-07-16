@@ -14,6 +14,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.betteraudio.data.db.entities.AudioFile
+import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.util.AppLog
@@ -77,6 +78,11 @@ class PlayerController @Inject constructor(
         private const val MIN_SESSION_MS = 5_000L
         // Pause longer than this splits the listening session into a new one.
         private const val PAUSE_SESSION_SPLIT_MS = 20 * 60 * 1_000L
+        // Position-history keep counts (see AudiobookRepository.insertSkipEventPruned) and timing.
+        private const val SKIP_BUTTON_HISTORY_KEEP = 20
+        private const val AUTO_CHECKPOINT_HISTORY_KEEP = 20
+        private const val SKIP_BUTTON_COALESCE_MS = 2_000L
+        private const val AUTO_CHECKPOINT_INTERVAL_MS = 10 * 60_000L
     }
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -133,6 +139,12 @@ class PlayerController @Inject constructor(
                 playerListener.triggerSync()
                 // Periodic persistence lives solely in PlaybackService's saver (survives the UI
                 // dying, and swipe-kill has no onStop) — no duplicate writer needed here.
+
+                autoCheckpointElapsedMs += 500
+                if (autoCheckpointElapsedMs >= AUTO_CHECKPOINT_INTERVAL_MS) {
+                    autoCheckpointElapsedMs = 0L
+                    recordAutoCheckpoint()
+                }
             }
         }
     }
@@ -140,6 +152,7 @@ class PlayerController @Inject constructor(
     private fun stopPositionTicker() {
         positionTickerJob?.cancel()
         positionTickerJob = null
+        autoCheckpointElapsedMs = 0L  // require CONTINUOUS listening, matching the doc on the field
     }
 
     // Volume boost — the LoudnessEnhancer itself lives in PlaybackService; this is just
@@ -288,6 +301,16 @@ class PlayerController @Inject constructor(
     }
 
     val currentVolumeBoostDb: Int get() = currentBoostMb / 100
+
+    /** Global (not per-book) stereo balance/mono, forwarded to the playback service. */
+    fun setChannelMix(balance: Float, mono: Boolean) {
+        val ctrl = controller ?: return
+        val args = Bundle().apply {
+            putFloat(PlaybackService.KEY_AUDIO_BALANCE, balance)
+            putBoolean(PlaybackService.KEY_MONO_AUDIO, mono)
+        }
+        ctrl.sendCustomCommand(SessionCommand(PlaybackService.CMD_SET_CHANNEL_MIX, Bundle.EMPTY), args)
+    }
 
     fun setEqBands(bandsJson: String?) {
         val ctrl = controller ?: return
@@ -465,11 +488,64 @@ class PlayerController @Inject constructor(
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
     fun skipForward() {
-        controller?.let { it.seekTo(it.currentPosition + settings.currentSkipForwardMs) }
+        val ctrl = controller ?: return
+        val fromBookPos = _positionState.value.bookPositionMs
+        ctrl.seekTo(ctrl.currentPosition + settings.currentSkipForwardMs)
+        recordSkipButtonTap(fromBookPos, fromBookPos + settings.currentSkipForwardMs)
     }
 
     fun skipBack() {
-        controller?.let { it.seekTo(maxOf(0L, it.currentPosition - settings.currentSkipBackMs)) }
+        val ctrl = controller ?: return
+        val fromBookPos = _positionState.value.bookPositionMs
+        ctrl.seekTo(maxOf(0L, ctrl.currentPosition - settings.currentSkipBackMs))
+        recordSkipButtonTap(fromBookPos, maxOf(0L, fromBookPos - settings.currentSkipBackMs))
+    }
+
+    // ── Position history: skip-button taps + periodic auto-checkpoints ─────────────────────
+    // Both are lower-confidence than a PlayerViewModel-recorded "jump" (chapter/bookmark select),
+    // so they're kept in a tighter rotation — see AudiobookRepository.insertSkipEventPruned.
+    private var skipButtonCoalesceJob: Job? = null
+    private var skipButtonCoalesceFromMs: Long = -1L
+
+    /** Coalesces rapid consecutive skip-button taps (fast-forward mashing) into one history
+     *  entry: the first tap's start position, the latest tap's end position, written once no
+     *  further taps arrive within [SKIP_BUTTON_COALESCE_MS]. */
+    private fun recordSkipButtonTap(fromMs: Long, toMs: Long) {
+        if (skipButtonCoalesceFromMs < 0L) skipButtonCoalesceFromMs = fromMs
+        val coalescedFrom = skipButtonCoalesceFromMs
+        skipButtonCoalesceJob?.cancel()
+        skipButtonCoalesceJob = scope.launch {
+            delay(SKIP_BUTTON_COALESCE_MS)
+            skipButtonCoalesceFromMs = -1L
+            val bid = _playbackState.value.bookId.takeIf { it != -1L } ?: currentBookId
+            if (bid == -1L) return@launch
+            val (ci, cn, _) = chapterAt(toMs)
+            repository.insertSkipEventPruned(
+                SkipEvent(
+                    bookId = bid, fromPositionMs = coalescedFrom, toPositionMs = toMs,
+                    chapterIndex = ci, chapterName = cn, source = "skip_button"
+                ),
+                keep = SKIP_BUTTON_HISTORY_KEEP
+            )
+        }
+    }
+
+    // Accumulates continuous playing time (reset on pause) — see startPositionTicker/onIsPlayingChanged.
+    private var autoCheckpointElapsedMs = 0L
+
+    /** A periodic "you were here" marker, so the history list is useful even when the user never
+     *  made an explicit jump (e.g. "where was I an hour ago"). */
+    private fun recordAutoCheckpoint() {
+        val bid = _playbackState.value.bookId.takeIf { it != -1L } ?: currentBookId
+        if (bid == -1L) return
+        val pos = _positionState.value.bookPositionMs
+        val (ci, cn, _) = chapterAt(pos)
+        scope.launch {
+            repository.insertSkipEventPruned(
+                SkipEvent(bookId = bid, fromPositionMs = pos, toPositionMs = pos, chapterIndex = ci, chapterName = cn, source = "auto"),
+                keep = AUTO_CHECKPOINT_HISTORY_KEEP
+            )
+        }
     }
 
     // Use explicit index seeks (not seekToNext/PreviousMediaItem) so the in-app "part" buttons

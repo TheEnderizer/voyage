@@ -71,6 +71,11 @@ sealed class ChapterRow {
     ) : ChapterRow()
 }
 
+// Jump events are kept generously (see AudiobookRepository.insertSkipEventPruned) — a user
+// relies on them to find "where was I yesterday". PlayerController has its own, tighter keep
+// counts for the higher-frequency "auto"/"skip_button" sources it records.
+private const val JUMP_HISTORY_KEEP = 100
+
 data class ChapterUiState(val rows: List<ChapterRow> = emptyList()) {
     val chapterCount: Int get() = rows.count { it is ChapterRow.Item }
     val hasChapters: Boolean get() = chapterCount > 1
@@ -219,6 +224,22 @@ class PlayerViewModel @Inject constructor(
         val json = bands?.let { JSONArray(it.toList()).toString() }
         playerController.setEqBands(json)
         viewModelScope.launch { repository.updateEqBands(bookId, json) }
+    }
+
+    // ── Stereo balance / mono — global (not per-book), unlike speed/boost/EQ above ────────────
+    val audioBalance: StateFlow<Float> =
+        settings.audioBalance.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0f)
+    val monoAudio: StateFlow<Boolean> =
+        settings.monoAudio.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setAudioBalance(value: Float) {
+        playerController.setChannelMix(value, monoAudio.value)
+        viewModelScope.launch { settings.setAudioBalance(value) }
+    }
+
+    fun setMonoAudio(enabled: Boolean) {
+        playerController.setChannelMix(audioBalance.value, enabled)
+        viewModelScope.launch { settings.setMonoAudio(enabled) }
     }
 
     // ── Per-book "local preset" reset: clear this book's override back to defaults ────────
@@ -527,14 +548,16 @@ class PlayerViewModel @Inject constructor(
         val idx = active?.let { items.indexOf(it) } ?: -1
         AppLog.i("History", "skip recorded book=$targetBookId ${fromMs}ms→${toMs}ms ch=$idx")
         viewModelScope.launch {
-            repository.insertSkipEvent(
+            repository.insertSkipEventPruned(
                 SkipEvent(
                     bookId = targetBookId,
                     fromPositionMs = fromMs,
                     toPositionMs = toMs,
                     chapterIndex = idx,
-                    chapterName = active?.title ?: ""
-                )
+                    chapterName = active?.title ?: "",
+                    source = "jump"
+                ),
+                keep = JUMP_HISTORY_KEEP
             )
         }
     }

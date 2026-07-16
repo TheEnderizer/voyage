@@ -31,6 +31,11 @@ data class SkipEvent(
     val bookId: Long,
     val atMs: Long = System.currentTimeMillis(),
     val kind: String = "AUDIO",
+    // How this entry was recorded: "jump" (chapter/bookmark/scrub — the original confirmed-jump
+    // meaning above), "skip_button" (coalesced fixed-amount skip taps), or "auto" (a periodic
+    // checkpoint every ~10 continuous listening minutes, so "where was I an hour ago" works even
+    // without an explicit jump). Pruned at different rates — see ListeningHistoryDao.pruneBySource.
+    val source: String = "jump",
     // ── Audio-side jump (kind == "AUDIO") ────────────────────────────────────
     val fromPositionMs: Long = 0,
     val toPositionMs: Long = 0,

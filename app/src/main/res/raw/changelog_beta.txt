@@ -3,6 +3,16 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.8b] - 2026-07-16
+
+### Added
+- Audio balance & mono: a new "Balance" tab in the player's audio settings (Tune button) — an L/R balance slider plus a mono downmix toggle, applied instantly across the whole app (not per-book)
+- Headset button mapping (Settings > Playback): map double/triple headset-button presses to skip forward/back, next/previous chapter, or add a bookmark. Off by default to keep single-press instant; headsets that fold multi-clicks into next/previous track buttons in firmware are handled directly
+- Position history: the player's History now has a "Recent positions" list — periodic checkpoints and skip-button taps you can jump back to, separate from confirmed chapter/bookmark jumps
+- Pinned book shortcuts: "Pin to home screen" in a book's options opens straight to that book's player, bypassing Home
+- Resume on headphones (Settings > Playback, off by default): automatically resumes a recently-paused book when headphones or a Bluetooth speaker connect
+- Player lock mode: lock the player from the overflow menu to block accidental touches while it keeps playing — hold the lock icon to unlock
+
 ## [1.8.7b] - 2026-07-16
 
 ### Fixed

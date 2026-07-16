@@ -8,6 +8,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.net.Uri
 import org.json.JSONArray
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -85,6 +86,10 @@ class PlaybackService : MediaSessionService() {
     // session-id audio effects above). Toggled per book; its tuning follows the settings live.
     private var silenceProcessor: LiveSilenceSkippingProcessor? = null
 
+    // Stereo balance / mono downmix — also lives in the decode→sink chain. Global (not per-book),
+    // applied per-buffer so a change takes effect immediately; see ChannelMixProcessor's doc.
+    private val channelMix = ChannelMixProcessor()
+
     // ── Sleep timer — single authority for BOTH the widget's timer and the in-app player's, so
     // it fires even if the app process (and PlayerController's own coroutine scope) has died;
     // only the service's process (tied to the foreground notification) needs to survive.
@@ -107,6 +112,13 @@ class PlaybackService : MediaSessionService() {
     // session; reset when a fresh set of media items is loaded (a genuinely new session).
     private var scheduleArmedThisSession = false
 
+    // ── Headset multi-press mapping ──────────────────────────────────────────────
+    private var headsetPressCount = 0
+    private var headsetPressJob: Job? = null
+
+    // ── Bluetooth/headphone auto-resume ──────────────────────────────────────────
+    private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
+
     companion object {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.betteraudio.action.WIDGET_PLAY_PAUSE"
         const val ACTION_SKIP_FORWARD      = "com.betteraudio.action.WIDGET_SKIP_FORWARD"
@@ -128,6 +140,10 @@ class PlaybackService : MediaSessionService() {
         const val KEY_EQ_BANDS_JSON  = "eq_bands_json"  // "" = flat/bypass
         const val CMD_SET_SKIP_SILENCE = "com.betteraudio.command.SET_SKIP_SILENCE"
         const val KEY_SKIP_SILENCE     = "skip_silence_enabled"
+
+        const val CMD_SET_CHANNEL_MIX = "com.betteraudio.command.SET_CHANNEL_MIX"
+        const val KEY_AUDIO_BALANCE   = "audio_balance"
+        const val KEY_MONO_AUDIO      = "mono_audio"
 
         const val CMD_SET_SLEEP_TIMER          = "com.betteraudio.command.SET_SLEEP_TIMER"
         const val KEY_SLEEP_MODE               = "sleep_mode"
@@ -153,6 +169,7 @@ class PlaybackService : MediaSessionService() {
         private const val SHAKE_MAGNITUDE_THRESHOLD = 12f       // m/s^2, on TYPE_LINEAR_ACCELERATION
         private const val SHAKE_ARM_WINDOW_MS = 30_000L         // start listening this close to firing
         private const val SHAKE_GRACE_WINDOW_MS = 30_000L       // keep listening this long after firing
+        private const val HEADSET_MULTI_PRESS_WINDOW_MS = 400L
     }
 
     override fun onCreate() {
@@ -175,6 +192,9 @@ class PlaybackService : MediaSessionService() {
         )
         silence.setEnabled(false)
         silenceProcessor = silence
+
+        channelMix.balance = settings.currentAudioBalance
+        channelMix.mono = settings.currentMonoAudio
 
         // Keep the processor's tuning in sync with Settings while audio is playing.
         // DataStore re-emits the full snapshot on EVERY write to ANY key, and navigation writes
@@ -203,7 +223,7 @@ class PlaybackService : MediaSessionService() {
             ): AudioSink =
                 DefaultAudioSink.Builder(context)
                     .setAudioProcessorChain(
-                        DefaultAudioSink.DefaultAudioProcessorChain(silence, SonicAudioProcessor())
+                        DefaultAudioSink.DefaultAudioProcessorChain(silence, SonicAudioProcessor(), channelMix)
                     )
                     .setEnableFloatOutput(enableFloatOutput)
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
@@ -285,6 +305,8 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, skippingPlayer)
             .setCallback(SessionCallback())
             .build()
+
+        registerBtAutoResume()
     }
 
     private fun attachLoudnessEnhancer(audioSessionId: Int) {
@@ -361,6 +383,16 @@ class PlaybackService : MediaSessionService() {
     /** Force the audio sink to flush so a changed silence-skipping state takes effect now. */
     private fun nudgeAudioPipeline() {
         exoPlayer?.let { if (it.mediaItemCount > 0) it.seekTo(it.currentPosition) }
+    }
+
+    /** Global (not per-book) balance/mono — [ChannelMixProcessor] reads its `@Volatile` fields
+     *  live on the audio-render thread, so this takes effect on the very next buffer; the nudge
+     *  just shortens how long already-buffered audio plays out unchanged first. */
+    private fun applyChannelMix(balance: Float, mono: Boolean) {
+        val changed = channelMix.balance != balance || channelMix.mono != mono
+        channelMix.balance = balance.coerceIn(-1f, 1f)
+        channelMix.mono = mono
+        if (changed) nudgeAudioPipeline()
     }
 
     private fun applyBoost(mb: Int) {
@@ -467,6 +499,90 @@ class PlaybackService : MediaSessionService() {
             }
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    // ── Headset multi-press mapping ──────────────────────────────────────────────
+    private fun countHeadsetPress(session: MediaSession) {
+        headsetPressCount++
+        headsetPressJob?.cancel()
+        headsetPressJob = serviceScope.launch {
+            delay(HEADSET_MULTI_PRESS_WINDOW_MS)
+            val count = headsetPressCount
+            headsetPressCount = 0
+            val action = when (count) {
+                1 -> "play_pause"
+                2 -> settings.currentHeadsetDoublePressAction
+                else -> settings.currentHeadsetTriplePressAction
+            }
+            performHeadsetAction(session, action)
+        }
+    }
+
+    private fun performHeadsetAction(session: MediaSession, action: String) {
+        val player = session.player
+        when (action) {
+            "play_pause" -> if (player.isPlaying) player.pause() else player.play()
+            "skip_forward" -> player.seekTo(player.currentPosition + settings.currentSkipForwardMs)
+            "skip_back" -> player.seekTo(maxOf(0L, player.currentPosition - settings.currentSkipBackMs))
+            "next_chapter" -> exoPlayer?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() }
+            "prev_chapter" -> exoPlayer?.let { if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() else it.seekTo(0L) }
+            "bookmark" -> addQuickBookmark()
+            "none" -> {}
+        }
+    }
+
+    // ── Bluetooth/headphone auto-resume ──────────────────────────────────────────
+    // AudioDeviceCallback (no runtime permission needed) rather than BluetoothDevice broadcasts —
+    // ACTION_ACL_CONNECTED fires for ANY paired device including watches and car head units doing
+    // phonebook sync, which would false-trigger a resume; this only fires for devices Android
+    // itself considers audio sinks.
+    private fun registerBtAutoResume() {
+        if (audioDeviceCallback != null) return
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val callback = object : android.media.AudioDeviceCallback() {
+            override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>) {
+                if (!settings.currentBtAutoResumeEnabled) return
+                if (addedDevices.any { isAudioSinkDevice(it) }) maybeAutoResumeOnDeviceConnect()
+            }
+        }
+        am.registerAudioDeviceCallback(callback, android.os.Handler(mainLooper))
+        audioDeviceCallback = callback
+    }
+
+    private fun unregisterBtAutoResume() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        audioDeviceCallback?.let { am.unregisterAudioDeviceCallback(it) }
+        audioDeviceCallback = null
+    }
+
+    private fun isAudioSinkDevice(info: android.media.AudioDeviceInfo): Boolean = when (info.type) {
+        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> true
+        else -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
+    }
+
+    /** Resumes only if something is actually loaded, not already playing, and was paused within
+     *  the configured window — otherwise a stale/irrelevant book could start blaring from a
+     *  months-old pause the moment any headphones connect. Known limitation: only fires while
+     *  this service process is alive (a fully killed app won't have anything loaded to resume). */
+    private fun maybeAutoResumeOnDeviceConnect() {
+        val player = exoPlayer ?: return
+        if (player.isPlaying || player.mediaItemCount == 0) return
+        val item = player.currentMediaItem ?: return
+        val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+        serviceScope.launch {
+            val progress = repository.getProgressForBookOnce(bookId) ?: return@launch
+            if (progress.lastPausedAt <= 0L) return@launch
+            val windowMs = settings.currentBtAutoResumeWindowMinutes * 60_000L
+            val elapsed = System.currentTimeMillis() - progress.lastPausedAt
+            if (elapsed in 0..windowMs) {
+                AppLog.i("Player", "BT/headphone connected — auto-resuming book=$bookId (paused ${elapsed / 1000}s ago)")
+                player.play()
+            }
+        }
     }
 
     /** Note-less bookmark at the current position, for the widget's quick-bookmark element. */
@@ -805,6 +921,8 @@ class PlaybackService : MediaSessionService() {
         sleepGraceJob?.cancel()
         stopShakeListening()
         releaseSleepWakeLock()
+        headsetPressJob?.cancel()
+        unregisterBtAutoResume()
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         attachedSessionId = C.AUDIO_SESSION_ID_UNSET
@@ -876,6 +994,7 @@ class PlaybackService : MediaSessionService() {
                 .add(SessionCommand(CMD_SET_EQ, Bundle.EMPTY))
                 .add(SessionCommand(CMD_SET_SKIP_SILENCE, Bundle.EMPTY))
                 .add(SessionCommand(CMD_SET_SLEEP_TIMER, Bundle.EMPTY))
+                .add(SessionCommand(CMD_SET_CHANNEL_MIX, Bundle.EMPTY))
                 .build()
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                 .setAvailableSessionCommands(sessionCommands)
@@ -909,6 +1028,10 @@ class PlaybackService : MediaSessionService() {
                     )
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
+                CMD_SET_CHANNEL_MIX -> {
+                    applyChannelMix(args.getFloat(KEY_AUDIO_BALANCE, 0f), args.getBoolean(KEY_MONO_AUDIO, false))
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
@@ -920,16 +1043,48 @@ class PlaybackService : MediaSessionService() {
         ): Boolean {
             @Suppress("DEPRECATION")
             val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
-            if (event.action != KeyEvent.ACTION_DOWN) return false
-            return when (event.keyCode) {
+
+            when (event.keyCode) {
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
                 KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD -> {
+                    if (event.action != KeyEvent.ACTION_DOWN) return true
                     session.player.seekTo(session.player.currentPosition + settings.currentSkipForwardMs)
-                    true
+                    return true
                 }
                 KeyEvent.KEYCODE_MEDIA_REWIND,
                 KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD -> {
+                    if (event.action != KeyEvent.ACTION_DOWN) return true
                     session.player.seekTo(maxOf(0L, session.player.currentPosition - settings.currentSkipBackMs))
+                    return true
+                }
+            }
+
+            // Multi-press mapping is opt-in: default "off" preserves today's zero-latency single
+            // press (returning false here lets Media3's default play/pause/next/previous handling
+            // fire immediately, same as before this feature existed). Many BT headsets already
+            // debounce a double/triple click into a single MEDIA_NEXT/MEDIA_PREVIOUS keycode in
+            // firmware — those never reach the HEADSETHOOK press-counting window below, so they're
+            // treated as direct double-/triple-press equivalents instead.
+            if (!settings.currentHeadsetMultiPressEnabled) return false
+            return when (event.keyCode) {
+                KeyEvent.KEYCODE_HEADSETHOOK, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                    // Count on ACTION_UP only — DOWN+UP both fire per physical click, and counting
+                    // both would double every press.
+                    if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) {
+                        countHeadsetPress(session)
+                    }
+                    true
+                }
+                KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        performHeadsetAction(session, settings.currentHeadsetDoublePressAction)
+                    }
+                    true
+                }
+                KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        performHeadsetAction(session, settings.currentHeadsetTriplePressAction)
+                    }
                     true
                 }
                 else -> false

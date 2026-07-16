@@ -71,6 +71,11 @@ class AudiobookRepository @Inject constructor(
     ) = listeningHistoryDao.finishSession(id, endMs, endChapterIndex, endChapterName, endPositionInChapterMs, listenedMs)
     fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>> = listeningHistoryDao.getSessionsForBook(bookId)
     suspend fun insertSkipEvent(skip: SkipEvent): Long = listeningHistoryDao.insertSkip(skip)
+    /** Insert then prune older rows of the same [SkipEvent.source] for that book beyond [keep]. */
+    suspend fun insertSkipEventPruned(skip: SkipEvent, keep: Int) {
+        listeningHistoryDao.insertSkip(skip)
+        listeningHistoryDao.pruneSkipsBySource(skip.bookId, skip.source, keep)
+    }
     fun getSkipsForBook(bookId: Long): Flow<List<SkipEvent>> = listeningHistoryDao.getSkipsForBook(bookId)
     suspend fun deleteHistoryForBook(bookId: Long) {
         listeningHistoryDao.deleteSessionsForBook(bookId)
