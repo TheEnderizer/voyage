@@ -3,6 +3,11 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.5b] - 2026-07-16
+
+### Fixed
+- Backup: importing a backup crashed with "MediaController method is called from a wrong thread" — restore now stops playback on the correct thread before applying the restore
+
 ## [1.8.4b] - 2026-07-16
 
 ### Added

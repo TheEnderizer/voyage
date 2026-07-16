@@ -12,7 +12,9 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -291,7 +293,11 @@ class BackupManager @Inject constructor(
      * older backups after later schema additions.
      */
     suspend fun restore(input: InputStream, forceOverwrite: Boolean): RestoreResult {
-        playerController.stop()
+        // PlayerController wraps a MediaController, which is main-thread-only (see its class doc);
+        // restore() itself normally runs on Dispatchers.IO (SettingsViewModel.importBackup), so
+        // this hop is required — calling stop() straight from IO throws "MediaController method
+        // is called from a wrong thread".
+        withContext(Dispatchers.Main) { playerController.stop() }
 
         val root = JSONObject(input.bufferedReader().readText())
 
