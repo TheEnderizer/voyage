@@ -3,6 +3,28 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [Unreleased]
+
+### Fixed
+- Backup & restore, repaired end to end:
+  - Restoring a backup now reliably applies resume positions — a race with the player's own position saving could silently skip or overwrite the restored progress for the book you were listening to
+  - The Finished / Listening tabs are correct after restoring onto a fresh install (book status is now backed up and restored, not just the raw progress)
+  - "Share backup" no longer crashes the app
+  - If some books kept newer local progress during an import, the summary now says so and offers "Overwrite anyway"
+  - An import keeps running (and applies completely or not at all) even if you leave the Settings screen mid-way
+  - Sleep timer, balance/mono, headset mapping, and resume-on-headphones settings are now included in backups
+- Widgets: rendering moved off the main thread (smoother during sleep-timer countdowns), the widget speed buttons now persist the change, and resuming from a cold widget tap now applies series/preset defaults and auto-rewind exactly like resuming in-app
+- Resuming from the home-screen card now auto-rewinds the same way the full player does
+
+### Changed
+- Immersive theme, polished: search bar, library tab chips, mini player bar, selection bar, bottom sheets, menus, and dialogs are now frosted/translucent so the blurred cover shows through everywhere — no more opaque Material panels breaking the look. Book-grid gradients are tinted toward the cover accent, and a soft theme gradient backs the app before the first book plays
+- The Immersive and Material You looks are now fully separate UI implementations under the hood, so each can keep evolving independently
+- Series screens now use the same pre-baked cover backdrop as books (sharper and cheaper to draw)
+- Android 13+ themed (monochrome) app icon
+
+### Removed
+- The old retired "join books into a group" feature's leftover code and database tables (superseded by Series long ago; it had no working entry point)
+
 ## [1.8.8b] - 2026-07-16
 
 ### Added
