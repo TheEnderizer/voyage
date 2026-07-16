@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -680,19 +682,27 @@ private fun BookGridCard(
         tween(150), label = "border"
     )
 
+    // Published so a cover-morph transition (grid → Book Info) can start from this exact card's
+    // on-screen bounds even when nothing is playing (no mini bar to morph from otherwise).
+    val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
+    val cardRadius = MaterialTheme.shapes.large
+
     Box(
         modifier
             .fillMaxWidth()
             .aspectRatio(0.72f)
             .pressScale(enabled = !isSelectionMode)
-            .clip(MaterialTheme.shapes.large)
+            .clip(cardRadius)
             .border(
                 width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
-                shape = MaterialTheme.shapes.large
+                shape = cardRadius
             )
             .background(MaterialTheme.colorScheme.surfaceContainer)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .onGloballyPositioned {
+                coverBoundsRegistry.publish(book.id, it.boundsInRoot(), 28.dp)
+            }
     ) {
         AsyncImage(
             model = book.coverArtPath?.let { File(it) },

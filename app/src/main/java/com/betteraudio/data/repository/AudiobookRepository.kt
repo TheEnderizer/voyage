@@ -49,6 +49,8 @@ class AudiobookRepository @Inject constructor(
             (existing ?: com.betteraudio.data.db.entities.AuthorMeta(name = name)).copy(coverArtPath = path)
         )
     }
+    suspend fun getAllAuthorMetaOnce(): List<com.betteraudio.data.db.entities.AuthorMeta> = authorMetaDao.getAllOnce()
+    suspend fun upsertAuthorMeta(meta: com.betteraudio.data.db.entities.AuthorMeta) = authorMetaDao.upsert(meta)
 
     /**
      * Wipe the entire library from the database — every book (which cascades to its files,

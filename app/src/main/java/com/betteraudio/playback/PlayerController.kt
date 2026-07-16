@@ -100,6 +100,17 @@ class PlayerController @Inject constructor(
     private var cumulativeStartsMs: List<Long> = emptyList()
     private var bookTotalDurationMs: Long = 0L
 
+    // ── Corrupt-file skip recovery ────────────────────────────────────────────
+    // Escalating skip schedule: 1s steps to 10s, then 5s steps to 30s. Attempt N skips
+    // recoverySkipSeconds[N] further past the damage; the schedule exhausting = give up.
+    private val recoverySkipSeconds = listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30)
+    // Attempts made per media id during the current book load (cleared on each load). Doubles
+    // as the give-up latch: a count past the schedule length means recovery failed for the file.
+    private val recoveryAttempts = mutableMapOf<String, Int>()
+    // filePath + scanned duration per media id, captured at load so recovery can estimate a
+    // bytes-per-second rate without an async DB round-trip mid-error-handling.
+    private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
+
     // Sleep timer
     private var sleepTimerJob: Job? = null
     private var sleepTimerRemainingMs: Long = 0L
@@ -386,6 +397,8 @@ class PlayerController @Inject constructor(
         allFiles.forEach { f -> cumulative.add(runningTotal); runningTotal += f.durationMs }
         cumulativeStartsMs = cumulative
         bookTotalDurationMs = runningTotal
+        recoveryAttempts.clear()
+        fileInfoByItemId = allFiles.associate { it.id.toString() to (it.filePath to it.durationMs) }
 
         val ctrl = controller ?: return
         ctrl.setMediaItems(items, startIndex, startPosition)
@@ -511,9 +524,102 @@ class PlayerController @Inject constructor(
         repository.updatePosition(bookId, fileId, positionMs)
     }
 
+    private fun showUserMessage(msg: String) {
+        scope.launch(Dispatchers.Main) {
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /**
+     * ExoPlayer's extractor is stricter than platform decoders: a file with a corrupt section
+     * fails with ERROR_CODE_PARSING_CONTAINER_MALFORMED even when the rest plays fine. Lenient
+     * players (e.g. Smart AudioBook Player) just skip the bad section. We mimic that with an
+     * escalating skip: tell the user the file is corrupt and that we're skipping the damage,
+     * then retry 1s further in, then 2s, … up to 10s, then 5s steps up to 30s. If 30s still
+     * fails, tell the user to skip manually or accept the file can't be played.
+     *
+     * Two skip mechanisms, chosen by whether the file ever prepared (duration known):
+     *  - **Head damage** (prepare failed, no duration): a time-seek can't work — with no seek
+     *    map, re-preparing always re-reads the same corrupt head — so hide the corresponding
+     *    leading *bytes* from the extractor (see [SkipHeadDataSource]) and it synchronizes in
+     *    clean audio. The attempted start position is preserved (adjusted for the skip) so a
+     *    resumed book doesn't get thrown back to the file start.
+     *  - **Mid-file damage** (was prepared/playing): the seek map exists, so simply step the
+     *    play position forward past the damage and re-prepare.
+     *
+     * @return true if a retry was kicked off (caller should treat the error as handled).
+     */
+    private fun tryRecoverFromCorruptFile(error: androidx.media3.common.PlaybackException): Boolean {
+        if (error.errorCode != androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) return false
+        val ctrl = controller ?: return false
+        val item = ctrl.currentMediaItem ?: return false
+        val itemId = item.mediaId
+        val attempt = recoveryAttempts.getOrDefault(itemId, 0)
+        recoveryAttempts[itemId] = attempt + 1
+        if (attempt >= recoverySkipSeconds.size) {
+            if (attempt == recoverySkipSeconds.size) {  // first error past the schedule → give up once
+                AppLog.e("Player", "corrupt-file recovery exhausted (30s) for item=$itemId")
+                showUserMessage("Couldn't skip past the damaged section (tried up to 30s). Try skipping manually — if that doesn't work, this file can't be played.")
+            }
+            return false
+        }
+        if (attempt == 0) {
+            showUserMessage("This audio file is corrupted — attempting to skip past the damaged section…")
+        }
+        val skipSeconds = recoverySkipSeconds[attempt]
+        val index = ctrl.currentMediaItemIndex
+        val positionMs = ctrl.currentPosition.coerceAtLeast(0L)
+        val prepared = ctrl.duration > 0L
+
+        if (prepared) {
+            // Mid-file damage: step past it and resume.
+            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: mid-file, seeking +${skipSeconds}s from ${positionMs}ms")
+            scope.launch(Dispatchers.Main) {
+                val c = controller ?: return@launch
+                c.seekTo(index, positionMs + skipSeconds * 1_000L)
+                c.prepare()
+                c.play()
+            }
+            return true
+        }
+
+        // Head damage: hide leading bytes so the extractor never sees the corrupt region.
+        val info = fileInfoByItemId[itemId] ?: return false
+        val (filePath, durationMs) = info
+        scope.launch {  // IO: reads the file header for the ID3 size
+            val file = java.io.File(filePath)
+            val fileLen = file.length()
+            val id3Bytes = SkipHeadDataSource.id3TagSizeBytes(file)
+            val audioBytes = (fileLen - id3Bytes).coerceAtLeast(1L)
+            // Approximate byte rate from the scanned duration; assume 256 kbps when unknown.
+            val bytesPerSec = if (durationMs > 1_000L) audioBytes * 1_000 / durationMs else 32_000L
+            val skipBytes = id3Bytes + skipSeconds * bytesPerSec
+            if (skipBytes >= fileLen) {
+                recoveryAttempts[itemId] = recoverySkipSeconds.size + 1  // latch as failed
+                showUserMessage("Couldn't skip past the damaged section. Try skipping manually — if that doesn't work, this file can't be played.")
+                return@launch
+            }
+            // Keep the position the user was starting from, shifted into the skipped timeline.
+            val resumeMs = (positionMs - skipSeconds * 1_000L).coerceAtLeast(0L)
+            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: head, hiding ${skipSeconds}s ($skipBytes of $fileLen bytes), resume at ${resumeMs}ms")
+            kotlinx.coroutines.withContext(Dispatchers.Main) {
+                val c = controller ?: return@withContext
+                val retryItem = item.buildUpon()
+                    .setUri(SkipHeadDataSource.wrapUri(Uri.fromFile(file), skipBytes))
+                    .build()
+                c.replaceMediaItem(index, retryItem)
+                c.seekTo(index, resumeMs)
+                c.prepare()
+                c.play()
+            }
+        }
+        return true
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             AppLog.e("Player", "playback error book=$currentBookId code=${error.errorCodeName}: ${error.message}", error)
+            if (tryRecoverFromCorruptFile(error)) return
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             AppLog.i("Player", "isPlaying=$isPlaying book=$currentBookId pos=${controller?.currentPosition ?: -1}ms")
@@ -555,6 +661,14 @@ class PlayerController @Inject constructor(
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
+            // A recovery attempt that reaches READY found clean audio — log the win.
+            if (playbackState == Player.STATE_READY) {
+                val id = controller?.currentMediaItem?.mediaId
+                val attempts = id?.let { recoveryAttempts[it] } ?: 0
+                if (attempts in 1..recoverySkipSeconds.size) {
+                    AppLog.i("Player", "corrupt-file recovery: prepared OK for item=$id after $attempts attempt(s) (${recoverySkipSeconds[attempts - 1]}s skipped)")
+                }
+            }
             if (playbackState == Player.STATE_ENDED && currentBookId != -1L) {
                 val endedBook = currentBookId
                 scope.launch { repository.markBookFinished(endedBook) }

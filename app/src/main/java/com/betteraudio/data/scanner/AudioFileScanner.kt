@@ -26,9 +26,12 @@ private val DISC_FOLDER_REGEX = Regex(
     RegexOption.IGNORE_CASE
 )
 
-// Detects an inline volume/part number in a filename, e.g. "Shadow Slave Volume 7 ...".
+// Detects an inline volume number in a filename, e.g. "Shadow Slave Volume 7 ...".
+// Deliberately excludes "part"/"pt"/"book" — those mean "same book, multiple files"
+// (see stemKey), never a genuinely distinct volume, and including them mis-splits
+// e.g. "... pt 1.mp3" / "... pt 2.mp3" / "... pt 3.mp3" into three separate books.
 private val VOLUME_IN_NAME_REGEX = Regex(
-    "\\b(?:volume|vol|part|pt|book)\\s*(\\d+)\\b",
+    "\\b(?:volume|vol)\\s*(\\d+)\\b",
     RegexOption.IGNORE_CASE
 )
 
@@ -306,7 +309,9 @@ class AudioFileScanner @Inject constructor(
         val needChapters = existing != null && repository.chapterCountForBook(existing.id) == 0
         if (existing != null && !filesChanged && !needChapters) return
 
-        val retriever = MediaMetadataRetriever()
+        // Recreated on failure: a MediaMetadataRetriever whose setDataSource() threw is left in an
+        // undefined state, and reusing it can poison every later file in the same folder.
+        var retriever = MediaMetadataRetriever()
 
         var totalDuration = 0L
         val audioEntities = mutableListOf<AudioFile>()
@@ -324,8 +329,17 @@ class AudioFileScanner @Inject constructor(
         sortedFiles.forEachIndexed { index, file ->
             try {
                 retriever.setDataSource(file.absolutePath)
-                val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                // MediaMetadataRetriever returns no duration for very large m4b files (7 GB / 261 h
+                // observed) without throwing. A 0 duration collapses every chapter to position 0 in
+                // buildChapters, so fall back to the MP4's own mvhd header.
+                var durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                     ?.toLongOrNull() ?: 0L
+                if (durationMs <= 0L) {
+                    durationMs = Mp4Probe.durationMs(file.absolutePath, file.extension)
+                    if (durationMs > 0L) {
+                        AppLog.i("Scan", "duration from mvhd for ${file.name}: ${durationMs}ms")
+                    }
+                }
                 totalDuration += durationMs
 
                 if (index == 0) {
@@ -366,7 +380,14 @@ class AudioFileScanner @Inject constructor(
                         chapterTitle = chapterTitle
                     )
                 )
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                // Was silently swallowed: the file vanished from audioEntities while the Book was
+                // still created with fileCount = sortedFiles.size, leaving a book that claims files
+                // it has no rows for and that reconcileAgainstDisk skips forever.
+                AppLog.e("Scan", "metadata read failed, skipping ${file.absolutePath} (${file.length()} bytes)", e)
+                runCatching { retriever.release() }
+                retriever = MediaMetadataRetriever()
+            }
         }
         retriever.release()
 
@@ -375,6 +396,11 @@ class AudioFileScanner @Inject constructor(
         val resolvedSeriesId = if (existing == null && !seriesName.isNullOrBlank())
             seriesRepository.getOrCreateSeriesByName(seriesName, bookAuthor)
         else null
+
+        // Count the rows we can actually insert, not the files on disk — a file whose metadata read
+        // failed above has no AudioFile row, and claiming otherwise produces a book that can never
+        // play and that reconcileAgainstDisk will not repair.
+        val importedCount = audioEntities.size
 
         val bookId: Long
         if (existing == null) {
@@ -387,7 +413,7 @@ class AudioFileScanner @Inject constructor(
                     seriesName = seriesName,
                     seriesOrder = seriesOrder,
                     totalDurationMs = totalDuration,
-                    fileCount = sortedFiles.size,
+                    fileCount = importedCount,
                     narrator = narrator,
                     genre = genre,
                     year = year,
@@ -400,7 +426,7 @@ class AudioFileScanner @Inject constructor(
             // preserving every user-facing field (title, overrides, status, series, group…).
             if (filesChanged) {
                 repository.upsertBook(
-                    existing.copy(totalDurationMs = totalDuration, fileCount = sortedFiles.size)
+                    existing.copy(totalDurationMs = totalDuration, fileCount = importedCount)
                 )
             }
         }

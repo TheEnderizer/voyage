@@ -114,7 +114,9 @@ object CustomWidgetRenderer {
                 canvas.drawBitmap(WidgetRender.coverBitmapRect(context, src, w, h), 0f, 0f, null)
             }
             WidgetBackground.APP_COLOR -> {
-                canvas.drawColor(appColor)
+                // A dark, accent-tinted tone (like the app's Material You dark surface) rather
+                // than the raw bright primary color, which would be too loud as a fill.
+                canvas.drawColor(WidgetRender.darkTint(appColor))
             }
             WidgetBackground.CUSTOM_COLOR -> {
                 canvas.drawColor(resolveCustomColor(backgroundValue, appColor))

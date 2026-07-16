@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -36,10 +37,18 @@ sealed class SettingsSection {
     object Presets : SettingsSection()
     object Widget : SettingsSection()
     object AI : SettingsSection()
+    object Backup : SettingsSection()
     object Updates : SettingsSection()
     object About : SettingsSection()
     object Diagnostics : SettingsSection()
 }
+
+data class BackupUiState(
+    val exporting: Boolean = false,
+    val importing: Boolean = false,
+    val lastResult: com.betteraudio.data.backup.BackupManager.RestoreResult? = null,
+    val error: String? = null
+)
 
 data class UpdateUiState(
     val checking: Boolean = false,
@@ -67,7 +76,8 @@ class SettingsViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
     private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager,
-    private val customWidgetDesignDao: CustomWidgetDesignDao
+    private val customWidgetDesignDao: CustomWidgetDesignDao,
+    private val backupManager: com.betteraudio.data.backup.BackupManager
 ) : ViewModel() {
 
     // ── Listen↔read sync speech model ─────────────────────────────────────────
@@ -420,6 +430,91 @@ class SettingsViewModel @Inject constructor(
                 _updateState.update { it.copy(downloading = false, error = "Could not open installer.") }
             }
         }
+    }
+
+    // ── Backup & restore ─────────────────────────────────────────────────────
+    private val _backupState = MutableStateFlow(BackupUiState())
+    val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
+
+    val autoBackupEnabled: StateFlow<Boolean> =
+        settings.autoBackupEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val autoBackupFolderUri: StateFlow<String> =
+        settings.autoBackupFolderUri.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val autoBackupLastRunMs: StateFlow<Long> =
+        settings.autoBackupLastRunMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+    val autoBackupLastStatus: StateFlow<String> =
+        settings.autoBackupLastStatus.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val backupIncludeApiKey: StateFlow<Boolean> =
+        settings.backupIncludeApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    fun setBackupIncludeApiKey(enabled: Boolean) = viewModelScope.launch { settings.setBackupIncludeApiKey(enabled) }
+
+    fun exportBackup(uri: android.net.Uri, includeApiKey: Boolean) {
+        if (_backupState.value.exporting) return
+        viewModelScope.launch {
+            _backupState.update { it.copy(exporting = true, error = null) }
+            try {
+                withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    appContext.contentResolver.openOutputStream(uri)?.use { out ->
+                        backupManager.export(out, includeApiKey)
+                    } ?: throw java.io.IOException("Could not open the chosen file for writing")
+                }
+                _backupState.update { it.copy(exporting = false) }
+            } catch (e: Exception) {
+                _backupState.update { it.copy(exporting = false, error = "Export failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun importBackup(uri: android.net.Uri, forceOverwrite: Boolean) {
+        if (_backupState.value.importing) return
+        viewModelScope.launch {
+            _backupState.update { it.copy(importing = true, error = null, lastResult = null) }
+            try {
+                val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    appContext.contentResolver.openInputStream(uri)?.use { input ->
+                        backupManager.restore(input, forceOverwrite)
+                    } ?: throw java.io.IOException("Could not open the chosen file for reading")
+                }
+                _backupState.update { it.copy(importing = false, lastResult = result) }
+            } catch (e: Exception) {
+                _backupState.update { it.copy(importing = false, error = "Import failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun clearBackupResult() = _backupState.update { it.copy(lastResult = null, error = null) }
+
+    /** Writes a share-ready copy (API key always stripped) to filesDir and returns it. */
+    suspend fun writeShareBackupFile(): java.io.File = withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = java.io.File(appContext.filesDir, "backup_share").apply { mkdirs() }
+        val file = java.io.File(dir, "voyage-backup.json")
+        file.outputStream().use { out -> backupManager.exportForSharing(out) }
+        file
+    }
+
+    fun setAutoBackupFolder(uri: android.net.Uri) = viewModelScope.launch {
+        appContext.contentResolver.takePersistableUriPermission(
+            uri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        )
+        settings.setAutoBackupFolderUri(uri.toString())
+        if (settings.autoBackupEnabled.first()) {
+            com.betteraudio.data.backup.AutoBackupWorker.schedule(appContext)
+        }
+    }
+
+    fun setAutoBackupEnabled(enabled: Boolean) = viewModelScope.launch {
+        settings.setAutoBackupEnabled(enabled)
+        if (enabled && settings.autoBackupFolderUri.first().isNotBlank()) {
+            com.betteraudio.data.backup.AutoBackupWorker.schedule(appContext)
+        } else {
+            com.betteraudio.data.backup.AutoBackupWorker.cancel(appContext)
+        }
+    }
+
+    fun runAutoBackupNow() {
+        com.betteraudio.data.backup.AutoBackupWorker.runNow(appContext)
     }
 
     fun loadWhatsNew() {

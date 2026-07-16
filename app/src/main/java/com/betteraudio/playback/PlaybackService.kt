@@ -18,8 +18,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -169,7 +172,14 @@ class PlaybackService : MediaSessionService() {
                     .build()
         }
 
+        // Data source that understands SkipHeadDataSource.wrapUri()-marked URIs, letting the
+        // controller retry a corrupt-headed file with its damaged leading bytes hidden.
+        val skipHeadFactory = DataSource.Factory {
+            SkipHeadDataSource(DefaultDataSource.Factory(this).createDataSource())
+        }
+
         val player = ExoPlayer.Builder(this, renderersFactory)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(skipHeadFactory))
             .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .setHandleAudioBecomingNoisy(true)
             .build()

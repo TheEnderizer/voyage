@@ -8,16 +8,23 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,9 +38,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraudio.R
 import com.betteraudio.widget.WidgetState
 import com.betteraudio.widget.custom.CustomWidgetRenderer
 import com.betteraudio.widget.custom.WidgetBackground
@@ -91,9 +100,20 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
             Spacer(Modifier.height(16.dp))
 
             var showAddSheet by remember { mutableStateOf(false) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { showAddSheet = true }) { Text("Add element") }
                 if (state.selectedIndex != -1) {
+                    Row(
+                        Modifier.clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { viewModel.resizeSelected(grow = false) }) {
+                            Icon(Icons.Default.Remove, "Shrink element")
+                        }
+                        IconButton(onClick = { viewModel.resizeSelected(grow = true) }) {
+                            Icon(Icons.Default.Add, "Grow element")
+                        }
+                    }
                     OutlinedButton(onClick = viewModel::deleteSelected) {
                         Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
@@ -213,14 +233,6 @@ private fun WidgetCanvas(state: WidgetEditorState, viewModel: WidgetEditorViewMo
                             y = (current.y + dyFrac).coerceIn(0f, 1f - current.h)
                         )
                     }
-                },
-                onResize = { dwFrac, dhFrac ->
-                    viewModel.updateElement(index) { current ->
-                        current.copy(
-                            w = (current.w + dwFrac).coerceIn(0.08f, 1f - current.x),
-                            h = (current.h + dhFrac).coerceIn(0.08f, 1f - current.y)
-                        )
-                    }
                 }
             )
         }
@@ -240,8 +252,7 @@ private fun BoxScope.ElementOverlay(
     element: WidgetElement,
     selected: Boolean,
     onSelect: () -> Unit,
-    onDrag: (dxFrac: Float, dyFrac: Float) -> Unit,
-    onResize: (dwFrac: Float, dhFrac: Float) -> Unit
+    onDrag: (dxFrac: Float, dyFrac: Float) -> Unit
 ) {
     var boxSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     Box(
@@ -280,43 +291,93 @@ private fun BoxScope.ElementOverlay(
                             onDrag(dragAmount.x / w, dragAmount.y / h)
                         }
                     }
-            ) {
-                if (selected) {
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomEnd)
-                            .size(20.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape)
-                            .pointerInput(element) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    onResize(dragAmount.x / w, dragAmount.y / h)
-                                }
+            )
+        }
+    }
+}
+
+private val ELEMENT_CATEGORIES: List<Pair<String, List<WidgetElementType>>> = listOf(
+    "Playback" to listOf(
+        WidgetElementType.PLAY_PAUSE, WidgetElementType.SKIP_FORWARD, WidgetElementType.SKIP_BACK,
+        WidgetElementType.CHAPTER_FORWARD, WidgetElementType.CHAPTER_BACK
+    ),
+    "Audio" to listOf(
+        WidgetElementType.SPEED_UP, WidgetElementType.SPEED_DOWN,
+        WidgetElementType.BOOST_UP, WidgetElementType.BOOST_DOWN
+    ),
+    "Tools" to listOf(
+        WidgetElementType.SLEEP_TIMER, WidgetElementType.QUICK_BOOKMARK, WidgetElementType.CLOSE_BOOK
+    ),
+    "Text" to listOf(
+        WidgetElementType.BOOK_NAME, WidgetElementType.AUTHOR_NAME,
+        WidgetElementType.CHAPTER_NAME, WidgetElementType.SERIES_NAME
+    ),
+    "Images" to listOf(
+        WidgetElementType.BOOK_COVER, WidgetElementType.SERIES_COVER, WidgetElementType.CUSTOM_IMAGE
+    )
+)
+
+@Composable
+private fun AddElementSheet(onPick: (WidgetElementType) -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(max = 520.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            ELEMENT_CATEGORIES.forEach { (category, types) ->
+                item {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(category, style = MaterialTheme.typography.titleSmall)
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(types) { type ->
+                                ElementTypeButton(type = type, onClick = { onPick(type) })
                             }
-                    )
+                        }
+                    }
                 }
             }
+            item { Spacer(Modifier.height(8.dp)) }
         }
     }
 }
 
 @Composable
-private fun AddElementSheet(onPick: (WidgetElementType) -> Unit, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(3),
-            modifier = Modifier.fillMaxWidth().padding(16.dp).heightIn(max = 480.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            gridItems(WidgetElementType.entries) { type ->
-                AssistChip(
-                    onClick = { onPick(type) },
-                    label = { Text(type.name.replace('_', ' ').lowercase().replaceFirstChar { it.uppercase() }) },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        }
+private fun ElementTypeButton(type: WidgetElementType, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        ElementTypeIcon(type, contentDescription = type.name.replace('_', ' '), modifier = Modifier.size(24.dp))
+    }
+}
+
+/** The same glyph the rendered widget uses for action elements; a Material icon otherwise. */
+@Composable
+private fun ElementTypeIcon(type: WidgetElementType, contentDescription: String?, modifier: Modifier = Modifier) {
+    when (type) {
+        WidgetElementType.PLAY_PAUSE -> Icon(painterResource(R.drawable.ic_play), contentDescription, modifier)
+        WidgetElementType.SKIP_FORWARD -> Icon(painterResource(R.drawable.ic_skip_forward), contentDescription, modifier)
+        WidgetElementType.SKIP_BACK -> Icon(painterResource(R.drawable.ic_skip_back), contentDescription, modifier)
+        WidgetElementType.CHAPTER_FORWARD -> Icon(painterResource(R.drawable.ic_chapter_forward), contentDescription, modifier)
+        WidgetElementType.CHAPTER_BACK -> Icon(painterResource(R.drawable.ic_chapter_back), contentDescription, modifier)
+        WidgetElementType.SPEED_UP -> Icon(painterResource(R.drawable.ic_speed_up), contentDescription, modifier)
+        WidgetElementType.SPEED_DOWN -> Icon(painterResource(R.drawable.ic_speed_down), contentDescription, modifier)
+        WidgetElementType.BOOST_UP -> Icon(painterResource(R.drawable.ic_boost_up), contentDescription, modifier)
+        WidgetElementType.BOOST_DOWN -> Icon(painterResource(R.drawable.ic_boost_down), contentDescription, modifier)
+        WidgetElementType.SLEEP_TIMER -> Icon(painterResource(R.drawable.ic_sleep), contentDescription, modifier)
+        WidgetElementType.QUICK_BOOKMARK -> Icon(painterResource(R.drawable.ic_bookmark_add), contentDescription, modifier)
+        WidgetElementType.CLOSE_BOOK -> Icon(painterResource(R.drawable.ic_close_book), contentDescription, modifier)
+        WidgetElementType.BOOK_NAME -> Icon(Icons.Default.Title, contentDescription, modifier)
+        WidgetElementType.AUTHOR_NAME -> Icon(Icons.Default.Person, contentDescription, modifier)
+        WidgetElementType.CHAPTER_NAME -> Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription, modifier)
+        WidgetElementType.SERIES_NAME -> Icon(Icons.Default.CollectionsBookmark, contentDescription, modifier)
+        WidgetElementType.BOOK_COVER -> Icon(Icons.Default.Image, contentDescription, modifier)
+        WidgetElementType.SERIES_COVER -> Icon(Icons.Default.PhotoLibrary, contentDescription, modifier)
+        WidgetElementType.CUSTOM_IMAGE -> Icon(Icons.Default.AddPhotoAlternate, contentDescription, modifier)
     }
 }
 

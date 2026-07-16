@@ -149,6 +149,40 @@ class MainActivity : ComponentActivity() {
                     .collectLatest { value = it }
             }
             val coverPath = seriesThemeCover ?: activeCover ?: lastPlayedCover
+
+            // Mirrors of the three cover flows above, but resolving each book/series' baked
+            // blurred+reflected composite (CoverEffectBaker) instead of the sharp cover — used by
+            // AppBlurredBackdrop so the app-wide Immersive background matches the player/book-info/
+            // series screens' pre-baked variant instead of live-blurring the sharp cover.
+            val lastPlayedCoverFx by produceState<String?>(null) {
+                settings.lastPlayedBookId.collectLatest { id ->
+                    if (id == -1L) value = null
+                    else repository.getBookById(id).collect { value = it?.coverFxPath }
+                }
+            }
+            val activeCoverFx by produceState<String?>(null) {
+                playerController.playbackState.map { it.bookId }.distinctUntilChanged()
+                    .flatMapLatest { id ->
+                        if (id == -1L) flowOf(null) else repository.getBookById(id).map { it?.coverFxPath }
+                    }
+                    .collectLatest { value = it }
+            }
+            val seriesThemeCoverFx by produceState<String?>(null) {
+                combine(
+                    settings.playerShowSeriesCover,
+                    playerController.playbackState.map { it.bookId }.distinctUntilChanged()
+                ) { show, id -> show to id }
+                    .flatMapLatest { (show, id) ->
+                        if (!show || id == -1L) flowOf(null)
+                        else repository.getBookById(id).flatMapLatest { b ->
+                            val sid = b?.seriesId
+                            if (sid == null) flowOf(null)
+                            else seriesRepository.getSeries(sid).map { it?.coverFxPath }
+                        }
+                    }
+                    .collectLatest { value = it }
+            }
+            val bakedCoverPath = seriesThemeCoverFx ?: activeCoverFx ?: lastPlayedCoverFx
             val appThemeRaw by settings.appTheme.collectAsStateWithLifecycle(initialThemeRaw)
             val colorSourceRaw by settings.themeColorSource.collectAsStateWithLifecycle(initialColorSource)
             val customThemeColor by settings.customThemeColor.collectAsStateWithLifecycle(initialCustomThemeColor)
@@ -173,6 +207,9 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
                 val uiScope = androidx.compose.runtime.rememberCoroutineScope()
+                // Shared across the home grid and the player sheet so a grid card's cover bounds
+                // are available as a morph source for grid → Book Info (see CoverBoundsRegistry).
+                val coverBoundsRegistry = androidx.compose.runtime.remember { com.betteraudio.ui.player.CoverBoundsRegistry() }
 
                 // Persist the resolved Material You primary so themeless widget providers (no
                 // Compose context) can render an "app color" background for custom widgets.
@@ -244,11 +281,14 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
 
                 Box(Modifier.fillMaxSize()) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.betteraudio.ui.player.LocalCoverBoundsRegistry provides coverBoundsRegistry
+                ) {
                 // Immersive: the playing/last-played cover under a very heavy blur fills the
                 // app. Material You: a plain opaque background (Home's scaffold is transparent
                 // and relies on this layer).
                 if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
-                    com.betteraudio.ui.components.AppBlurredBackdrop(coverPath = coverPath)
+                    com.betteraudio.ui.components.AppBlurredBackdrop(coverPath = coverPath, bakedPath = bakedCoverPath)
                 } else {
                     Box(
                         Modifier
@@ -401,6 +441,7 @@ class MainActivity : ComponentActivity() {
                     liftForNavPill = currentRoute == "home",
                     onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )
+                } // CompositionLocalProvider(LocalCoverBoundsRegistry)
 
                 // First launch (or first run after this update): let the user pick the app
                 // theme. "" = never chosen; confirming (or dismissing) writes a value so the

@@ -9,7 +9,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
@@ -229,13 +228,23 @@ fun PlayerContent(
                 .frostedWhenVisible(showHistory || showChapters)
         ) {
             if (isImmersive) {
-            // ── Cover + reflection + progressive scrim — grows out of the mini cover ──
+            // ── Cover + reflection + progressive scrim — grows out of the mini cover. The clip
+            // mask itself is animated (rounded like the mini cover → square, full-bleed) so it
+            // reads as one object growing into the screen rather than a plain fade. The baked
+            // composite (see CoverEffectBaker) is already the "pre-generated blurred lower-half
+            // version" the immersive player uses — its sharp top half sits at the composite's
+            // 25%-height mark and this backdrop is top-anchored/fill-width, so the visible sharp
+            // artwork's center naturally lands ~1/4 down from the top with no extra positioning. ──
             ReflectedCoverBackdrop(
                 coverPath = coverPath,
                 bakedPath = bakedPath,
                 modifier  = Modifier
                     .fillMaxSize()
-                    .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true, fadeIn = true)
+                    .morphFrom(
+                        expand.miniCover, expandProgress,
+                        anchorTopLeft = true, byWidth = true, fadeIn = true,
+                        sourceRadius = expand.coverSourceRadius, destRadius = 0.dp
+                    )
             )
             // Sharp copy of the cover that physically TRAVELS from the mini player's slot up
             // into the backdrop's cover area while the (blurred/reflected) backdrop fades in
@@ -249,12 +258,15 @@ fun PlayerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true)
+                    .morphFrom(
+                        expand.miniCover, expandProgress,
+                        anchorTopLeft = true, byWidth = true,
+                        sourceRadius = expand.coverSourceRadius, destRadius = 0.dp
+                    )
                     .graphicsLayer {
                         val p = expandProgress.value
                         alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
                     }
-                    .clip(RoundedCornerShape(12.dp))
             )
             }
 
@@ -351,8 +363,11 @@ fun PlayerContent(
                             modifier = Modifier
                                 // Largest square that fits the leftover space.
                                 .aspectRatio(1f)
-                                .morphFrom(expand.miniCover, expandProgress, anchorTopLeft = true, byWidth = true)
-                                .clip(RoundedCornerShape(28.dp))
+                                .morphFrom(
+                                    expand.miniCover, expandProgress,
+                                    anchorTopLeft = true, byWidth = true,
+                                    sourceRadius = expand.coverSourceRadius, destRadius = 28.dp
+                                )
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         )
                     }

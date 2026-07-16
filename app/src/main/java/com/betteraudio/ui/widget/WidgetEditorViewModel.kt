@@ -122,6 +122,28 @@ class WidgetEditorViewModel @Inject constructor(
         _state.value = _state.value.copy(elements = list, selectedIndex = -1)
     }
 
+    /** Grows/shrinks the selected element around its own center. Interactive elements step by
+     *  one grid cell (so the +/- controls always land back on a valid tap target after
+     *  [updateElement]'s automatic snap); text/cover/image elements step by a smaller fraction
+     *  since they aren't grid-constrained. */
+    fun resizeSelected(grow: Boolean) {
+        val idx = _state.value.selectedIndex
+        updateElement(idx) { el ->
+            val step = if (el.type.isInteractive) 1f / WidgetGrid.COLS else 0.08f
+            val delta = if (grow) step else -step
+            val cx = el.x + el.w / 2f
+            val cy = el.y + el.h / 2f
+            val newW = (el.w + delta).coerceIn(0.06f, 1f)
+            val newH = (el.h + delta).coerceIn(0.06f, 1f)
+            el.copy(
+                x = (cx - newW / 2f).coerceIn(0f, 1f - newW),
+                y = (cy - newH / 2f).coerceIn(0f, 1f - newH),
+                w = newW,
+                h = newH
+            )
+        }
+    }
+
     fun setElementImage(index: Int, uri: Uri) = viewModelScope.launch {
         val path = copyToFiles(uri, "widget_el") ?: return@launch
         updateElement(index) { it.copy(imagePath = path) }

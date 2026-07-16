@@ -3,6 +3,15 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.4b] - 2026-07-16
+
+### Added
+- Backup & restore: Settings → Backup & restore can now export your progress, bookmarks, listening history, audio presets, and series to a file, and restore from one. Restore matches books by folder/title, not by an internal id, so it survives a reinstall or rescan. Optional daily auto-backup to a folder you choose (keeps the last 5), plus a "Share backup" action. Your Gemini AI key is only included if you explicitly check the box, and shared/auto backups never include it.
+
+### Fixed
+- Playback: a file with a corrupt/malformed start no longer refuses to play — the app now shows a message and automatically retries further into the file (escalating up to 30s) to find clean audio, instead of failing outright
+- Scanner: books whose filenames use "pt N" / "part N" for multi-part files (e.g. "... pt 1.mp3", "... pt 2.mp3") no longer get mis-split into separate one-file "books" — they now import correctly as a single multi-part book
+
 ## [1.8.3b] - 2026-07-08
 
 ### Added

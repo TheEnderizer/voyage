@@ -85,6 +85,15 @@ class SettingsStore @Inject constructor(
         // When true, custom widgets render fully transparent (no elements) while nothing is
         // playing, instead of showing a cold play button that revives the last book.
         val WIDGET_HIDE_WHEN_IDLE        = booleanPreferencesKey("widget_hide_when_idle")
+        // ── Backup & restore (data/backup/) ──────────────────────────────────
+        val AUTO_BACKUP_ENABLED          = booleanPreferencesKey("auto_backup_enabled")
+        // Persisted SAF tree URI (as a string) of the folder auto-backups are written to.
+        val AUTO_BACKUP_FOLDER_URI       = stringPreferencesKey("auto_backup_folder_uri")
+        val AUTO_BACKUP_LAST_RUN_MS      = longPreferencesKey("auto_backup_last_run_ms")
+        // "" = never run; "ok" = last run succeeded; anything else = the last error message.
+        val AUTO_BACKUP_LAST_STATUS      = stringPreferencesKey("auto_backup_last_status")
+        // Remembers the user's last choice for the "include API key" export checkbox.
+        val BACKUP_INCLUDE_API_KEY       = booleanPreferencesKey("backup_include_api_key")
     }
 
     companion object {
@@ -134,6 +143,11 @@ class SettingsStore @Inject constructor(
     val pureBlack: Flow<Boolean>               = context.dataStore.data.map { it[Keys.PURE_BLACK] ?: false }
     val widgetAppColor: Flow<Int>              = context.dataStore.data.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }
     val widgetHideWhenIdle: Flow<Boolean>      = context.dataStore.data.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }
+    val autoBackupEnabled: Flow<Boolean>       = context.dataStore.data.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }
+    val autoBackupFolderUri: Flow<String>      = context.dataStore.data.map { it[Keys.AUTO_BACKUP_FOLDER_URI] ?: "" }
+    val autoBackupLastRunMs: Flow<Long>        = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_RUN_MS] ?: 0L }
+    val autoBackupLastStatus: Flow<String>     = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_STATUS] ?: "" }
+    val backupIncludeApiKey: Flow<Boolean>     = context.dataStore.data.map { it[Keys.BACKUP_INCLUDE_API_KEY] ?: false }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -232,4 +246,15 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }.let { }
     suspend fun setWidgetHideWhenIdle(enabled: Boolean) =
         context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }.let { }
+    suspend fun setAutoBackupEnabled(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.AUTO_BACKUP_ENABLED] = enabled }.let { }
+    suspend fun setAutoBackupFolderUri(uri: String) =
+        context.dataStore.edit { it[Keys.AUTO_BACKUP_FOLDER_URI] = uri }.let { }
+    suspend fun setAutoBackupLastRun(ts: Long, status: String) =
+        context.dataStore.edit {
+            it[Keys.AUTO_BACKUP_LAST_RUN_MS] = ts
+            it[Keys.AUTO_BACKUP_LAST_STATUS] = status
+        }.let { }
+    suspend fun setBackupIncludeApiKey(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.BACKUP_INCLUDE_API_KEY] = enabled }.let { }
 }

@@ -42,6 +42,8 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.components.ScrimButton
+import com.betteraudio.ui.home.BookOptionsSheet
+import com.betteraudio.ui.home.SeriesOptions
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
@@ -297,9 +299,11 @@ fun SeriesDetailScreen(
 
     if (showOptions) {
         series?.let { s ->
-            SeriesOptionsSheet(
-                series = s,
-                onSave = { viewModel.saveOptions(it) },
+            BookOptionsSheet(
+                seriesOptions = SeriesOptions(
+                    series = s,
+                    onSave = { viewModel.saveOptions(it) }
+                ),
                 onDismiss = { showOptions = false }
             )
         }

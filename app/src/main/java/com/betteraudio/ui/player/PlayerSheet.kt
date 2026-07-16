@@ -234,8 +234,28 @@ fun PlayerSheet(
     val miniCoverRect = remember { mutableStateOf(Rect.Zero) }
     val miniTitleRect = remember { mutableStateOf(Rect.Zero) }
     val miniControlsRect = remember { mutableStateOf(Rect.Zero) }
-    val transition = remember {
-        PlayerExpandTransition(progressState, miniCoverRect, miniTitleRect, miniControlsRect)
+
+    // Book Info is ALWAYS opened by tapping a grid card, so it must ALWAYS morph from that card's
+    // published bounds — even if a DIFFERENT book is currently playing (and thus has a live mini
+    // bar showing its own, unrelated cover). Only a non-info open (tapping the mini bar itself, or
+    // resuming playback into the full player) morphs from the mini bar.
+    val coverBoundsRegistry = LocalCoverBoundsRegistry.current
+    val effectiveCoverSource = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
+        if (target?.startInfo == true || !usingLivePlayback) {
+            coverBoundsRegistry.boundsState(target?.bookId ?: -1L)
+        } else {
+            miniCoverRect
+        }
+    }
+    val effectiveCoverRadius = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
+        if (target?.startInfo == true || !usingLivePlayback) {
+            coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
+        } else {
+            12.dp
+        }
+    }
+    val transition = remember(effectiveCoverSource, effectiveCoverRadius) {
+        PlayerExpandTransition(progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius)
     }
 
     fun settle(velocity: Float) {
@@ -253,7 +273,11 @@ fun PlayerSheet(
         // cover/title/controls (which start exactly on top of their mini counterparts) read as
         // the same element travelling, not a crossfade. The mini content hides the moment the
         // morph takes over; only the pill surface fades out.
-        if (!(hideMiniBar && !expanded)) MiniPlayerBar(
+        // The mini bar only exists when there's an active session (a book loaded in the service,
+        // playing or paused) — e.g. opening Book Info alone (no auto-play) must not spawn a bar.
+        // Cold-start `restore()` still loads the book (paused) into the service, so it satisfies
+        // this and the restored mini bar keeps showing on launch.
+        if (usingLivePlayback && !(hideMiniBar && !expanded)) MiniPlayerBar(
             title = when {
                 usingLivePlayback && playback.groupId != -1L -> playback.groupName
                 usingLivePlayback -> playback.bookTitle
@@ -435,6 +459,7 @@ private fun MiniPlayerBar(
                     AsyncImage(
                         model = coverPath?.let { File(it) },
                         contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
