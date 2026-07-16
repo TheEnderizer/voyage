@@ -8,9 +8,6 @@ import kotlinx.coroutines.flow.Flow
 interface AudioFileDao {
 
     @Query("SELECT * FROM audio_files WHERE bookId = :bookId ORDER BY trackNumber ASC, fileName ASC")
-    fun getFilesForBook(bookId: Long): Flow<List<AudioFile>>
-
-    @Query("SELECT * FROM audio_files WHERE bookId = :bookId ORDER BY trackNumber ASC, fileName ASC")
     suspend fun getFilesForBookOnce(bookId: Long): List<AudioFile>
 
     @Query("SELECT * FROM audio_files WHERE id = :id")

@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
@@ -50,6 +51,7 @@ fun AudioSettingsSheet(
     var presetName by remember { mutableStateOf("") }
 
     ModalBottomSheet(
+        containerColor = com.betteraudio.ui.components.appSheetColor(),
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
@@ -58,7 +60,9 @@ fun AudioSettingsSheet(
                 .fillMaxWidth()
                 .navigationBarsPadding()
         ) {
-            TabRow(selectedTabIndex = selectedTab) {
+            // Transparent so the sheet's own fill shows through — an opaque `surface` band here
+            // looks wrong in the Immersive theme now that the sheet itself is frosted.
+            TabRow(selectedTabIndex = selectedTab, containerColor = Color.Transparent) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Speed") })
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Boost") })
                 Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("EQ") })

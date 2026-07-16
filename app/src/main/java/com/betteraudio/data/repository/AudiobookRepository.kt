@@ -32,7 +32,6 @@ class AudiobookRepository @Inject constructor(
     private val bookmarkDao: BookmarkDao,
     private val audioPresetDao: AudioPresetDao,
     private val listeningHistoryDao: ListeningHistoryDao,
-    private val bookGroupDao: com.betteraudio.data.db.dao.BookGroupDao,
     private val authorMetaDao: com.betteraudio.data.db.dao.AuthorMetaDao,
     private val syncAnchorDao: com.betteraudio.data.db.dao.SyncAnchorDao,
     private val coverEffectBaker: CoverEffectBaker
@@ -54,21 +53,16 @@ class AudiobookRepository @Inject constructor(
 
     /**
      * Wipe the entire library from the database — every book (which cascades to its files,
-     * chapters, progress, bookmarks and listening history) and every playback group. The
-     * audio files on disk are left untouched; the folder + import-structure settings are kept
-     * so the user can immediately rescan. Custom audio presets are preserved.
+     * chapters, progress, bookmarks and listening history). The audio files on disk are left
+     * untouched; the folder + import-structure settings are kept so the user can immediately
+     * rescan. Custom audio presets are preserved.
      */
     suspend fun resetLibrary() {
         bookDao.deleteAll()
-        bookGroupDao.deleteAllGroups()
     }
 
     // ── Listening history ────────────────────────────────────────────────────
     suspend fun insertListeningSession(session: ListeningSession): Long = listeningHistoryDao.insertSession(session)
-    suspend fun finishListeningSession(
-        id: Long, endMs: Long, endChapterIndex: Int, endChapterName: String,
-        endPositionInChapterMs: Long, listenedMs: Long
-    ) = listeningHistoryDao.finishSession(id, endMs, endChapterIndex, endChapterName, endPositionInChapterMs, listenedMs)
     fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>> = listeningHistoryDao.getSessionsForBook(bookId)
     suspend fun insertSkipEvent(skip: SkipEvent): Long = listeningHistoryDao.insertSkip(skip)
     /** Insert then prune older rows of the same [SkipEvent.source] for that book beyond [keep]. */
@@ -77,23 +71,13 @@ class AudiobookRepository @Inject constructor(
         listeningHistoryDao.pruneSkipsBySource(skip.bookId, skip.source, keep)
     }
     fun getSkipsForBook(bookId: Long): Flow<List<SkipEvent>> = listeningHistoryDao.getSkipsForBook(bookId)
-    suspend fun deleteHistoryForBook(bookId: Long) {
-        listeningHistoryDao.deleteSessionsForBook(bookId)
-        listeningHistoryDao.deleteSkipsForBook(bookId)
-    }
 
     suspend fun setSkipSilenceEnabled(bookId: Long, enabled: Boolean) =
         bookDao.setSkipSilenceEnabled(bookId, enabled)
 
-    fun getBooksInProgress(): Flow<List<BookWithProgress>> = bookDao.getBooksInProgress()
-    fun getNotStartedBooks(): Flow<List<Book>> = bookDao.getNotStartedBooks()
-    fun getFinishedBooks(): Flow<List<Book>> = bookDao.getFinishedBooks()
     fun getAllBooks(): Flow<List<Book>> = bookDao.getAllBooksSorted()
     fun getBookById(bookId: Long): Flow<Book?> = bookDao.getBookById(bookId)
     fun getBookWithProgress(bookId: Long): Flow<BookWithProgress?> = bookDao.getBookWithProgress(bookId)
-    fun getMostRecentProgress(): Flow<PlaybackProgress?> = progressDao.getMostRecentProgress()
-    fun getProgressForBook(bookId: Long): Flow<PlaybackProgress?> = progressDao.getProgressForBook(bookId)
-    fun getAudioFilesForBook(bookId: Long): Flow<List<AudioFile>> = audioFileDao.getFilesForBook(bookId)
     fun getChaptersForBook(bookId: Long): Flow<List<Chapter>> = chapterDao.getChaptersForBook(bookId)
     suspend fun getChaptersForBookOnce(bookId: Long): List<Chapter> = chapterDao.getChaptersForBookOnce(bookId)
     suspend fun chapterCountForBook(bookId: Long): Int = chapterDao.countForBook(bookId)
@@ -146,14 +130,14 @@ class AudiobookRepository @Inject constructor(
         val cover = book.coverArtPath ?: return
         val fx = book.coverFxPath
         if (fx != null && java.io.File(fx).exists()) return
-        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId))
+        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId.toString()))
     }
 
     /** Force a re-bake from the current cover (manual "refresh cover effect"). */
     suspend fun regenerateCoverFx(bookId: Long) {
         val book = bookDao.getBookById(bookId).firstOrNull() ?: return
         val cover = book.coverArtPath ?: return
-        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId))
+        bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId.toString()))
     }
     suspend fun updateBookStatus(bookId: Long, status: BookStatus) = bookDao.updateStatus(bookId, status)
     suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) =
@@ -339,10 +323,6 @@ class AudiobookRepository @Inject constructor(
     suspend fun updateSynopsis(bookId: Long, synopsis: String) = bookDao.updateSynopsis(bookId, synopsis)
 
     suspend fun getBooksByIds(ids: List<Long>): List<Book> = bookDao.getBooksByIds(ids)
-    suspend fun getAllUngroupedOnce(): List<Book> = bookDao.getAllUngroupedOnce()
-
-    /** Lock these books' grouping so the scanner's AutoJoiner never touches them again. */
-    suspend fun markManualGrouping(ids: List<Long>) = bookDao.markManualGrouping(ids)
 
     /**
      * One-time cleanup of legacy auto-sliced "synthetic" chapters. Clearing all chapter rows
@@ -362,7 +342,6 @@ class AudiobookRepository @Inject constructor(
 
     // ── Audio presets ─────────────────────────────────────────────────────────
     fun getAllAudioPresets(): Flow<List<AudioPreset>> = audioPresetDao.getAll()
-    fun getAudioPresetsByType(type: String): Flow<List<AudioPreset>> = audioPresetDao.getByType(type)
     suspend fun insertAudioPreset(preset: AudioPreset): Long = audioPresetDao.insert(preset)
     suspend fun updateAudioPreset(preset: AudioPreset) = audioPresetDao.update(preset)
     suspend fun deleteAudioPreset(id: Long) = audioPresetDao.deleteById(id)
@@ -390,7 +369,7 @@ class AudiobookRepository @Inject constructor(
         bookDao.getAllBooksSortedOnce()
             .filter { it.coverArtPath != null }
             .forEach { book ->
-                bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id))
+                bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id.toString()))
             }
     }
 }

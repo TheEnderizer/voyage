@@ -14,14 +14,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Post notifications (API 33+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Network access for AI synopsis and update checks -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- Side-load APK updates -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -72,9 +70,6 @@
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-                <action android:name="com.betteraudio.action.WIDGET_PLAY_PAUSE" />
-                <action android:name="com.betteraudio.action.WIDGET_SKIP_FORWARD" />
-                <action android:name="com.betteraudio.action.WIDGET_SKIP_BACK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

@@ -49,17 +49,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
-data class GroupScreenState(
-    val seriesId: Long,
-    val name: String,
-    val speed: Float,
-    val books: List<Book>,
-    val totalDurationMs: Long,
-    val progressFraction: Float,
-    val coverArtPath: String?
-)
-
-/** A row in the chapter list: a book-title header (for joined groups) or a chapter. */
+/** A row in the chapter list: a book-title header (for a playing series' member books) or a chapter. */
 sealed class ChapterRow {
     data class BookHeader(val title: String) : ChapterRow()
     data class Item(
@@ -93,11 +83,6 @@ class PlayerViewModel @Inject constructor(
 ) : ViewModel() {
 
     val bookId: Long = savedStateHandle["bookId"] ?: -1L
-    val groupId: Long = savedStateHandle["groupId"] ?: -1L
-
-    // Group screen model — populated when groupId != -1.
-    private val _groupInfo = MutableStateFlow<GroupScreenState?>(null)
-    val groupInfo: StateFlow<GroupScreenState?> = _groupInfo.asStateFlow()
 
     val bookWithProgress: StateFlow<BookWithProgress?> =
         if (bookId != -1L)
@@ -163,36 +148,6 @@ class PlayerViewModel @Inject constructor(
                         repository.ensureCoverFx(bookId)
                     }
                 }
-                .launchIn(viewModelScope)
-        }
-    }
-
-    // Load series info when opened via a series (carried in the groupId route arg).
-    init {
-        if (groupId != -1L) {
-            seriesRepository.getBooksInSeries(groupId)
-                .flatMapLatest { books ->
-                    flow {
-                        val series = seriesRepository.getSeriesOnce(groupId)
-                            ?: run { emit(null); return@flow }
-                        val totalMs = books.sumOf { it.totalDurationMs }
-                        val progressList = books.map { repository.getProgressForBookOnce(it.id) }
-                        val playedMs = books.zip(progressList)
-                            .sumOf { (_, prog) -> prog?.positionMs ?: 0L }
-                        val fraction = if (totalMs > 0)
-                            (playedMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
-                        emit(GroupScreenState(
-                            seriesId         = groupId,
-                            name             = series.name,
-                            speed            = series.playbackSpeed ?: settings.currentDefaultSpeed,
-                            books            = books,
-                            totalDurationMs  = totalMs,
-                            progressFraction = fraction,
-                            coverArtPath     = series.coverArtPath ?: books.firstOrNull()?.coverArtPath
-                        ))
-                    }
-                }
-                .onEach { _groupInfo.value = it }
                 .launchIn(viewModelScope)
         }
     }
@@ -607,21 +562,7 @@ class PlayerViewModel @Inject constructor(
 
     // ── Playback actions ─────────────────────────────────────────────────────
 
-    private fun computeAutoRewindMs(progress: com.betteraudio.data.db.entities.PlaybackProgress?): Long {
-        if (progress == null || progress.lastPausedAt <= 0L) return 0L
-        val rewindMs = settings.currentAutoRewindSeconds * 1_000L
-        if (rewindMs <= 0L) return 0L
-        // If the app was stopped (backgrounded/killed) after the last in-app pause, always rewind
-        if (settings.currentAppStoppedAt > progress.lastPausedAt) return rewindMs
-        // Otherwise apply threshold: only rewind if paused longer than configured threshold
-        val thresholdMs = settings.currentAutoRewindThresholdMinutes * 60_000L
-        if (thresholdMs <= 0L) return 0L
-        val elapsed = System.currentTimeMillis() - progress.lastPausedAt
-        return if (elapsed >= thresholdMs) rewindMs else 0L
-    }
-
     fun play() {
-        if (groupId != -1L) { playGroup(); return }
         viewModelScope.launch {
             val bwp = bookWithProgress.value ?: return@launch
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
@@ -638,70 +579,34 @@ class PlayerViewModel @Inject constructor(
             // apply to every book that hasn't been individually tuned.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
-            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
+            val audio = com.betteraudio.playback.AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)
             if (bridgedMs != null) {
                 AppLog.i("Player", "play() book=${bwp.book.id} bridged from reading position -> ${bridgedMs}ms")
-                playerController.playBook(bwp.book, files, 0, 0L, speed)
+                playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
                 playerController.bookSeekTo(bridgedMs)
             } else {
                 val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
                 val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-                val rewind = computeAutoRewindMs(progress)
+                val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
                 // Never rewind past the chapter/file boundary: if the saved position is shorter than
                 // the rewind amount, resume from the saved position instead of the file start.
                 val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
                 AppLog.i("Player", "play() book=${bwp.book.id}" +
                     " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                     " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
-                playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+                playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             }
             // Restore per-book (or inherited series/global) boost and EQ so they don't bleed between books
-            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
-            val savedEq = com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson)
-            _eqBandsMillibels.value = savedEq?.let { json ->
+            playerController.setVolumeBoost(audio.boostDb)
+            _eqBandsMillibels.value = audio.eqBandsJson?.let { json ->
                 try { val arr = JSONArray(json); IntArray(arr.length()) { i -> arr.getInt(i) } }
                 catch (_: Exception) { null }
             }
-            playerController.setEqBands(savedEq)
-            playerController.setSkipSilence(com.betteraudio.playback.AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
+            playerController.setEqBands(audio.eqBandsJson)
+            playerController.setSkipSilence(audio.skipSilence)
             // Mark as just-played now so last-played sorting moves it to the top immediately.
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
-        }
-    }
-
-    private fun playGroup() {
-        viewModelScope.launch {
-            val state = _groupInfo.value ?: return@launch
-            val filesPerBook = seriesRepository.getAudioFilesForBooks(state.books.map { it.id })
-            val progressMap = state.books.associateWith { book ->
-                repository.getProgressForBookOnce(book.id)
-            }
-            val resumeBook = progressMap.entries
-                .maxByOrNull { it.value?.lastPlayedMs ?: 0L }?.key ?: state.books.first()
-            val resumeProgress = progressMap[resumeBook]
-            var globalIndex = 0
-            for (book in state.books) {
-                val files = filesPerBook[book.id] ?: emptyList()
-                if (book.id == resumeBook.id) {
-                    globalIndex += files.indexOfFirst { it.id == resumeProgress?.currentFileId }
-                        .coerceAtLeast(0)
-                    break
-                }
-                globalIndex += files.size
-            }
-            val startPos = if (resumeProgress?.isCompleted == true) 0L
-                           else resumeProgress?.positionMs ?: 0L
-            playerController.playBookGroup(
-                groupId              = state.seriesId,
-                groupName            = state.name,
-                coverArtPath         = state.coverArtPath,
-                orderedBooks         = state.books,
-                filesPerBook         = filesPerBook,
-                startGlobalFileIndex = globalIndex,
-                startPositionMs      = startPos,
-                speed                = state.speed
-            )
         }
     }
 

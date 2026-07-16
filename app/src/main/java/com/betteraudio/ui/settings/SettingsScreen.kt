@@ -79,6 +79,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.components.label
+import com.betteraudio.ui.immersive.ImmersiveStyle
+import com.betteraudio.ui.material.MaterialStyle
+import com.betteraudio.ui.theme.AppTheme
+import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import com.betteraudio.util.AppLog
@@ -86,7 +90,10 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Dispatches to the Immersive or Material You implementation — see CLAUDE.md's theming section
+ *  for the split convention. Every section content builder below (`rootSection`, `themeSection`,
+ *  `librarySection`, etc.) stays shared/unsplit: none of them branch on theme, they're called
+ *  identically by both variant top composables. */
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -94,176 +101,19 @@ fun SettingsScreen(
     onEditWidget: (Long) -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
-    val context = LocalContext.current
-    val libraryFolder   by viewModel.libraryFolder.collectAsStateWithLifecycle()
-    val skipForwardMs   by viewModel.skipForwardMs.collectAsStateWithLifecycle()
-    val skipBackMs      by viewModel.skipBackMs.collectAsStateWithLifecycle()
-    val defaultSpeed    by viewModel.defaultSpeed.collectAsStateWithLifecycle()
-    val bookCount       by viewModel.bookCount.collectAsStateWithLifecycle()
-    val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
-    val rescanRunning        by viewModel.rescanRunning.collectAsStateWithLifecycle()
-    val coverRefreshRunning  by viewModel.coverRefreshRunning.collectAsStateWithLifecycle()
-    val resetRunning         by viewModel.resetRunning.collectAsStateWithLifecycle()
-    val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
-    val updateState               by viewModel.updateState.collectAsStateWithLifecycle()
-    val whatsNew                  by viewModel.whatsNew.collectAsStateWithLifecycle()
-    val currentSection            by viewModel.currentSection.collectAsStateWithLifecycle()
-    val autoRewindSeconds         by viewModel.autoRewindSeconds.collectAsStateWithLifecycle()
-    val autoRewindThresholdMinutes by viewModel.autoRewindThresholdMinutes.collectAsStateWithLifecycle()
-    val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
-    val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
-    val skipSilencePaddingMs      by viewModel.skipSilencePaddingMs.collectAsStateWithLifecycle()
-    val sleepFadeSeconds          by viewModel.sleepFadeSeconds.collectAsStateWithLifecycle()
-    val sleepShakeEnabled         by viewModel.sleepShakeEnabled.collectAsStateWithLifecycle()
-    val sleepShakeResetMinutes    by viewModel.sleepShakeResetMinutes.collectAsStateWithLifecycle()
-    val sleepScheduleEnabled      by viewModel.sleepScheduleEnabled.collectAsStateWithLifecycle()
-    val sleepScheduleStartMinutes by viewModel.sleepScheduleStartMinutes.collectAsStateWithLifecycle()
-    val sleepScheduleEndMinutes   by viewModel.sleepScheduleEndMinutes.collectAsStateWithLifecycle()
-    val sleepScheduleDefaultMinutes by viewModel.sleepScheduleDefaultMinutes.collectAsStateWithLifecycle()
-    val headsetMultiPressEnabled by viewModel.headsetMultiPressEnabled.collectAsStateWithLifecycle()
-    val headsetDoublePressAction by viewModel.headsetDoublePressAction.collectAsStateWithLifecycle()
-    val headsetTriplePressAction by viewModel.headsetTriplePressAction.collectAsStateWithLifecycle()
-    val btAutoResumeEnabled by viewModel.btAutoResumeEnabled.collectAsStateWithLifecycle()
-    val btAutoResumeWindowMinutes by viewModel.btAutoResumeWindowMinutes.collectAsStateWithLifecycle()
-    val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
-    val appTheme                  by viewModel.appTheme.collectAsStateWithLifecycle()
-    val themeColorSource          by viewModel.themeColorSource.collectAsStateWithLifecycle()
-    val customThemeColor          by viewModel.customThemeColor.collectAsStateWithLifecycle()
-    val darkMode                  by viewModel.darkMode.collectAsStateWithLifecycle()
-    val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
-    val presets                   by viewModel.presets.collectAsStateWithLifecycle()
-    val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
-    val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
-    val customWidgets             by viewModel.customWidgets.collectAsStateWithLifecycle()
-
-    var showBrowser by remember { mutableStateOf(false) }
-    var showEbookBrowser by remember { mutableStateOf(false) }
-    var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
-    val ebookFolder by viewModel.ebookFolder.collectAsStateWithLifecycle()
-
-    val storageSettingsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { storageGranted = hasAllFilesAccess() }
-
-    LaunchedEffect(Unit) { viewModel.loadWhatsNew() }
-
-    if (showBrowser) {
-        FolderBrowser(
-            startPath = libraryFolder.ifBlank { "/storage/emulated/0" },
-            onSelect = {
-                viewModel.setLibraryFolder(it)
-                viewModel.rescan()
-                showBrowser = false
-            },
-            onCancel = { showBrowser = false }
+    when (LocalAppTheme.current) {
+        AppTheme.IMMERSIVE -> com.betteraudio.ui.immersive.settings.SettingsScreen(
+            onBack, onCreateWidget, onEditWidget, viewModel
         )
-    }
-
-    if (showEbookBrowser) {
-        FolderBrowser(
-            startPath = ebookFolder.ifBlank { "/storage/emulated/0" },
-            onSelect = {
-                viewModel.setEbookFolder(it)
-                showEbookBrowser = false
-            },
-            onCancel = { showEbookBrowser = false }
+        AppTheme.MATERIAL_YOU -> com.betteraudio.ui.material.settings.SettingsScreen(
+            onBack, onCreateWidget, onEditWidget, viewModel
         )
-    }
-
-    BackHandler(enabled = currentSection != SettingsSection.Root) {
-        viewModel.navigateTo(SettingsSection.Root)
-    }
-
-    val sectionTitle = when (currentSection) {
-        SettingsSection.Root -> "Settings"
-        SettingsSection.Theme -> "Theme"
-        SettingsSection.Library -> "Library"
-        SettingsSection.Playback -> "Playback"
-        SettingsSection.Presets -> "Audio presets"
-        SettingsSection.Widget -> "Widget"
-        SettingsSection.AI -> "AI Synopsis"
-        SettingsSection.Backup -> "Backup & restore"
-        SettingsSection.Updates -> "Updates"
-        SettingsSection.About -> "About"
-        SettingsSection.Diagnostics -> "Diagnostics"
-    }
-
-    Scaffold(
-        // Transparent in the Immersive theme so the blurred cover shows through. Explicit
-        // contentColor: contentColorFor(Transparent) falls back to black otherwise.
-        containerColor = com.betteraudio.ui.theme.appSurfaceColor(),
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        topBar = {
-            TopAppBar(
-                title = { Text(sectionTitle, style = MaterialTheme.typography.titleLarge) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        if (currentSection == SettingsSection.Root) onBack()
-                        else viewModel.navigateTo(SettingsSection.Root)
-                    }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = com.betteraudio.ui.theme.appSurfaceColor()
-                )
-            )
-        }
-    ) { padding ->
-        AnimatedContent(
-            targetState = currentSection,
-            transitionSpec = {
-                fadeIn(tween(160)) togetherWith fadeOut(tween(160))
-            },
-            label = "settings_section",
-            modifier = Modifier.padding(padding)
-        ) { section ->
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                when (section) {
-                    SettingsSection.Root -> rootSection(viewModel)
-                    SettingsSection.Theme -> themeSection(
-                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, viewModel
-                    )
-                    SettingsSection.Library -> librarySection(
-                        context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        coverRefreshRunning, resetRunning, ignoredBooks, importStructure,
-                        storageSettingsLauncher, { showBrowser = true },
-                        ebookFolder, { showEbookBrowser = true }, viewModel
-                    )
-                    SettingsSection.Playback -> playbackSection(
-                        skipForwardMs, skipBackMs, defaultSpeed,
-                        autoRewindSeconds, autoRewindThresholdMinutes,
-                        skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs,
-                        sleepFadeSeconds, sleepShakeEnabled, sleepShakeResetMinutes,
-                        sleepScheduleEnabled, sleepScheduleStartMinutes, sleepScheduleEndMinutes,
-                        sleepScheduleDefaultMinutes,
-                        headsetMultiPressEnabled, headsetDoublePressAction, headsetTriplePressAction,
-                        btAutoResumeEnabled, btAutoResumeWindowMinutes,
-                        viewModel
-                    )
-                    SettingsSection.Presets -> presetsSection(presets, viewModel)
-                    SettingsSection.Widget -> widgetSection(
-                        widgetDefaultCover, widgetHideWhenIdle, customWidgets,
-                        onCreateWidget, onEditWidget, viewModel
-                    )
-                    SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
-                    SettingsSection.Backup -> backupSection(context, viewModel)
-                    SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
-                    SettingsSection.About -> aboutSection(updateState, viewModel)
-                    SettingsSection.Diagnostics -> diagnosticsSection(context)
-                }
-            }
-        }
     }
 }
 
 // ─── Section content blocks ───────────────────────────────────────────────────
 
-private fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
+internal fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
     val rows = listOf(
         Triple(Icons.Default.Palette, "Theme", SettingsSection.Theme),
         Triple(Icons.Default.Folder, "Library", SettingsSection.Library),
@@ -293,7 +143,7 @@ internal val CUSTOM_COLOR_PRESETS = listOf(
     0xFFCDDC39, 0xFFFFC107, 0xFFFF9800, 0xFFFF5722,
 ).map { androidx.compose.ui.graphics.Color(it.toInt()) }
 
-private fun LazyListScope.themeSection(
+internal fun LazyListScope.themeSection(
     appTheme: com.betteraudio.ui.theme.AppTheme,
     colorSource: com.betteraudio.ui.theme.ThemeColorSource,
     customThemeColor: String,
@@ -498,7 +348,7 @@ private fun ThemeRadioRow(title: String, detail: String, selected: Boolean, onSe
     }
 }
 
-private fun LazyListScope.librarySection(
+internal fun LazyListScope.librarySection(
     context: Context,
     storageGranted: Boolean,
     libraryFolder: String,
@@ -733,10 +583,9 @@ private fun LazyListScope.librarySection(
     }
 }
 
-private fun LazyListScope.playbackSection(
+internal fun LazyListScope.playbackSection(
     skipForwardMs: Long,
     skipBackMs: Long,
-    defaultSpeed: Float,
     autoRewindSeconds: Int,
     autoRewindThresholdMinutes: Int,
     skipSilenceMinMs: Long,
@@ -1229,7 +1078,7 @@ private fun ClockMinutesPickerDialog(initialMinutes: Int, onDismiss: () -> Unit,
     )
 }
 
-private fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsViewModel) {
+internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsViewModel) {
     item {
         CardContainer {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1321,7 +1170,7 @@ private fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVie
     }
 }
 
-private fun LazyListScope.updatesSection(
+internal fun LazyListScope.updatesSection(
     updateState: UpdateUiState,
     whatsNew: WhatsNewState,
     viewModel: SettingsViewModel
@@ -1452,7 +1301,7 @@ private fun LazyListScope.updatesSection(
     }
 }
 
-private fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: SettingsViewModel) {
+internal fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: SettingsViewModel) {
     item {
         SettingsCard(
             icon = Icons.Default.MusicNote,
@@ -1558,7 +1407,7 @@ private fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: Se
 
 // ─── Backup & restore ──────────────────────────────────────────────────────────
 
-private fun LazyListScope.backupSection(context: Context, viewModel: SettingsViewModel) {
+internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsViewModel) {
     item {
         val backupState by viewModel.backupState.collectAsStateWithLifecycle()
         val includeApiKey by viewModel.backupIncludeApiKey.collectAsStateWithLifecycle()
@@ -1567,7 +1416,8 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
         val autoLastRunMs by viewModel.autoBackupLastRunMs.collectAsStateWithLifecycle()
         val autoLastStatus by viewModel.autoBackupLastStatus.collectAsStateWithLifecycle()
         val scope = rememberCoroutineScope()
-        var showForceOverwriteConfirm by remember { mutableStateOf<Uri?>(null) }
+        var lastImportUri by remember { mutableStateOf<Uri?>(null) }
+        var shareError by remember { mutableStateOf<String?>(null) }
 
         val exportLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.CreateDocument("application/json")
@@ -1575,7 +1425,7 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
 
         val importLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocument()
-        ) { uri -> uri?.let { viewModel.importBackup(it, forceOverwrite = false) } }
+        ) { uri -> uri?.let { lastImportUri = it; viewModel.importBackup(it, forceOverwrite = false) } }
 
         val folderLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.OpenDocumentTree()
@@ -1629,8 +1479,12 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
                         }
                         FilledTonalButton(shape = Pill, onClick = {
                             scope.launch {
-                                val file = viewModel.writeShareBackupFile()
-                                shareBackupFile(context, file)
+                                try {
+                                    val file = viewModel.writeShareBackupFile()
+                                    shareBackupFile(context, file)
+                                } catch (e: Exception) {
+                                    shareError = "Couldn't share the backup: ${e.message}"
+                                }
                             }
                         }) {
                             Icon(Icons.Default.Share, null, Modifier.size(18.dp))
@@ -1659,8 +1513,14 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
                         Switch(
                             checked = autoEnabled,
                             onCheckedChange = { enabled ->
-                                if (enabled && autoFolderUri.isBlank()) folderLauncher.launch(null)
-                                viewModel.setAutoBackupEnabled(enabled)
+                                if (enabled && autoFolderUri.isBlank()) {
+                                    // setAutoBackupFolder() enables it once a folder is actually
+                                    // picked — if the user cancels the picker, the switch must
+                                    // stay off rather than being left on with nothing to write to.
+                                    folderLauncher.launch(null)
+                                } else {
+                                    viewModel.setAutoBackupEnabled(enabled)
+                                }
                             }
                         )
                     }
@@ -1695,6 +1555,14 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
                 confirmButton = { TextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } }
             )
         }
+        shareError?.let { error ->
+            AlertDialog(
+                onDismissRequest = { shareError = null },
+                title = { Text("Share failed") },
+                text = { Text(error) },
+                confirmButton = { TextButton(onClick = { shareError = null }) { Text("OK") } }
+            )
+        }
         backupState.lastResult?.let { result ->
             AlertDialog(
                 onDismissRequest = { viewModel.clearBackupResult() },
@@ -1702,15 +1570,32 @@ private fun LazyListScope.backupSection(context: Context, viewModel: SettingsVie
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("Books matched: ${result.booksMatched}")
-                        if (result.booksSkippedNoMatch > 0) Text("Books not found on this device: ${result.booksSkippedNoMatch}")
+                        if (result.booksSkippedNoMatch > 0) {
+                            Text("Books not found on this device: ${result.booksSkippedNoMatch}")
+                            Text(
+                                "Tip: scan your library, then import again to match these.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (result.booksSkippedAmbiguous > 0) Text("Books skipped (ambiguous match): ${result.booksSkippedAmbiguous}")
+                        if (result.booksSkippedStale > 0) Text("Kept local progress (newer than backup): ${result.booksSkippedStale}")
                         Text("Bookmarks restored: ${result.bookmarksRestored}")
                         Text("Listening sessions restored: ${result.sessionsRestored}")
+                        Text("Position history restored: ${result.skipEventsRestored}")
                         Text("Presets restored: ${result.presetsRestored}")
                         Text("Series restored: ${result.seriesRestored}")
+                        Text("Settings restored")
                     }
                 },
-                confirmButton = { TextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } }
+                confirmButton = { TextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } },
+                dismissButton = if (result.booksSkippedStale > 0 && lastImportUri != null) {
+                    {
+                        TextButton(onClick = {
+                            lastImportUri?.let { viewModel.importBackup(it, forceOverwrite = true) }
+                        }) { Text("Overwrite anyway") }
+                    }
+                } else null
             )
         }
     }
@@ -1742,7 +1627,7 @@ private fun relativeTime(ts: Long): String {
 
 // ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
 
-private fun LazyListScope.diagnosticsSection(context: Context) {
+internal fun LazyListScope.diagnosticsSection(context: Context) {
     item {
         var logText by remember { mutableStateOf(AppLog.recentText()) }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1809,12 +1694,19 @@ private fun shareLog(context: Context) {
 }
 
 // ─── Reusable settings building blocks ────────────────────────────────────────
+// Used across nearly every (unsplit) section function below, so — unlike the split screens —
+// these stay in one place and resolve their own card color per theme, the same way the old
+// shared `appCardColor()` helper did.
+
+@Composable
+private fun settingsCardColor(): Color =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) ImmersiveStyle.cardColor() else MaterialStyle.cardColor()
 
 @Composable
 private fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = com.betteraudio.ui.theme.appCardColor(),
+        color = settingsCardColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth().pressScale().clickable(onClick = onClick)
     ) {
@@ -1835,7 +1727,7 @@ private fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
 private fun CardContainer(content: @Composable () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = com.betteraudio.ui.theme.appCardColor(),
+        color = settingsCardColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth()
     ) { content() }
@@ -1868,7 +1760,7 @@ private fun SettingsCard(
     val clickModifier = if (onClick != null) base.pressScale().clickable(onClick = onClick) else base
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = com.betteraudio.ui.theme.appCardColor(),
+        color = settingsCardColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = clickModifier
     ) {
@@ -1967,7 +1859,7 @@ private fun IntervalChips(
 
 // ─── Audio presets (unified bundles + global default) ──────────────────────────
 
-private fun LazyListScope.presetsSection(
+internal fun LazyListScope.presetsSection(
     presets: List<com.betteraudio.data.db.entities.AudioPreset>,
     viewModel: SettingsViewModel
 ) {
@@ -2044,7 +1936,7 @@ private fun PresetRow(
     var confirmDelete by remember { mutableStateOf(false) }
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = com.betteraudio.ui.theme.appCardColor(),
+        color = settingsCardColor(),
         contentColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -2189,7 +2081,7 @@ private fun PresetEditorDialog(
 
 // ─── Widget ─────────────────────────────────────────────────────────────────────
 
-private fun LazyListScope.widgetSection(
+internal fun LazyListScope.widgetSection(
     currentCoverPath: String,
     hideWhenIdle: Boolean,
     customWidgets: List<com.betteraudio.data.db.entities.CustomWidgetDesign>,
@@ -2334,7 +2226,7 @@ private fun CustomWidgetRow(
     }
 }
 
-private fun hasAllFilesAccess(): Boolean =
+internal fun hasAllFilesAccess(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
 private fun allFilesAccessIntent(context: Context): Intent =

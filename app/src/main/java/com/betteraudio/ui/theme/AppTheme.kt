@@ -1,10 +1,7 @@
 package com.betteraudio.ui.theme
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 
 /**
  * The two app-wide looks, chosen by the user on first launch (and in Settings → Theme):
@@ -43,41 +40,10 @@ enum class DarkMode {
     }
 }
 
-/** Provided by [VoyageTheme]; lets any composable branch its styling per theme. */
+/** Provided by [VoyageTheme]; lets any composable branch its styling per theme. Used by the
+ *  per-theme router composables in the `ui.material` and `ui.immersive` packages — see
+ *  CLAUDE.md's theming section for the split convention. The old shared `immersive()`,
+ *  `appSurfaceColor()`, `appCardColor()`, `appCardHighColor()`, `scrimTextColor()` helpers were
+ *  removed once every branching screen was split; their equivalents now live in `MaterialStyle`
+ *  and `ImmersiveStyle`. */
 val LocalAppTheme = compositionLocalOf { AppTheme.MATERIAL_YOU }
-
-@Composable
-fun immersive(): Boolean = LocalAppTheme.current == AppTheme.IMMERSIVE
-
-/** Scaffold/TopAppBar fill: transparent in Immersive (the blurred cover shows through). */
-@Composable
-fun appSurfaceColor(): Color =
-    if (immersive()) Color.Transparent else MaterialTheme.colorScheme.background
-
-/** Card/row fill: frosted translucent over the blur in Immersive, tonal surface otherwise. */
-@Composable
-fun appCardColor(): Color =
-    if (immersive()) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.38f)
-    else MaterialTheme.colorScheme.surfaceContainer
-
-/** Elevated card/row fill (dialogs, raised rows). */
-@Composable
-fun appCardHighColor(): Color =
-    if (immersive()) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
-    else MaterialTheme.colorScheme.surfaceContainerHigh
-
-/**
- * Text drawn over dark cover scrims (player pages, grid-card gradients). In Immersive it is
- * near-white pulled toward the cover accent so ALL text follows the theme colour; in Material
- * You it stays plain white for stock M3 contrast.
- */
-@Composable
-fun scrimTextColor(muted: Boolean = false): Color {
-    val accent = MaterialTheme.colorScheme.primary
-    return if (immersive()) {
-        if (muted) lerp(Color.White, accent, 0.30f).copy(alpha = 0.68f)
-        else lerp(Color.White, accent, 0.22f)
-    } else {
-        if (muted) Color.White.copy(alpha = 0.68f) else Color.White
-    }
-}

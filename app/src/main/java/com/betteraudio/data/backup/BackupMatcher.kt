@@ -1,5 +1,7 @@
 package com.betteraudio.data.backup
 
+import com.betteraudio.data.db.entities.BookStatus
+
 /**
  * Pure matching logic for backup restore — no Android types, so it's covered by JVM unit tests
  * (`app/src/test/.../BackupMatcherTest.kt`) instead of only on-device verification. This is the
@@ -79,5 +81,27 @@ object BackupMatcher {
         val pool = exact.ifEmpty { candidates.filter { it.fileName.equals(fileName, ignoreCase = true) } }
         if (pool.isEmpty()) return null
         return pool.minByOrNull { kotlin.math.abs(it.durationMs - durationMs) }?.id
+    }
+
+    /**
+     * Derives the DB `status` for a restored book. An explicit [explicitStatus] (present in
+     * backups written after that field was added) always wins; older backups infer it from the
+     * progress payload instead, so restoring onto a fresh install doesn't leave every book stuck
+     * "Not started" — the Finished/Listening tabs would otherwise appear empty even though
+     * progress was restored.
+     */
+    fun deriveBookStatus(explicitStatus: String?, isCompleted: Boolean, positionMs: Long): BookStatus {
+        explicitStatus?.takeIf { it.isNotBlank() }?.let {
+            try {
+                return BookStatus.valueOf(it)
+            } catch (e: IllegalArgumentException) {
+                // Unknown value (newer/corrupt schema) — fall through to deriving it instead.
+            }
+        }
+        return when {
+            isCompleted -> BookStatus.FINISHED
+            positionMs > 0L -> BookStatus.IN_PROGRESS
+            else -> BookStatus.NOT_STARTED
+        }
     }
 }

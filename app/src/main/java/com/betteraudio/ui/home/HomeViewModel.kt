@@ -299,7 +299,10 @@ class HomeViewModel @Inject constructor(
             when (target) {
                 is CoverCollectionTarget.Series -> {
                     val path = coverSearchService.download(imageUrl, "series${target.seriesId}")
-                    if (path != null) seriesRepository.setSeriesCover(target.seriesId, path)
+                    if (path != null) {
+                        seriesRepository.setSeriesCover(target.seriesId, path)
+                        seriesRepository.ensureSeriesCoverFx(target.seriesId)
+                    }
                 }
                 is CoverCollectionTarget.Author -> {
                     val path = coverSearchService.download(imageUrl, "author${target.name}")
@@ -583,18 +586,22 @@ class HomeViewModel @Inject constructor(
             // Effective audio: book override → series default → global default preset → fallback.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
-            val speed = com.betteraudio.playback.AudioCascade.speed(progress?.playbackSpeed, series?.playbackSpeed, gPreset?.speedMult ?: settings.currentDefaultSpeed)
+            val audio = com.betteraudio.playback.AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)
             if (bridgedMs != null) {
-                playerController.playBook(bwp.book, files, 0, 0L, speed)
+                playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
                 playerController.bookSeekTo(bridgedMs)
             } else {
                 val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-                val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-                playerController.playBook(bwp.book, files, startIndex, startPos, speed)
+                val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+                // Same auto-rewind as the full player (PlayerViewModel.play()) — resuming from this
+                // card shouldn't behave differently just because it skipped opening the full player.
+                val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
+                val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
+                playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             }
-            playerController.setVolumeBoost(com.betteraudio.playback.AudioCascade.boost(progress?.boostDb, series?.boostDb, gPreset?.boostDb ?: 0))
-            playerController.setEqBands(com.betteraudio.playback.AudioCascade.eq(progress?.eqBandsJson, series?.eqBandsJson, gPreset?.eqBandsJson))
-            playerController.setSkipSilence(com.betteraudio.playback.AudioCascade.skipSilence(bwp.book.skipSilenceEnabled, series?.skipSilenceEnabled))
+            playerController.setVolumeBoost(audio.boostDb)
+            playerController.setEqBands(audio.eqBandsJson)
+            playerController.setSkipSilence(audio.skipSilence)
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
         }

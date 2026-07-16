@@ -9,7 +9,6 @@ import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
-import com.betteraudio.data.db.dao.BookGroupDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.CustomWidgetDesignDao
@@ -21,8 +20,6 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Book
-import com.betteraudio.data.db.entities.BookGroup
-import com.betteraudio.data.db.entities.BookGroupMember
 import com.betteraudio.data.db.entities.CustomWidgetDesign
 import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
@@ -50,9 +47,12 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // Version 17: skip_events.source ("jump" | "skip_button" | "auto") — distinguishes confirmed
 //             jumps from coalesced skip-button taps and periodic auto-checkpoints, so the
 //             position-history UI can show/prune each differently.
+// Version 18: drops the retired book-group/"join" feature entirely — book_groups/book_group_members
+//             tables and Book.groupId/manualGrouping columns (grouping had already been superseded
+//             by first-class Series since v12; the UI/nav path to it was fully unreachable).
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, BookGroup::class, BookGroupMember::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, CustomWidgetDesign::class, WidgetBinding::class],
-    version = 17,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, CustomWidgetDesign::class, WidgetBinding::class],
+    version = 18,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,7 +60,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun audioFileDao(): AudioFileDao
     abstract fun playbackProgressDao(): PlaybackProgressDao
-    abstract fun bookGroupDao(): BookGroupDao
     abstract fun chapterDao(): ChapterDao
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun audioPresetDao(): AudioPresetDao
@@ -301,6 +300,63 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 AppLog.i("DB", "migrating 16 → 17 (skip_events.source)")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN source TEXT NOT NULL DEFAULT 'jump'")
+            }
+        }
+
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 17 → 18 (drop retired book-group feature)")
+                db.execSQL("DROP TABLE IF EXISTS book_group_members")
+                db.execSQL("DROP TABLE IF EXISTS book_groups")
+                // Full rebuild (not ALTER TABLE ... DROP COLUMN) so this works on every SQLite
+                // version this app's minSdk can ship with, not just 3.35+.
+                db.execSQL("""
+                    CREATE TABLE books_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        title TEXT NOT NULL,
+                        author TEXT NOT NULL,
+                        seriesId INTEGER,
+                        seriesName TEXT,
+                        seriesOrder REAL,
+                        folderPath TEXT NOT NULL,
+                        coverArtPath TEXT,
+                        coverFxPath TEXT,
+                        totalDurationMs INTEGER NOT NULL,
+                        addedDateMs INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        fileCount INTEGER NOT NULL,
+                        synopsis TEXT,
+                        narrator TEXT,
+                        genre TEXT,
+                        year INTEGER,
+                        album TEXT,
+                        description TEXT,
+                        titleOverride TEXT,
+                        authorOverride TEXT,
+                        isIgnored INTEGER NOT NULL,
+                        skipSilenceEnabled INTEGER NOT NULL,
+                        ebookPath TEXT,
+                        ebookSpineCount INTEGER NOT NULL,
+                        chapterMapJson TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    INSERT INTO books_new (
+                        id, title, author, seriesId, seriesName, seriesOrder, folderPath, coverArtPath,
+                        coverFxPath, totalDurationMs, addedDateMs, status, fileCount, synopsis, narrator,
+                        genre, year, album, description, titleOverride, authorOverride, isIgnored,
+                        skipSilenceEnabled, ebookPath, ebookSpineCount, chapterMapJson
+                    )
+                    SELECT
+                        id, title, author, seriesId, seriesName, seriesOrder, folderPath, coverArtPath,
+                        coverFxPath, totalDurationMs, addedDateMs, status, fileCount, synopsis, narrator,
+                        genre, year, album, description, titleOverride, authorOverride, isIgnored,
+                        skipSilenceEnabled, ebookPath, ebookSpineCount, chapterMapJson
+                    FROM books
+                """.trimIndent())
+                db.execSQL("DROP TABLE books")
+                db.execSQL("ALTER TABLE books_new RENAME TO books")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_books_seriesId ON books(seriesId)")
             }
         }
     }

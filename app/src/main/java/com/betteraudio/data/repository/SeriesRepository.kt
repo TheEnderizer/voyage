@@ -1,5 +1,6 @@
 package com.betteraudio.data.repository
 
+import com.betteraudio.data.covers.CoverEffectBaker
 import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.SeriesDao
@@ -7,6 +8,7 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,7 +21,8 @@ import javax.inject.Singleton
 class SeriesRepository @Inject constructor(
     private val seriesDao: SeriesDao,
     private val bookDao: BookDao,
-    private val audioFileDao: AudioFileDao
+    private val audioFileDao: AudioFileDao,
+    private val coverEffectBaker: CoverEffectBaker
 ) {
 
     /** bookId → its audio files, sorted for playback. Used to flatten a series into one timeline. */
@@ -34,7 +37,6 @@ class SeriesRepository @Inject constructor(
 
     fun getBooksInSeries(seriesId: Long): Flow<List<Book>> = bookDao.getBooksInSeriesById(seriesId)
     suspend fun getBooksInSeriesOnce(seriesId: Long): List<Book> = bookDao.getBooksInSeriesByIdOnce(seriesId)
-    suspend fun countBooks(seriesId: Long): Int = bookDao.countBooksInSeries(seriesId)
 
     /** Resolve a series by name, creating it (with [author]) if it doesn't exist yet. */
     suspend fun getOrCreateSeriesByName(name: String, author: String? = null): Long {
@@ -42,9 +44,6 @@ class SeriesRepository @Inject constructor(
         seriesDao.getByName(trimmed)?.let { return it.id }
         return seriesDao.insert(Series(name = trimmed, author = author?.takeIf { it.isNotBlank() }))
     }
-
-    suspend fun createSeries(name: String, author: String? = null): Long =
-        seriesDao.insert(Series(name = name.trim(), author = author?.takeIf { it.isNotBlank() }))
 
     suspend fun updateSeries(series: Series) = seriesDao.update(series)
 
@@ -84,6 +83,19 @@ class SeriesRepository @Inject constructor(
 
     suspend fun setSeriesCover(seriesId: Long, path: String?) = seriesDao.updateCover(seriesId, path)
     suspend fun setSeriesCoverFx(seriesId: Long, path: String?) = seriesDao.updateCoverFx(seriesId, path)
+
+    /** Bake the series backdrop effect if a cover exists but no valid baked file is present yet —
+     *  mirrors [com.betteraudio.data.repository.AudiobookRepository.ensureCoverFx] for books, so a
+     *  series backdrop gets the same pre-baked reflection/blur instead of only ever live-rendering.
+     *  Namespaced `"series_$seriesId"` cache key: series ids and book ids are separate autoincrement
+     *  sequences and can collide numerically. */
+    suspend fun ensureSeriesCoverFx(seriesId: Long) {
+        val series = seriesDao.getById(seriesId).firstOrNull() ?: return
+        val cover = series.coverArtPath ?: return
+        val fx = series.coverFxPath
+        if (fx != null && java.io.File(fx).exists()) return
+        setSeriesCoverFx(seriesId, coverEffectBaker.bake(cover, "series_$seriesId"))
+    }
 
     private suspend fun nextOrder(seriesId: Long): Float {
         val max = bookDao.getBooksInSeriesByIdOnce(seriesId).maxOfOrNull { it.seriesOrder ?: 0f } ?: 0f

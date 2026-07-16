@@ -78,7 +78,7 @@ class PlaybackService : MediaSessionService() {
     private var eqBandsJson: String? = null  // null = flat / bypass
     private var skipSilenceEnabled = false
 
-    // Saves the current playback position to the DB every 2 s while playing. Runs on
+    // Saves the current playback position to the DB every 5 s while playing. Runs on
     // serviceScope (Main dispatcher) so ExoPlayer's currentPosition is safe to read.
     private var positionSaverJob: Job? = null
 
@@ -427,6 +427,15 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /** Persists a speed change made from the widget — without this, a widget speed-up/down is
+     *  silently reverted the next time this book loads (only [com.betteraudio.ui.player.PlayerViewModel.setSpeed]
+     *  used to persist it). */
+    private fun persistCurrentSpeed(speed: Float) {
+        val bookId = exoPlayer?.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+        serviceScope.launch(Dispatchers.IO) { repository.updateSpeed(bookId, speed) }
+    }
+
     private fun startPositionSaver() {
         if (positionSaverJob?.isActive == true) return
         positionSaverJob = serviceScope.launch {
@@ -472,11 +481,13 @@ class PlaybackService : MediaSessionService() {
             ACTION_SPEED_UP -> player?.let {
                 val newSpeed = (it.playbackParameters.speed + SPEED_STEP).coerceIn(0.5f, 3.0f)
                 it.setPlaybackSpeed(newSpeed)
+                persistCurrentSpeed(newSpeed)
                 broadcastWidgetUpdate()
             }
             ACTION_SPEED_DOWN -> player?.let {
                 val newSpeed = (it.playbackParameters.speed - SPEED_STEP).coerceIn(0.5f, 3.0f)
                 it.setPlaybackSpeed(newSpeed)
+                persistCurrentSpeed(newSpeed)
                 broadcastWidgetUpdate()
             }
             ACTION_BOOST_UP -> {
@@ -853,9 +864,15 @@ class PlaybackService : MediaSessionService() {
                 .sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
             val progress = repository.getProgressForBookOnce(bookId)
+            val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
+            val gPreset = repository.getDefaultAudioPreset()
+            val audio = AudioCascade.resolve(book, progress, series, gPreset, settings.currentDefaultSpeed)
             val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-            val startPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
-            val speed = progress?.playbackSpeed ?: settings.currentDefaultSpeed
+            val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+            // Same auto-rewind as every other resume path (PlayerViewModel.play() etc.) — a cold
+            // widget tap shouldn't behave differently just because no Activity is open yet.
+            val rewind = AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
+            val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
             AppLog.i("Player", "widget loadLastPlayedAndPlay book=$bookId" +
                 " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                 " → startIdx=$startIndex startPos=${startPos}ms")
@@ -878,20 +895,19 @@ class PlaybackService : MediaSessionService() {
                             .setArtworkUri(book.coverArtPath?.let { Uri.parse("file://$it") })
                             .setExtras(Bundle().apply {
                                 putLong("bookId", book.id)
-                                putLong("groupId", -1L)
                             })
                             .build()
                     )
                     .build()
             }
             player.setMediaItems(items, startIndex, startPos)
-            player.setPlaybackSpeed(speed)
+            player.setPlaybackSpeed(audio.speed)
             player.prepare()
             player.play()
-            // Restore this book's saved boost/EQ (mb = dB * 100) + skip-silence preference.
-            applyBoost((progress?.boostDb ?: 0) * 100)
-            applyEq(progress?.eqBandsJson)
-            applySkipSilence(book.skipSilenceEnabled)
+            // Restore the cascaded boost/EQ (mb = dB * 100) + skip-silence preference.
+            applyBoost(audio.boostDb * 100)
+            applyEq(audio.eqBandsJson)
+            applySkipSilence(audio.skipSilence)
             repository.touchLastPlayed(bookId)
             broadcastWidgetUpdate()
         }

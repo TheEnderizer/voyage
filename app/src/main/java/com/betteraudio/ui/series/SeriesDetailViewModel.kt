@@ -85,6 +85,22 @@ class SeriesDetailViewModel @Inject constructor(
     private val _synopsisGenerating = MutableStateFlow(false)
     val synopsisGenerating: StateFlow<Boolean> = _synopsisGenerating.asStateFlow()
 
+    // Lazily bake the series backdrop effect the first time this series is opened (or after its
+    // cover changes) — mirrors PlayerViewModel's book cover-fx bake so the series screen also
+    // draws one cached bitmap instead of live-blurring.
+    private var lastFxCover: String? = null
+    init {
+        series
+            .onEach { s ->
+                val cover = s?.coverArtPath
+                if (cover != null && s.coverFxPath == null && cover != lastFxCover) {
+                    lastFxCover = cover
+                    seriesRepository.ensureSeriesCoverFx(seriesId)
+                }
+            }
+            .launchIn(viewModelScope)
+    }
+
     init {
         // Auto-generate once the series is loaded, has no synopsis yet, and a key exists.
         combine(series, books, settings.geminiApiKey) { s, members, key -> Triple(s, members, key) }

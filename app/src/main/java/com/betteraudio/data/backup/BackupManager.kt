@@ -1,5 +1,8 @@
 package com.betteraudio.data.backup
 
+import android.content.Context
+import androidx.room.withTransaction
+import com.betteraudio.data.db.AppDatabase
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Bookmark
@@ -10,17 +13,34 @@ import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class BackupUiState(
+    val exporting: Boolean = false,
+    val importing: Boolean = false,
+    val lastResult: BackupManager.RestoreResult? = null,
+    val error: String? = null
+)
 
 /**
  * Exports/imports a portable snapshot of everything the DB + DataStore know that isn't re-derived
@@ -30,28 +50,89 @@ import javax.inject.Singleton
  * Book identity across a reinstall/rescan is NOT the DB row id (ids are not stable — see
  * [BackupMatcher]) — it's `folderPath`/`relPath`/`{title,author}`, resolved via [BackupMatcher] at
  * restore time. Files inside a book are identified by basename, not `fileId`, for the same reason.
+ *
+ * Import/export are launched on [appScope] (process-lifetime), not the caller's ViewModel scope —
+ * navigating away from Settings mid-import must not cancel it half-applied. [uiState] is owned
+ * here so it survives the SettingsViewModel being recreated by that same navigation.
  */
 @Singleton
 class BackupManager @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val db: AppDatabase,
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
     private val settings: SettingsStore,
-    private val playerController: PlayerController
+    private val playerController: PlayerController,
+    @ApplicationScope private val appScope: CoroutineScope
 ) {
     companion object {
         const val SCHEMA_VERSION = 1
+        // Gives the position-save the stop triggers on the service side (fire-and-forget, over
+        // IPC) time to land before restore starts reading/writing progress for the same book.
+        private const val STOP_SETTLE_MS = 400L
     }
 
     data class RestoreResult(
         val booksMatched: Int,
         val booksSkippedNoMatch: Int,
         val booksSkippedAmbiguous: Int,
+        val booksSkippedStale: Int, // matched, but local progress was newer and forceOverwrite was off
         val bookmarksRestored: Int,
         val sessionsRestored: Int,
         val skipEventsRestored: Int,
         val presetsRestored: Int,
         val seriesRestored: Int,
     )
+
+    // ── UI-facing state + entry points (survive navigation away from the caller's screen) ─────
+    private val _uiState = MutableStateFlow(BackupUiState())
+    val uiState: StateFlow<BackupUiState> = _uiState.asStateFlow()
+
+    fun clearResult() = _uiState.update { it.copy(lastResult = null, error = null) }
+
+    fun exportFile(uri: android.net.Uri, includeApiKey: Boolean) {
+        if (_uiState.value.exporting) return
+        appScope.launch {
+            _uiState.update { it.copy(exporting = true, error = null) }
+            try {
+                withContext(Dispatchers.IO) {
+                    // "wt" truncates on overwrite — plain "w" can leave trailing bytes from a
+                    // previous longer file on some SAF providers.
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { out ->
+                        export(out, includeApiKey)
+                    } ?: throw java.io.IOException("Could not open the chosen file for writing")
+                }
+                _uiState.update { it.copy(exporting = false) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(exporting = false, error = "Export failed: ${e.message}") }
+            }
+        }
+    }
+
+    fun importFile(uri: android.net.Uri, forceOverwrite: Boolean) {
+        if (_uiState.value.importing) return
+        appScope.launch {
+            _uiState.update { it.copy(importing = true, error = null, lastResult = null) }
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        restore(input, forceOverwrite)
+                    } ?: throw java.io.IOException("Could not open the chosen file for reading")
+                }
+                _uiState.update { it.copy(importing = false, lastResult = result) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(importing = false, error = "Import failed: ${e.message}") }
+            }
+        }
+    }
+
+    /** Writes a share-ready copy (API key always stripped) to filesDir and returns it. */
+    suspend fun writeShareBackupFile(): File = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "backup_share").apply { mkdirs() }
+        val file = File(dir, "voyage-backup.json")
+        file.outputStream().use { out -> exportForSharing(out) }
+        file
+    }
 
     // ── Settings whitelist ──────────────────────────────────────────────────────
     // Explicit (name, type, getter, setter) per key — deliberately not reflection/generic, so a
@@ -88,6 +169,20 @@ class BackupManager @Inject constructor(
         SettingSpec("reader_font_size", "int", { settings.readerFontSize.first().toString() }, { settings.setReaderFontSize(it.toInt()) }),
         SettingSpec("home_section", "string", { settings.homeSection.first() }, { settings.setHomeSection(it) }),
         SettingSpec("widget_hide_when_idle", "boolean", { settings.widgetHideWhenIdle.first().toString() }, { settings.setWidgetHideWhenIdle(it.toBoolean()) }),
+        SettingSpec("sleep_fade_seconds", "int", { settings.sleepFadeSeconds.first().toString() }, { settings.setSleepFadeSeconds(it.toInt()) }),
+        SettingSpec("sleep_shake_enabled", "boolean", { settings.sleepShakeEnabled.first().toString() }, { settings.setSleepShakeEnabled(it.toBoolean()) }),
+        SettingSpec("sleep_shake_reset_minutes", "int", { settings.sleepShakeResetMinutes.first().toString() }, { settings.setSleepShakeResetMinutes(it.toInt()) }),
+        SettingSpec("sleep_schedule_enabled", "boolean", { settings.sleepScheduleEnabled.first().toString() }, { settings.setSleepScheduleEnabled(it.toBoolean()) }),
+        SettingSpec("sleep_schedule_start_minutes", "int", { settings.sleepScheduleStartMinutes.first().toString() }, { settings.setSleepScheduleStartMinutes(it.toInt()) }),
+        SettingSpec("sleep_schedule_end_minutes", "int", { settings.sleepScheduleEndMinutes.first().toString() }, { settings.setSleepScheduleEndMinutes(it.toInt()) }),
+        SettingSpec("sleep_schedule_default_minutes", "int", { settings.sleepScheduleDefaultMinutes.first().toString() }, { settings.setSleepScheduleDefaultMinutes(it.toInt()) }),
+        SettingSpec("audio_balance", "float", { settings.audioBalance.first().toString() }, { settings.setAudioBalance(it.toFloat()) }),
+        SettingSpec("mono_audio", "boolean", { settings.monoAudio.first().toString() }, { settings.setMonoAudio(it.toBoolean()) }),
+        SettingSpec("headset_multi_press_enabled", "boolean", { settings.headsetMultiPressEnabled.first().toString() }, { settings.setHeadsetMultiPressEnabled(it.toBoolean()) }),
+        SettingSpec("headset_double_press_action", "string", { settings.headsetDoublePressAction.first() }, { settings.setHeadsetDoublePressAction(it) }),
+        SettingSpec("headset_triple_press_action", "string", { settings.headsetTriplePressAction.first() }, { settings.setHeadsetTriplePressAction(it) }),
+        SettingSpec("bt_auto_resume_enabled", "boolean", { settings.btAutoResumeEnabled.first().toString() }, { settings.setBtAutoResumeEnabled(it.toBoolean()) }),
+        SettingSpec("bt_auto_resume_window_minutes", "int", { settings.btAutoResumeWindowMinutes.first().toString() }, { settings.setBtAutoResumeWindowMinutes(it.toInt()) }),
     )
 
     // Path-valued settings: exported always, but restored only if the path still exists on this
@@ -206,6 +301,9 @@ class BackupManager @Inject constructor(
                 book.authorOverride?.let { put("authorOverride", it) }
                 book.narrator?.let { put("narrator", it) }
                 put("skipSilenceEnabled", book.skipSilenceEnabled)
+                put("status", book.status.name)
+                put("isIgnored", book.isIgnored)
+                book.synopsis?.let { put("synopsis", it) }
 
                 if (progress != null) {
                     put("progress", JSONObject().apply {
@@ -285,30 +383,40 @@ class BackupManager @Inject constructor(
 
     // ── Restore ──────────────────────────────────────────────────────────────
 
+    /** Result of restoring one matched book's progress/bookmarks/sessions/skip-events. */
+    private data class BookRestoreCounts(
+        val bookmarksInserted: Int,
+        val sessionsInserted: Int,
+        val skipEventsInserted: Int,
+        // true when the backup had progress for this book but local progress was newer and
+        // forceOverwrite was off, so it was intentionally left untouched.
+        val progressKeptLocal: Boolean
+    )
+
     /**
-     * Reads and applies a backup. Stops any active playback FIRST so the service's periodic
-     * position-save can't race the restore and clobber it on its next tick. Merges rather than
-     * replaces: a book's progress is only overwritten if the backup's `lastPlayedMs` is newer (or
-     * [forceOverwrite] is set). Tolerant of unknown/missing JSON fields for forward-compat with
-     * older backups after later schema additions.
+     * Reads and applies a backup. Stops any active playback FIRST and awaits its final position
+     * write (via [PlayerController.stopAndFlush]) — a merely fire-and-forget save can otherwise
+     * land after restore has already read/written progress for the same book, either hiding the
+     * restored position behind a fresher `lastPlayedMs` or clobbering it back afterwards. Merges
+     * rather than replaces: a book's progress is only overwritten if the backup's `lastPlayedMs`
+     * is newer (or [forceOverwrite] is set). Tolerant of unknown/missing JSON fields for
+     * forward-compat with older backups after later schema additions. The DB-touching portion
+     * runs in one transaction so navigating away or a mid-file JSON error can't leave a half
+     * applied restore.
      */
     suspend fun restore(input: InputStream, forceOverwrite: Boolean): RestoreResult {
         // PlayerController wraps a MediaController, which is main-thread-only (see its class doc);
-        // restore() itself normally runs on Dispatchers.IO (SettingsViewModel.importBackup), so
-        // this hop is required — calling stop() straight from IO throws "MediaController method
-        // is called from a wrong thread".
-        withContext(Dispatchers.Main) { playerController.stop() }
+        // restore() itself normally runs on Dispatchers.IO (BackupManager.importFile), so this hop
+        // is required — calling it straight from IO throws "MediaController method is called from
+        // a wrong thread".
+        withContext(Dispatchers.Main) { playerController.stopAndFlush() }
+        // Give the service's own onIsPlayingChanged(false)-triggered save (fire-and-forget, over
+        // IPC) a moment to land before we start reading/writing progress for the same books.
+        delay(STOP_SETTLE_MS)
 
         val root = JSONObject(input.bufferedReader().readText())
 
         restoreSettings(root.optJSONArray("settings") ?: JSONArray())
-        val presetsRestored = restorePresets(root.optJSONArray("presets") ?: JSONArray())
-        restoreAuthors(root.optJSONArray("authors") ?: JSONArray())
-
-        val libraryFolder = settings.libraryFolder.first()
-        val currentBooks = repository.getAllBooksIncludingIgnoredOnce().map { b ->
-            BookCandidate(b.id, BookIdentity(b.folderPath, relPath(b.folderPath, libraryFolder), b.title, b.author))
-        }
 
         var bookmarksRestored = 0
         var sessionsRestored = 0
@@ -316,37 +424,52 @@ class BackupManager @Inject constructor(
         var matched = 0
         var noMatch = 0
         var ambiguous = 0
+        var staleSkipped = 0
+        var presetsRestored = 0
+        var seriesRestored = 0
 
-        val booksArr = root.optJSONArray("books") ?: JSONArray()
-        for (i in 0 until booksArr.length()) {
-            val entry = booksArr.getJSONObject(i)
-            val identity = BookIdentity(
-                folderPath = entry.optString("folderPath"),
-                relPath = entry.optString("relPath"),
-                title = entry.optString("title"),
-                author = entry.optString("author")
-            )
-            when (val result = BackupMatcher.matchBooks(listOf(identity), currentBooks).single()) {
-                is MatchResult.Matched -> {
-                    matched++
-                    val counts = restoreBook(result.bookId, entry, forceOverwrite)
-                    bookmarksRestored += counts.first
-                    sessionsRestored += counts.second
-                    skipEventsRestored += counts.third
-                }
-                MatchResult.NoMatch -> noMatch++
-                MatchResult.Ambiguous -> ambiguous++
+        db.withTransaction {
+            presetsRestored = restorePresets(root.optJSONArray("presets") ?: JSONArray())
+            restoreAuthors(root.optJSONArray("authors") ?: JSONArray())
+
+            val libraryFolder = settings.libraryFolder.first()
+            val currentBooks = repository.getAllBooksIncludingIgnoredOnce().map { b ->
+                BookCandidate(b.id, BookIdentity(b.folderPath, relPath(b.folderPath, libraryFolder), b.title, b.author))
             }
+
+            val booksArr = root.optJSONArray("books") ?: JSONArray()
+            for (i in 0 until booksArr.length()) {
+                val entry = booksArr.getJSONObject(i)
+                val identity = BookIdentity(
+                    folderPath = entry.optString("folderPath"),
+                    relPath = entry.optString("relPath"),
+                    title = entry.optString("title"),
+                    author = entry.optString("author")
+                )
+                when (val result = BackupMatcher.matchBooks(listOf(identity), currentBooks).single()) {
+                    is MatchResult.Matched -> {
+                        matched++
+                        val counts = restoreBook(result.bookId, entry, forceOverwrite)
+                        bookmarksRestored += counts.bookmarksInserted
+                        sessionsRestored += counts.sessionsInserted
+                        skipEventsRestored += counts.skipEventsInserted
+                        if (counts.progressKeptLocal) staleSkipped++
+                    }
+                    MatchResult.NoMatch -> noMatch++
+                    MatchResult.Ambiguous -> ambiguous++
+                }
+            }
+
+            seriesRestored = restoreSeries(root.optJSONArray("series") ?: JSONArray(), currentBooks)
         }
 
-        val seriesRestored = restoreSeries(root.optJSONArray("series") ?: JSONArray(), currentBooks)
-
-        AppLog.i("Backup", "restore complete: matched=$matched noMatch=$noMatch ambiguous=$ambiguous bookmarks=$bookmarksRestored sessions=$sessionsRestored skips=$skipEventsRestored presets=$presetsRestored series=$seriesRestored")
+        AppLog.i("Backup", "restore complete: matched=$matched noMatch=$noMatch ambiguous=$ambiguous stale=$staleSkipped bookmarks=$bookmarksRestored sessions=$sessionsRestored skips=$skipEventsRestored presets=$presetsRestored series=$seriesRestored")
 
         return RestoreResult(
             booksMatched = matched,
             booksSkippedNoMatch = noMatch,
             booksSkippedAmbiguous = ambiguous,
+            booksSkippedStale = staleSkipped,
             bookmarksRestored = bookmarksRestored,
             sessionsRestored = sessionsRestored,
             skipEventsRestored = skipEventsRestored,
@@ -356,18 +479,25 @@ class BackupManager @Inject constructor(
     }
 
     private suspend fun restoreSettings(arr: JSONArray) {
-        val specsByName = (coreSettingSpecs() + pathSettingSpecs()).associateBy { it.name }
+        val coreByName = coreSettingSpecs().associateBy { it.name }
+        val pathByName = pathSettingSpecs().associateBy { it.name }
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val name = o.optString("name")
             val value = o.optString("value")
             try {
-                if (name == "gemini_api_key") {
-                    // Not in the whitelist map — opt-in only; present in the file at all means the
-                    // exporter chose to include it, so restore always honors that.
-                    settings.setGeminiApiKey(value)
-                } else {
-                    specsByName[name]?.set(value) // unknown key (older/newer schema) — skip, don't throw
+                when {
+                    name == "gemini_api_key" -> {
+                        // Not in the whitelist map — opt-in only; present in the file at all means
+                        // the exporter chose to include it, so restore always honors that.
+                        settings.setGeminiApiKey(value)
+                    }
+                    pathByName.containsKey(name) -> {
+                        // A path from another device/reinstall is meaningless and would just 404
+                        // in the UI — only apply it if it still resolves on this device.
+                        if (value.isNotBlank() && File(value).exists()) pathByName.getValue(name).set(value)
+                    }
+                    else -> coreByName[name]?.set(value) // unknown key (older/newer schema) — skip, don't throw
                 }
             } catch (e: Exception) {
                 AppLog.e("Backup", "failed to restore setting '$name'", e)
@@ -378,26 +508,32 @@ class BackupManager @Inject constructor(
     private suspend fun restorePresets(arr: JSONArray): Int {
         if (arr.length() == 0) return 0
         val existing = repository.getAllAudioPresets().first()
+        // A backup exported before any default existed (or that just doesn't declare one)
+        // shouldn't silently wipe the device's current default when it updates a same-named preset.
+        val backupHasDefault = (0 until arr.length()).any { arr.getJSONObject(it).optBoolean("isDefault", false) }
         var defaultName: String? = null
         var count = 0
         for (i in 0 until arr.length()) {
             val o = arr.getJSONObject(i)
             val name = o.optString("name")
+            val existingMatch = existing.find { it.name == name }
             val preset = AudioPreset(
-                id = existing.find { it.name == name }?.id ?: 0L,
+                id = existingMatch?.id ?: 0L,
                 name = name,
                 type = o.optString("type", AudioPreset.TYPE_BUNDLE),
                 speedMult = o.optDouble("speedMult", 1.0).toFloat(),
                 boostDb = o.optInt("boostDb", 0),
                 eqBandsJson = o.optString("eqBandsJson").takeIf { it.isNotBlank() },
-                isDefault = false // set explicitly below, once, to keep exactly one default
+                isDefault = if (backupHasDefault) false else (existingMatch?.isDefault ?: false)
             )
             if (preset.id != 0L) repository.updateAudioPreset(preset) else repository.insertAudioPreset(preset)
             if (o.optBoolean("isDefault", false)) defaultName = name
             count++
         }
-        defaultName?.let { name ->
-            repository.getAllAudioPresets().first().find { it.name == name }?.let { repository.setDefaultAudioPreset(it.id) }
+        if (backupHasDefault) {
+            defaultName?.let { name ->
+                repository.getAllAudioPresets().first().find { it.name == name }?.let { repository.setDefaultAudioPreset(it.id) }
+            }
         }
         return count
     }
@@ -411,9 +547,8 @@ class BackupManager @Inject constructor(
         }
     }
 
-    /** Restores one matched book's progress/bookmarks/sessions/skip-events. Returns
-     *  (bookmarksInserted, sessionsInserted, skipEventsInserted). */
-    private suspend fun restoreBook(bookId: Long, entry: JSONObject, forceOverwrite: Boolean): Triple<Int, Int, Int> {
+    /** Restores one matched book's progress/bookmarks/sessions/skip-events. */
+    private suspend fun restoreBook(bookId: Long, entry: JSONObject, forceOverwrite: Boolean): BookRestoreCounts {
         entry.optString("titleOverride").takeIf { it.isNotBlank() }?.let { t ->
             repository.updateBookMetadata(bookId, t, entry.optString("authorOverride").takeIf { it.isNotBlank() })
         }
@@ -421,9 +556,12 @@ class BackupManager @Inject constructor(
         if (entry.has("skipSilenceEnabled")) {
             repository.setSkipSilenceEnabled(bookId, entry.optBoolean("skipSilenceEnabled"))
         }
+        if (entry.has("isIgnored")) repository.setBookIgnored(bookId, entry.optBoolean("isIgnored"))
+        entry.optString("synopsis").takeIf { it.isNotBlank() }?.let { repository.updateSynopsis(bookId, it) }
 
         val fileCandidates = repository.getAudioFilesOnce(bookId).map { FileCandidate(it.id, it.fileName, it.durationMs) }
 
+        var progressKeptLocal = false
         entry.optJSONObject("progress")?.let { p ->
             val backupLastPlayed = p.optLong("lastPlayedMs", 0L)
             val existing = repository.getProgressForBookOnce(bookId)
@@ -450,6 +588,14 @@ class BackupManager @Inject constructor(
                         lastMode = p.optString("lastMode", "AUDIO")
                     )
                 )
+                val status = BackupMatcher.deriveBookStatus(
+                    explicitStatus = entry.optString("status"),
+                    isCompleted = p.optBoolean("isCompleted", false),
+                    positionMs = p.optLong("positionMs", 0L)
+                )
+                repository.updateBookStatus(bookId, status)
+            } else {
+                progressKeptLocal = true
             }
         }
 
@@ -528,7 +674,7 @@ class BackupManager @Inject constructor(
             }
         }
 
-        return Triple(bookmarksInserted, sessionsInserted, skipEventsInserted)
+        return BookRestoreCounts(bookmarksInserted, sessionsInserted, skipEventsInserted, progressKeptLocal)
     }
 
     private suspend fun restoreSeries(arr: JSONArray, currentBooks: List<BookCandidate>): Int {

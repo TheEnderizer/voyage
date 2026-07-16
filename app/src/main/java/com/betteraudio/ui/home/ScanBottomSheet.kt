@@ -42,7 +42,7 @@ fun ScanBottomSheet(
         )
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

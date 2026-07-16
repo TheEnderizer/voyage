@@ -192,12 +192,21 @@ object WidgetRender {
 
     fun decodeCover(context: Context, coverUri: String?): Bitmap? {
         if (!coverUri.isNullOrBlank()) {
-            val decoded = try {
-                context.contentResolver.openInputStream(Uri.parse(coverUri))?.use { stream ->
-                    BitmapFactory.decodeStream(stream)
-                }
-            } catch (_: Exception) { null }
-            if (decoded != null) return decoded
+            val uri = Uri.parse(coverUri)
+            // The legitimate value is always a local file:// path (PlaybackService.broadcastWidgetUpdate
+            // sends MediaMetadata.artworkUri, itself a book/series cover file on disk). The widget
+            // receivers are exported (required for the system to deliver APPWIDGET_UPDATE), so this
+            // extra also arrives on ACTION_UPDATE_WIDGET from any app that cares to broadcast it —
+            // only resolve file:// so a spoofed broadcast can't make this app open an arbitrary
+            // external content:// URI.
+            if (uri.scheme == "file") {
+                val decoded = try {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        BitmapFactory.decodeStream(stream)
+                    }
+                } catch (_: Exception) { null }
+                if (decoded != null) return decoded
+            }
         }
         // Nothing playing (or no cover): fall back to the user-chosen default widget cover, if set.
         return decodeDefaultCover(context)

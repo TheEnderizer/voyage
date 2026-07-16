@@ -58,7 +58,6 @@ import com.betteraudio.ui.theme.colorOsEnter
 import com.betteraudio.ui.theme.colorOsExit
 import com.betteraudio.ui.theme.colorOsPopEnter
 import com.betteraudio.ui.theme.colorOsPopExit
-import com.betteraudio.ui.join.JoinOptionsScreen
 import com.betteraudio.ui.player.PlayerSheet
 import com.betteraudio.ui.player.rememberPlayerSheetController
 import com.betteraudio.ui.search.SearchScreen
@@ -71,6 +70,16 @@ import com.betteraudio.util.AppLog
 import com.betteraudio.widget.WidgetRender
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+
+/** The theme-related settings read synchronously at cold start (see [MainActivity.onCreate]) —
+ *  bundled into one type so all five can be fetched with a single `runBlocking`. */
+private data class InitialTheme(
+    val raw: String,
+    val colorSource: String,
+    val customColor: String,
+    val darkMode: String,
+    val pureBlack: Boolean
+)
 
 @UnstableApi
 @AndroidEntryPoint
@@ -103,12 +112,22 @@ class MainActivity : ComponentActivity() {
         // effect (which writes -1 for the initial "home" route) can overwrite it.
         val initialBookId = runBlocking { settings.lastOpenBookId.first() }
         // Theme read synchronously so the first frame renders in the right theme (no flash).
-        // "" = never chosen → the first-launch theme prompt is shown over the app.
-        val initialThemeRaw = runBlocking { settings.appTheme.first() }
-        val initialColorSource = runBlocking { settings.themeColorSource.first() }
-        val initialCustomThemeColor = runBlocking { settings.customThemeColor.first() }
-        val initialDarkMode = runBlocking { settings.darkMode.first() }
-        val initialPureBlack = runBlocking { settings.pureBlack.first() }
+        // "" = never chosen → the first-launch theme prompt is shown over the app. One runBlocking
+        // for all five reads instead of five separate ones.
+        val initialTheme = runBlocking {
+            InitialTheme(
+                raw = settings.appTheme.first(),
+                colorSource = settings.themeColorSource.first(),
+                customColor = settings.customThemeColor.first(),
+                darkMode = settings.darkMode.first(),
+                pureBlack = settings.pureBlack.first()
+            )
+        }
+        val initialThemeRaw = initialTheme.raw
+        val initialColorSource = initialTheme.colorSource
+        val initialCustomThemeColor = initialTheme.customColor
+        val initialDarkMode = initialTheme.darkMode
+        val initialPureBlack = initialTheme.pureBlack
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
         val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false) == true
@@ -381,27 +400,6 @@ class MainActivity : ComponentActivity() {
                             // The reader VM already started playback (readFromHere's cascade); just
                             // expand the sheet over the reader — it stays on the back stack beneath it.
                             onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) }
-                        )
-                    }
-
-                    // Join / Edit group options
-                    composable(
-                        route = "join_options?bookIds={bookIds}&groupId={groupId}",
-                        arguments = listOf(
-                            navArgument("bookIds") {
-                                type = NavType.StringType
-                                nullable = true
-                                defaultValue = null
-                            },
-                            navArgument("groupId") {
-                                type = NavType.LongType
-                                defaultValue = -1L
-                            }
-                        )
-                    ) {
-                        JoinOptionsScreen(
-                            onBack = { navController.popBackStack() },
-                            onSaved = { navController.popBackStack() }
                         )
                     }
                 }

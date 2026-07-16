@@ -50,11 +50,13 @@ class CoverEffectBaker @Inject constructor(
     private val outDir: File get() = File(context.filesDir, "cover_fx").apply { mkdirs() }
 
     /**
-     * Bakes the effect for [sourceCoverPath] and writes it to internal storage, replacing
-     * any previous bake for [bookId]. Returns the new file's absolute path, or null if the
-     * source image can't be decoded.
+     * Bakes the effect for [sourceCoverPath] and writes it to internal storage, replacing any
+     * previous bake for [cacheKey]. Returns the new file's absolute path, or null if the source
+     * image can't be decoded. [cacheKey] must be unique across every caller's id space — book ids
+     * and series ids are separate autoincrement sequences and can collide, so callers other than
+     * a plain book id must namespace their key (e.g. `"series_$seriesId"`).
      */
-    suspend fun bake(sourceCoverPath: String, bookId: Long): String? = withContext(Dispatchers.Default) {
+    suspend fun bake(sourceCoverPath: String, cacheKey: String): String? = withContext(Dispatchers.Default) {
         val src = runCatching { BitmapFactory.decodeFile(sourceCoverPath) }.getOrNull()
             ?: return@withContext null
 
@@ -117,9 +119,9 @@ class CoverEffectBaker @Inject constructor(
             outBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             outBmp.setPixels(output, 0, w, 0, 0, w, h)
 
-            // Replace any previous bake(s) for this book.
-            outDir.listFiles { f -> f.name.startsWith("${bookId}_") }?.forEach { it.delete() }
-            val dest = File(outDir, "${bookId}_v${VERSION}_${System.currentTimeMillis()}.webp")
+            // Replace any previous bake(s) for this key.
+            outDir.listFiles { f -> f.name.startsWith("${cacheKey}_") }?.forEach { it.delete() }
+            val dest = File(outDir, "${cacheKey}_v${VERSION}_${System.currentTimeMillis()}.webp")
             dest.outputStream().use { os ->
                 @Suppress("DEPRECATION")
                 outBmp.compress(Bitmap.CompressFormat.WEBP, 82, os)

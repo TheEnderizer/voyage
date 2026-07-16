@@ -9,26 +9,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface BookDao {
 
-    @Transaction
-    @Query("""
-        SELECT books.* FROM books
-        LEFT JOIN playback_progress ON books.id = playback_progress.bookId
-        WHERE books.status = 'IN_PROGRESS'
-        ORDER BY playback_progress.lastPlayedMs DESC
-    """)
-    fun getBooksInProgress(): Flow<List<BookWithProgress>>
-
-    @Query("SELECT * FROM books WHERE status = 'NOT_STARTED' ORDER BY title ASC")
-    fun getNotStartedBooks(): Flow<List<Book>>
-
-    @Query("""
-        SELECT books.* FROM books
-        LEFT JOIN playback_progress ON books.id = playback_progress.bookId
-        WHERE books.status = 'FINISHED'
-        ORDER BY playback_progress.completedDateMs DESC
-    """)
-    fun getFinishedBooks(): Flow<List<Book>>
-
     @Query("SELECT * FROM books ORDER BY title ASC")
     fun getAllBooks(): Flow<List<Book>>
 
@@ -85,9 +65,6 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE seriesId = :seriesId AND isIgnored = 0 ORDER BY seriesOrder ASC, title ASC")
     suspend fun getBooksInSeriesByIdOnce(seriesId: Long): List<Book>
 
-    @Query("SELECT COUNT(*) FROM books WHERE seriesId = :seriesId")
-    suspend fun countBooksInSeries(seriesId: Long): Int
-
     /** Books whose effective author (authorOverride ?: author) matches [name] — used to delete a
      *  whole author from the library grid. */
     @Query("SELECT * FROM books WHERE COALESCE(authorOverride, author) = :name AND isIgnored = 0")
@@ -123,27 +100,17 @@ interface BookDao {
     @Delete
     suspend fun delete(book: Book)
 
-    @Query("UPDATE books SET groupId = :groupId WHERE id = :bookId")
-    suspend fun setGroupId(bookId: Long, groupId: Long?)
-
     @Query("UPDATE books SET synopsis = :synopsis WHERE id = :id")
     suspend fun updateSynopsis(id: Long, synopsis: String)
 
     @Query("SELECT * FROM books WHERE id IN (:ids)")
     suspend fun getBooksByIds(ids: List<Long>): List<Book>
 
-    // Auto-join candidates: ungrouped books the user has NOT manually grouped/split.
-    @Query("SELECT * FROM books WHERE groupId IS NULL AND manualGrouping = 0")
-    suspend fun getAllUngroupedOnce(): List<Book>
-
-    @Query("UPDATE books SET manualGrouping = 1 WHERE id IN (:ids)")
-    suspend fun markManualGrouping(ids: List<Long>)
-
     @Query("UPDATE books SET skipSilenceEnabled = :enabled WHERE id = :id")
     suspend fun setSkipSilenceEnabled(id: Long, enabled: Boolean)
 
     @Transaction
-    @Query("SELECT * FROM books WHERE groupId IS NULL AND isIgnored = 0 ORDER BY addedDateMs DESC")
+    @Query("SELECT * FROM books WHERE isIgnored = 0 ORDER BY addedDateMs DESC")
     fun getAllBooksWithProgressUngrouped(): Flow<List<com.betteraudio.data.model.BookWithProgress>>
 
     @Query("SELECT * FROM books WHERE isIgnored = 1 ORDER BY title ASC")

@@ -37,8 +37,6 @@ import javax.inject.Singleton
 data class PlaybackState(
     val isPlaying: Boolean = false,
     val bookId: Long = -1L,
-    val groupId: Long = -1L,         // -1 if not playing a group
-    val groupName: String = "",
     val bookTitle: String = "",
     val author: String = "",
     val coverArtUri: String? = null,
@@ -93,8 +91,6 @@ class PlayerController @Inject constructor(
 
     private var controller: MediaController? = null
     private var currentBookId = -1L
-    private var currentGroupId = -1L
-    private var currentGroupName = ""
 
     // Series-continuation context: when the playing book belongs to an active series session,
     // the next book auto-starts when it ends. Managed by SeriesPlayer via [playBook].
@@ -174,7 +170,7 @@ class PlayerController @Inject constructor(
     private var sessionAccumulatedMs = 0L   // actual play time, pauses excluded
     private var sessionSegmentStartMs = 0L  // wall-clock when current segment started; 0 = not playing
     private var pauseTimerJob: Job? = null
-    // (absStartMs, index, name) per chapter for the loaded single book; empty for groups.
+    // (absStartMs, index, name) per chapter for the loaded book.
     private var chapterBoundaries: List<Triple<Long, Int, String>> = emptyList()
 
     private val controllerListener = object : MediaController.Listener {
@@ -345,8 +341,6 @@ class PlayerController @Inject constructor(
         if (sleepTimerIsEndOfChapter) updateSleepDisplay(0L, endOfChapter = false)
         AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed series=$seriesId")
         currentBookId = book.id
-        currentGroupId = -1L
-        currentGroupName = ""
         currentSeriesId = seriesId
         currentSeriesBookIds = seriesBookIds
         loadChapterBoundaries(book.id, files)
@@ -355,7 +349,6 @@ class PlayerController @Inject constructor(
                 buildMediaItem(
                     file = file,
                     memberBookId = book.id,
-                    groupId = -1L,
                     albumTitle = book.title,
                     artist = book.author,
                     artworkPath = book.coverArtPath
@@ -368,47 +361,9 @@ class PlayerController @Inject constructor(
         )
     }
 
-    /**
-     * Play a joined book group — all files from all member books in order.
-     * [orderedBooks] is sorted by group order. [filesPerBook] maps bookId → sorted AudioFiles.
-     */
-    fun playBookGroup(
-        groupId: Long,
-        groupName: String,
-        coverArtPath: String?,
-        orderedBooks: List<Book>,
-        filesPerBook: Map<Long, List<AudioFile>>,
-        startGlobalFileIndex: Int = 0,
-        startPositionMs: Long = 0L,
-        speed: Float = settings.currentDefaultSpeed
-    ) {
-        closeHistorySession()  // end any session on the previously-loaded book first
-        chapterBoundaries = emptyList()  // per-member chapter mapping skipped for groups
-        currentGroupId = groupId
-        currentGroupName = groupName
-        // Use the first member book's ID as the "representative" book ID
-        currentBookId = orderedBooks.firstOrNull()?.id ?: -1L
-
-        val allFiles = orderedBooks.flatMap { filesPerBook[it.id] ?: emptyList() }
-        val items = orderedBooks.flatMap { book ->
-            (filesPerBook[book.id] ?: emptyList()).map { file ->
-                buildMediaItem(
-                    file = file,
-                    memberBookId = book.id,
-                    groupId = groupId,
-                    albumTitle = groupName,
-                    artist = book.author,
-                    artworkPath = coverArtPath ?: book.coverArtPath
-                )
-            }
-        }
-        buildAndPlay(items, allFiles, startGlobalFileIndex, startPositionMs, speed)
-    }
-
     private fun buildMediaItem(
         file: AudioFile,
         memberBookId: Long,
-        groupId: Long,
         albumTitle: String,
         artist: String,
         artworkPath: String?
@@ -429,7 +384,6 @@ class PlayerController @Inject constructor(
                 .setArtworkUri(artworkPath?.let { Uri.parse("file://$it") })
                 .setExtras(Bundle().apply {
                     putLong("bookId", memberBookId)
-                    putLong("groupId", groupId)
                 })
                 .build()
         )
@@ -472,8 +426,6 @@ class PlayerController @Inject constructor(
             it.stop()
         }
         currentBookId = -1L
-        currentGroupId = -1L
-        currentGroupName = ""
         currentSeriesId = -1L
         currentSeriesBookIds = emptyList()
         stopPositionTicker()
@@ -483,6 +435,28 @@ class PlayerController @Inject constructor(
             settings.setLastPlayedBookId(-1L)
             settings.setLastOpenBookId(-1L)
         }
+    }
+
+    /** Like [stop], but *awaits* the final position write (via [saveCurrentProgressNow]) before
+     *  clearing playback, instead of firing it off in [scope]. Used by
+     *  [com.betteraudio.data.backup.BackupManager.restore], where a fire-and-forget save could
+     *  land after restore has already read/written progress for the same book. Must be called
+     *  from the main thread (MediaController is main-thread-only) — same as [stop]. */
+    suspend fun stopAndFlush() {
+        saveCurrentProgressNow()
+        controller?.let {
+            it.pause()
+            it.clearMediaItems()
+            it.stop()
+        }
+        currentBookId = -1L
+        currentSeriesId = -1L
+        currentSeriesBookIds = emptyList()
+        stopPositionTicker()
+        _playbackState.value = PlaybackState()
+        _positionState.value = PositionState()
+        settings.setLastPlayedBookId(-1L)
+        settings.setLastOpenBookId(-1L)
     }
 
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
@@ -505,7 +479,9 @@ class PlayerController @Inject constructor(
     // Both are lower-confidence than a PlayerViewModel-recorded "jump" (chapter/bookmark select),
     // so they're kept in a tighter rotation — see AudiobookRepository.insertSkipEventPruned.
     private var skipButtonCoalesceJob: Job? = null
-    private var skipButtonCoalesceFromMs: Long = -1L
+    // Written from skipForward()/skipBack() (main thread) and read/reset from the coalescing
+    // coroutine (scope = Dispatchers.IO) — @Volatile for cross-thread visibility.
+    @Volatile private var skipButtonCoalesceFromMs: Long = -1L
 
     /** Coalesces rapid consecutive skip-button taps (fast-forward mashing) into one history
      *  entry: the first tap's start position, the latest tap's end position, written once no
@@ -823,10 +799,6 @@ class PlayerController @Inject constructor(
             val fileIndex = ctrl.currentMediaItemIndex
             val filePositionMs = ctrl.currentPosition
             val cumulativeStart = cumulativeStartsMs.getOrElse(fileIndex) { 0L }
-            // For group playback, update currentBookId to the member book currently playing
-            val memberBookId = ctrl.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
-            if (currentGroupId != -1L && memberBookId != -1L) currentBookId = memberBookId
-
             val bookPos = cumulativeStart + filePositionMs
             // Sleep-timer fields are NOT recomputed here — PlaybackService is sole authority and
             // pushes updates directly into sleepTimerRemainingMs/sleepTimerIsEndOfChapter (see
@@ -846,8 +818,6 @@ class PlayerController @Inject constructor(
             val newPlaybackState = PlaybackState(
                 isPlaying = ctrl.isPlaying,
                 bookId = currentBookId,
-                groupId = currentGroupId,
-                groupName = currentGroupName,
                 bookTitle = meta?.albumTitle?.toString() ?: "",
                 author = meta?.artist?.toString() ?: "",
                 coverArtUri = meta?.artworkUri?.toString(),

@@ -1,26 +1,14 @@
 package com.betteraudio.ui.author
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.Composable
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
-import com.betteraudio.data.db.entities.Book
-import com.betteraudio.ui.theme.pressScale
-import java.io.File
+import com.betteraudio.ui.theme.AppTheme
+import com.betteraudio.ui.theme.LocalAppTheme
+import com.betteraudio.ui.immersive.author.AuthorDetailScreen as ImmersiveAuthorDetailScreen
+import com.betteraudio.ui.material.author.AuthorDetailScreen as MaterialAuthorDetailScreen
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Dispatches to the Immersive or Material You implementation — see CLAUDE.md's theming section
+ *  for the split convention. */
 @Composable
 fun AuthorDetailScreen(
     authorName: String,
@@ -28,77 +16,8 @@ fun AuthorDetailScreen(
     onBookClick: (Long) -> Unit,
     viewModel: AuthorDetailViewModel = hiltViewModel()
 ) {
-    val books by viewModel.books.collectAsStateWithLifecycle()
-
-    Scaffold(
-        // Transparent in the Immersive theme so the blurred cover shows through; explicit
-        // contentColor since contentColorFor(Transparent) falls back to black.
-        containerColor = com.betteraudio.ui.theme.appSurfaceColor(),
-        contentColor = MaterialTheme.colorScheme.onBackground,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(authorName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            "${books.size} book${if (books.size != 1) "s" else ""}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = com.betteraudio.ui.theme.appSurfaceColor()
-                )
-            )
-        }
-    ) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(books, key = { it.id }) { book ->
-                AuthorBookRow(book = book, onClick = { onBookClick(book.id) }, modifier = Modifier.animateItem())
-            }
-        }
-    }
-}
-
-@Composable
-private fun AuthorBookRow(book: Book, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        shape = MaterialTheme.shapes.large,
-        color = com.betteraudio.ui.theme.appCardColor(),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.fillMaxWidth().pressScale()
-    ) {
-        Row(
-            Modifier.fillMaxWidth().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            AsyncImage(
-                model = book.coverArtPath?.let { File(it) },
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(64.dp).clip(MaterialTheme.shapes.medium)
-            )
-            Column(Modifier.weight(1f)) {
-                Text(book.displayTitle, style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (!book.seriesName.isNullOrBlank()) {
-                    Text(book.seriesName!!, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
+    when (LocalAppTheme.current) {
+        AppTheme.IMMERSIVE -> ImmersiveAuthorDetailScreen(authorName, onBack, onBookClick, viewModel)
+        AppTheme.MATERIAL_YOU -> MaterialAuthorDetailScreen(authorName, onBack, onBookClick, viewModel)
     }
 }

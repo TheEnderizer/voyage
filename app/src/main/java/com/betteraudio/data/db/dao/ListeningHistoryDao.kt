@@ -13,16 +13,6 @@ interface ListeningHistoryDao {
     @Insert
     suspend fun insertSession(session: ListeningSession): Long
 
-    @Query("UPDATE listening_sessions SET endMs = :endMs, endChapterIndex = :endChapterIndex, endChapterName = :endChapterName, endPositionInChapterMs = :endPositionInChapterMs, listenedMs = :listenedMs WHERE id = :id")
-    suspend fun finishSession(
-        id: Long,
-        endMs: Long,
-        endChapterIndex: Int,
-        endChapterName: String,
-        endPositionInChapterMs: Long,
-        listenedMs: Long
-    )
-
     @Query("SELECT * FROM listening_sessions WHERE bookId = :bookId AND endMs > 0 ORDER BY startMs DESC")
     fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>>
 

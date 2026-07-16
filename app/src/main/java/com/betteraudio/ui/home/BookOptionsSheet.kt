@@ -113,6 +113,7 @@ fun BookOptionsSheet(
     var sNarrator by remember(series?.id) { mutableStateOf(series?.narrator ?: "") }
 
     ModalBottomSheet(
+        containerColor = com.betteraudio.ui.components.appSheetColor(),
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {

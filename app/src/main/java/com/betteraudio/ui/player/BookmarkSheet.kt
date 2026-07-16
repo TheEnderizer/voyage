@@ -27,7 +27,7 @@ fun BookmarkSheet(
     onAddHere: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             // Header
             Row(
@@ -107,7 +107,9 @@ private fun BookmarkRow(
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.surfaceContainer,
+        // Slightly translucent so the row blends with the (frosted, in Immersive) sheet fill
+        // instead of reading as an opaque Material card on top of it.
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.6f),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(

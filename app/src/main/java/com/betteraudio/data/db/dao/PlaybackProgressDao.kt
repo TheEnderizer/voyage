@@ -8,13 +8,7 @@ import kotlinx.coroutines.flow.Flow
 interface PlaybackProgressDao {
 
     @Query("SELECT * FROM playback_progress WHERE bookId = :bookId")
-    fun getProgressForBook(bookId: Long): Flow<PlaybackProgress?>
-
-    @Query("SELECT * FROM playback_progress WHERE bookId = :bookId")
     suspend fun getProgressForBookOnce(bookId: Long): PlaybackProgress?
-
-    @Query("SELECT * FROM playback_progress ORDER BY lastPlayedMs DESC LIMIT 1")
-    fun getMostRecentProgress(): Flow<PlaybackProgress?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(progress: PlaybackProgress)

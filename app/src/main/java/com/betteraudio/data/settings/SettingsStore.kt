@@ -37,8 +37,6 @@ class SettingsStore @Inject constructor(
         val SORT_DIRECTION          = stringPreferencesKey("sort_direction")
         val LAST_OPEN_BOOK_ID       = longPreferencesKey("last_open_book_id")
         val LAST_PLAYED_BOOK_ID     = longPreferencesKey("last_played_book_id")
-        // Legacy key kept so old Anthropic keys are silently ignored on next read
-        val ANTHROPIC_API_KEY = stringPreferencesKey("anthropic_api_key")
         val AUTO_REWIND_SECONDS          = intPreferencesKey("auto_rewind_seconds")
         val AUTO_REWIND_THRESHOLD_MINUTES = intPreferencesKey("auto_rewind_threshold_minutes")
         val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
@@ -207,7 +205,6 @@ class SettingsStore @Inject constructor(
     @Volatile var currentSkipSilenceMinMs           = DEFAULT_SKIP_SILENCE_MIN_MS;            private set
     @Volatile var currentSkipSilenceThreshold       = DEFAULT_SKIP_SILENCE_THRESHOLD;         private set
     @Volatile var currentSkipSilencePaddingMs       = DEFAULT_SKIP_SILENCE_PADDING_MS;        private set
-    @Volatile var currentImportStructure            = "";                                     private set
     @Volatile var currentWidgetAppColor             = DEFAULT_WIDGET_APP_COLOR;               private set
     @Volatile var currentWidgetHideWhenIdle         = false;                                   private set
     @Volatile var currentSleepFadeSeconds           = DEFAULT_SLEEP_FADE_SECONDS;             private set
@@ -238,7 +235,6 @@ class SettingsStore @Inject constructor(
         scope.launch { skipSilenceMinMs.collect          { currentSkipSilenceMinMs          = it } }
         scope.launch { skipSilenceThreshold.collect      { currentSkipSilenceThreshold      = it } }
         scope.launch { skipSilencePaddingMs.collect      { currentSkipSilencePaddingMs      = it } }
-        scope.launch { importStructure.collect           { currentImportStructure           = it } }
         scope.launch { widgetAppColor.collect            { currentWidgetAppColor            = it } }
         scope.launch { widgetHideWhenIdle.collect        { currentWidgetHideWhenIdle        = it } }
         scope.launch { sleepFadeSeconds.collect              { currentSleepFadeSeconds              = it } }

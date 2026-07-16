@@ -43,13 +43,6 @@ sealed class SettingsSection {
     object Diagnostics : SettingsSection()
 }
 
-data class BackupUiState(
-    val exporting: Boolean = false,
-    val importing: Boolean = false,
-    val lastResult: com.betteraudio.data.backup.BackupManager.RestoreResult? = null,
-    val error: String? = null
-)
-
 data class UpdateUiState(
     val checking: Boolean = false,
     val available: ReleaseInfo? = null,
@@ -100,13 +93,6 @@ class SettingsViewModel @Inject constructor(
     private val _restructure = MutableStateFlow(RestructureUi())
     val restructure: StateFlow<RestructureUi> = _restructure.asStateFlow()
 
-    /** Dry-run: count how many books would move (shown in the confirm dialog). */
-    fun loadRestructurePlan() {
-        viewModelScope.launch {
-            _restructure.value = RestructureUi(planCount = restructurer.plan().size)
-        }
-    }
-
     /** Set the target structure (also becomes the app's structure) then compute the dry-run plan. */
     fun chooseRestructureStructure(structure: com.betteraudio.data.scanner.ImportStructure) {
         viewModelScope.launch {
@@ -152,11 +138,6 @@ class SettingsViewModel @Inject constructor(
             SettingsStore.DEFAULT_SKIP_BACK_MS
         )
 
-    val defaultSpeed: StateFlow<Float> =
-        settings.defaultSpeed.stateIn(
-            viewModelScope, SharingStarted.WhileSubscribed(5_000),
-            SettingsStore.DEFAULT_SPEED
-        )
 
     val bookCount: StateFlow<Int> =
         repository.getAllBooks().map { it.size }
@@ -360,7 +341,6 @@ class SettingsViewModel @Inject constructor(
     fun setLibraryFolder(path: String) = viewModelScope.launch { settings.setLibraryFolder(path) }
     fun setSkipForward(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }
     fun setSkipBack(ms: Long) = viewModelScope.launch { settings.setSkipBackMs(ms) }
-    fun setDefaultSpeed(speed: Float) = viewModelScope.launch { settings.setDefaultSpeed(speed) }
     fun setGeminiApiKey(key: String) = viewModelScope.launch { settings.setGeminiApiKey(key) }
 
     val autoRewindSeconds: StateFlow<Int> =
@@ -478,8 +458,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ── Backup & restore ─────────────────────────────────────────────────────
-    private val _backupState = MutableStateFlow(BackupUiState())
-    val backupState: StateFlow<BackupUiState> = _backupState.asStateFlow()
+    // Owned by BackupManager (a Singleton), not this ViewModel — an import launched from Settings
+    // must keep running (and its result must still be observable) even if the user navigates away
+    // and this ViewModel gets recreated.
+    val backupState: StateFlow<com.betteraudio.data.backup.BackupUiState> = backupManager.uiState
 
     val autoBackupEnabled: StateFlow<Boolean> =
         settings.autoBackupEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -494,59 +476,25 @@ class SettingsViewModel @Inject constructor(
 
     fun setBackupIncludeApiKey(enabled: Boolean) = viewModelScope.launch { settings.setBackupIncludeApiKey(enabled) }
 
-    fun exportBackup(uri: android.net.Uri, includeApiKey: Boolean) {
-        if (_backupState.value.exporting) return
-        viewModelScope.launch {
-            _backupState.update { it.copy(exporting = true, error = null) }
-            try {
-                withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    appContext.contentResolver.openOutputStream(uri)?.use { out ->
-                        backupManager.export(out, includeApiKey)
-                    } ?: throw java.io.IOException("Could not open the chosen file for writing")
-                }
-                _backupState.update { it.copy(exporting = false) }
-            } catch (e: Exception) {
-                _backupState.update { it.copy(exporting = false, error = "Export failed: ${e.message}") }
-            }
-        }
-    }
+    fun exportBackup(uri: android.net.Uri, includeApiKey: Boolean) = backupManager.exportFile(uri, includeApiKey)
 
-    fun importBackup(uri: android.net.Uri, forceOverwrite: Boolean) {
-        if (_backupState.value.importing) return
-        viewModelScope.launch {
-            _backupState.update { it.copy(importing = true, error = null, lastResult = null) }
-            try {
-                val result = withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    appContext.contentResolver.openInputStream(uri)?.use { input ->
-                        backupManager.restore(input, forceOverwrite)
-                    } ?: throw java.io.IOException("Could not open the chosen file for reading")
-                }
-                _backupState.update { it.copy(importing = false, lastResult = result) }
-            } catch (e: Exception) {
-                _backupState.update { it.copy(importing = false, error = "Import failed: ${e.message}") }
-            }
-        }
-    }
+    fun importBackup(uri: android.net.Uri, forceOverwrite: Boolean) = backupManager.importFile(uri, forceOverwrite)
 
-    fun clearBackupResult() = _backupState.update { it.copy(lastResult = null, error = null) }
+    fun clearBackupResult() = backupManager.clearResult()
 
     /** Writes a share-ready copy (API key always stripped) to filesDir and returns it. */
-    suspend fun writeShareBackupFile(): java.io.File = withContext(kotlinx.coroutines.Dispatchers.IO) {
-        val dir = java.io.File(appContext.filesDir, "backup_share").apply { mkdirs() }
-        val file = java.io.File(dir, "voyage-backup.json")
-        file.outputStream().use { out -> backupManager.exportForSharing(out) }
-        file
-    }
+    suspend fun writeShareBackupFile(): java.io.File = backupManager.writeShareBackupFile()
 
+    /** Only ever called after a folder was actually picked (see the auto-backup switch in
+     *  SettingsScreen) — always safe to enable here without leaving a folder-less toggle on. */
     fun setAutoBackupFolder(uri: android.net.Uri) = viewModelScope.launch {
         appContext.contentResolver.takePersistableUriPermission(
             uri,
             Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         )
         settings.setAutoBackupFolderUri(uri.toString())
-        if (settings.autoBackupEnabled.first()) {
-            com.betteraudio.data.backup.AutoBackupWorker.schedule(appContext)
-        }
+        settings.setAutoBackupEnabled(true)
+        com.betteraudio.data.backup.AutoBackupWorker.schedule(appContext)
     }
 
     fun setAutoBackupEnabled(enabled: Boolean) = viewModelScope.launch {

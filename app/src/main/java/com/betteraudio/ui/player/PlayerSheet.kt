@@ -64,15 +64,16 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.ui.theme.AppTheme
+import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
 import kotlinx.coroutines.launch
 
-/** Which book/group the expanded player should show. */
+/** Which book the expanded player should show. */
 data class PlayerTarget(
     val bookId: Long = -1L,
-    val groupId: Long = -1L,
     val startInfo: Boolean = false,
     // false on cold-start restore so the player doesn't auto-play when the app opens
     val startPlaying: Boolean = true,
@@ -105,8 +106,8 @@ class PlayerSheetController {
         androidx.compose.runtime.mutableFloatStateOf(0f)
 
     /** Set the target without expanding (used to show the mini bar for the last-played book). */
-    fun prime(bookId: Long = -1L, groupId: Long = -1L) {
-        if (target == null) target = PlayerTarget(bookId, groupId, startInfo = false)
+    fun prime(bookId: Long = -1L) {
+        if (target == null) target = PlayerTarget(bookId, startInfo = false)
     }
 
     /** Cold-start restore of the mini bar (collapsed): load the last-played book PAUSED so the
@@ -117,9 +118,9 @@ class PlayerSheetController {
             target = PlayerTarget(bookId = bookId, startInfo = false, startPlaying = false)
     }
 
-    /** Open a book/group in the full player (expands the sheet). */
-    fun open(bookId: Long = -1L, groupId: Long = -1L, startInfo: Boolean = false, startPlaying: Boolean = true) {
-        target = PlayerTarget(bookId, groupId, startInfo, startPlaying)
+    /** Open a book in the full player (expands the sheet). */
+    fun open(bookId: Long = -1L, startInfo: Boolean = false, startPlaying: Boolean = true) {
+        target = PlayerTarget(bookId, startInfo, startPlaying)
         expandToken++
     }
 
@@ -171,8 +172,8 @@ fun PlayerSheet(
     val target = controller.target
 
     // Mirror the playing book into the target so the mini bar is ready to expand.
-    LaunchedEffect(playback.bookId, playback.groupId) {
-        if (playback.bookId != -1L) controller.prime(playback.bookId, playback.groupId)
+    LaunchedEffect(playback.bookId) {
+        if (playback.bookId != -1L) controller.prime(playback.bookId)
     }
 
     // Cold-start restore (PlayerSheetController.restore): `target` is set to the last-played book,
@@ -181,7 +182,7 @@ fun PlayerSheet(
     // Room) worked fine. Load that same book/progress data here as a fallback the mini bar can show
     // until real playback state takes over.
     val restoreVm: MiniPlayerRestoreViewModel = hiltViewModel()
-    val usingLivePlayback = playback.bookId != -1L || playback.groupId != -1L
+    val usingLivePlayback = playback.bookId != -1L
     LaunchedEffect(target?.bookId, usingLivePlayback) {
         restoreVm.setBookId(if (!usingLivePlayback) target?.bookId ?: -1L else -1L)
     }
@@ -279,7 +280,6 @@ fun PlayerSheet(
         // this and the restored mini bar keeps showing on launch.
         if (usingLivePlayback && !(hideMiniBar && !expanded)) MiniPlayerBar(
             title = when {
-                usingLivePlayback && playback.groupId != -1L -> playback.groupName
                 usingLivePlayback -> playback.bookTitle
                 else -> restoreInfo?.title.orEmpty()
             },
@@ -295,8 +295,7 @@ fun PlayerSheet(
             },
             enabled = !expanded,
             onTap = {
-                if (playback.groupId != -1L) controller.open(groupId = playback.groupId)
-                else if (playback.bookId != -1L) controller.open(bookId = playback.bookId)
+                if (playback.bookId != -1L) controller.open(bookId = playback.bookId)
                 else controller.expandCurrent()
             },
             onPlayPause = { playerController.togglePlayPause() },
@@ -343,7 +342,7 @@ fun PlayerSheet(
             val nested = rememberNavController()
             LaunchedEffect(target) {
                 nested.navigate(
-                    "player?bookId=${target!!.bookId}&groupId=${target!!.groupId}" +
+                    "player?bookId=${target!!.bookId}" +
                     "&startInfo=${target!!.startInfo}&startPlaying=${target!!.startPlaying}"
                 ) {
                     // Clear the entire nested back stack so every book switch gets a fresh
@@ -382,10 +381,9 @@ fun PlayerSheet(
                     ) {
                         composable("blank") { Box(Modifier.fillMaxSize()) }
                         composable(
-                            route = "player?bookId={bookId}&groupId={groupId}&startInfo={startInfo}&startPlaying={startPlaying}",
+                            route = "player?bookId={bookId}&startInfo={startInfo}&startPlaying={startPlaying}",
                             arguments = listOf(
                                 navArgument("bookId") { type = NavType.LongType; defaultValue = -1L },
-                                navArgument("groupId") { type = NavType.LongType; defaultValue = -1L },
                                 navArgument("startInfo") { type = NavType.BoolType; defaultValue = false },
                                 navArgument("startPlaying") { type = NavType.BoolType; defaultValue = true }
                             )
@@ -429,9 +427,15 @@ private fun MiniPlayerBar(
     val handOff = Modifier.graphicsLayer {
         alpha = if ((expandProgress?.value ?: 0f) > 0.02f) 0f else 1f
     }
+    // PlayerSheet itself stays unsplit (it's all shared drag/morph logic), so — like the shared
+    // Settings building blocks — the bar resolves its own fill per theme: frosted in Immersive
+    // (matching FloatingNavPill's 0.55 directly below it), opaque tonal in Material You.
+    val barColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
+        alpha = if (LocalAppTheme.current == AppTheme.IMMERSIVE) 0.55f else 1f
+    )
     Surface(
         shape = Pill,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = barColor,
         tonalElevation = 3.dp,
         shadowElevation = 10.dp,
         modifier = modifier

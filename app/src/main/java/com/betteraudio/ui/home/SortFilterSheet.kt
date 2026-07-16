@@ -17,7 +17,7 @@ fun SortFilterSheet(
     onApply: (SortFilter) -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
         Column(
             Modifier
                 .fillMaxWidth()

@@ -26,7 +26,6 @@ data class Book(
     val addedDateMs: Long = System.currentTimeMillis(),
     val status: BookStatus = BookStatus.NOT_STARTED,
     val fileCount: Int = 0,
-    val groupId: Long? = null,   // non-null = this book belongs to a BookGroup
     val synopsis: String? = null, // AI-generated synopsis
     // ── Extra metadata pulled from the audio file tags ──────────────────────
     val narrator: String? = null,
@@ -38,9 +37,6 @@ data class Book(
     val titleOverride: String? = null,
     val authorOverride: String? = null,
     val isIgnored: Boolean = false,
-    // True once the user has explicitly joined or split this book's grouping. The scanner's
-    // AutoJoiner skips these so a manual decision is never silently undone by a refresh.
-    val manualGrouping: Boolean = false,
     // Per-book toggle: when on, the player auto-skips silent gaps (sensitivity + min length
     // are global, in SettingsStore).
     val skipSilenceEnabled: Boolean = false,

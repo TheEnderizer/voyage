@@ -49,6 +49,7 @@ fun CoverSearchSheet(
     LaunchedEffect(Unit) { if (initialQuery.isNotBlank()) runSearch() }
 
     ModalBottomSheet(
+        containerColor = com.betteraudio.ui.components.appSheetColor(),
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {

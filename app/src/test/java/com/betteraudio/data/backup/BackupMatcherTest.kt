@@ -1,5 +1,6 @@
 package com.betteraudio.data.backup
 
+import com.betteraudio.data.db.entities.BookStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -108,5 +109,42 @@ class BackupMatcherTest {
     @Test
     fun `matchFile on empty candidates returns null`() {
         assertTrue(BackupMatcher.matchFile("a.mp3", 1_000L, emptyList()) == null)
+    }
+
+    @Test
+    fun `deriveBookStatus honors an explicit status even if progress looks unfinished`() {
+        // A newer backup's explicit status is authoritative — don't second-guess it from progress.
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = "FINISHED", isCompleted = false, positionMs = 0L)
+        assertEquals(BookStatus.FINISHED, result)
+    }
+
+    @Test
+    fun `deriveBookStatus falls back to isCompleted when no explicit status`() {
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = null, isCompleted = true, positionMs = 500L)
+        assertEquals(BookStatus.FINISHED, result)
+    }
+
+    @Test
+    fun `deriveBookStatus falls back to in-progress when positionMs is positive`() {
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = null, isCompleted = false, positionMs = 12_345L)
+        assertEquals(BookStatus.IN_PROGRESS, result)
+    }
+
+    @Test
+    fun `deriveBookStatus falls back to not-started with no progress at all`() {
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = null, isCompleted = false, positionMs = 0L)
+        assertEquals(BookStatus.NOT_STARTED, result)
+    }
+
+    @Test
+    fun `deriveBookStatus ignores a garbage explicit status and derives instead`() {
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = "NOT_A_REAL_STATUS", isCompleted = false, positionMs = 999L)
+        assertEquals(BookStatus.IN_PROGRESS, result)
+    }
+
+    @Test
+    fun `deriveBookStatus treats blank explicit status as absent`() {
+        val result = BackupMatcher.deriveBookStatus(explicitStatus = "", isCompleted = true, positionMs = 0L)
+        assertEquals(BookStatus.FINISHED, result)
     }
 }

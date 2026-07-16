@@ -7,7 +7,4 @@
     <string name="skip_back">Skip back 15 seconds</string>
     <string name="play_pause">Play or pause</string>
     <string name="skip_forward">Skip forward 30 seconds</string>
-    <string name="notification_channel_name">Playback</string>
-    <string name="notification_channel_description">Audiobook playback controls</string>
-    <string name="scan_channel_name">Library Scan</string>
 </resources>
