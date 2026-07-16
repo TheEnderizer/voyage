@@ -25,7 +25,7 @@ fun SleepTimerSheet(
         "60 min" to 60 * 60_000L,
     )
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(
             Modifier
                 .fillMaxWidth()

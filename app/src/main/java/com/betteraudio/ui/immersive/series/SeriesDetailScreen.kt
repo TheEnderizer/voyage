@@ -216,7 +216,10 @@ fun SeriesDetailScreen(
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             // Near-opaque frosted: lets the cover backdrop glow through faintly while keeping
             // the list readable — a fully solid sheet looks pasted-on in the Immersive theme.
+            // contentColor explicit: contentColorFor() can't resolve a translucent fill and this
+            // screen has no parent Surface/Scaffold to inherit a sane LocalContentColor from.
             color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
@@ -417,7 +420,7 @@ private fun AddBooksSheet(
     onDismiss: () -> Unit
 ) {
     val added = remember { mutableStateListOf<Long>() }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Text("Add books to series", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.padding(vertical = 8.dp))

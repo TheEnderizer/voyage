@@ -436,6 +436,9 @@ private fun MiniPlayerBar(
     Surface(
         shape = Pill,
         color = barColor,
+        // Explicit: contentColorFor() can't resolve a translucent (frosted) fill and would fall
+        // back to LocalContentColor — plain black here, since no parent Surface provides one.
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 3.dp,
         shadowElevation = 10.dp,
         modifier = modifier

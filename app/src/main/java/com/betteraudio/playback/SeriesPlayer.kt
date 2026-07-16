@@ -30,6 +30,12 @@ class SeriesPlayer @Inject constructor(
     // internally, so a main scope is safe for the load-then-play advance.
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    // KNOWN CAVEAT: this singleton is only constructed when Hilt first injects it (Home/Player/
+    // SeriesDetail ViewModels), so the onSeriesBookEnded hook below isn't registered until one of
+    // those screens has been built at least once in this process. A service-only resume (e.g. a
+    // cold widget tap with the Activity never opened) therefore won't auto-advance a finishing
+    // series book until the app UI is opened. Acceptable today because loadLastPlayedAndPlay
+    // doesn't carry series context either; revisit if the widget path ever becomes series-aware.
     init {
         playerController.onSeriesBookEnded = { seriesId, orderedBookIds, endedBookId ->
             val nextId = orderedBookIds.getOrNull(orderedBookIds.indexOf(endedBookId) + 1)

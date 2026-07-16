@@ -615,7 +615,9 @@ private fun SelectionHeader(
         shape = MaterialTheme.shapes.large,
         // Mostly-opaque frosted (not fully solid): it floats over the book grid, so it needs to
         // stay readable, but a hint of translucency keeps it in the Immersive family.
+        // contentColor explicit — contentColorFor() can't resolve a translucent fill.
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
         modifier = Modifier

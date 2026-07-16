@@ -27,7 +27,7 @@ fun BookmarkSheet(
     onAddHere: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor()) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = com.betteraudio.ui.components.appSheetColor(), contentColor = MaterialTheme.colorScheme.onSurface) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
             // Header
             Row(

@@ -114,6 +114,7 @@ fun BookOptionsSheet(
 
     ModalBottomSheet(
         containerColor = com.betteraudio.ui.components.appSheetColor(),
+        contentColor = MaterialTheme.colorScheme.onSurface,
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
