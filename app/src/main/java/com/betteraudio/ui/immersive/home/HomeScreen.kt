@@ -359,6 +359,7 @@ fun HomeScreen(
     // Dialogs
     ebookError?.let { message ->
         AlertDialog(
+            containerColor = ImmersiveStyle.dialogColor(),
             onDismissRequest = { viewModel.dismissEbookError() },
             title = { Text("Couldn't connect ebook") },
             text = { Text(message) },
@@ -370,6 +371,7 @@ fun HomeScreen(
         var deleteFiles by remember { mutableStateOf(false) }
         val count = selection.size
         AlertDialog(
+            containerColor = ImmersiveStyle.dialogColor(),
             onDismissRequest = { showDeleteConfirm = false },
             icon = { Icon(Icons.Default.DeleteSweep, null) },
             title = { Text("Delete $count item${if (count != 1) "s" else ""}?") },
@@ -399,6 +401,7 @@ fun HomeScreen(
 
     if (showStorageRationale) {
         AlertDialog(
+            containerColor = ImmersiveStyle.dialogColor(),
             onDismissRequest = { showStorageRationale = false },
             title = { Text("Storage Access Needed") },
             text = { Text("Better Audio needs access to all files. Tap Open Settings, then enable 'Allow access to all files'.") },
@@ -719,14 +722,16 @@ private fun BookGridCard(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Bottom gradient info
+        // Bottom gradient info — the scrim is pulled slightly toward the cover accent (instead
+        // of pure black) so the grid ties into the Immersive theme's cover-derived palette.
+        val scrimBase = androidx.compose.ui.graphics.lerp(Color.Black, MaterialTheme.colorScheme.primary, 0.10f)
         Box(
             Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.82f))
+                        listOf(Color.Transparent, scrimBase.copy(alpha = 0.82f))
                     )
                 )
                 .padding(12.dp)
@@ -868,13 +873,15 @@ private fun CollectionGridCard(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
+        // Accent-tinted scrim, matching BookGridCard — see the comment there.
+        val scrimBase = androidx.compose.ui.graphics.lerp(Color.Black, MaterialTheme.colorScheme.primary, 0.10f)
         Box(
             Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.88f))
+                        listOf(Color.Transparent, scrimBase.copy(alpha = 0.88f))
                     )
                 )
                 .padding(12.dp)

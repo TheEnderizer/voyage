@@ -30,6 +30,11 @@ object ImmersiveStyle {
     @Composable
     fun menuColor(): Color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
 
+    /** Alert dialog fill: near-opaque frosted. Dialogs already sit over the system dim scrim, so
+     *  a whisper of translucency is enough to keep them in the family without hurting reading. */
+    @Composable
+    fun dialogColor(): Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.93f)
+
     /** Text drawn over dark cover scrims: near-white pulled toward the cover accent so all text
      *  follows the theme color. */
     @Composable

@@ -631,6 +631,7 @@ fun PlayerContent(
 
         if (showAddBookmark) {
             AlertDialog(
+                containerColor = ImmersiveStyle.dialogColor(),
                 onDismissRequest = { showAddBookmark = false; bookmarkComment = "" },
                 title = { Text("Add bookmark") },
                 text = {
@@ -855,6 +856,7 @@ private fun SkipValueDialog(
 ) {
     var secs by remember { mutableStateOf(currentSeconds.coerceIn(5, 300)) }
     AlertDialog(
+        containerColor = ImmersiveStyle.dialogColor(),
         onDismissRequest = onDismiss,
         title = { Text(if (forward) "Skip forward" else "Skip back") },
         text = {

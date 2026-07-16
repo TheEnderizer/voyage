@@ -323,6 +323,7 @@ fun SeriesDetailScreen(
     if (showRename) {
         var name by remember { mutableStateOf(series?.name ?: "") }
         AlertDialog(
+            containerColor = ImmersiveStyle.dialogColor(),
             onDismissRequest = { showRename = false },
             title = { Text("Rename series") },
             text = {
