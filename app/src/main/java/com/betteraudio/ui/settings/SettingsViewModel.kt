@@ -380,6 +380,30 @@ class SettingsViewModel @Inject constructor(
     fun setSkipSilenceThreshold(level: Int) = viewModelScope.launch { settings.setSkipSilenceThreshold(level) }
     fun setSkipSilencePaddingMs(ms: Long) = viewModelScope.launch { settings.setSkipSilencePaddingMs(ms) }
 
+    // ── Sleep timer ──────────────────────────────────────────────────────────
+    val sleepFadeSeconds: StateFlow<Int> =
+        settings.sleepFadeSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_FADE_SECONDS)
+    val sleepShakeEnabled: StateFlow<Boolean> =
+        settings.sleepShakeEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SHAKE_ENABLED)
+    val sleepShakeResetMinutes: StateFlow<Int> =
+        settings.sleepShakeResetMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SHAKE_RESET_MINUTES)
+    val sleepScheduleEnabled: StateFlow<Boolean> =
+        settings.sleepScheduleEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val sleepScheduleStartMinutes: StateFlow<Int> =
+        settings.sleepScheduleStartMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_START_MINUTES)
+    val sleepScheduleEndMinutes: StateFlow<Int> =
+        settings.sleepScheduleEndMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_END_MINUTES)
+    val sleepScheduleDefaultMinutes: StateFlow<Int> =
+        settings.sleepScheduleDefaultMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES)
+
+    fun setSleepFadeSeconds(seconds: Int) = viewModelScope.launch { settings.setSleepFadeSeconds(seconds) }
+    fun setSleepShakeEnabled(enabled: Boolean) = viewModelScope.launch { settings.setSleepShakeEnabled(enabled) }
+    fun setSleepShakeResetMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepShakeResetMinutes(minutes) }
+    fun setSleepScheduleEnabled(enabled: Boolean) = viewModelScope.launch { settings.setSleepScheduleEnabled(enabled) }
+    fun setSleepScheduleStartMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleStartMinutes(minutes) }
+    fun setSleepScheduleEndMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleEndMinutes(minutes) }
+    fun setSleepScheduleDefaultMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleDefaultMinutes(minutes) }
+
     fun rescan() {
         val path = libraryFolder.value
         if (path.isBlank() || _rescanRunning.value) return

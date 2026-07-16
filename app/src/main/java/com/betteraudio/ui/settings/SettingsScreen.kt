@@ -113,6 +113,13 @@ fun SettingsScreen(
     val skipSilenceMinMs          by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
     val skipSilenceThreshold      by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
     val skipSilencePaddingMs      by viewModel.skipSilencePaddingMs.collectAsStateWithLifecycle()
+    val sleepFadeSeconds          by viewModel.sleepFadeSeconds.collectAsStateWithLifecycle()
+    val sleepShakeEnabled         by viewModel.sleepShakeEnabled.collectAsStateWithLifecycle()
+    val sleepShakeResetMinutes    by viewModel.sleepShakeResetMinutes.collectAsStateWithLifecycle()
+    val sleepScheduleEnabled      by viewModel.sleepScheduleEnabled.collectAsStateWithLifecycle()
+    val sleepScheduleStartMinutes by viewModel.sleepScheduleStartMinutes.collectAsStateWithLifecycle()
+    val sleepScheduleEndMinutes   by viewModel.sleepScheduleEndMinutes.collectAsStateWithLifecycle()
+    val sleepScheduleDefaultMinutes by viewModel.sleepScheduleDefaultMinutes.collectAsStateWithLifecycle()
     val importStructure           by viewModel.importStructure.collectAsStateWithLifecycle()
     val appTheme                  by viewModel.appTheme.collectAsStateWithLifecycle()
     val themeColorSource          by viewModel.themeColorSource.collectAsStateWithLifecycle()
@@ -225,7 +232,10 @@ fun SettingsScreen(
                     SettingsSection.Playback -> playbackSection(
                         skipForwardMs, skipBackMs, defaultSpeed,
                         autoRewindSeconds, autoRewindThresholdMinutes,
-                        skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs, viewModel
+                        skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs,
+                        sleepFadeSeconds, sleepShakeEnabled, sleepShakeResetMinutes,
+                        sleepScheduleEnabled, sleepScheduleStartMinutes, sleepScheduleEndMinutes,
+                        sleepScheduleDefaultMinutes, viewModel
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
                     SettingsSection.Widget -> widgetSection(
@@ -724,6 +734,13 @@ private fun LazyListScope.playbackSection(
     skipSilenceMinMs: Long,
     skipSilenceThreshold: Int,
     skipSilencePaddingMs: Long,
+    sleepFadeSeconds: Int,
+    sleepShakeEnabled: Boolean,
+    sleepShakeResetMinutes: Int,
+    sleepScheduleEnabled: Boolean,
+    sleepScheduleStartMinutes: Int,
+    sleepScheduleEndMinutes: Int,
+    sleepScheduleDefaultMinutes: Int,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -932,6 +949,133 @@ private fun LazyListScope.playbackSection(
     }
     item {
         CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("Sleep timer", style = MaterialTheme.typography.titleSmall)
+
+                // Fade-out length (0 = hard pause, 1-30s)
+                var fadeSlider by remember(sleepFadeSeconds) { mutableFloatStateOf(sleepFadeSeconds.toFloat()) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("Fade out over", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (fadeSlider == 0f) "Off (hard pause)" else "${fadeSlider.toInt()} s",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Slider(
+                    value = fadeSlider,
+                    onValueChange = { fadeSlider = it.toInt().toFloat() },
+                    onValueChangeFinished = { viewModel.setSleepFadeSeconds(fadeSlider.toInt()) },
+                    valueRange = 0f..30f,
+                    steps = 29,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                HorizontalDivider()
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Shake to extend", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Shake the phone near the end of the timer (or right after it pauses) to keep listening.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = sleepShakeEnabled, onCheckedChange = { viewModel.setSleepShakeEnabled(it) })
+                }
+                if (sleepShakeEnabled) {
+                    var shakeSlider by remember(sleepShakeResetMinutes) { mutableFloatStateOf(sleepShakeResetMinutes.toFloat()) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Extend by", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${shakeSlider.toInt()} min",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = shakeSlider,
+                        onValueChange = { shakeSlider = it.toInt().toFloat() },
+                        onValueChangeFinished = { viewModel.setSleepShakeResetMinutes(shakeSlider.toInt().coerceAtLeast(1)) },
+                        valueRange = 1f..60f,
+                        steps = 58,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                HorizontalDivider()
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto-start nightly", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Automatically arm the timer when you start playing within this window.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = sleepScheduleEnabled, onCheckedChange = { viewModel.setSleepScheduleEnabled(it) })
+                }
+                if (sleepScheduleEnabled) {
+                    var showStartPicker by remember { mutableStateOf(false) }
+                    var showEndPicker by remember { mutableStateOf(false) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { showStartPicker = true }, modifier = Modifier.weight(1f)) {
+                            Text("From ${formatClockMinutes(sleepScheduleStartMinutes)}")
+                        }
+                        OutlinedButton(onClick = { showEndPicker = true }, modifier = Modifier.weight(1f)) {
+                            Text("To ${formatClockMinutes(sleepScheduleEndMinutes)}")
+                        }
+                    }
+                    if (showStartPicker) {
+                        ClockMinutesPickerDialog(
+                            initialMinutes = sleepScheduleStartMinutes,
+                            onDismiss = { showStartPicker = false },
+                            onConfirm = { viewModel.setSleepScheduleStartMinutes(it); showStartPicker = false }
+                        )
+                    }
+                    if (showEndPicker) {
+                        ClockMinutesPickerDialog(
+                            initialMinutes = sleepScheduleEndMinutes,
+                            onDismiss = { showEndPicker = false },
+                            onConfirm = { viewModel.setSleepScheduleEndMinutes(it); showEndPicker = false }
+                        )
+                    }
+
+                    var defaultSlider by remember(sleepScheduleDefaultMinutes) { mutableFloatStateOf(sleepScheduleDefaultMinutes.toFloat()) }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Duration", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${defaultSlider.toInt()} min",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                    }
+                    Slider(
+                        value = defaultSlider,
+                        onValueChange = { defaultSlider = it.toInt().toFloat() },
+                        onValueChangeFinished = { viewModel.setSleepScheduleDefaultMinutes(defaultSlider.toInt().coerceAtLeast(1)) },
+                        valueRange = 5f..120f,
+                        steps = 22,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+    item {
+        CardContainer {
             NavRow(
                 icon = Icons.Default.Tune,
                 label = "Audio Presets — open via Tune button in player",
@@ -939,6 +1083,30 @@ private fun LazyListScope.playbackSection(
             )
         }
     }
+}
+
+private fun formatClockMinutes(totalMinutes: Int): String {
+    val h = totalMinutes / 60
+    val m = totalMinutes % 60
+    return "%02d:%02d".format(h, m)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClockMinutesPickerDialog(initialMinutes: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+    val state = rememberTimePickerState(
+        initialHour = initialMinutes / 60,
+        initialMinute = initialMinutes % 60,
+        is24Hour = true
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        text = { TimePicker(state = state) },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 private fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsViewModel) {

@@ -410,6 +410,21 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Arms the sleep timer to fire at the end of the chapter currently playing, resolved from
+     * the same [chapters] rows the chapter list already shows — the "current" chapter is the
+     * last one whose start is at or before the live book position. No-op if chapters aren't
+     * loaded yet or nothing is playing.
+     */
+    fun setSleepTimerEndOfCurrentChapter() {
+        val bookPos = positionState.value.bookPositionMs
+        val items = chapters.value.rows.filterIsInstance<ChapterRow.Item>()
+            .filter { it.bookId == -1L || it.bookId == playbackState.value.bookId }
+        val current = items.lastOrNull { it.absStartMs <= bookPos } ?: return
+        val target = current.absStartMs + current.durationMs
+        playerController.setSleepTimerEndOfChapter(target)
+    }
+
     private fun cumulativeStarts(idDur: List<Pair<Long, Long>>): Map<Long, Long> {
         val map = HashMap<Long, Long>(idDur.size)
         var t = 0L

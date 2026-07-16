@@ -94,6 +94,16 @@ class SettingsStore @Inject constructor(
         val AUTO_BACKUP_LAST_STATUS      = stringPreferencesKey("auto_backup_last_status")
         // Remembers the user's last choice for the "include API key" export checkbox.
         val BACKUP_INCLUDE_API_KEY       = booleanPreferencesKey("backup_include_api_key")
+        // ── Sleep timer (playback/PlaybackService — service-owned, see setSleepTimer) ────────
+        val SLEEP_FADE_SECONDS           = intPreferencesKey("sleep_fade_seconds")
+        val SLEEP_SHAKE_ENABLED          = booleanPreferencesKey("sleep_shake_enabled")
+        val SLEEP_SHAKE_RESET_MINUTES    = intPreferencesKey("sleep_shake_reset_minutes")
+        val SLEEP_SCHEDULE_ENABLED       = booleanPreferencesKey("sleep_schedule_enabled")
+        // Minutes since midnight (local time), 0-1439. START may be > END to mean "wraps past
+        // midnight" (e.g. 22:00 -> 06:00).
+        val SLEEP_SCHEDULE_START_MINUTES = intPreferencesKey("sleep_schedule_start_minutes")
+        val SLEEP_SCHEDULE_END_MINUTES   = intPreferencesKey("sleep_schedule_end_minutes")
+        val SLEEP_SCHEDULE_DEFAULT_MINUTES = intPreferencesKey("sleep_schedule_default_minutes")
     }
 
     companion object {
@@ -110,6 +120,12 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SKIP_SILENCE_THRESHOLD  = 1024
         const val DEFAULT_SKIP_SILENCE_PADDING_MS = 300L
         const val DEFAULT_WIDGET_APP_COLOR = 0xFFFFA552.toInt()
+        const val DEFAULT_SLEEP_FADE_SECONDS = 10
+        const val DEFAULT_SLEEP_SHAKE_ENABLED = true
+        const val DEFAULT_SLEEP_SHAKE_RESET_MINUTES = 10
+        const val DEFAULT_SLEEP_SCHEDULE_START_MINUTES = 22 * 60   // 22:00
+        const val DEFAULT_SLEEP_SCHEDULE_END_MINUTES = 6 * 60      // 06:00
+        const val DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES = 30
     }
 
     val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
@@ -148,6 +164,13 @@ class SettingsStore @Inject constructor(
     val autoBackupLastRunMs: Flow<Long>        = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_RUN_MS] ?: 0L }
     val autoBackupLastStatus: Flow<String>     = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_STATUS] ?: "" }
     val backupIncludeApiKey: Flow<Boolean>     = context.dataStore.data.map { it[Keys.BACKUP_INCLUDE_API_KEY] ?: false }
+    val sleepFadeSeconds: Flow<Int>            = context.dataStore.data.map { it[Keys.SLEEP_FADE_SECONDS] ?: DEFAULT_SLEEP_FADE_SECONDS }
+    val sleepShakeEnabled: Flow<Boolean>       = context.dataStore.data.map { it[Keys.SLEEP_SHAKE_ENABLED] ?: DEFAULT_SLEEP_SHAKE_ENABLED }
+    val sleepShakeResetMinutes: Flow<Int>      = context.dataStore.data.map { it[Keys.SLEEP_SHAKE_RESET_MINUTES] ?: DEFAULT_SLEEP_SHAKE_RESET_MINUTES }
+    val sleepScheduleEnabled: Flow<Boolean>    = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_ENABLED] ?: false }
+    val sleepScheduleStartMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_START_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_START_MINUTES }
+    val sleepScheduleEndMinutes: Flow<Int>     = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_END_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_END_MINUTES }
+    val sleepScheduleDefaultMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES }
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -164,6 +187,13 @@ class SettingsStore @Inject constructor(
     @Volatile var currentImportStructure            = "";                                     private set
     @Volatile var currentWidgetAppColor             = DEFAULT_WIDGET_APP_COLOR;               private set
     @Volatile var currentWidgetHideWhenIdle         = false;                                   private set
+    @Volatile var currentSleepFadeSeconds           = DEFAULT_SLEEP_FADE_SECONDS;             private set
+    @Volatile var currentSleepShakeEnabled          = DEFAULT_SLEEP_SHAKE_ENABLED;             private set
+    @Volatile var currentSleepShakeResetMinutes     = DEFAULT_SLEEP_SHAKE_RESET_MINUTES;       private set
+    @Volatile var currentSleepScheduleEnabled       = false;                                   private set
+    @Volatile var currentSleepScheduleStartMinutes  = DEFAULT_SLEEP_SCHEDULE_START_MINUTES;    private set
+    @Volatile var currentSleepScheduleEndMinutes    = DEFAULT_SLEEP_SCHEDULE_END_MINUTES;      private set
+    @Volatile var currentSleepScheduleDefaultMinutes = DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES; private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -181,6 +211,13 @@ class SettingsStore @Inject constructor(
         scope.launch { importStructure.collect           { currentImportStructure           = it } }
         scope.launch { widgetAppColor.collect            { currentWidgetAppColor            = it } }
         scope.launch { widgetHideWhenIdle.collect        { currentWidgetHideWhenIdle        = it } }
+        scope.launch { sleepFadeSeconds.collect              { currentSleepFadeSeconds              = it } }
+        scope.launch { sleepShakeEnabled.collect             { currentSleepShakeEnabled             = it } }
+        scope.launch { sleepShakeResetMinutes.collect        { currentSleepShakeResetMinutes        = it } }
+        scope.launch { sleepScheduleEnabled.collect          { currentSleepScheduleEnabled          = it } }
+        scope.launch { sleepScheduleStartMinutes.collect     { currentSleepScheduleStartMinutes     = it } }
+        scope.launch { sleepScheduleEndMinutes.collect       { currentSleepScheduleEndMinutes       = it } }
+        scope.launch { sleepScheduleDefaultMinutes.collect   { currentSleepScheduleDefaultMinutes   = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -257,4 +294,18 @@ class SettingsStore @Inject constructor(
         }.let { }
     suspend fun setBackupIncludeApiKey(enabled: Boolean) =
         context.dataStore.edit { it[Keys.BACKUP_INCLUDE_API_KEY] = enabled }.let { }
+    suspend fun setSleepFadeSeconds(seconds: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_FADE_SECONDS] = seconds.coerceIn(0, 60) }.let { }
+    suspend fun setSleepShakeEnabled(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.SLEEP_SHAKE_ENABLED] = enabled }.let { }
+    suspend fun setSleepShakeResetMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_SHAKE_RESET_MINUTES] = minutes.coerceIn(1, 120) }.let { }
+    suspend fun setSleepScheduleEnabled(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_ENABLED] = enabled }.let { }
+    suspend fun setSleepScheduleStartMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_START_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
+    suspend fun setSleepScheduleEndMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_END_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
+    suspend fun setSleepScheduleDefaultMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] = minutes.coerceIn(1, 180) }.let { }
 }

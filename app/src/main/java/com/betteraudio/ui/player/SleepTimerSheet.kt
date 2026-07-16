@@ -11,7 +11,10 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SleepTimerSheet(
     remainingMs: Long,
+    isEndOfChapter: Boolean = false,
+    hasChapters: Boolean = false,
     onSetTimer: (Long) -> Unit,
+    onSetEndOfChapter: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val presets = listOf(
@@ -43,7 +46,8 @@ fun SleepTimerSheet(
                             Text("Timer active", style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer)
                             Text(
-                                "Pausing in ${formatTimerMs(remainingMs)}",
+                                if (isEndOfChapter) "Pausing at end of chapter (~${formatTimerMs(remainingMs)})"
+                                else "Pausing in ${formatTimerMs(remainingMs)}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -74,6 +78,14 @@ fun SleepTimerSheet(
                         selected = false,
                         onClick = { onSetTimer(ms); onDismiss() },
                         label = { Text(label) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (hasChapters) {
+                    FilterChip(
+                        selected = false,
+                        onClick = { onSetEndOfChapter(); onDismiss() },
+                        label = { Text("End of chapter") },
                         modifier = Modifier.weight(1f)
                     )
                 }

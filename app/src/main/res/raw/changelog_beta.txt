@@ -3,6 +3,16 @@
 All notable changes to the beta channel are documented here.
 Format follows https://keepachangelog.com/en/1.1.0/
 
+## [1.8.6b] - 2026-07-16
+
+### Added
+- Sleep timer, overhauled (Settings > Playback > Sleep timer):
+  - Fades the volume out over the last few seconds instead of an abrupt hard stop (configurable, off = old hard-pause behavior)
+  - "End of chapter" option — pauses when the current chapter ends instead of a fixed duration
+  - Shake to extend — shake the phone near the end of the timer (or right after it pauses) to keep listening
+  - Optional nightly auto-start — automatically arms the timer when you start playing within a time window you set
+  - The timer now lives in the playback service instead of the app process, so it reliably fires even if the app is swiped away while it's counting down
+
 ## [1.8.5b] - 2026-07-16
 
 ### Fixed

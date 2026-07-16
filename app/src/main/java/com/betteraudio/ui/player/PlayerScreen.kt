@@ -762,7 +762,10 @@ fun PlayerContent(
         if (showSleepTimer) {
             SleepTimerSheet(
                 remainingMs = position.sleepTimerRemainingMs,
+                isEndOfChapter = position.sleepTimerEndOfChapter,
+                hasChapters = chapters.hasChapters,
                 onSetTimer = { viewModel.playerController.setSleepTimer(it) },
+                onSetEndOfChapter = { viewModel.setSleepTimerEndOfCurrentChapter() },
                 onDismiss = { showSleepTimer = false }
             )
         }
