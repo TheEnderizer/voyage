@@ -1981,7 +1981,7 @@ private fun PresetEditorDialog(
 internal fun LazyListScope.widgetSection(
     currentCoverPath: String,
     hideWhenIdle: Boolean,
-    customWidgets: List<com.betteraudio.data.db.entities.CustomWidgetDesign>,
+    widgetDesigns: List<com.betteraudio.data.db.entities.WidgetDesign>,
     onCreateWidget: () -> Unit,
     onEditWidget: (Long) -> Unit,
     viewModel: SettingsViewModel
@@ -1994,7 +1994,7 @@ internal fun LazyListScope.widgetSection(
         }
     }
 
-    if (customWidgets.isNotEmpty()) {
+    if (widgetDesigns.isNotEmpty()) {
         item {
             Text(
                 "Your widgets",
@@ -2002,11 +2002,11 @@ internal fun LazyListScope.widgetSection(
                 modifier = Modifier.padding(top = 8.dp)
             )
         }
-        items(customWidgets, key = { it.id }) { design ->
-            CustomWidgetRow(
+        items(widgetDesigns, key = { it.id }) { design ->
+            WidgetDesignRow(
                 design = design,
                 onEdit = { onEditWidget(design.id) },
-                onDelete = { viewModel.deleteCustomWidget(design.id) }
+                onDelete = { viewModel.deleteWidgetDesign(design.id) }
             )
         }
     }
@@ -2080,25 +2080,23 @@ internal fun LazyListScope.widgetSection(
 }
 
 @Composable
-private fun CustomWidgetRow(
-    design: com.betteraudio.data.db.entities.CustomWidgetDesign,
+private fun WidgetDesignRow(
+    design: com.betteraudio.data.db.entities.WidgetDesign,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val context = LocalContext.current
-    val bucket = remember(design.sizeBucket) {
-        runCatching { com.betteraudio.widget.custom.WidgetSizeBucket.valueOf(design.sizeBucket) }
-            .getOrDefault(com.betteraudio.widget.custom.WidgetSizeBucket.WIDE)
-    }
     val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
     val thumbnail = remember(design, primaryArgb) {
-        val w = 240
-        val h = (w * bucket.cellsH / bucket.cellsW).coerceAtLeast(1)
-        com.betteraudio.widget.custom.CustomWidgetRenderer.render(
-            context, design,
-            com.betteraudio.widget.WidgetState(title = "Sample", author = "Author", isPlaying = true),
-            appColor = primaryArgb,
-            hideWhenIdle = false, pxW = w, pxH = h
+        val w = 480
+        val h = (w / design.aspectRatio).toInt().coerceAtLeast(1)
+        com.betteraudio.widget.render.WidgetPainter.paint(
+            context,
+            com.betteraudio.widget.model.WidgetDesignCodec.decode(design.documentJson),
+            design.aspectRatio,
+            com.betteraudio.widget.model.WidgetSnapshot(title = "Sample", author = "Author", isPlaying = true),
+            w, h,
+            com.betteraudio.widget.render.WidgetPainter.PaintOptions(accentFallback = primaryArgb)
         )
     }
     CardContainer {
@@ -2112,7 +2110,7 @@ private fun CustomWidgetRow(
                 contentDescription = design.name,
                 modifier = Modifier
                     .weight(1f)
-                    .aspectRatio(bucket.cellsW.toFloat() / bucket.cellsH.toFloat())
+                    .aspectRatio(design.aspectRatio)
                     .clip(RoundedCornerShape(12.dp))
             )
             Column {

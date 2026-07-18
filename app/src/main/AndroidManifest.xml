@@ -68,106 +68,21 @@
             </intent-filter>
         </service>
 
-        <!-- Home screen widget -->
+        <!-- Home screen widget: one free-size provider, all rendering/click-handling driven by
+             WidgetUpdater (no ACTION_UPDATE_WIDGET broadcast — see widget/WidgetUpdater.kt). -->
         <receiver
-            android:name=".widget.NowPlayingWidget"
+            android:name=".widget.VoyageWidgetProvider"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/widget_now_playing_info" />
-        </receiver>
-
-        <!-- Tall (vertical) widget -->
-        <receiver
-            android:name=".widget.NowPlayingWidgetTall"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_now_playing_tall_info" />
-        </receiver>
-
-        <!-- Compact pill widget -->
-        <receiver
-            android:name=".widget.NowPlayingWidgetCompact"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_now_playing_compact_info" />
-        </receiver>
-
-        <!-- 2×2 square widget -->
-        <receiver
-            android:name=".widget.NowPlayingWidget2x2"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_now_playing_2x2_info" />
-        </receiver>
-
-        <!-- Custom widget maker: 4 size-bucket providers sharing widget_custom_host.xml -->
-        <receiver
-            android:name=".widget.custom.CustomWidgetSmall"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_custom_small_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.custom.CustomWidgetWide"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_custom_wide_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.custom.CustomWidgetTall"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_custom_tall_info" />
-        </receiver>
-        <receiver
-            android:name=".widget.custom.CustomWidgetLarge"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.betteraudio.action.UPDATE_WIDGET" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_custom_large_info" />
+                android:resource="@xml/widget_info" />
         </receiver>
 
         <activity
-            android:name=".widget.custom.CustomWidgetConfigureActivity"
+            android:name=".widget.WidgetConfigureActivity"
             android:exported="true"
             android:theme="@style/Theme.Voyage">
             <intent-filter>

@@ -9,7 +9,7 @@ import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
-import com.betteraudio.data.db.dao.CustomWidgetDesignDao
+import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.db.dao.SeriesDao
@@ -44,7 +44,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "betteraudio.db")
-            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18)
+            .addMigrations(AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5, AppDatabase.MIGRATION_5_6, AppDatabase.MIGRATION_6_7, AppDatabase.MIGRATION_7_8, AppDatabase.MIGRATION_8_9, AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12, AppDatabase.MIGRATION_12_13, AppDatabase.MIGRATION_13_14, AppDatabase.MIGRATION_14_15, AppDatabase.MIGRATION_15_16, AppDatabase.MIGRATION_16_17, AppDatabase.MIGRATION_17_18, AppDatabase.MIGRATION_18_19)
             .fallbackToDestructiveMigration()
             .build()
 
@@ -58,6 +58,6 @@ object AppModule {
     @Provides fun provideSeriesDao(db: AppDatabase): SeriesDao = db.seriesDao()
     @Provides fun provideAuthorMetaDao(db: AppDatabase): AuthorMetaDao = db.authorMetaDao()
     @Provides fun provideSyncAnchorDao(db: AppDatabase): com.betteraudio.data.db.dao.SyncAnchorDao = db.syncAnchorDao()
-    @Provides fun provideCustomWidgetDesignDao(db: AppDatabase): CustomWidgetDesignDao = db.customWidgetDesignDao()
+    @Provides fun provideWidgetDesignDao(db: AppDatabase): WidgetDesignDao = db.widgetDesignDao()
     @Provides fun provideWidgetBindingDao(db: AppDatabase): WidgetBindingDao = db.widgetBindingDao()
 }

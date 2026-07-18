@@ -5,9 +5,9 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.betteraudio.BuildConfig
-import com.betteraudio.data.db.dao.CustomWidgetDesignDao
+import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.AudioPreset
-import com.betteraudio.data.db.entities.CustomWidgetDesign
+import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
@@ -69,7 +69,8 @@ class SettingsViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
     private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager,
-    private val customWidgetDesignDao: CustomWidgetDesignDao,
+    private val widgetDesignDao: WidgetDesignDao,
+    private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     private val backupManager: com.betteraudio.data.backup.BackupManager
 ) : ViewModel() {
 
@@ -237,7 +238,7 @@ class SettingsViewModel @Inject constructor(
         }
         if (path != null) {
             settings.setWidgetDefaultCoverPath(path)
-            com.betteraudio.widget.WidgetRender.refresh(appContext)
+            widgetUpdater.requestRender()
         }
     }
 
@@ -246,24 +247,25 @@ class SettingsViewModel @Inject constructor(
             runCatching { java.io.File(appContext.filesDir, "widget_default_cover.jpg").delete() }
         }
         settings.setWidgetDefaultCoverPath("")
-        com.betteraudio.widget.WidgetRender.refresh(appContext)
+        widgetUpdater.requestRender()
     }
 
-    // ── Custom widget maker ─────────────────────────────────────────────────────
+    // ── Widget maker ─────────────────────────────────────────────────────────
     val widgetHideWhenIdle: StateFlow<Boolean> =
         settings.widgetHideWhenIdle.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     fun setWidgetHideWhenIdle(enabled: Boolean) = viewModelScope.launch {
         settings.setWidgetHideWhenIdle(enabled)
-        com.betteraudio.widget.WidgetRender.refresh(appContext)
+        widgetUpdater.requestRender()
     }
 
-    val customWidgets: StateFlow<List<CustomWidgetDesign>> =
-        customWidgetDesignDao.observeAll()
+    val widgetDesigns: StateFlow<List<WidgetDesign>> =
+        widgetDesignDao.observeAll()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun deleteCustomWidget(id: Long) = viewModelScope.launch {
-        customWidgetDesignDao.deleteById(id)
+    fun deleteWidgetDesign(id: Long) = viewModelScope.launch {
+        widgetDesignDao.deleteById(id)
+        widgetUpdater.onDesignDeleted(id)
     }
 
     // ── App theme ────────────────────────────────────────────────────────────

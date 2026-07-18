@@ -100,7 +100,7 @@ fun SettingsScreen(
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
-    val customWidgets             by viewModel.customWidgets.collectAsStateWithLifecycle()
+    val widgetDesigns              by viewModel.widgetDesigns.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var showEbookBrowser by remember { mutableStateOf(false) }
@@ -220,7 +220,7 @@ fun SettingsScreen(
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
                     SettingsSection.Widget -> widgetSection(
-                        widgetDefaultCover, widgetHideWhenIdle, customWidgets,
+                        widgetDefaultCover, widgetHideWhenIdle, widgetDesigns,
                         onCreateWidget, onEditWidget, viewModel
                     )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)

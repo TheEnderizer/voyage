@@ -328,8 +328,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }.let { }
     suspend fun setWidgetHideWhenIdle(enabled: Boolean) {
         // Set the volatile snapshot eagerly (not just via the async collector above) so a widget
-        // refresh fired immediately after this call — see WidgetEditorViewModel/SettingsViewModel —
-        // reads the new value instead of racing the DataStore write's own collect().
+        // re-render fired immediately after this call — see WidgetUpdater.requestRender() callers
+        // in SettingsViewModel — reads the new value instead of racing the DataStore write's own collect().
         currentWidgetHideWhenIdle = enabled
         context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }.let { }
     }

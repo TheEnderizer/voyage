@@ -11,7 +11,7 @@ import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
-import com.betteraudio.data.db.dao.CustomWidgetDesignDao
+import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.db.dao.SeriesDao
@@ -20,7 +20,7 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Book
-import com.betteraudio.data.db.entities.CustomWidgetDesign
+import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
 import com.betteraudio.data.db.entities.Bookmark
@@ -50,9 +50,13 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // Version 18: drops the retired book-group/"join" feature entirely — book_groups/book_group_members
 //             tables and Book.groupId/manualGrouping columns (grouping had already been superseded
 //             by first-class Series since v12; the UI/nav path to it was fully unreachable).
+// Version 19: widget maker v2 rewrite — drops the old custom_widget_design/widget_binding tables
+//             (6x6-grid, bucketed-size design model) entirely in favor of widget_designs
+//             (free aspect ratio + a JSON design-unit document) and widget_bindings. No migration
+//             of old designs: this is a deliberate clean break (see widget/model/WidgetDesignDoc.kt).
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, CustomWidgetDesign::class, WidgetBinding::class],
-    version = 18,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
+    version = 19,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -67,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun seriesDao(): SeriesDao
     abstract fun authorMetaDao(): AuthorMetaDao
     abstract fun syncAnchorDao(): SyncAnchorDao
-    abstract fun customWidgetDesignDao(): CustomWidgetDesignDao
+    abstract fun widgetDesignDao(): WidgetDesignDao
     abstract fun widgetBindingDao(): WidgetBindingDao
 
     companion object {
@@ -357,6 +361,31 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("DROP TABLE books")
                 db.execSQL("ALTER TABLE books_new RENAME TO books")
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_books_seriesId ON books(seriesId)")
+            }
+        }
+
+        val MIGRATION_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 18 → 19 (widget maker v2 — clean break, no data migration)")
+                db.execSQL("DROP TABLE IF EXISTS custom_widget_design")
+                db.execSQL("DROP TABLE IF EXISTS widget_binding")
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `widget_designs` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `aspectRatio` REAL NOT NULL DEFAULT 2.0,
+                        `documentJson` TEXT NOT NULL DEFAULT '{}',
+                        `createdAt` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `widget_bindings` (
+                        `appWidgetId` INTEGER PRIMARY KEY NOT NULL,
+                        `designId` INTEGER NOT NULL,
+                        `boundAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
             }
         }
     }

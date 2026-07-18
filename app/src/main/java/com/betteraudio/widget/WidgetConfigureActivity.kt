@@ -1,20 +1,14 @@
-package com.betteraudio.widget.custom
+package com.betteraudio.widget
 
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
-import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,18 +25,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.betteraudio.data.db.dao.CustomWidgetDesignDao
 import com.betteraudio.data.db.dao.WidgetBindingDao
-import com.betteraudio.data.db.entities.CustomWidgetDesign
+import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetBinding
-import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.ui.theme.VoyageTheme
-import com.betteraudio.widget.WidgetRender
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,37 +42,38 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class CustomWidgetConfigureViewModel @Inject constructor(
-    private val designDao: CustomWidgetDesignDao,
+class WidgetConfigureViewModel @Inject constructor(
+    private val designDao: WidgetDesignDao,
     private val bindingDao: WidgetBindingDao,
-    val settings: SettingsStore
+    private val updater: WidgetUpdater,
 ) : ViewModel() {
-    private val _designs = MutableStateFlow<List<CustomWidgetDesign>>(emptyList())
-    val designs: StateFlow<List<CustomWidgetDesign>> = _designs.asStateFlow()
+    private val _designs = MutableStateFlow<List<WidgetDesign>>(emptyList())
+    val designs: StateFlow<List<WidgetDesign>> = _designs.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            designDao.observeAll().collect { _designs.value = it }
-        }
+        viewModelScope.launch { designDao.observeAll().collect { _designs.value = it } }
     }
 
     fun bind(appWidgetId: Int, designId: Long, onDone: () -> Unit) {
         viewModelScope.launch {
-            bindingDao.upsert(WidgetBinding(appWidgetId, designId))
+            bindingDao.upsert(WidgetBinding(appWidgetId, designId, System.currentTimeMillis()))
+            updater.renderOneAsync(appWidgetId)
             onDone()
         }
     }
 }
 
 /**
- * android:configure activity for the 4 custom-widget providers. Binds the placed appWidgetId to
- * a chosen [CustomWidgetDesign] in [WidgetBindingDao], then triggers a render via the normal
- * ACTION_UPDATE_WIDGET broadcast path before finishing.
+ * android:configure activity — also reachable by tapping the "pick a design" placeholder on an
+ * unbound/deleted-design widget (see WidgetUpdater.renderPlaceholder), and via long-press
+ * "reconfigure" since the provider declares widgetFeatures="reconfigurable". Binds the placed
+ * appWidgetId to a chosen design, triggers a direct render (no broadcast round-trip), then
+ * finishes.
  */
 @AndroidEntryPoint
-class CustomWidgetConfigureActivity : ComponentActivity() {
+class WidgetConfigureActivity : ComponentActivity() {
 
-    private val viewModel: CustomWidgetConfigureViewModel by viewModels()
+    private val viewModel: WidgetConfigureViewModel by viewModels()
     private var appWidgetId: Int = AppWidgetManager.INVALID_APPWIDGET_ID
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,30 +92,25 @@ class CustomWidgetConfigureActivity : ComponentActivity() {
             VoyageTheme {
                 ConfigureScreen(
                     viewModel = viewModel,
-                    onPick = { designId ->
-                        viewModel.bind(appWidgetId, designId) { finishWithResult() }
-                    },
-                    onCreateNew = { openEditor() }
+                    onPick = { designId -> viewModel.bind(appWidgetId, designId) { finishWithResult() } },
+                    onCreateNew = { openGallery() }
                 )
             }
         }
     }
 
-    private fun openEditor() {
+    private fun openGallery() {
         val intent = Intent(this, com.betteraudio.MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, true)
+            putExtra(WidgetIntents.EXTRA_OPEN_WIDGET_GALLERY, true)
         }
         startActivity(intent)
-        // The user creates the design in the app, then re-adds the widget to pick it — this
-        // configure session ends here (RESULT_CANCELED already set).
+        // The user designs/picks in the app, then re-adds the widget — this configure session
+        // ends here (RESULT_CANCELED already set).
         finish()
     }
 
     private fun finishWithResult() {
-        // Trigger a normal broadcast-driven render (all custom-widget ids, incl. this one) from
-        // the app's cached last playback state.
-        WidgetRender.refresh(this)
         val result = Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId)
         setResult(Activity.RESULT_OK, result)
         finish()
@@ -133,9 +119,9 @@ class CustomWidgetConfigureActivity : ComponentActivity() {
 
 @Composable
 private fun ConfigureScreen(
-    viewModel: CustomWidgetConfigureViewModel,
+    viewModel: WidgetConfigureViewModel,
     onPick: (Long) -> Unit,
-    onCreateNew: () -> Unit
+    onCreateNew: () -> Unit,
 ) {
     val designs by viewModel.designs.collectAsState()
     Scaffold(
@@ -147,7 +133,7 @@ private fun ConfigureScreen(
             }
             if (designs.isEmpty()) {
                 Text(
-                    "No custom widgets yet — create one first.",
+                    "No widget designs yet — create one first.",
                     modifier = Modifier.padding(top = 24.dp)
                 )
             } else {
@@ -165,8 +151,7 @@ private fun ConfigureScreen(
 }
 
 @Composable
-private fun DesignRow(design: CustomWidgetDesign, onClick: () -> Unit) {
-    val bucket = runCatching { WidgetSizeBucket.valueOf(design.sizeBucket) }.getOrDefault(WidgetSizeBucket.WIDE)
+private fun DesignRow(design: WidgetDesign, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
@@ -176,7 +161,7 @@ private fun DesignRow(design: CustomWidgetDesign, onClick: () -> Unit) {
         Column(Modifier.padding(16.dp)) {
             Text(design.name.ifBlank { "Untitled widget" }, style = MaterialTheme.typography.titleMedium)
             Text(
-                "${bucket.cellsW}×${bucket.cellsH}",
+                "Aspect ${"%.2f".format(design.aspectRatio)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

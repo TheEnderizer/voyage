@@ -36,7 +36,8 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
-import com.betteraudio.widget.WidgetRender
+import com.betteraudio.widget.WidgetUpdater
+import com.betteraudio.widget.model.WidgetSnapshot
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
@@ -61,6 +62,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var repository: AudiobookRepository
     @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var settings: SettingsStore
+    @Inject lateinit var widgetUpdater: WidgetUpdater
 
     private var mediaSession: MediaSession? = null
     // The real ExoPlayer (the MediaSession is fed a ForwardingPlayer wrapping it). Audio
@@ -265,13 +267,13 @@ class PlaybackService : MediaSessionService() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) { startPositionSaver(); maybeAutoArmScheduledSleep() }
                 else { stopPositionSaver(); saveCurrentPosition() }
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                     scheduleArmedThisSession = false
                 }
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
         })
 
@@ -461,7 +463,7 @@ class PlaybackService : MediaSessionService() {
                 if (it.mediaItemCount == 0) loadLastPlayedAndPlay()
                 else {
                     if (it.isPlaying) it.pause() else it.play()
-                    broadcastWidgetUpdate()
+                    pushWidgetState()
                 }
             }
             ACTION_SKIP_FORWARD -> player?.let {
@@ -472,31 +474,31 @@ class PlaybackService : MediaSessionService() {
             }
             ACTION_CHAPTER_FORWARD -> exoPlayer?.let {
                 if (it.hasNextMediaItem()) it.seekToNextMediaItem()
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_CHAPTER_BACK -> exoPlayer?.let {
                 if (it.hasPreviousMediaItem()) it.seekToPreviousMediaItem() else it.seekTo(0L)
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_SPEED_UP -> player?.let {
                 val newSpeed = (it.playbackParameters.speed + SPEED_STEP).coerceIn(0.5f, 3.0f)
                 it.setPlaybackSpeed(newSpeed)
                 persistCurrentSpeed(newSpeed)
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_SPEED_DOWN -> player?.let {
                 val newSpeed = (it.playbackParameters.speed - SPEED_STEP).coerceIn(0.5f, 3.0f)
                 it.setPlaybackSpeed(newSpeed)
                 persistCurrentSpeed(newSpeed)
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_BOOST_UP -> {
                 applyBoost((boostMb + BOOST_STEP_MB).coerceIn(0, 2400))
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_BOOST_DOWN -> {
                 applyBoost((boostMb - BOOST_STEP_MB).coerceIn(0, 2400))
-                broadcastWidgetUpdate()
+                pushWidgetState()
             }
             ACTION_QUICK_BOOKMARK -> addQuickBookmark()
             ACTION_CLOSE_BOOK -> closeBook()
@@ -623,7 +625,7 @@ class PlaybackService : MediaSessionService() {
         saveCurrentPosition()
         exoPlayer?.stop()
         exoPlayer?.clearMediaItems()
-        broadcastWidgetUpdate()
+        pushWidgetState()
     }
 
     // ── Sleep timer engine ──────────────────────────────────────────────────────
@@ -658,7 +660,7 @@ class PlaybackService : MediaSessionService() {
                 sleepRemainingMsForWidget = 0L
             }
         }
-        broadcastWidgetUpdate()
+        pushWidgetState()
         broadcastSleepState()
     }
 
@@ -690,7 +692,12 @@ class PlaybackService : MediaSessionService() {
                     fireSleepTimer()
                     return@launch
                 }
-                broadcastWidgetUpdate()
+                // COUNTDOWN mode needs no new data each tick — the widget recomputes remaining
+                // time at paint time from the already-persisted sleepEndAtElapsedMs deadline, so
+                // a cheap tickCountdown() (re-renders only countdown-showing widgets) suffices.
+                // END_OF_CHAPTER has no fixed deadline (remaining shrinks with playback position,
+                // not just wall-clock time), so it still needs a full state push each tick.
+                if (sleepMode == SLEEP_MODE_END_OF_CHAPTER) pushWidgetState() else widgetUpdater.tickCountdown()
                 broadcastSleepState()
                 delay(1_000)
             }
@@ -751,7 +758,7 @@ class PlaybackService : MediaSessionService() {
         sleepMode = SLEEP_MODE_OFF
         sleepRemainingMsForWidget = 0L
         AppLog.i("Player", "sleep timer fired, pausing")
-        broadcastWidgetUpdate()
+        pushWidgetState()
         broadcastSleepState()
         if (settings.currentSleepShakeEnabled) armShakeGraceWindow()
     }
@@ -909,7 +916,7 @@ class PlaybackService : MediaSessionService() {
             applyEq(audio.eqBandsJson)
             applySkipSilence(audio.skipSilence)
             repository.touchLastPlayed(bookId)
-            broadcastWidgetUpdate()
+            pushWidgetState()
         }
     }
 
@@ -931,6 +938,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        widgetUpdater.pushPaused()
         stopPositionSaver()
         saveCurrentPosition()
         sleepTickJob?.cancel()
@@ -955,47 +963,61 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    fun broadcastWidgetUpdate() {
+    /** Builds a WidgetSnapshot from live player state and hands it to WidgetUpdater, which
+     *  persists it (so a cold-started widget always has real data) and renders every placed
+     *  widget directly — no exported broadcast, so this can't be throttled or spoofed. */
+    fun pushWidgetState() {
         val player = mediaSession?.player ?: return
         val meta = player.currentMediaItem?.mediaMetadata
         val isPlaying = player.isPlaying
         val title = meta?.albumTitle?.toString() ?: ""
         val author = meta?.artist?.toString() ?: ""
-        val coverArtUri = meta?.artworkUri?.toString() ?: ""
         val chapterTitle = meta?.title?.toString() ?: ""
         val speed = player.playbackParameters.speed
-        val boostDb = boostMb / 100
+        val boostDbVal = boostMb / 100
+        val sleepEnd = if (sleepMode == SLEEP_MODE_COUNTDOWN) sleepEndAtElapsedMs else 0L
         val sleepRemaining = sleepRemainingMsForWidget
         val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
+        val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
+        val chapterPositionMs = player.currentPosition
+        val chapterDurationMs = player.duration.coerceAtLeast(0L)
 
         serviceScope.launch(Dispatchers.IO) {
             var seriesName = ""
             var bookCoverPath: String? = null
             var seriesCoverPath: String? = null
+            var bookDurationMs = 0L
             if (bookId != -1L) {
                 val book = repository.getBookById(bookId).first()
                 bookCoverPath = book?.coverArtPath
                 seriesName = book?.seriesName ?: ""
+                bookDurationMs = book?.totalDurationMs ?: 0L
                 val seriesId = book?.seriesId
                 if (seriesId != null) {
                     seriesCoverPath = seriesRepository.getSeriesOnce(seriesId)?.coverArtPath
                 }
             }
-            val intent = Intent(WidgetRender.ACTION_UPDATE_WIDGET).apply {
-                setPackage(packageName)
-                putExtra(WidgetRender.EXTRA_IS_PLAYING, isPlaying)
-                putExtra(WidgetRender.EXTRA_BOOK_TITLE, title)
-                putExtra(WidgetRender.EXTRA_BOOK_AUTHOR, author)
-                putExtra(WidgetRender.EXTRA_COVER_ART_URI, coverArtUri)
-                putExtra(WidgetRender.EXTRA_CHAPTER_TITLE, chapterTitle)
-                putExtra(WidgetRender.EXTRA_SERIES_NAME, seriesName)
-                putExtra(WidgetRender.EXTRA_BOOK_COVER_PATH, bookCoverPath ?: "")
-                putExtra(WidgetRender.EXTRA_SERIES_COVER_PATH, seriesCoverPath ?: "")
-                putExtra(WidgetRender.EXTRA_SPEED, speed)
-                putExtra(WidgetRender.EXTRA_BOOST_DB, boostDb)
-                putExtra(WidgetRender.EXTRA_SLEEP_REMAINING_MS, sleepRemaining)
-            }
-            sendBroadcast(intent)
+            widgetUpdater.push(
+                WidgetSnapshot(
+                    bookId = bookId,
+                    title = title,
+                    author = author,
+                    chapterTitle = chapterTitle,
+                    seriesName = seriesName,
+                    isPlaying = isPlaying,
+                    speed = speed,
+                    boostDb = boostDbVal,
+                    bookCoverPath = bookCoverPath,
+                    seriesCoverPath = seriesCoverPath,
+                    positionMs = positionMs,
+                    bookDurationMs = bookDurationMs,
+                    chapterPositionMs = chapterPositionMs,
+                    chapterDurationMs = chapterDurationMs,
+                    sleepEndAtElapsedMs = sleepEnd,
+                    sleepRemainingMs = sleepRemaining,
+                    writtenAtElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),
+                )
+            )
         }
     }
 

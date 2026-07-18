@@ -79,6 +79,7 @@ class PlayerViewModel @Inject constructor(
     private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val settings: SettingsStore,
     private val synopsisService: SynopsisService,
+    private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     val playerController: PlayerController
 ) : ViewModel() {
 
@@ -773,11 +774,10 @@ class PlayerViewModel @Inject constructor(
                     dest.outputStream().use { input.copyTo(it) }
                 }
                 repository.updateCoverArt(bookId, dest.absolutePath)
-                // The widget's cached WidgetState still points at the same file:// path (book cover
-                // art is always written to a per-book fixed path), so re-broadcasting the cached
-                // state is enough to force a redraw with the new bytes — no need to wait for the
-                // next play/pause event.
-                com.betteraudio.widget.WidgetRender.refresh(context.applicationContext)
+                // The persisted widget snapshot still points at the same file:// path (book cover
+                // art is always written to a per-book fixed path), so a plain re-render is enough
+                // to force a redraw with the new bytes — no need to wait for the next play/pause event.
+                widgetUpdater.requestRender()
             } catch (_: Exception) {}
         }
     }

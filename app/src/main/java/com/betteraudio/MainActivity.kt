@@ -73,7 +73,7 @@ import com.betteraudio.ui.theme.VoyageTheme
 import com.betteraudio.ui.update.UpdateAvailableScreen
 import com.betteraudio.ui.update.UpdateGateViewModel
 import com.betteraudio.util.AppLog
-import com.betteraudio.widget.WidgetRender
+import com.betteraudio.widget.WidgetIntents
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -135,8 +135,8 @@ class MainActivity : ComponentActivity() {
         val initialDarkMode = initialTheme.darkMode
         val initialPureBlack = initialTheme.pureBlack
         // A widget tap opens the active player instead of just restoring the last screen.
-        val openPlayerFromWidget = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false) == true
-        val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false) == true
+        val openPlayerFromWidget = intent?.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false) == true
+        val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetIntents.EXTRA_OPEN_WIDGET_GALLERY, false) == true
         // A pinned book shortcut carries the book's folderPath (stable across a rescan/reinstall,
         // unlike a DB row id — see BookShortcuts) rather than a bookId directly.
         val shortcutBookPath = intent?.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)
@@ -543,12 +543,12 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(WidgetRender.EXTRA_OPEN_PLAYER, false)) {
+        if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false)) {
             val id = playerController.playbackState.value.bookId.takeIf { it != -1L }
                 ?: runBlocking { settings.lastPlayedBookId.first() }
             if (id != -1L) playerNavRequest = id
         }
-        if (intent.getBooleanExtra(WidgetRender.EXTRA_OPEN_WIDGET_EDITOR, false)) {
+        if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_WIDGET_GALLERY, false)) {
             widgetEditorNavRequest = true
         }
         intent.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)?.let { path ->
