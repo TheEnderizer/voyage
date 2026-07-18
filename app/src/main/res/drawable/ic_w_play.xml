@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Solid triangle, nudged right of the geometric center to correct the optical illusion
+         where a play glyph centered on its bounding box reads as off-center-left. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M6.5,3.5 L20.5,12 L6.5,20.5 Z" />
+</vector>

@@ -1,0 +1,152 @@
+package com.betteraudio.widget.model
+
+import kotlinx.serialization.Serializable
+import java.util.UUID
+
+/** Design-unit canvas: width is always [CANVAS_UNITS], height is [CANVAS_UNITS] / aspectRatio.
+ *  Every element rect lives in this fixed space, so `w == h` is always a true square regardless
+ *  of the design's aspect ratio or the real granted widget pixel size — one uniform scale maps
+ *  design units to pixels at render time (see WidgetPainter.contentBox/unitScale). This replaces
+ *  the old system's two-different-axis fractional coordinates, which needed a whole
+ *  aspect-correction workaround (WidgetElement.effectiveRect) to keep icons square. */
+const val CANVAS_UNITS = 1000f
+
+@Serializable
+data class WidgetDesignDoc(
+    val schemaVersion: Int = 1,
+    val background: BackgroundSpec = BackgroundSpec(),
+    /** List order = z-order; last element is drawn (and tapped) on top. */
+    val elements: List<ElementSpec> = emptyList(),
+)
+
+enum class BgSource { BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE, SOLID, GRADIENT, TRANSPARENT }
+
+@Serializable
+data class BackgroundSpec(
+    val source: BgSource = BgSource.BOOK_COVER,
+    val imagePath: String? = null,
+    val color: Long = 0xFF1A1A22,
+    val colorEnd: Long? = null,
+    val gradientAngleDeg: Float = 90f,
+    /** 0f..0.8f black overlay for text legibility over busy covers. */
+    val dim: Float = 0f,
+    /** Stack-blur radius in design units (0 = off). */
+    val blurRadius: Float = 0f,
+    /** Outer corner radius in design units. */
+    val cornerRadius: Float = 60f,
+    val opacity: Float = 1f,
+)
+
+/** Every element type the widget editor can place. */
+enum class ElementType {
+    // Interactive controls — axis-aligned only, map to PlaybackService.ACTION_* (see WidgetIntents).
+    PLAY_PAUSE, SKIP_FORWARD, SKIP_BACK, CHAPTER_FORWARD, CHAPTER_BACK,
+    SPEED_UP, SPEED_DOWN, BOOST_UP, BOOST_DOWN, SLEEP_TIMER,
+    QUICK_BOOKMARK, CLOSE_BOOK,
+    // Text
+    BOOK_TITLE, AUTHOR, CHAPTER_TITLE, SERIES_NAME, SPEED_LABEL,
+    TIME_REMAINING_BOOK, TIME_REMAINING_CHAPTER, PROGRESS_PERCENT, CUSTOM_TEXT,
+    // Images
+    BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE,
+    // Shapes
+    RECT, PROGRESS_BAR;
+
+    val isControl: Boolean get() = this in CONTROL_TYPES
+    val isText: Boolean get() = this in TEXT_TYPES
+    val isImage: Boolean get() = this in IMAGE_TYPES
+    val isShape: Boolean get() = this == RECT || this == PROGRESS_BAR
+    /** Text/image/shape elements can rotate; controls stay axis-aligned so tap mapping is exact. */
+    val canRotate: Boolean get() = !isControl
+
+    companion object {
+        val CONTROL_TYPES = setOf(
+            PLAY_PAUSE, SKIP_FORWARD, SKIP_BACK, CHAPTER_FORWARD, CHAPTER_BACK,
+            SPEED_UP, SPEED_DOWN, BOOST_UP, BOOST_DOWN, SLEEP_TIMER,
+            QUICK_BOOKMARK, CLOSE_BOOK
+        )
+        val TEXT_TYPES = setOf(
+            BOOK_TITLE, AUTHOR, CHAPTER_TITLE, SERIES_NAME, SPEED_LABEL,
+            TIME_REMAINING_BOOK, TIME_REMAINING_CHAPTER, PROGRESS_PERCENT, CUSTOM_TEXT
+        )
+        val IMAGE_TYPES = setOf(BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE)
+    }
+}
+
+/** Tap behavior for TEXT/IMAGE/SHAPE elements (controls have an intrinsic action instead). Lets
+ *  a photo or text element be interactive on the real widget — e.g. tap the cover to play/pause,
+ *  tap the title to open the player — per the "more interactivity" requirement for those types. */
+enum class TapAction {
+    NONE, OPEN_APP, OPEN_PLAYER, PLAY_PAUSE, SKIP_FORWARD, SKIP_BACK, NEXT_CHAPTER, PREV_CHAPTER
+}
+
+enum class ContainerShape { NONE, CIRCLE, ROUNDED, SQUIRCLE }
+enum class HorizontalTextAlign { LEFT, CENTER, RIGHT }
+enum class ImageFit { COVER, CONTAIN }
+enum class ShapeKind { RECT, PILL, CIRCLE }
+
+@Serializable
+data class IconStyle(
+    val glyphColor: Long = 0xFFFFFFFF,
+    val glyphUsesAccent: Boolean = true,
+    val container: ContainerShape = ContainerShape.NONE,
+    val containerColor: Long = 0x33FFFFFF,
+    val containerUsesAccent: Boolean = false,
+)
+
+@Serializable
+data class TextStyle(
+    /** Glyph height in design units — scales with the widget like everything else. */
+    val sizeUnits: Float = 55f,
+    val weight: Int = 600,
+    val italic: Boolean = false,
+    val color: Long = 0xFFFFFFFF,
+    val usesAccent: Boolean = false,
+    val align: HorizontalTextAlign = HorizontalTextAlign.LEFT,
+    val maxLines: Int = 1,
+    val shadow: Boolean = true,
+)
+
+@Serializable
+data class ImageStyle(
+    val fit: ImageFit = ImageFit.COVER,
+    val cornerRadius: Float = 40f,
+    val borderWidth: Float = 0f,
+    val borderColor: Long = 0xFFFFFFFF,
+    val shadow: Boolean = false,
+)
+
+@Serializable
+data class ShapeStyle(
+    val kind: ShapeKind = ShapeKind.RECT,
+    val fillColor: Long = 0x66000000,
+    val cornerRadius: Float = 30f,
+    val trackColor: Long = 0x4DFFFFFF,
+    val fillColorBar: Long = 0xFFFFFFFF,
+)
+
+/**
+ * One placed element. Position/size are in design units (0..CANVAS_UNITS / CANVAS_UNITS/aspect),
+ * NOT normalized fractions of two different axes — see [CANVAS_UNITS]. [id] is a stable UUID used
+ * for undo/selection identity and for scoping PendingIntents (WidgetIntents), so two elements of
+ * the same type on one design (or the same design placed twice) never collide.
+ */
+@Serializable
+data class ElementSpec(
+    val id: String = UUID.randomUUID().toString(),
+    val type: ElementType,
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val h: Float,
+    val rotationDeg: Float = 0f,
+    val opacity: Float = 1f,
+    val icon: IconStyle? = null,
+    val text: TextStyle? = null,
+    val image: ImageStyle? = null,
+    val shape: ShapeStyle? = null,
+    val sleepDurationMs: Long? = null,
+    val showCountdown: Boolean = true,
+    val customText: String? = null,
+    val imagePath: String? = null,
+    val tapAction: TapAction = TapAction.NONE,
+)
