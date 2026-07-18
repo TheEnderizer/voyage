@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -76,11 +75,8 @@ fun FloatingNavPill(
     val density = LocalDensity.current
     val hideTravelPx = with(density) { (NAV_PILL_HEIGHT + NAV_PILL_BOTTOM_PADDING + 48.dp).toPx() }
 
-    Surface(
+    GlassPillSurface(
         shape = Pill,
-        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f),
-        tonalElevation = 3.dp,
-        shadowElevation = 10.dp,
         modifier = modifier
             .graphicsLayer { translationY = expandProgress.value.coerceIn(0f, 1f) * hideTravelPx }
             .padding(horizontal = 16.dp)

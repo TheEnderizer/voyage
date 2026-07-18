@@ -37,6 +37,15 @@ class PlayerExpandTransition(
     val miniTitle: State<Rect>,
     val miniControls: State<Rect>,
     val coverSourceRadius: Dp = 12.dp,
+    // Material You only: the mini bar's own surface bounds/radius, so the full player's
+    // background can grow out of the pill instead of crossfading (see MaterialMotion.kt's
+    // expandingContainer). Immersive ignores these (defaults keep it a no-op).
+    val miniBar: State<Rect> = stateOfZeroRect,
+    val miniBarRadius: Dp = 0.dp,
+    // True when [miniCover] is a library grid card's bounds (Book Info opened from the grid)
+    // rather than the live mini-player's cover slot — Material You uses this to pick the
+    // aspect-aware coverCropMorph instead of the mini-bar's morphFrom (see MaterialMotion.kt).
+    val sourceIsGridCard: Boolean = false,
 )
 
 private val stateOfOne = mutableStateOf(1f)

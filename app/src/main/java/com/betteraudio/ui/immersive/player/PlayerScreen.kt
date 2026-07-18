@@ -46,6 +46,7 @@ import com.betteraudio.ui.player.ChapterRow
 import com.betteraudio.ui.player.LocalPlayerExpand
 import com.betteraudio.ui.player.LockOverlay
 import com.betteraudio.ui.player.PlayerViewModel
+import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
@@ -87,6 +88,7 @@ fun PlayerContent(
     val showSeriesCover by viewModel.showSeriesCover.collectAsStateWithLifecycle()
     val seriesCover by viewModel.seriesCover.collectAsStateWithLifecycle()
     val currentSeries by viewModel.currentSeries.collectAsStateWithLifecycle()
+    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsStateWithLifecycle()
     val book = bwp?.book
     val inSeries = book?.seriesId != null
     // A book with no author/narrator of its own falls back to the series' (metadata cascade).
@@ -102,6 +104,7 @@ fun PlayerContent(
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
     var showSleepTimer     by remember { mutableStateOf(false) }
+    var showSkipSilenceSettings by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
     var showAddBookmark    by remember { mutableStateOf(false) }
     var bookmarkComment    by remember { mutableStateOf("") }
@@ -579,7 +582,10 @@ fun PlayerContent(
                             modifier = Modifier
                                 .clip(Pill)
                                 .background(if (skipSilenceOn) accent.copy(alpha = 0.22f) else Color.Transparent)
-                                .clickable { viewModel.setSkipSilenceEnabled(!skipSilenceOn) }
+                                .combinedClickable(
+                                    onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
+                                    onLongClick = { showSkipSilenceSettings = true }
+                                )
                                 .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Icon(
@@ -596,16 +602,33 @@ fun PlayerContent(
                     }
                     SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
                     SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
-                    if (position.sleepTimerRemainingMs > 0L) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clip(Pill).clickable { showSleepTimer = true }.padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
-                            Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
+                    // Tap starts a timer at the slider's set duration (or cancels one already
+                    // running); long-press opens the full options (slider/custom entry/end-of-
+                    // chapter/fade/shake/schedule).
+                    Box(
+                        Modifier
+                            .clip(Pill)
+                            .combinedClickable(
+                                onClick = {
+                                    if (position.sleepTimerRemainingMs > 0L) {
+                                        viewModel.playerController.setSleepTimer(0L)
+                                    } else {
+                                        viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                                    }
+                                },
+                                onLongClick = { showSleepTimer = true }
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (position.sleepTimerRemainingMs > 0L) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
+                                Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
+                            }
+                        } else {
+                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = onScrim)
                         }
-                    } else {
-                        SecondaryIcon(Icons.Default.Bedtime, "Sleep timer", onScrim) { showSleepTimer = true }
                     }
                 }
 
@@ -695,13 +718,51 @@ fun PlayerContent(
         }
 
         if (showSleepTimer) {
+            val fadeSeconds by viewModel.sleepFadeSeconds.collectAsStateWithLifecycle()
+            val shakeEnabled by viewModel.sleepShakeEnabled.collectAsStateWithLifecycle()
+            val shakeResetMinutes by viewModel.sleepShakeResetMinutes.collectAsStateWithLifecycle()
+            val scheduleEnabled by viewModel.sleepScheduleEnabled.collectAsStateWithLifecycle()
+            val scheduleStartMinutes by viewModel.sleepScheduleStartMinutes.collectAsStateWithLifecycle()
+            val scheduleEndMinutes by viewModel.sleepScheduleEndMinutes.collectAsStateWithLifecycle()
+            val scheduleDefaultMinutes by viewModel.sleepScheduleDefaultMinutes.collectAsStateWithLifecycle()
             SleepTimerSheet(
                 remainingMs = position.sleepTimerRemainingMs,
                 isEndOfChapter = position.sleepTimerEndOfChapter,
                 hasChapters = chapters.hasChapters,
+                timerMinutes = sleepTimerMinutes,
+                fadeSeconds = fadeSeconds,
+                shakeEnabled = shakeEnabled,
+                shakeResetMinutes = shakeResetMinutes,
+                scheduleEnabled = scheduleEnabled,
+                scheduleStartMinutes = scheduleStartMinutes,
+                scheduleEndMinutes = scheduleEndMinutes,
+                scheduleDefaultMinutes = scheduleDefaultMinutes,
                 onSetTimer = { viewModel.playerController.setSleepTimer(it) },
+                onSetTimerMinutes = { viewModel.setSleepTimerMinutes(it) },
                 onSetEndOfChapter = { viewModel.setSleepTimerEndOfCurrentChapter() },
+                onSetFadeSeconds = { viewModel.setSleepFadeSeconds(it) },
+                onSetShakeEnabled = { viewModel.setSleepShakeEnabled(it) },
+                onSetShakeResetMinutes = { viewModel.setSleepShakeResetMinutes(it) },
+                onSetScheduleEnabled = { viewModel.setSleepScheduleEnabled(it) },
+                onSetScheduleStartMinutes = { viewModel.setSleepScheduleStartMinutes(it) },
+                onSetScheduleEndMinutes = { viewModel.setSleepScheduleEndMinutes(it) },
+                onSetScheduleDefaultMinutes = { viewModel.setSleepScheduleDefaultMinutes(it) },
                 onDismiss = { showSleepTimer = false }
+            )
+        }
+
+        if (showSkipSilenceSettings) {
+            val minMs by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
+            val threshold by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
+            val paddingMs by viewModel.skipSilencePaddingMs.collectAsStateWithLifecycle()
+            SkipSilenceSettingsSheet(
+                minMs = minMs,
+                threshold = threshold,
+                paddingMs = paddingMs,
+                onSetMinMs = { viewModel.setSkipSilenceMinMs(it) },
+                onSetThreshold = { viewModel.setSkipSilenceThreshold(it) },
+                onSetPaddingMs = { viewModel.setSkipSilencePaddingMs(it) },
+                onDismiss = { showSkipSilenceSettings = false }
             )
         }
 

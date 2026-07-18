@@ -18,11 +18,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +39,7 @@ import com.betteraudio.ui.history.BookHistoryOverlay
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.PlaybackOptions
 import com.betteraudio.ui.material.MaterialStyle
+import com.betteraudio.ui.material.coverCropMorph
 import com.betteraudio.ui.player.AudioSettingsSheet
 import com.betteraudio.ui.player.BookmarkSheet
 import com.betteraudio.ui.player.ChapterOverlay
@@ -45,6 +47,7 @@ import com.betteraudio.ui.player.ChapterRow
 import com.betteraudio.ui.player.LocalPlayerExpand
 import com.betteraudio.ui.player.LockOverlay
 import com.betteraudio.ui.player.PlayerViewModel
+import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
@@ -86,6 +89,7 @@ fun PlayerContent(
     val showSeriesCover by viewModel.showSeriesCover.collectAsStateWithLifecycle()
     val seriesCover by viewModel.seriesCover.collectAsStateWithLifecycle()
     val currentSeries by viewModel.currentSeries.collectAsStateWithLifecycle()
+    val sleepTimerMinutes by viewModel.sleepTimerMinutes.collectAsStateWithLifecycle()
     val book = bwp?.book
     val inSeries = book?.seriesId != null
     // A book with no author/narrator of its own falls back to the series' (metadata cascade).
@@ -101,6 +105,7 @@ fun PlayerContent(
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
     var showSleepTimer     by remember { mutableStateOf(false) }
+    var showSkipSilenceSettings by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
     var showAddBookmark    by remember { mutableStateOf(false) }
     var bookmarkComment    by remember { mutableStateOf("") }
@@ -142,6 +147,10 @@ fun PlayerContent(
     // title and transport morph from their mini counterparts; everything else reveals.
     val expand = LocalPlayerExpand.current
     val expandProgress = expand.progress
+    // Stable "available space" rect for the cover's parent Box — used by coverCropMorph as the
+    // progress-1 target; doesn't change as the cover's own animated size changes (see
+    // coverCropMorph's doc for why that stability matters).
+    val coverParentBounds = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
 
     Scaffold(
         containerColor = Color.Transparent
@@ -209,15 +218,11 @@ fun PlayerContent(
             inactiveTrackColor = trackColor
         )
 
-        val dimColor = MaterialTheme.colorScheme.background
+        // Background is provided by PlayerSheet's expandingContainer, which grows out of the
+        // mini bar's pill instead of fading in — no dim/solidify overlay needed here.
         Box(
             Modifier
                 .fillMaxSize()
-                // Dim/solidify as the player opens (deferred read — no per-frame recompose).
-                .drawBehind {
-                    val p = expandProgress.value.coerceIn(0f, 1f)
-                    drawRect(dimColor.copy(alpha = p * p))
-                }
                 .frostedWhenVisible(showHistory || showChapters)
         ) {
             Column(
@@ -297,24 +302,60 @@ fun PlayerContent(
                 // ── Large rounded cover card in the leftover space — the SAME element that
                 // travels out of the mini player's cover slot (it stays as the player cover
                 // instead of dissolving into a full-bleed backdrop). ──
+                // TopStart (not Center): when morphing from a grid card, coverCropMorph positions
+                // the cover with an absolute offset computed from this Box's own top-left, so any
+                // implicit centering here would double up with that math.
                 Box(
-                    Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp),
-                    contentAlignment = Alignment.Center
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp)
+                        .onGloballyPositioned { coverParentBounds.value = it.boundsInRoot() },
+                    contentAlignment = Alignment.TopStart
                 ) {
-                    AsyncImage(
-                        model = coverPath?.let { File(it) },
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            // Largest square that fits the leftover space.
-                            .aspectRatio(1f)
-                            .morphFrom(
-                                expand.miniCover, expandProgress,
-                                anchorTopLeft = true, byWidth = true,
-                                sourceRadius = expand.coverSourceRadius, destRadius = 28.dp
-                            )
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    )
+                    val cacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
+                    val imageModel = coverPath?.let {
+                        coil.request.ImageRequest.Builder(LocalContext.current)
+                            .data(File(it))
+                            .memoryCacheKey(cacheKey)
+                            .build()
+                    }
+                    if (expand.sourceIsGridCard) {
+                        // Grid card → Book Info: aspect-aware crop morph (see MaterialMotion.kt)
+                        // so the same crop window that the grid card shows continuously resizes
+                        // into the natural square crop — no reload, no aspect "pop".
+                        AsyncImage(
+                            model = imageModel,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .coverCropMorph(
+                                    parentBounds = coverParentBounds,
+                                    source = expand.miniCover,
+                                    progress = expandProgress,
+                                    sourceRadius = expand.coverSourceRadius,
+                                    destRadius = 28.dp
+                                )
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                    } else {
+                        // Mini-bar → full player: the mini cover is already near-square, so the
+                        // simple uniform morph reads fine.
+                        AsyncImage(
+                            model = imageModel,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                // Largest square that fits the leftover space.
+                                .aspectRatio(1f)
+                                .morphFrom(
+                                    expand.miniCover, expandProgress,
+                                    anchorTopLeft = true, byWidth = true,
+                                    sourceRadius = expand.coverSourceRadius, destRadius = 28.dp
+                                )
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        )
+                    }
                 }
 
                 // ── Bottom: info panel OR player controls (crossfade, background stays static) ──
@@ -555,7 +596,10 @@ fun PlayerContent(
                             modifier = Modifier
                                 .clip(Pill)
                                 .background(if (skipSilenceOn) accent.copy(alpha = 0.22f) else Color.Transparent)
-                                .clickable { viewModel.setSkipSilenceEnabled(!skipSilenceOn) }
+                                .combinedClickable(
+                                    onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
+                                    onLongClick = { showSkipSilenceSettings = true }
+                                )
                                 .padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Icon(
@@ -572,16 +616,33 @@ fun PlayerContent(
                     }
                     SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
                     SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
-                    if (position.sleepTimerRemainingMs > 0L) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.clip(Pill).clickable { showSleepTimer = true }.padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
-                            Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
+                    // Tap starts a timer at the slider's set duration (or cancels one already
+                    // running); long-press opens the full options (slider/custom entry/end-of-
+                    // chapter/fade/shake/schedule).
+                    Box(
+                        Modifier
+                            .clip(Pill)
+                            .combinedClickable(
+                                onClick = {
+                                    if (position.sleepTimerRemainingMs > 0L) {
+                                        viewModel.playerController.setSleepTimer(0L)
+                                    } else {
+                                        viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                                    }
+                                },
+                                onLongClick = { showSleepTimer = true }
+                            )
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (position.sleepTimerRemainingMs > 0L) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
+                                Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
+                            }
+                        } else {
+                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = onScrim)
                         }
-                    } else {
-                        SecondaryIcon(Icons.Default.Bedtime, "Sleep timer", onScrim) { showSleepTimer = true }
                     }
                 }
 
@@ -670,13 +731,51 @@ fun PlayerContent(
         }
 
         if (showSleepTimer) {
+            val fadeSeconds by viewModel.sleepFadeSeconds.collectAsStateWithLifecycle()
+            val shakeEnabled by viewModel.sleepShakeEnabled.collectAsStateWithLifecycle()
+            val shakeResetMinutes by viewModel.sleepShakeResetMinutes.collectAsStateWithLifecycle()
+            val scheduleEnabled by viewModel.sleepScheduleEnabled.collectAsStateWithLifecycle()
+            val scheduleStartMinutes by viewModel.sleepScheduleStartMinutes.collectAsStateWithLifecycle()
+            val scheduleEndMinutes by viewModel.sleepScheduleEndMinutes.collectAsStateWithLifecycle()
+            val scheduleDefaultMinutes by viewModel.sleepScheduleDefaultMinutes.collectAsStateWithLifecycle()
             SleepTimerSheet(
                 remainingMs = position.sleepTimerRemainingMs,
                 isEndOfChapter = position.sleepTimerEndOfChapter,
                 hasChapters = chapters.hasChapters,
+                timerMinutes = sleepTimerMinutes,
+                fadeSeconds = fadeSeconds,
+                shakeEnabled = shakeEnabled,
+                shakeResetMinutes = shakeResetMinutes,
+                scheduleEnabled = scheduleEnabled,
+                scheduleStartMinutes = scheduleStartMinutes,
+                scheduleEndMinutes = scheduleEndMinutes,
+                scheduleDefaultMinutes = scheduleDefaultMinutes,
                 onSetTimer = { viewModel.playerController.setSleepTimer(it) },
+                onSetTimerMinutes = { viewModel.setSleepTimerMinutes(it) },
                 onSetEndOfChapter = { viewModel.setSleepTimerEndOfCurrentChapter() },
+                onSetFadeSeconds = { viewModel.setSleepFadeSeconds(it) },
+                onSetShakeEnabled = { viewModel.setSleepShakeEnabled(it) },
+                onSetShakeResetMinutes = { viewModel.setSleepShakeResetMinutes(it) },
+                onSetScheduleEnabled = { viewModel.setSleepScheduleEnabled(it) },
+                onSetScheduleStartMinutes = { viewModel.setSleepScheduleStartMinutes(it) },
+                onSetScheduleEndMinutes = { viewModel.setSleepScheduleEndMinutes(it) },
+                onSetScheduleDefaultMinutes = { viewModel.setSleepScheduleDefaultMinutes(it) },
                 onDismiss = { showSleepTimer = false }
+            )
+        }
+
+        if (showSkipSilenceSettings) {
+            val minMs by viewModel.skipSilenceMinMs.collectAsStateWithLifecycle()
+            val threshold by viewModel.skipSilenceThreshold.collectAsStateWithLifecycle()
+            val paddingMs by viewModel.skipSilencePaddingMs.collectAsStateWithLifecycle()
+            SkipSilenceSettingsSheet(
+                minMs = minMs,
+                threshold = threshold,
+                paddingMs = paddingMs,
+                onSetMinMs = { viewModel.setSkipSilenceMinMs(it) },
+                onSetThreshold = { viewModel.setSkipSilenceThreshold(it) },
+                onSetPaddingMs = { viewModel.setSkipSilencePaddingMs(it) },
+                onDismiss = { showSkipSilenceSettings = false }
             )
         }
 

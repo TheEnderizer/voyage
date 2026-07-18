@@ -54,10 +54,20 @@ fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: 
         if (baked != null) {
             Crossfade(targetState = baked, animationSpec = tween(600), label = "appBackdropBaked") { path ->
                 Box(Modifier.fillMaxSize().clipToBounds()) {
+                    // The bake itself is already blurred (see CoverEffectBaker) — the player/
+                    // book-info/series screens show it as-is, but Immersive's app-wide backdrop
+                    // wants to read a bit softer still, so a little extra blur goes on TOP of the
+                    // bake here only (this composable, not ReflectedProgressiveBlurCover itself).
+                    val extraBlurModifier = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        Modifier
+                            // Overscan so the blur's clamped edges don't show at the frame edge.
+                            .graphicsLayer { scaleX = 1.08f; scaleY = 1.08f }
+                            .blur(10.dp)
+                    } else Modifier
                     ReflectedProgressiveBlurCover(
                         coverPath = coverPath,
                         bakedPath = path,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().then(extraBlurModifier)
                     )
                 }
             }
@@ -71,8 +81,8 @@ fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: 
                         modifier = Modifier
                             .fillMaxSize()
                             // Overscan so the blur's clamped edges are cropped away.
-                            .graphicsLayer { scaleX = 1.15f; scaleY = 1.15f }
-                            .blur(22.dp)
+                            .graphicsLayer { scaleX = 1.18f; scaleY = 1.18f }
+                            .blur(28.dp)
                     )
                 }
             }

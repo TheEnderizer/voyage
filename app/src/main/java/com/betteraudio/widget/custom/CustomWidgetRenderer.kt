@@ -40,8 +40,11 @@ object CustomWidgetRenderer {
     )
 
     /**
-     * @param hideWhenIdle if true and nothing is playing, returns a fully transparent bitmap
-     * (per Settings → Widget → "Hide widgets when nothing is playing").
+     * @param hideWhenIdle if true and nothing is playing, draws the background only — all
+     * elements (icons/text/covers placed on top) are skipped, per Settings → Widget → "Hide
+     * widgets when nothing is playing". The background itself always stays visible; this used to
+     * return a fully transparent bitmap (background included), which made the whole widget
+     * disappear rather than just its controls.
      */
     fun render(
         context: Context,
@@ -57,8 +60,6 @@ object CustomWidgetRenderer {
         val h = if (scale < 1f) (pxH * scale).toInt().coerceAtLeast(1) else pxH
 
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        if (hideWhenIdle && !state.isPlaying) return bmp
-
         val canvas = Canvas(bmp)
         val density = context.resources.displayMetrics.density
         val background = runCatching { WidgetBackground.valueOf(design.backgroundType) }
@@ -71,6 +72,8 @@ object CustomWidgetRenderer {
 
         drawBackground(context, canvas, background, design.backgroundValue, state, appColor, w, h)
 
+        if (hideWhenIdle && !state.isPlaying) return bmp
+
         val elements = WidgetElementCodec.decode(design.elementsJson)
         val hasImageBackground = background == WidgetBackground.BOOK_COVER ||
             background == WidgetBackground.SERIES_COVER || background == WidgetBackground.CUSTOM_IMAGE
@@ -79,8 +82,11 @@ object CustomWidgetRenderer {
             canvas.drawBitmap(scrim, 0f, 0f, null)
         }
 
+        // Real granted pixel aspect (not the bucket's nominal ratio) — see WidgetElement.effectiveRect.
+        val realAspect = w.toFloat() / h.toFloat()
         for (el in elements) {
-            val rect = RectF(el.x * w, el.y * h, (el.x + el.w) * w, (el.y + el.h) * h)
+            val eff = el.effectiveRect(realAspect)
+            val rect = RectF(eff[0] * w, eff[1] * h, (eff[0] + eff[2]) * w, (eff[1] + eff[3]) * h)
             if (rect.width() <= 0f || rect.height() <= 0f) continue
             drawElement(context, canvas, el, rect, state, accent, density)
         }
@@ -158,12 +164,12 @@ object CustomWidgetRenderer {
             }
             el.type == WidgetElementType.PLAY_PAUSE -> {
                 val icon = if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play
-                drawButton(context, canvas, rect, accent, icon)
+                drawIcon(context, canvas, rect, accent, icon)
             }
             el.type == WidgetElementType.SLEEP_TIMER -> {
                 val active = state.sleepTimerRemainingMs > 0L
                 val icon = if (active) R.drawable.ic_sleep_active else R.drawable.ic_sleep
-                drawButton(context, canvas, rect, accent, icon)
+                drawIcon(context, canvas, rect, accent, icon)
                 if (active) {
                     val totalSec = state.sleepTimerRemainingMs / 1000
                     val mm = totalSec / 60
@@ -173,7 +179,7 @@ object CustomWidgetRenderer {
                     drawText(canvas, label, labelRect, (rect.height() / density) * 0.28f, density, center = true)
                 }
             }
-            el.type in ELEMENT_ICONS -> drawButton(context, canvas, rect, accent, ELEMENT_ICONS.getValue(el.type))
+            el.type in ELEMENT_ICONS -> drawIcon(context, canvas, rect, accent, ELEMENT_ICONS.getValue(el.type))
         }
     }
 
@@ -193,9 +199,10 @@ object CustomWidgetRenderer {
         canvas.drawBitmap(bmp, rect.left, rect.top, null)
     }
 
-    private fun drawButton(context: Context, canvas: Canvas, rect: RectF, accent: Int, iconRes: Int) {
+    /** Icon only — no filled/tinted circle behind it (see WidgetRender.renderIcon). */
+    private fun drawIcon(context: Context, canvas: Canvas, rect: RectF, accent: Int, iconRes: Int) {
         val size = min(rect.width(), rect.height()).toInt().coerceAtLeast(1)
-        val bmp = WidgetRender.renderButton(context, size, accent, Color.WHITE, iconRes, filled = true)
+        val bmp = WidgetRender.renderIcon(context, size, accent, iconRes)
         val left = rect.left + (rect.width() - size) / 2f
         val top = rect.top + (rect.height() - size) / 2f
         canvas.drawBitmap(bmp, left, top, null)

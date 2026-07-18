@@ -1,6 +1,5 @@
 package com.betteraudio.ui.components
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -23,8 +22,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.theme.MotionTokens
+import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 
 /**
  * A darkening scrim with floating [content] drawn over whatever page hosts it (player /
@@ -42,8 +43,10 @@ fun FrostedOverlay(
     content: @Composable () -> Unit
 ) {
     // Composed inside the host page (player/book-info), so this registers after — and wins
-    // over — MainActivity's collapse-player BackHandler while the overlay is visible.
-    BackHandler(enabled = visible) { onDismiss() }
+    // over — MainActivity's collapse-player back handling while the overlay is visible. Tracks
+    // gesture progress too (not just commit-only), so a slow edge-swipe visibly nudges the panel
+    // before committing to onDismiss — same "peek" treatment as the top-level screens.
+    val backProgress = rememberPredictiveBackProgress(enabled = visible, onCommit = onDismiss)
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(MotionTokens.floatEffects),
@@ -52,6 +55,7 @@ fun FrostedOverlay(
         Box(
             modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = 1f - 0.4f * backProgress.value }
                 .background(Color.Black.copy(alpha = 0.45f))
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
@@ -72,7 +76,13 @@ fun FrostedOverlay(
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = 12.dp)
+                .graphicsLayer {
+                    val p = backProgress.value
+                    scaleX = 1f - 0.08f * p
+                    scaleY = 1f - 0.08f * p
+                    alpha = 1f - 0.2f * p
+                },
             contentAlignment = Alignment.Center
         ) { content() }
     }

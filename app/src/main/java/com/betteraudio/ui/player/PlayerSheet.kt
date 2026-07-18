@@ -64,12 +64,19 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil.compose.AsyncImage
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.ui.immersive.IMMERSIVE_MINI_BAR_FADE_RATE
+import com.betteraudio.ui.material.expandingContainer
 import com.betteraudio.ui.theme.AppTheme
 import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
 import kotlinx.coroutines.launch
+
+/** Mini bar's Pill shape radius at its actual 64dp height (RoundedCornerShape(percent = 50) on a
+ *  64dp-tall bar rounds to half its height). Used as the source radius for Material You's
+ *  container-growth (see [com.betteraudio.ui.material.expandingContainer]). */
+private val MINI_BAR_RADIUS = 32.dp
 
 /** Which book the expanded player should show. */
 data class PlayerTarget(
@@ -127,6 +134,21 @@ class PlayerSheetController {
     fun expandCurrent() { if (target != null) expandToken++ }
     fun collapse() { collapseToken++ }
 
+    /** Material You predictive back: while a back gesture is in flight, mirrors its progress
+     *  (0 = just started, 1 = fully committed) directly onto the sheet's collapse animation so it
+     *  shrinks in lockstep with the finger/swipe instead of only reacting after the gesture
+     *  commits. [PlayerSheet] observes this via `snapTo`, not an animated `animateTo`, so it
+     *  tracks the gesture exactly. Null (the default / after [cancelSeek]) means "not seeking" —
+     *  the normal expand/collapse token animations take over as usual. */
+    var seekProgress by mutableStateOf<Float?>(null)
+        private set
+    fun seek(backGestureProgress: Float) { seekProgress = (1f - backGestureProgress).coerceIn(0f, 1f) }
+    /** Gesture cancelled: stop seeking and spring back open from wherever the gesture left it. */
+    fun cancelSeek() { seekProgress = null; expandCurrent() }
+    /** Gesture committed: stop seeking and let the normal collapse animation finish the job from
+     *  wherever the gesture left it. */
+    fun commitSeek() { seekProgress = null; collapse() }
+
     /** Re-point the (already-open) player at a new book without re-animating — used when a series
      *  auto-advances so the full player follows into the next book. */
     fun follow(bookId: Long) {
@@ -170,6 +192,9 @@ fun PlayerSheet(
     // in this composable's body would recompose the whole sheet on every 500ms tick.
     val position by playerController.positionState.collectAsStateWithLifecycle()
     val target = controller.target
+    // Captured here (composable scope) rather than inside graphicsLayer lambdas below, since
+    // CompositionLocal.current isn't safe to read from those deferred draw-phase blocks.
+    val isMaterialYou = LocalAppTheme.current == AppTheme.MATERIAL_YOU
 
     // Mirror the playing book into the target so the mini bar is ready to expand.
     LaunchedEffect(playback.bookId) {
@@ -208,12 +233,27 @@ fun PlayerSheet(
             .collect { controller.expandProgress.floatValue = it }
     }
 
+    // Material You predictive back: while MainActivity's PredictiveBackHandler reports gesture
+    // progress via controller.seek(...), track it exactly (snapTo, not animateTo) so the sheet
+    // shrinks in lockstep with the finger. Cancel/commit clear seekProgress and hand off to the
+    // normal expand/collapse token animations (see PlayerSheetController.cancelSeek/commitSeek).
+    LaunchedEffect(controller.seekProgress) {
+        controller.seekProgress?.let { progressAnim.snapTo(it) }
+    }
+
     var heightPx by remember { mutableStateOf(0) }
+    var widthPx by remember { mutableStateOf(0) }
     val miniPx = with(density) { MINI_HEIGHT_DP.dp.toPx() }
     // Sit the mini bar 20dp above the system navigation bar (gesture bar / button bar).
     val bottomNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val navReservePx = with(density) { (bottomNavInset + 20.dp).toPx() }
     val travelPx = (heightPx - miniPx - navReservePx).coerceAtLeast(1f)
+    // Material You's expandingContainer needs the full player's TRUE (unparked) size — NOT
+    // measured via onGloballyPositioned on a descendant of the parked/translated container, since
+    // boundsInRoot() there wasn't reliably reflecting the un-parked position (the container was
+    // rendering as an opaque box sitting on top of the mini bar even while collapsed). Passing the
+    // already-tracked outer size directly sidesteps that.
+    val ownSizePx = remember { derivedStateOf { androidx.compose.ui.geometry.Size(widthPx.toFloat(), heightPx.toFloat()) } }
 
     // React to expand/collapse intents (token-based so they survive composition timing).
     LaunchedEffect(controller.expandToken) {
@@ -235,28 +275,43 @@ fun PlayerSheet(
     val miniCoverRect = remember { mutableStateOf(Rect.Zero) }
     val miniTitleRect = remember { mutableStateOf(Rect.Zero) }
     val miniControlsRect = remember { mutableStateOf(Rect.Zero) }
+    // Material You only: the mini bar's own Surface bounds, so the full player's background can
+    // grow out of the pill (see MaterialMotion.kt's expandingContainer) instead of crossfading.
+    val miniBarRect = remember { mutableStateOf(Rect.Zero) }
 
     // Book Info is ALWAYS opened by tapping a grid card, so it must ALWAYS morph from that card's
     // published bounds — even if a DIFFERENT book is currently playing (and thus has a live mini
     // bar showing its own, unrelated cover). Only a non-info open (tapping the mini bar itself, or
     // resuming playback into the full player) morphs from the mini bar.
     val coverBoundsRegistry = LocalCoverBoundsRegistry.current
+    val sourceIsGridCard = target?.startInfo == true || !usingLivePlayback
     val effectiveCoverSource = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
-        if (target?.startInfo == true || !usingLivePlayback) {
+        if (sourceIsGridCard) {
             coverBoundsRegistry.boundsState(target?.bookId ?: -1L)
         } else {
             miniCoverRect
         }
     }
     val effectiveCoverRadius = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
-        if (target?.startInfo == true || !usingLivePlayback) {
+        if (sourceIsGridCard) {
             coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
         } else {
             12.dp
         }
     }
-    val transition = remember(effectiveCoverSource, effectiveCoverRadius) {
-        PlayerExpandTransition(progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius)
+    // Tell the grid card whose cover is currently morphing so it can hide its own copy (prevents
+    // seeing both the still grid card AND the traveling player cover at once).
+    LaunchedEffect(sourceIsGridCard, target?.bookId) {
+        coverBoundsRegistry.setActiveMorph(
+            if (sourceIsGridCard) target?.bookId ?: -1L else -1L,
+            progressState
+        )
+    }
+    val transition = remember(effectiveCoverSource, effectiveCoverRadius, sourceIsGridCard) {
+        PlayerExpandTransition(
+            progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius,
+            miniBar = miniBarRect, miniBarRadius = MINI_BAR_RADIUS, sourceIsGridCard = sourceIsGridCard
+        )
     }
 
     fun settle(velocity: Float) {
@@ -269,7 +324,7 @@ fun PlayerSheet(
         }
     }
 
-    Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height }) {
+    Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height; widthPx = it.width }) {
         // ── Mini bar — docked at the bottom, drawn UNDER the full player so the morphing
         // cover/title/controls (which start exactly on top of their mini counterparts) read as
         // the same element travelling, not a crossfade. The mini content hides the moment the
@@ -303,6 +358,7 @@ fun PlayerSheet(
             onCoverBounds = { miniCoverRect.value = it },
             onTitleBounds = { miniTitleRect.value = it },
             onControlsBounds = { miniControlsRect.value = it },
+            onBarBounds = { miniBarRect.value = it },
             expandProgress = progressState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -317,7 +373,14 @@ fun PlayerSheet(
                         label = "miniBarLift"
                     ).value
                 )
-                .graphicsLayer { alpha = (1f - progressAnim.value * 2.5f).coerceIn(0f, 1f) }
+                .graphicsLayer {
+                    // Material You: the pill stays fully visible — it's physically occluded by
+                    // the full player's expandingContainer (same rect, grown from it) the moment
+                    // the sheet starts opening, so no separate fade is needed. Immersive keeps the
+                    // original crossfade look (no growing container there).
+                    alpha = if (isMaterialYou) 1f
+                            else (1f - progressAnim.value * IMMERSIVE_MINI_BAR_FADE_RATE).coerceIn(0f, 1f)
+                }
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
@@ -370,6 +433,31 @@ fun PlayerSheet(
                         onDragStopped = { velocity -> settle(velocity) }
                     )
             ) {
+                // Material You: the full player's background grows out of the mini bar's pill
+                // instead of fading in over it — draws UNDER the NavHost content but ON TOP of
+                // the mini bar (same z-order slot), so once progress > 0 it exactly occludes the
+                // pill (same starting rect/radius) and visibly widens/heightens into the full
+                // screen as the sheet opens. Immersive keeps its original look (no container).
+                if (isMaterialYou) {
+                    val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    val bgColor = MaterialTheme.colorScheme.background
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .expandingContainer(
+                                source = miniBarRect,
+                                ownSizePx = ownSizePx,
+                                progress = progressState,
+                                sourceRadius = MINI_BAR_RADIUS,
+                                destRadius = 0.dp
+                            )
+                            .background(
+                                androidx.compose.ui.graphics.lerp(
+                                    barColor, bgColor, progressAnim.value.coerceIn(0f, 1f)
+                                )
+                            )
+                    )
+                }
                 CompositionLocalProvider(LocalPlayerExpand provides transition) {
                     NavHost(
                         navController = nested,
@@ -420,6 +508,7 @@ private fun MiniPlayerBar(
     onCoverBounds: (Rect) -> Unit = {},
     onTitleBounds: (Rect) -> Unit = {},
     onControlsBounds: (Rect) -> Unit = {},
+    onBarBounds: (Rect) -> Unit = {},
     expandProgress: androidx.compose.runtime.State<Float>? = null
 ) {
     // The mini content disappears the instant the full player's morphing counterparts (which
@@ -428,26 +517,17 @@ private fun MiniPlayerBar(
         alpha = if ((expandProgress?.value ?: 0f) > 0.02f) 0f else 1f
     }
     // PlayerSheet itself stays unsplit (it's all shared drag/morph logic), so — like the shared
-    // Settings building blocks — the bar resolves its own fill per theme: frosted in Immersive
-    // (matching FloatingNavPill's 0.55 directly below it), opaque tonal in Material You.
-    val barColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(
-        alpha = if (LocalAppTheme.current == AppTheme.IMMERSIVE) 0.55f else 1f
-    )
-    Surface(
-        shape = Pill,
-        color = barColor,
-        // Explicit: contentColorFor() can't resolve a translucent (frosted) fill and would fall
-        // back to LocalContentColor — plain black here, since no parent Surface provides one.
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        tonalElevation = 3.dp,
-        shadowElevation = 10.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp)
-            .height(MINI_HEIGHT_DP.dp)
-            .pressScale(enabled = enabled)
-            .clickable(enabled = enabled, onClick = onTap)
-    ) {
+    // Settings building blocks — the bar resolves its own fill per theme: "liquid glass" (aligned
+    // blurred backdrop + darken) in Immersive, opaque tonal Surface in Material You.
+    val isImmersive = LocalAppTheme.current == AppTheme.IMMERSIVE
+    val barModifier = modifier
+        .fillMaxWidth()
+        .padding(horizontal = 12.dp)
+        .height(MINI_HEIGHT_DP.dp)
+        .onGloballyPositioned { onBarBounds(it.boundsInRoot()) }
+        .pressScale(enabled = enabled)
+        .clickable(enabled = enabled, onClick = onTap)
+    val barContent: @Composable () -> Unit = {
         Box {
             Row(
                 Modifier.fillMaxSize().padding(start = 8.dp, end = 10.dp),
@@ -526,5 +606,25 @@ private fun MiniPlayerBar(
                 trackColor = Color.Transparent
             )
         }
+    }
+    if (isImmersive) {
+        com.betteraudio.ui.immersive.components.GlassPillSurface(
+            shape = Pill,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            modifier = barModifier,
+            content = barContent
+        )
+    } else {
+        Surface(
+            shape = Pill,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            // Explicit: contentColorFor() can't resolve a translucent fill and would fall back to
+            // LocalContentColor — plain onSurface here, since no parent Surface provides one.
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 3.dp,
+            shadowElevation = 10.dp,
+            modifier = barModifier,
+            content = barContent
+        )
     }
 }

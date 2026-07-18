@@ -1,6 +1,5 @@
 package com.betteraudio.ui.material.series
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -45,9 +44,11 @@ import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.SeriesOptions
 import com.betteraudio.ui.material.MaterialStyle
+import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.series.SeriesDetailViewModel
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
+import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -84,7 +85,41 @@ fun SeriesDetailScreen(
     fun settlePanel(open: Boolean) = scope.launch {
         panelAnim.animateTo(if (open) 1f else 0f, spring(dampingRatio = 0.85f, stiffness = 380f))
     }
-    BackHandler(enabled = panelOpen) { settlePanel(false) }
+    // Predictive back drives the panel closed in lockstep with the gesture (not just a commit-only
+    // BackHandler) — mirrors PlayerSheet's seek pattern for the mini↔full player.
+    val panelBackProgress = rememberPredictiveBackProgress(enabled = panelOpen) { settlePanel(false) }
+    LaunchedEffect(panelBackProgress.value) {
+        if (panelOpen) panelAnim.snapTo(1f - panelBackProgress.value)
+    }
+
+    // Cover morph from/to the tapped series grid card (same treatment as Book Info's grid → info
+    // morph) — 0 = sitting on the card, 1 = fully open. Drives coverMorphFrom below.
+    val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
+    val coverOpenAnim = remember { Animatable(0f) }
+    val coverOpenProgress = remember { derivedStateOf { coverOpenAnim.value } }
+    LaunchedEffect(Unit) { coverOpenAnim.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 380f)) }
+    LaunchedEffect(viewModel.seriesId) {
+        coverBoundsRegistry.setActiveSeriesMorph(viewModel.seriesId, coverOpenProgress)
+    }
+    DisposableEffect(Unit) { onDispose { coverBoundsRegistry.setActiveSeriesMorph(-1L, null) } }
+    val coverSource = remember(viewModel.seriesId) { coverBoundsRegistry.seriesBoundsState(viewModel.seriesId) }
+    val coverSourceRadius = coverBoundsRegistry.seriesRadiusFor(viewModel.seriesId)
+    // Whole-screen close: only active while the books panel is closed (the panel's own back
+    // handler above takes priority while it's showing). Awaits the cover shrinking back onto the
+    // grid card before actually popping, so close matches open's "glued to the card" quality.
+    val closeBackProgress = rememberPredictiveBackProgress(enabled = !panelOpen) {
+        scope.launch {
+            coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+            onBack()
+        }
+    }
+    LaunchedEffect(closeBackProgress.value) {
+        if (!panelOpen) coverOpenAnim.snapTo(1f - closeBackProgress.value)
+    }
+    fun closeWithMorph() = scope.launch {
+        coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+        onBack()
+    }
 
     val onScrim = MaterialStyle.scrimText()
     val onScrimMuted = MaterialStyle.scrimText(muted = true)
@@ -100,16 +135,43 @@ fun SeriesDetailScreen(
             settlePanel(open)
         }
 
-        // ── Cover + reflection background (identical to the book info page) ────
+        // ── Cover + reflection background (identical to the book info page), morphing in/out
+        // from the tapped series grid card — same two-layer recipe as Immersive's Book Info:
+        // the (blurred/reflected) backdrop fades in as it grows from the card, while a sharp
+        // copy of the cover travels from the card's exact position/size and dissolves once the
+        // backdrop has taken over. ──
         val coverPath = series?.coverArtPath
             ?: books.firstOrNull { it.coverArtPath != null }?.coverArtPath
         Box(Modifier.fillMaxSize().clipToBounds()) {
             ReflectedProgressiveBlurCover(
                 coverPath = coverPath,
                 bakedPath = series?.coverFxPath,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .morphFrom(
+                        coverSource, coverOpenProgress,
+                        anchorTopLeft = true, byWidth = true, fadeIn = true,
+                        sourceRadius = coverSourceRadius, destRadius = 0.dp
+                    )
             )
         }
+        AsyncImage(
+            model = coverPath?.let { File(it) },
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.72f)
+                .morphFrom(
+                    coverSource, coverOpenProgress,
+                    anchorTopLeft = true, byWidth = true,
+                    sourceRadius = coverSourceRadius, destRadius = 0.dp
+                )
+                .graphicsLayer {
+                    val p = coverOpenProgress.value
+                    alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
+                }
+        )
         Box(
             Modifier.fillMaxSize().background(
                 Brush.verticalGradient(
@@ -140,7 +202,7 @@ fun SeriesDetailScreen(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = onBack)
+                ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = { closeWithMorph() })
                 Spacer(Modifier.weight(1f))
                 Text(
                     "SERIES",

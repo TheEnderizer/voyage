@@ -13,23 +13,16 @@ class NowPlayingWidgetCompact : BaseNowPlayingWidget() {
         context: Context,
         manager: AppWidgetManager,
         widgetId: Int,
-        state: WidgetState
+        state: WidgetState,
+        hideWhenIdle: Boolean
     ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_now_playing_compact)
         val r = WidgetRender
         fun dp(v: Int) = r.dp(context, v)
 
         views.setOnClickPendingIntent(R.id.widget_container, r.openAppIntent(context))
-        views.setOnClickPendingIntent(R.id.btn_play_pause,
-            r.serviceIntent(context, 1, PlaybackService.ACTION_TOGGLE_PLAY_PAUSE))
 
         val (cover, accent, cardBg) = r.palette(context, state.coverArtUri)
-
-        views.setTextViewText(R.id.tv_title,
-            state.title.ifBlank { context.getString(R.string.widget_no_book) })
-        views.setTextViewText(R.id.tv_author, state.author)
-        views.setTextColor(R.id.tv_title, accent)
-        views.setTextColor(R.id.tv_author, 0xFFB6AB9C.toInt())
 
         val opts = manager.getAppWidgetOptions(widgetId)
         val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 180).coerceIn(90, 500)
@@ -37,6 +30,19 @@ class NowPlayingWidgetCompact : BaseNowPlayingWidget() {
         // Pill: fully rounded ends
         val radius = (dp(hDp) / 2f)
         views.setImageViewBitmap(R.id.iv_bg, r.renderCardBackground(dp(wDp), dp(hDp), cardBg, radius))
+
+        val hideElements = hideWhenIdle && !state.isPlaying
+        views.setElementsHidden(hideElements, R.id.tv_title, R.id.tv_author, R.id.btn_play_pause, R.id.iv_cover_art)
+        if (hideElements) return views
+
+        views.setOnClickPendingIntent(R.id.btn_play_pause,
+            r.serviceIntent(context, 1, PlaybackService.ACTION_TOGGLE_PLAY_PAUSE))
+
+        views.setTextViewText(R.id.tv_title,
+            state.title.ifBlank { context.getString(R.string.widget_no_book) })
+        views.setTextViewText(R.id.tv_author, state.author)
+        views.setTextColor(R.id.tv_title, accent)
+        views.setTextColor(R.id.tv_author, 0xFFB6AB9C.toInt())
 
         views.setImageViewBitmap(R.id.btn_play_pause,
             r.renderButton(context, dp(46), accent, cardBg,

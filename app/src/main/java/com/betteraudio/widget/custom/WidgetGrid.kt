@@ -32,14 +32,13 @@ object WidgetGrid {
         return start..end
     }
 
-    /** Snaps a normalized rect's edges to grid cell boundaries (used by the editor for interactive elements). */
-    fun snap(x: Float, y: Float, w: Float, h: Float): FloatArray {
-        val cols = colRange(x, w)
-        val rows = rowRange(y, h)
-        val sx = cols.first.toFloat() / COLS
-        val sy = rows.first.toFloat() / ROWS
-        val sw = (cols.last - cols.first + 1).toFloat() / COLS
-        val sh = (rows.last - rows.first + 1).toFloat() / ROWS
-        return floatArrayOf(sx, sy, sw, sh)
+    /** Snaps only the ORIGIN to the nearest grid line, keeping w/h fixed — used once when a drag
+     *  ends. Unlike [snap] (which expands the rect to fully cover whatever cells it overlaps, and
+     *  would make an element visibly grow if re-applied on every drag delta), this never changes
+     *  the element's size, so continuous dragging just moves it. */
+    fun snapPosition(x: Float, y: Float, w: Float, h: Float): FloatArray {
+        val sx = (Math.round(x * COLS).toFloat() / COLS).coerceIn(0f, (1f - w).coerceAtLeast(0f))
+        val sy = (Math.round(y * ROWS).toFloat() / ROWS).coerceIn(0f, (1f - h).coerceAtLeast(0f))
+        return floatArrayOf(sx, sy, w, h)
     }
 }

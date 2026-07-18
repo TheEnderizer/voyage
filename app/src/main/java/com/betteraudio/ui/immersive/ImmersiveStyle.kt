@@ -17,13 +17,16 @@ object ImmersiveStyle {
     @Composable
     fun surfaceColor(): Color = Color.Transparent
 
-    /** Card/row fill: frosted translucent over the blur. */
+    /** Card/row fill: frosted translucent over the blur, darkened toward black so rows/pills/
+     *  buttons (e.g. Settings) read clearly against the bright parts of the blurred cover. */
     @Composable
-    fun cardColor(): Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.38f)
+    fun cardColor(): Color =
+        lerp(MaterialTheme.colorScheme.surfaceContainerHigh, Color.Black, 0.35f).copy(alpha = 0.45f)
 
-    /** Elevated card/row fill (dialogs, raised rows). */
+    /** Elevated card/row fill (dialogs, raised rows) — same darkening, slightly more opaque. */
     @Composable
-    fun cardHighColor(): Color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.5f)
+    fun cardHighColor(): Color =
+        lerp(MaterialTheme.colorScheme.surfaceContainerHigh, Color.Black, 0.35f).copy(alpha = 0.58f)
 
     /** Dropdown/context menu fill: near-opaque frosted — menus float directly over cover art, so
      *  they need to stay readable while still belonging to the translucent Immersive family. */

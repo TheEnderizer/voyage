@@ -30,13 +30,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -49,6 +46,7 @@ import com.betteraudio.widget.custom.WidgetBackground
 import com.betteraudio.widget.custom.WidgetElement
 import com.betteraudio.widget.custom.WidgetElementType
 import com.betteraudio.widget.custom.WidgetSizeBucket
+import com.betteraudio.widget.custom.effectiveRect
 import kotlin.math.roundToInt
 
 private val SAMPLE_STATE = WidgetState(
@@ -114,10 +112,8 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                             Icon(Icons.Default.Add, "Grow element")
                         }
                     }
-                    OutlinedButton(onClick = viewModel::deleteSelected) {
-                        Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Delete")
+                    IconButton(onClick = viewModel::deleteSelected) {
+                        Icon(Icons.Default.Delete, "Delete element", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -176,70 +172,107 @@ private fun SizePickerStep(onPick: (WidgetSizeBucket) -> Unit, onBack: () -> Uni
     }
 }
 
+/**
+ * Live Compose preview of the design being edited — no widget bitmap is rendered here at all
+ * (that only happens for the real home-screen widget, via [CustomWidgetRenderer]). Background and
+ * elements are drawn as plain Compose content ("just images"/icons/text) positioned from their
+ * normalized rects, so dragging/selecting is real layout, not an invisible overlay atop a
+ * per-frame-rendered bitmap.
+ */
 @Composable
 private fun WidgetCanvas(state: WidgetEditorState, viewModel: WidgetEditorViewModel, modifier: Modifier = Modifier) {
-    val context = LocalContext.current
     val density = LocalDensity.current
     val bucket = state.sizeBucket
     val aspect = bucket.cellsW.toFloat() / bucket.cellsH.toFloat()
+    val accent = MaterialTheme.colorScheme.primary
+    val lastPlayedCoverPath by viewModel.lastPlayedCoverPath.collectAsStateWithLifecycle()
 
     var canvasWidthPx by remember { mutableStateOf(0) }
     var canvasHeightPx by remember { mutableStateOf(0) }
-
-    val design = remember(state.sizeBucket, state.background, state.backgroundValue, state.elements) {
-        com.betteraudio.data.db.entities.CustomWidgetDesign(
-            id = state.designId,
-            name = state.name,
-            sizeBucket = state.sizeBucket.name,
-            backgroundType = state.background.name,
-            backgroundValue = state.backgroundValue,
-            elementsJson = com.betteraudio.widget.custom.WidgetElementCodec.encode(state.elements)
-        )
-    }
-
-    val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
-    val bitmap = remember(design, canvasWidthPx, canvasHeightPx, primaryArgb) {
-        if (canvasWidthPx <= 0 || canvasHeightPx <= 0) null
-        else CustomWidgetRenderer.render(
-            context, design, SAMPLE_STATE, appColor = primaryArgb,
-            hideWhenIdle = false, pxW = canvasWidthPx, pxH = canvasHeightPx
-        )
-    }
 
     Box(
         modifier
             .aspectRatio(aspect)
             .clip(RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .onSizeChanged(density) { w, h -> canvasWidthPx = w; canvasHeightPx = h }
     ) {
-        bitmap?.let {
-            androidx.compose.foundation.Image(
-                bitmap = it.asImageBitmap(),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        WidgetBackgroundPreview(state.background, state.backgroundValue, accent, lastPlayedCoverPath)
 
-        state.elements.forEachIndexed { index, el ->
-            ElementOverlay(
-                element = el,
-                selected = index == state.selectedIndex,
-                onSelect = { viewModel.select(index) },
-                onDrag = { dxFrac, dyFrac ->
-                    viewModel.updateElement(index) { current ->
-                        current.copy(
-                            x = (current.x + dxFrac).coerceIn(0f, 1f - current.w),
-                            y = (current.y + dyFrac).coerceIn(0f, 1f - current.h)
-                        )
-                    }
-                }
-            )
+        val w = canvasWidthPx
+        val h = canvasHeightPx
+        if (w > 0 && h > 0) {
+            state.elements.forEachIndexed { index, el ->
+                ElementPreview(
+                    index = index,
+                    element = el,
+                    canvasWidthPx = w,
+                    canvasHeightPx = h,
+                    accent = accent,
+                    selected = index == state.selectedIndex,
+                    onSelect = { viewModel.select(index) },
+                    onDragDelta = { dxFrac, dyFrac -> viewModel.moveElement(index, dxFrac, dyFrac) },
+                    onDragEnd = { viewModel.snapPosition(index) }
+                )
+            }
         }
     }
 }
 
-/** Reports the composable's measured pixel size once known (used to size the render bitmap). */
+@Composable
+private fun BoxScope.WidgetBackgroundPreview(
+    background: WidgetBackground,
+    backgroundValue: String,
+    accent: Color,
+    lastPlayedCoverPath: String?
+) {
+    when (background) {
+        WidgetBackground.CUSTOM_IMAGE -> coil.compose.AsyncImage(
+            model = backgroundValue.takeIf { it.isNotBlank() }?.let { java.io.File(it) },
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        )
+        WidgetBackground.CUSTOM_COLOR -> Box(
+            Modifier.matchParentSize().background(parsePreviewColor(backgroundValue, accent))
+        )
+        // Matches WidgetRender.darkTint(appColor) — the real widget's APP_COLOR fill is this dark,
+        // accent-tinted tone, not the raw bright primary color.
+        WidgetBackground.APP_COLOR -> Box(
+            Modifier.matchParentSize().background(previewDarkTint(accent))
+        )
+        // BOOK_COVER / SERIES_COVER: show the last-played book's actual cover (same fallback the
+        // real widget uses when nothing is currently playing) so the preview reflects reality
+        // instead of a generic placeholder forever; only falls back to that placeholder when
+        // nothing has ever played.
+        WidgetBackground.BOOK_COVER, WidgetBackground.SERIES_COVER -> {
+            if (lastPlayedCoverPath != null) {
+                coil.compose.AsyncImage(
+                    model = java.io.File(lastPlayedCoverPath),
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                )
+            } else {
+                Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceContainerHigh))
+            }
+        }
+    }
+}
+
+/** Compose equivalent of [com.betteraudio.widget.WidgetRender.darkTint] — kept in sync by formula,
+ *  not a shared call, since one works on Android [Int] colors and the other on Compose [Color]. */
+private fun previewDarkTint(accent: Color): Color {
+    val r = (accent.red * 255f * 0.16f + 12f).coerceIn(0f, 255f) / 255f
+    val g = (accent.green * 255f * 0.16f + 11f).coerceIn(0f, 255f) / 255f
+    val b = (accent.blue * 255f * 0.16f + 11f).coerceIn(0f, 255f) / 255f
+    return Color(r, g, b)
+}
+
+private fun parsePreviewColor(hex: String, fallback: Color): Color =
+    if (hex.isBlank()) fallback
+    else runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(fallback)
+
+/** Reports the composable's measured pixel size once known (used to place elements). */
 private fun Modifier.onSizeChanged(density: androidx.compose.ui.unit.Density, onSize: (Int, Int) -> Unit): Modifier =
     this.then(Modifier.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
@@ -248,51 +281,119 @@ private fun Modifier.onSizeChanged(density: androidx.compose.ui.unit.Density, on
     })
 
 @Composable
-private fun BoxScope.ElementOverlay(
+private fun BoxScope.ElementPreview(
+    index: Int,
     element: WidgetElement,
+    canvasWidthPx: Int,
+    canvasHeightPx: Int,
+    accent: Color,
     selected: Boolean,
     onSelect: () -> Unit,
-    onDrag: (dxFrac: Float, dyFrac: Float) -> Unit
+    onDragDelta: (dxFrac: Float, dyFrac: Float) -> Unit,
+    onDragEnd: () -> Unit,
 ) {
-    var boxSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+    val density = LocalDensity.current
+    // Effective (aspect-corrected, icon-square) rect — matches the real widget's render and tap
+    // mapping exactly (see WidgetElement.effectiveRect), so an icon added by an older app version
+    // (a larger, non-square legacy footprint) previews and drags identically to how it now
+    // actually behaves on the home screen, not the stale raw stored rect.
+    val eff = remember(element) { element.effectiveRect(canvasWidthPx.toFloat() / canvasHeightPx) }
+    val leftPx = eff[0] * canvasWidthPx
+    val topPx = eff[1] * canvasHeightPx
+    val wPx = (eff[2] * canvasWidthPx).coerceAtLeast(8f)
+    val hPx = (eff[3] * canvasHeightPx).coerceAtLeast(8f)
+    // Matches CustomWidgetRenderer.drawImageRect's radius exactly (min(w,h) * 0.12f) so the
+    // editor preview's rounding matches what the real widget will actually render.
+    val imageRadius = with(density) { (minOf(wPx, hPx) * 0.12f).toDp() }
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    // Icon-type (interactive) elements are given a square w/h by WidgetEditorViewModel (aspect-
+    // corrected per bucket, see WidgetElement.aspect) precisely so this box — which carries the
+    // border AND the click/drag target — already equals the icon's own footprint with no extra
+    // padding: no separate inner box sized to "just the icon" is needed or correct anymore, since
+    // the element itself now IS just the size of the icon.
+    val isIconElement = element.type.isInteractive
+
+    Box(
+        Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(leftPx.roundToInt(), topPx.roundToInt()) }
+            .size(with(density) { wPx.toDp() }, with(density) { hPx.toDp() })
+            .then(
+                if (isIconElement) Modifier.border(2.dp, borderColor, RoundedCornerShape(8.dp))
+                else Modifier
+            )
+            .clickable { onSelect() }
+            // Keyed on the element's stable slot (its index in the list), NOT the element value —
+            // keying on the value restarted this gesture coroutine every drag delta (the element
+            // changes every frame while dragging), which is why moving used to not work at all.
+            .pointerInput(index) {
+                detectDragGestures(
+                    onDragStart = { onSelect() },
+                    onDragEnd = { onDragEnd() },
+                    onDragCancel = { onDragEnd() }
+                ) { change, dragAmount ->
+                    change.consume()
+                    onDragDelta(dragAmount.x / canvasWidthPx, dragAmount.y / canvasHeightPx)
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            element.type.isText -> Text(
+                textForPreview(element.type),
+                color = Color.White,
+                fontSize = androidx.compose.ui.unit.TextUnit(
+                    element.fontSizeSp ?: 14f, androidx.compose.ui.unit.TextUnitType.Sp
+                ),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.border(2.dp, borderColor, RoundedCornerShape(4.dp))
+            )
+            element.type == WidgetElementType.CUSTOM_IMAGE -> {
+                if (element.imagePath != null) {
+                    coil.compose.AsyncImage(
+                        model = java.io.File(element.imagePath),
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(imageRadius))
+                            .border(2.dp, borderColor, RoundedCornerShape(imageRadius))
+                    )
+                } else {
+                    ImagePlaceholder(radius = imageRadius, borderColor = borderColor)
+                }
+            }
+            element.type == WidgetElementType.BOOK_COVER || element.type == WidgetElementType.SERIES_COVER ->
+                ImagePlaceholder(radius = imageRadius, borderColor = borderColor)
+            // Matches CustomWidgetRenderer.drawIcon, which draws the icon at min(rect.width,
+            // rect.height) centered. That min() is now a no-op in practice (wPx == hPx already,
+            // by construction) — the border lives on the outer box above, not a nested one, since
+            // the outer box no longer has any padding around the icon to hide.
+            else -> ElementTypeIcon(
+                element.type,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(0.9f),
+                tint = accent
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImagePlaceholder(radius: androidx.compose.ui.unit.Dp, borderColor: Color = Color.Transparent) {
     Box(
         Modifier
             .fillMaxSize()
-            .layout { measurable, constraints ->
-                val placeable = measurable.measure(constraints)
-                boxSize = androidx.compose.ui.unit.IntSize(placeable.width, placeable.height)
-                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-            }
+            .clip(RoundedCornerShape(radius))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .border(2.dp, borderColor, RoundedCornerShape(radius)),
+        contentAlignment = Alignment.Center
     ) {
-        val w = boxSize.width
-        val h = boxSize.height
-        if (w > 0 && h > 0) {
-            val leftPx = (element.x * w).roundToInt()
-            val topPx = (element.y * h).roundToInt()
-            val wPx = (element.w * w).roundToInt().coerceAtLeast(8)
-            val hPx = (element.h * h).roundToInt().coerceAtLeast(8)
-
-            Box(
-                Modifier
-                    .offset { androidx.compose.ui.unit.IntOffset(leftPx, topPx) }
-                    .size(
-                        with(LocalDensity.current) { wPx.toDp() },
-                        with(LocalDensity.current) { hPx.toDp() }
-                    )
-                    .border(
-                        2.dp,
-                        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable { onSelect() }
-                    .pointerInput(element) {
-                        detectDragGestures(onDragStart = { onSelect() }) { change, dragAmount ->
-                            change.consume()
-                            onDrag(dragAmount.x / w, dragAmount.y / h)
-                        }
-                    }
-            )
-        }
+        Icon(
+            Icons.Default.Image, null,
+            Modifier.fillMaxSize(0.5f),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -357,28 +458,42 @@ private fun ElementTypeButton(type: WidgetElementType, onClick: () -> Unit) {
 
 /** The same glyph the rendered widget uses for action elements; a Material icon otherwise. */
 @Composable
-private fun ElementTypeIcon(type: WidgetElementType, contentDescription: String?, modifier: Modifier = Modifier) {
+private fun ElementTypeIcon(
+    type: WidgetElementType,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    tint: Color = LocalContentColor.current
+) {
     when (type) {
-        WidgetElementType.PLAY_PAUSE -> Icon(painterResource(R.drawable.ic_play), contentDescription, modifier)
-        WidgetElementType.SKIP_FORWARD -> Icon(painterResource(R.drawable.ic_skip_forward), contentDescription, modifier)
-        WidgetElementType.SKIP_BACK -> Icon(painterResource(R.drawable.ic_skip_back), contentDescription, modifier)
-        WidgetElementType.CHAPTER_FORWARD -> Icon(painterResource(R.drawable.ic_chapter_forward), contentDescription, modifier)
-        WidgetElementType.CHAPTER_BACK -> Icon(painterResource(R.drawable.ic_chapter_back), contentDescription, modifier)
-        WidgetElementType.SPEED_UP -> Icon(painterResource(R.drawable.ic_speed_up), contentDescription, modifier)
-        WidgetElementType.SPEED_DOWN -> Icon(painterResource(R.drawable.ic_speed_down), contentDescription, modifier)
-        WidgetElementType.BOOST_UP -> Icon(painterResource(R.drawable.ic_boost_up), contentDescription, modifier)
-        WidgetElementType.BOOST_DOWN -> Icon(painterResource(R.drawable.ic_boost_down), contentDescription, modifier)
-        WidgetElementType.SLEEP_TIMER -> Icon(painterResource(R.drawable.ic_sleep), contentDescription, modifier)
-        WidgetElementType.QUICK_BOOKMARK -> Icon(painterResource(R.drawable.ic_bookmark_add), contentDescription, modifier)
-        WidgetElementType.CLOSE_BOOK -> Icon(painterResource(R.drawable.ic_close_book), contentDescription, modifier)
-        WidgetElementType.BOOK_NAME -> Icon(Icons.Default.Title, contentDescription, modifier)
-        WidgetElementType.AUTHOR_NAME -> Icon(Icons.Default.Person, contentDescription, modifier)
-        WidgetElementType.CHAPTER_NAME -> Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription, modifier)
-        WidgetElementType.SERIES_NAME -> Icon(Icons.Default.CollectionsBookmark, contentDescription, modifier)
-        WidgetElementType.BOOK_COVER -> Icon(Icons.Default.Image, contentDescription, modifier)
-        WidgetElementType.SERIES_COVER -> Icon(Icons.Default.PhotoLibrary, contentDescription, modifier)
-        WidgetElementType.CUSTOM_IMAGE -> Icon(Icons.Default.AddPhotoAlternate, contentDescription, modifier)
+        WidgetElementType.PLAY_PAUSE -> Icon(painterResource(R.drawable.ic_play), contentDescription, modifier, tint)
+        WidgetElementType.SKIP_FORWARD -> Icon(painterResource(R.drawable.ic_skip_forward), contentDescription, modifier, tint)
+        WidgetElementType.SKIP_BACK -> Icon(painterResource(R.drawable.ic_skip_back), contentDescription, modifier, tint)
+        WidgetElementType.CHAPTER_FORWARD -> Icon(painterResource(R.drawable.ic_chapter_forward), contentDescription, modifier, tint)
+        WidgetElementType.CHAPTER_BACK -> Icon(painterResource(R.drawable.ic_chapter_back), contentDescription, modifier, tint)
+        WidgetElementType.SPEED_UP -> Icon(painterResource(R.drawable.ic_speed_up), contentDescription, modifier, tint)
+        WidgetElementType.SPEED_DOWN -> Icon(painterResource(R.drawable.ic_speed_down), contentDescription, modifier, tint)
+        WidgetElementType.BOOST_UP -> Icon(painterResource(R.drawable.ic_boost_up), contentDescription, modifier, tint)
+        WidgetElementType.BOOST_DOWN -> Icon(painterResource(R.drawable.ic_boost_down), contentDescription, modifier, tint)
+        WidgetElementType.SLEEP_TIMER -> Icon(painterResource(R.drawable.ic_sleep), contentDescription, modifier, tint)
+        WidgetElementType.QUICK_BOOKMARK -> Icon(painterResource(R.drawable.ic_bookmark_add), contentDescription, modifier, tint)
+        WidgetElementType.CLOSE_BOOK -> Icon(painterResource(R.drawable.ic_close_book), contentDescription, modifier, tint)
+        WidgetElementType.BOOK_NAME -> Icon(Icons.Default.Title, contentDescription, modifier, tint)
+        WidgetElementType.AUTHOR_NAME -> Icon(Icons.Default.Person, contentDescription, modifier, tint)
+        WidgetElementType.CHAPTER_NAME -> Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription, modifier, tint)
+        WidgetElementType.SERIES_NAME -> Icon(Icons.Default.CollectionsBookmark, contentDescription, modifier, tint)
+        WidgetElementType.BOOK_COVER -> Icon(Icons.Default.Image, contentDescription, modifier, tint)
+        WidgetElementType.SERIES_COVER -> Icon(Icons.Default.PhotoLibrary, contentDescription, modifier, tint)
+        WidgetElementType.CUSTOM_IMAGE -> Icon(Icons.Default.AddPhotoAlternate, contentDescription, modifier, tint)
     }
+}
+
+/** Sample text shown for a text element in the editor preview (see [SAMPLE_STATE]). */
+private fun textForPreview(type: WidgetElementType): String = when (type) {
+    WidgetElementType.BOOK_NAME -> SAMPLE_STATE.title
+    WidgetElementType.AUTHOR_NAME -> SAMPLE_STATE.author
+    WidgetElementType.CHAPTER_NAME -> SAMPLE_STATE.chapterTitle
+    WidgetElementType.SERIES_NAME -> SAMPLE_STATE.seriesName
+    else -> ""
 }
 
 @Composable

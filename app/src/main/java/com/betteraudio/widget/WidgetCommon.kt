@@ -13,6 +13,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.net.Uri
+import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
@@ -176,6 +177,20 @@ object WidgetRender {
         return bmp
     }
 
+    /** A bare glyph, no filled/tinted circle behind it — used by custom-widget action elements
+     *  (see CustomWidgetRenderer), which are icon-only rather than filled buttons. */
+    fun renderIcon(context: Context, size: Int, tint: Int, iconRes: Int): Bitmap {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bmp)
+        val pad = (size * 0.16f).toInt()
+        ContextCompat.getDrawable(context, iconRes)?.mutate()?.apply {
+            setTint(tint)
+            setBounds(pad, pad, size - pad, size - pad)
+            draw(canvas)
+        }
+        return bmp
+    }
+
     fun renderNoteBadge(context: Context, size: Int, accent: Int, glyphColor: Int): Bitmap {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bmp)
@@ -293,4 +308,12 @@ object WidgetRender {
         canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), radius, radius, paint)
         return out
     }
+}
+
+/** Hides (GONE) or shows (VISIBLE) a set of "element" views for the "Hide widgets when nothing is
+ *  playing" setting — the widget's actual background view is deliberately never passed here, so
+ *  it stays visible even when idle; only controls/text/cover elements on top of it disappear. */
+fun RemoteViews.setElementsHidden(hidden: Boolean, vararg viewIds: Int) {
+    val visibility = if (hidden) android.view.View.GONE else android.view.View.VISIBLE
+    for (id in viewIds) setViewVisibility(id, visibility)
 }

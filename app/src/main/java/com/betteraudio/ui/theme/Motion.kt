@@ -1,33 +1,32 @@
 package com.betteraudio.ui.theme
 
-import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.navigation.NavBackStackEntry
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 object MotionTokens {
     /** Page/element motion — slight overshoot then settle. */
@@ -117,29 +116,36 @@ fun Modifier.coverTransform(
     }
 }
 
-// ── NavHost transition builders ───────────────────────────────────────────────
-// Usage: composable(enterTransition = { colorOsEnter() }, exitTransition = { colorOsExit() }, ...)
+// NavHost screen transitions live per-theme now: ui/material/MaterialMotion.kt and
+// ui/immersive/ImmersiveMotion.kt (see CLAUDE.md's theming split convention).
 
-fun AnimatedContentTransitionScope<NavBackStackEntry>.colorOsEnter(): EnterTransition =
-    fadeIn(animationSpec = spring(MotionTokens.effectsDamping, MotionTokens.effectsStiffness)) +
-    scaleIn(initialScale = 0.92f, animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness)) +
-    slideInVertically(
-        initialOffsetY = { (it * 0.04f).toInt() },
-        animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness)
-    )
-
-fun AnimatedContentTransitionScope<NavBackStackEntry>.colorOsExit(): ExitTransition =
-    fadeOut(animationSpec = spring(MotionTokens.effectsDamping, MotionTokens.effectsStiffness)) +
-    scaleOut(targetScale = 0.96f, animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness))
-
-fun AnimatedContentTransitionScope<NavBackStackEntry>.colorOsPopEnter(): EnterTransition =
-    fadeIn(animationSpec = spring(MotionTokens.effectsDamping, MotionTokens.effectsStiffness)) +
-    scaleIn(initialScale = 0.96f, animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness))
-
-fun AnimatedContentTransitionScope<NavBackStackEntry>.colorOsPopExit(): ExitTransition =
-    fadeOut(animationSpec = spring(MotionTokens.effectsDamping, MotionTokens.effectsStiffness)) +
-    scaleOut(targetScale = 0.92f, animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness)) +
-    slideOutVertically(
-        targetOffsetY = { (it * 0.04f).toInt() },
-        animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness)
-    )
+/**
+ * Tracks a predictive-back gesture for any dismissible overlay/panel/sheet in the app — not just
+ * the top-level home↔player sheet — so back visually "peeks" everywhere, not only on the one
+ * screen that had bespoke wiring for it. Returns live progress (0 = settled/not gesturing, 1 =
+ * fully committed) for the caller to drive its own scale/fade/slide; [onCommit] fires once the
+ * gesture completes (or on a plain, non-gesture back press — [PredictiveBackHandler] handles both
+ * transparently), where the caller should perform its actual dismiss/collapse/pop action. On
+ * cancel, progress springs back to 0 on its own; this function never dismisses anything itself.
+ */
+@Composable
+fun rememberPredictiveBackProgress(enabled: Boolean, onCommit: () -> Unit): State<Float> {
+    val progress = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val currentOnCommit by rememberUpdatedState(onCommit)
+    PredictiveBackHandler(enabled = enabled) { events ->
+        try {
+            events.collect { event -> progress.snapTo(event.progress) }
+            currentOnCommit()
+        } catch (_: CancellationException) {
+            scope.launch { progress.animateTo(0f, MotionTokens.floatSpatial) }
+        }
+    }
+    // Reset if this handler is disabled mid-gesture (e.g. the caller already dismissed via
+    // another path) so a stale non-zero progress doesn't linger on the next time it's shown.
+    DisposableEffect(enabled) {
+        if (!enabled) scope.launch { progress.snapTo(0f) }
+        onDispose { }
+    }
+    return remember { derivedStateOf { progress.value } }
+}

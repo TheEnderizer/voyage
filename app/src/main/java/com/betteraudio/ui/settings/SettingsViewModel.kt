@@ -255,6 +255,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setWidgetHideWhenIdle(enabled: Boolean) = viewModelScope.launch {
         settings.setWidgetHideWhenIdle(enabled)
+        com.betteraudio.widget.WidgetRender.refresh(appContext)
     }
 
     val customWidgets: StateFlow<List<CustomWidgetDesign>> =
@@ -296,6 +297,9 @@ class SettingsViewModel @Inject constructor(
     val pureBlack: StateFlow<Boolean> =
         settings.pureBlack.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    val dynamicPills: StateFlow<Boolean> =
+        settings.dynamicPills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
     fun setCustomThemeColor(value: String) =
         viewModelScope.launch { settings.setCustomThemeColor(value) }
 
@@ -304,6 +308,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setPureBlack(enabled: Boolean) =
         viewModelScope.launch { settings.setPureBlack(enabled) }
+
+    fun setDynamicPills(enabled: Boolean) =
+        viewModelScope.launch { settings.setDynamicPills(enabled) }
 
     private val _updateState = MutableStateFlow(UpdateUiState())
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()

@@ -7,6 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.RemoteViews
+import com.betteraudio.widget.custom.CustomWidgetEntryPoint
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,6 +22,11 @@ import kotlinx.coroutines.launch
  * [WidgetRender]) — real work, not a cheap RemoteViews build — and `ACTION_UPDATE_WIDGET` fires
  * once a second during a sleep-timer countdown, so every callback here hops off the main thread
  * with `goAsync()`, matching [com.betteraudio.widget.custom.CustomWidgetProvider].
+ *
+ * [hideWhenIdle] mirrors Settings → Widget → "Hide widgets when nothing is playing" — true only
+ * when that's on AND nothing is playing. Subclasses hide their element views (text/buttons/cover)
+ * but must keep their background view visible (see each subclass's own view-id comment for which
+ * id that is), same behavior as the custom widget renderer.
  */
 abstract class BaseNowPlayingWidget : AppWidgetProvider() {
 
@@ -27,15 +34,21 @@ abstract class BaseNowPlayingWidget : AppWidgetProvider() {
         context: Context,
         manager: AppWidgetManager,
         widgetId: Int,
-        state: WidgetState
+        state: WidgetState,
+        hideWhenIdle: Boolean
     ): RemoteViews
+
+    private fun currentHideWhenIdle(context: Context): Boolean =
+        EntryPointAccessors.fromApplication(context.applicationContext, CustomWidgetEntryPoint::class.java)
+            .settingsStore().currentWidgetHideWhenIdle
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
+                val hideWhenIdle = currentHideWhenIdle(context)
                 for (id in appWidgetIds) {
-                    manager.updateAppWidget(id, buildViews(context, manager, id, WidgetRender.lastState))
+                    manager.updateAppWidget(id, buildViews(context, manager, id, WidgetRender.lastState, hideWhenIdle))
                 }
             } finally {
                 pending.finish()
@@ -52,7 +65,8 @@ abstract class BaseNowPlayingWidget : AppWidgetProvider() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                manager.updateAppWidget(appWidgetId, buildViews(context, manager, appWidgetId, WidgetRender.lastState))
+                val hideWhenIdle = currentHideWhenIdle(context)
+                manager.updateAppWidget(appWidgetId, buildViews(context, manager, appWidgetId, WidgetRender.lastState, hideWhenIdle))
             } finally {
                 pending.finish()
             }
@@ -67,10 +81,11 @@ abstract class BaseNowPlayingWidget : AppWidgetProvider() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
+                val hideWhenIdle = currentHideWhenIdle(context)
                 val manager = AppWidgetManager.getInstance(context)
                 val ids = manager.getAppWidgetIds(ComponentName(context, javaClass))
                 for (id in ids) {
-                    manager.updateAppWidget(id, buildViews(context, manager, id, state))
+                    manager.updateAppWidget(id, buildViews(context, manager, id, state, hideWhenIdle))
                 }
             } finally {
                 pending.finish()

@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -285,7 +286,8 @@ fun HomeScreen(
                                             else onOpenSeries(gridItem.series.id)
                                         },
                                         onPlayClick = { viewModel.playSeries(gridItem.series.id) },
-                                        onLongClick = { viewModel.toggleSelection(key) }
+                                        onLongClick = { viewModel.toggleSelection(key) },
+                                        seriesId = gridItem.series.id
                                     )
                                 }
                             }
@@ -702,6 +704,11 @@ private fun BookGridCard(
 
     Box(
         modifier
+            // Hides the ENTIRE card (image, border, badge, gradient/title/progress) the instant
+            // the player's morphing cover takes over — placed first so it affects everything
+            // later in the chain and all children, not just the image (leaving the border/badge
+            // floating over a hidden image was a visible "stutter").
+            .graphicsLayer { alpha = if (coverBoundsRegistry.isMorphHidden(book.id)) 0f else 1f }
             .fillMaxWidth()
             .aspectRatio(0.72f)
             .pressScale(enabled = !isSelectionMode)
@@ -714,7 +721,7 @@ private fun BookGridCard(
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.38f)) // frosted placeholder behind cover art
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .onGloballyPositioned {
-                coverBoundsRegistry.publish(book.id, it.boundsInRoot(), 28.dp)
+                coverBoundsRegistry.publish(book.id, it.boundsInRoot(), 28.dp, book.coverArtPath)
             }
     ) {
         AsyncImage(
@@ -844,7 +851,11 @@ private fun CollectionGridCard(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
     isSelected: Boolean = false,
-    isSelectionMode: Boolean = false
+    isSelectionMode: Boolean = false,
+    // Non-null only for series cards (author cards leave this null) — publishes this card's bounds
+    // for the Series info screen's cover-morph open/close (see CoverBoundsRegistry), mirroring how
+    // the book grid card feeds Book Info's morph.
+    seriesId: Long? = null
 ) {
     val borderColor by animateColorAsState(
         when {
@@ -854,20 +865,28 @@ private fun CollectionGridCard(
         },
         tween(150), label = "collectionBorder"
     )
+    val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
+    val cardRadius = MaterialTheme.shapes.large
 
     Box(
         modifier
+            .graphicsLayer {
+                alpha = if (seriesId != null && coverBoundsRegistry.isSeriesMorphHidden(seriesId)) 0f else 1f
+            }
             .fillMaxWidth()
             .aspectRatio(0.72f)
             .pressScale(enabled = !isSelectionMode)
-            .clip(MaterialTheme.shapes.large)
+            .clip(cardRadius)
             .border(
                 width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
-                shape = MaterialTheme.shapes.large
+                shape = cardRadius
             )
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.38f)) // frosted placeholder behind cover art
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .onGloballyPositioned {
+                if (seriesId != null) coverBoundsRegistry.publishSeries(seriesId, it.boundsInRoot(), 28.dp)
+            }
     ) {
         AsyncImage(
             model = coverPath?.let { File(it) },

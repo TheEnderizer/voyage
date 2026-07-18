@@ -15,17 +15,14 @@ class NowPlayingWidget2x2 : BaseNowPlayingWidget() {
         context: Context,
         manager: AppWidgetManager,
         widgetId: Int,
-        state: WidgetState
+        state: WidgetState,
+        hideWhenIdle: Boolean
     ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_now_playing_2x2)
         val r = WidgetRender
         fun dp(v: Int) = r.dp(context, v)
 
         views.setOnClickPendingIntent(R.id.widget_container, r.openAppIntent(context))
-        views.setOnClickPendingIntent(
-            R.id.btn_play_pause,
-            r.serviceIntent(context, 10, PlaybackService.ACTION_TOGGLE_PLAY_PAUSE)
-        )
 
         val opts = manager.getAppWidgetOptions(widgetId)
         val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 140).coerceIn(80, 400)
@@ -35,8 +32,19 @@ class NowPlayingWidget2x2 : BaseNowPlayingWidget() {
 
         val (cover, _, _) = r.palette(context, state.coverArtUri)
 
-        // Full-bleed cover — no rounding, let the Android 12+ launcher handle corners
+        // The cover itself IS the "background" here (full-bleed, no card) — it stays visible when
+        // idle+hidden; the scrim (only there to keep the title legible) and the title/button on
+        // top of it are the "elements" that disappear.
         views.setImageViewBitmap(R.id.iv_cover_art, r.coverBitmapRect(context, cover, w, h))
+
+        val hideElements = hideWhenIdle && !state.isPlaying
+        views.setElementsHidden(hideElements, R.id.iv_scrim, R.id.tv_title, R.id.btn_play_pause)
+        if (hideElements) return views
+
+        views.setOnClickPendingIntent(
+            R.id.btn_play_pause,
+            r.serviceIntent(context, 10, PlaybackService.ACTION_TOGGLE_PLAY_PAUSE)
+        )
 
         // Bottom gradient scrim so title is readable over any cover art
         views.setImageViewBitmap(R.id.iv_scrim, r.renderScrim(w, h))

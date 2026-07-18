@@ -1,6 +1,5 @@
 package com.betteraudio.ui.immersive.settings
 
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -30,12 +29,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.immersive.ImmersiveStyle
+import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import com.betteraudio.ui.settings.SettingsSection
 import com.betteraudio.ui.settings.SettingsViewModel
 import com.betteraudio.ui.settings.aboutSection
@@ -95,6 +96,7 @@ fun SettingsScreen(
     val customThemeColor          by viewModel.customThemeColor.collectAsStateWithLifecycle()
     val darkMode                  by viewModel.darkMode.collectAsStateWithLifecycle()
     val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
+    val dynamicPills              by viewModel.dynamicPills.collectAsStateWithLifecycle()
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
@@ -134,7 +136,9 @@ fun SettingsScreen(
         )
     }
 
-    BackHandler(enabled = currentSection != SettingsSection.Root) {
+    val sectionBackProgress = rememberPredictiveBackProgress(
+        enabled = currentSection != SettingsSection.Root
+    ) {
         viewModel.navigateTo(SettingsSection.Root)
     }
 
@@ -178,7 +182,14 @@ fun SettingsScreen(
                 fadeIn(tween(160)) togetherWith fadeOut(tween(160))
             },
             label = "settings_section",
-            modifier = Modifier.padding(padding)
+            modifier = Modifier
+                .padding(padding)
+                .graphicsLayer {
+                    val p = sectionBackProgress.value
+                    scaleX = 1f - 0.05f * p
+                    scaleY = 1f - 0.05f * p
+                    alpha = 1f - 0.15f * p
+                }
         ) { section ->
             LazyColumn(
                 Modifier.fillMaxSize(),
@@ -188,7 +199,7 @@ fun SettingsScreen(
                 when (section) {
                     SettingsSection.Root -> rootSection(viewModel)
                     SettingsSection.Theme -> themeSection(
-                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, viewModel
+                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, dynamicPills, viewModel
                     )
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,

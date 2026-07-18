@@ -77,11 +77,16 @@ class SettingsStore @Inject constructor(
         val DARK_MODE                    = stringPreferencesKey("dark_mode")
         // AMOLED-black surfaces when dark + Material You.
         val PURE_BLACK                   = booleanPreferencesKey("pure_black")
+        // Immersive only: the mini player / nav pill "glass" samples whichever book cover is
+        // currently scrolled underneath it in the grid (updating live as the user scrolls) instead
+        // of the fixed now-playing/last-played backdrop.
+        val DYNAMIC_PILLS                = booleanPreferencesKey("dynamic_pills")
         // Resolved Material You ColorScheme.primary (ARGB Int), kept in sync from VoyageTheme so
         // themeless widget providers (no Compose context) can render an "app color" background.
         val WIDGET_APP_COLOR             = intPreferencesKey("widget_app_color")
-        // When true, custom widgets render fully transparent (no elements) while nothing is
-        // playing, instead of showing a cold play button that revives the last book.
+        // When true, widgets (built-in and custom) hide their controls/text/cover elements while
+        // nothing is playing, keeping just the background — instead of showing a cold play button
+        // that revives the last book.
         val WIDGET_HIDE_WHEN_IDLE        = booleanPreferencesKey("widget_hide_when_idle")
         // ── Backup & restore (data/backup/) ──────────────────────────────────
         val AUTO_BACKUP_ENABLED          = booleanPreferencesKey("auto_backup_enabled")
@@ -102,6 +107,8 @@ class SettingsStore @Inject constructor(
         val SLEEP_SCHEDULE_START_MINUTES = intPreferencesKey("sleep_schedule_start_minutes")
         val SLEEP_SCHEDULE_END_MINUTES   = intPreferencesKey("sleep_schedule_end_minutes")
         val SLEEP_SCHEDULE_DEFAULT_MINUTES = intPreferencesKey("sleep_schedule_default_minutes")
+        // The slider/custom-entry value the player's sleep icon starts a timer with on tap.
+        val SLEEP_TIMER_MINUTES          = intPreferencesKey("sleep_timer_minutes")
         // ── Audio balance / mono (playback/ChannelMixProcessor) — global, not per-book ────────
         val AUDIO_BALANCE = floatPreferencesKey("audio_balance")   // -1f (left) .. 1f (right)
         val MONO_AUDIO     = booleanPreferencesKey("mono_audio")
@@ -137,6 +144,7 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_SLEEP_SCHEDULE_START_MINUTES = 22 * 60   // 22:00
         const val DEFAULT_SLEEP_SCHEDULE_END_MINUTES = 6 * 60      // 06:00
         const val DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES = 30
+        const val DEFAULT_SLEEP_TIMER_MINUTES = 30
         const val DEFAULT_HEADSET_DOUBLE_PRESS_ACTION = "skip_forward"
         const val DEFAULT_HEADSET_TRIPLE_PRESS_ACTION = "skip_back"
         const val DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES = 15
@@ -171,6 +179,7 @@ class SettingsStore @Inject constructor(
     val customThemeColor: Flow<String>         = context.dataStore.data.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }
     val darkMode: Flow<String>                 = context.dataStore.data.map { it[Keys.DARK_MODE] ?: "AUTO" }
     val pureBlack: Flow<Boolean>               = context.dataStore.data.map { it[Keys.PURE_BLACK] ?: false }
+    val dynamicPills: Flow<Boolean>            = context.dataStore.data.map { it[Keys.DYNAMIC_PILLS] ?: false }
     val widgetAppColor: Flow<Int>              = context.dataStore.data.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }
     val widgetHideWhenIdle: Flow<Boolean>      = context.dataStore.data.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }
     val autoBackupEnabled: Flow<Boolean>       = context.dataStore.data.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }
@@ -185,6 +194,7 @@ class SettingsStore @Inject constructor(
     val sleepScheduleStartMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_START_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_START_MINUTES }
     val sleepScheduleEndMinutes: Flow<Int>     = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_END_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_END_MINUTES }
     val sleepScheduleDefaultMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES }
+    val sleepTimerMinutes: Flow<Int>           = context.dataStore.data.map { it[Keys.SLEEP_TIMER_MINUTES] ?: DEFAULT_SLEEP_TIMER_MINUTES }
     val audioBalance: Flow<Float>              = context.dataStore.data.map { it[Keys.AUDIO_BALANCE] ?: 0f }
     val monoAudio: Flow<Boolean>               = context.dataStore.data.map { it[Keys.MONO_AUDIO] ?: false }
     val headsetMultiPressEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.HEADSET_MULTI_PRESS_ENABLED] ?: false }
@@ -312,10 +322,17 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.DARK_MODE] = mode }.let { }
     suspend fun setPureBlack(enabled: Boolean) =
         context.dataStore.edit { it[Keys.PURE_BLACK] = enabled }.let { }
+    suspend fun setDynamicPills(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.DYNAMIC_PILLS] = enabled }.let { }
     suspend fun setWidgetAppColor(argb: Int) =
         context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }.let { }
-    suspend fun setWidgetHideWhenIdle(enabled: Boolean) =
+    suspend fun setWidgetHideWhenIdle(enabled: Boolean) {
+        // Set the volatile snapshot eagerly (not just via the async collector above) so a widget
+        // refresh fired immediately after this call — see WidgetEditorViewModel/SettingsViewModel —
+        // reads the new value instead of racing the DataStore write's own collect().
+        currentWidgetHideWhenIdle = enabled
         context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }.let { }
+    }
     suspend fun setAutoBackupEnabled(enabled: Boolean) =
         context.dataStore.edit { it[Keys.AUTO_BACKUP_ENABLED] = enabled }.let { }
     suspend fun setAutoBackupFolderUri(uri: String) =
@@ -341,6 +358,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_END_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
     suspend fun setSleepScheduleDefaultMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] = minutes.coerceIn(1, 180) }.let { }
+    suspend fun setSleepTimerMinutes(minutes: Int) =
+        context.dataStore.edit { it[Keys.SLEEP_TIMER_MINUTES] = minutes.coerceIn(1, 180) }.let { }
     suspend fun setAudioBalance(value: Float) =
         context.dataStore.edit { it[Keys.AUDIO_BALANCE] = value.coerceIn(-1f, 1f) }.let { }
     suspend fun setMonoAudio(enabled: Boolean) =

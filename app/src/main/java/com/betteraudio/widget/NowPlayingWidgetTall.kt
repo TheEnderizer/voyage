@@ -13,13 +13,30 @@ class NowPlayingWidgetTall : BaseNowPlayingWidget() {
         context: Context,
         manager: AppWidgetManager,
         widgetId: Int,
-        state: WidgetState
+        state: WidgetState,
+        hideWhenIdle: Boolean
     ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_now_playing_tall)
         val r = WidgetRender
         fun dp(v: Int) = r.dp(context, v)
 
         views.setOnClickPendingIntent(R.id.widget_container, r.openAppIntent(context))
+
+        val (cover, accent, cardBg) = r.palette(context, state.coverArtUri)
+
+        val opts = manager.getAppWidgetOptions(widgetId)
+        val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 160).coerceIn(110, 420)
+        val hDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 240).coerceIn(150, 520)
+        views.setImageViewBitmap(R.id.iv_bg, r.renderCardBackground(dp(wDp), dp(hDp), cardBg, dp(28).toFloat()))
+
+        val hideElements = hideWhenIdle && !state.isPlaying
+        views.setElementsHidden(
+            hideElements,
+            R.id.tv_title, R.id.tv_author,
+            R.id.btn_skip_back, R.id.btn_play_pause, R.id.btn_skip_forward, R.id.iv_cover_art
+        )
+        if (hideElements) return views
+
         views.setOnClickPendingIntent(R.id.btn_play_pause,
             r.serviceIntent(context, 1, PlaybackService.ACTION_TOGGLE_PLAY_PAUSE))
         views.setOnClickPendingIntent(R.id.btn_skip_forward,
@@ -27,18 +44,11 @@ class NowPlayingWidgetTall : BaseNowPlayingWidget() {
         views.setOnClickPendingIntent(R.id.btn_skip_back,
             r.serviceIntent(context, 3, PlaybackService.ACTION_SKIP_BACK))
 
-        val (cover, accent, cardBg) = r.palette(context, state.coverArtUri)
-
         views.setTextViewText(R.id.tv_title,
             state.title.ifBlank { context.getString(R.string.widget_no_book) })
         views.setTextViewText(R.id.tv_author, state.author)
         views.setTextColor(R.id.tv_title, accent)
         views.setTextColor(R.id.tv_author, 0xFFB6AB9C.toInt())
-
-        val opts = manager.getAppWidgetOptions(widgetId)
-        val wDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 160).coerceIn(110, 420)
-        val hDp = opts.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 240).coerceIn(150, 520)
-        views.setImageViewBitmap(R.id.iv_bg, r.renderCardBackground(dp(wDp), dp(hDp), cardBg, dp(28).toFloat()))
 
         views.setImageViewBitmap(R.id.btn_skip_back,
             r.renderButton(context, dp(44), accent, accent, R.drawable.ic_skip_back, filled = false))

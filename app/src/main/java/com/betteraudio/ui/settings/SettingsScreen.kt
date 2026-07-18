@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
@@ -149,6 +150,7 @@ internal fun LazyListScope.themeSection(
     customThemeColor: String,
     darkMode: com.betteraudio.ui.theme.DarkMode,
     pureBlack: Boolean,
+    dynamicPills: Boolean,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -253,6 +255,31 @@ internal fun LazyListScope.themeSection(
                         }
                         Switch(checked = pureBlack, onCheckedChange = { viewModel.setPureBlack(it) })
                     }
+                }
+            }
+        }
+    }
+
+    // Immersive only — Material You has no "glass" pill for this to affect.
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+            CardContainer {
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Dynamic pills", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "The mini player and nav pill's glass effect samples whichever book " +
+                                "cover is currently scrolled underneath them, instead of the " +
+                                "now-playing cover.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = dynamicPills, onCheckedChange = { viewModel.setDynamicPills(it) })
                 }
             }
         }
@@ -737,202 +764,37 @@ internal fun LazyListScope.playbackSection(
     }
     item {
         CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Skip silence", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "Tune how silence is detected. Enable per book from the player.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                // Minimum silence length before trimming (0.2–3.0 s)
-                var minSlider by remember(skipSilenceMinMs) { mutableFloatStateOf(skipSilenceMinMs / 1000f) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Minimum silence", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${"%.1f".format(minSlider)} s",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-                Slider(
-                    value = minSlider,
-                    onValueChange = { minSlider = (it / 0.1f).roundToInt() * 0.1f },
-                    onValueChangeFinished = { viewModel.setSkipSilenceMinMs((minSlider * 1000).toLong()) },
-                    valueRange = 0.2f..3.0f,
-                    steps = 27,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // Sensitivity (PCM threshold level). Higher slider = more aggressive trimming.
-                var sensSlider by remember(skipSilenceThreshold) { mutableFloatStateOf(skipSilenceThreshold.toFloat()) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Sensitivity", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${sensSlider.toInt()}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-                Slider(
-                    value = sensSlider,
-                    onValueChange = { sensSlider = it },
-                    onValueChangeFinished = { viewModel.setSkipSilenceThreshold(sensSlider.toInt()) },
-                    valueRange = 256f..4096f,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                // How much of each skipped silence is left in place, so word onsets aren't clipped.
-                var keepSlider by remember(skipSilencePaddingMs) { mutableFloatStateOf(skipSilencePaddingMs / 1000f) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Silence to keep", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${"%.1f".format(keepSlider)} s",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-                }
-                Slider(
-                    value = keepSlider,
-                    onValueChange = { keepSlider = (it / 0.1f).roundToInt() * 0.1f },
-                    onValueChangeFinished = { viewModel.setSkipSilencePaddingMs((keepSlider * 1000).toLong()) },
-                    valueRange = 0f..2.0f,
-                    steps = 19,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "How much of each trimmed pause is left in, so words aren't cut off. " +
-                        "Changes apply immediately.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+            com.betteraudio.ui.player.SkipSilenceControls(
+                minMs = skipSilenceMinMs,
+                threshold = skipSilenceThreshold,
+                paddingMs = skipSilencePaddingMs,
+                onSetMinMs = { viewModel.setSkipSilenceMinMs(it) },
+                onSetThreshold = { viewModel.setSkipSilenceThreshold(it) },
+                onSetPaddingMs = { viewModel.setSkipSilencePaddingMs(it) },
+                modifier = Modifier.padding(16.dp)
+            )
         }
     }
     item {
         CardContainer {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Sleep timer", style = MaterialTheme.typography.titleSmall)
-
-                // Fade-out length (0 = hard pause, 1-30s)
-                var fadeSlider by remember(sleepFadeSeconds) { mutableFloatStateOf(sleepFadeSeconds.toFloat()) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically) {
-                    Text("Fade out over", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        if (fadeSlider == 0f) "Off (hard pause)" else "${fadeSlider.toInt()} s",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Slider(
-                    value = fadeSlider,
-                    onValueChange = { fadeSlider = it.toInt().toFloat() },
-                    onValueChangeFinished = { viewModel.setSleepFadeSeconds(fadeSlider.toInt()) },
-                    valueRange = 0f..30f,
-                    steps = 29,
-                    modifier = Modifier.fillMaxWidth()
+                com.betteraudio.ui.player.SleepTimerTuningControls(
+                    fadeSeconds = sleepFadeSeconds,
+                    shakeEnabled = sleepShakeEnabled,
+                    shakeResetMinutes = sleepShakeResetMinutes,
+                    scheduleEnabled = sleepScheduleEnabled,
+                    scheduleStartMinutes = sleepScheduleStartMinutes,
+                    scheduleEndMinutes = sleepScheduleEndMinutes,
+                    scheduleDefaultMinutes = sleepScheduleDefaultMinutes,
+                    onSetFadeSeconds = { viewModel.setSleepFadeSeconds(it) },
+                    onSetShakeEnabled = { viewModel.setSleepShakeEnabled(it) },
+                    onSetShakeResetMinutes = { viewModel.setSleepShakeResetMinutes(it) },
+                    onSetScheduleEnabled = { viewModel.setSleepScheduleEnabled(it) },
+                    onSetScheduleStartMinutes = { viewModel.setSleepScheduleStartMinutes(it) },
+                    onSetScheduleEndMinutes = { viewModel.setSleepScheduleEndMinutes(it) },
+                    onSetScheduleDefaultMinutes = { viewModel.setSleepScheduleDefaultMinutes(it) }
                 )
-
-                HorizontalDivider()
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Shake to extend", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Shake the phone near the end of the timer (or right after it pauses) to keep listening.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = sleepShakeEnabled, onCheckedChange = { viewModel.setSleepShakeEnabled(it) })
-                }
-                if (sleepShakeEnabled) {
-                    var shakeSlider by remember(sleepShakeResetMinutes) { mutableFloatStateOf(sleepShakeResetMinutes.toFloat()) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("Extend by", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${shakeSlider.toInt()} min",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
-                    }
-                    Slider(
-                        value = shakeSlider,
-                        onValueChange = { shakeSlider = it.toInt().toFloat() },
-                        onValueChangeFinished = { viewModel.setSleepShakeResetMinutes(shakeSlider.toInt().coerceAtLeast(1)) },
-                        valueRange = 1f..60f,
-                        steps = 58,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                HorizontalDivider()
-
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Auto-start nightly", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Automatically arm the timer when you start playing within this window.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = sleepScheduleEnabled, onCheckedChange = { viewModel.setSleepScheduleEnabled(it) })
-                }
-                if (sleepScheduleEnabled) {
-                    var showStartPicker by remember { mutableStateOf(false) }
-                    var showEndPicker by remember { mutableStateOf(false) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { showStartPicker = true }, modifier = Modifier.weight(1f)) {
-                            Text("From ${formatClockMinutes(sleepScheduleStartMinutes)}")
-                        }
-                        OutlinedButton(onClick = { showEndPicker = true }, modifier = Modifier.weight(1f)) {
-                            Text("To ${formatClockMinutes(sleepScheduleEndMinutes)}")
-                        }
-                    }
-                    if (showStartPicker) {
-                        ClockMinutesPickerDialog(
-                            initialMinutes = sleepScheduleStartMinutes,
-                            onDismiss = { showStartPicker = false },
-                            onConfirm = { viewModel.setSleepScheduleStartMinutes(it); showStartPicker = false }
-                        )
-                    }
-                    if (showEndPicker) {
-                        ClockMinutesPickerDialog(
-                            initialMinutes = sleepScheduleEndMinutes,
-                            onDismiss = { showEndPicker = false },
-                            onConfirm = { viewModel.setSleepScheduleEndMinutes(it); showEndPicker = false }
-                        )
-                    }
-
-                    var defaultSlider by remember(sleepScheduleDefaultMinutes) { mutableFloatStateOf(sleepScheduleDefaultMinutes.toFloat()) }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Text("Duration", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("${defaultSlider.toInt()} min",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
-                    }
-                    Slider(
-                        value = defaultSlider,
-                        onValueChange = { defaultSlider = it.toInt().toFloat() },
-                        onValueChangeFinished = { viewModel.setSleepScheduleDefaultMinutes(defaultSlider.toInt().coerceAtLeast(1)) },
-                        valueRange = 5f..120f,
-                        steps = 22,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
             }
         }
     }
@@ -1054,7 +916,7 @@ private fun HeadsetActionPicker(label: String, selected: String, onSelect: (Stri
     }
 }
 
-private fun formatClockMinutes(totalMinutes: Int): String {
+internal fun formatClockMinutes(totalMinutes: Int): String {
     val h = totalMinutes / 60
     val m = totalMinutes % 60
     return "%02d:%02d".format(h, m)
@@ -1062,7 +924,7 @@ private fun formatClockMinutes(totalMinutes: Int): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ClockMinutesPickerDialog(initialMinutes: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
+internal fun ClockMinutesPickerDialog(initialMinutes: Int, onDismiss: () -> Unit, onConfirm: (Int) -> Unit) {
     val state = rememberTimePickerState(
         initialHour = initialMinutes / 60,
         initialMinute = initialMinutes % 60,
@@ -1628,6 +1490,41 @@ private fun relativeTime(ts: Long): String {
 // ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
 
 internal fun LazyListScope.diagnosticsSection(context: Context) {
+    item {
+        val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
+        var ignoringOptimizations by remember {
+            mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true)
+        }
+        val batteryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            ignoringOptimizations = powerManager?.isIgnoringBatteryOptimizations(context.packageName) ?: true
+        }
+        if (!ignoringOptimizations) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SectionHeader("Background reliability")
+                Text(
+                    "Some phone makers (this one included) aggressively restrict apps running in the " +
+                        "background to save battery, which can delay the home-screen widget updating " +
+                        "or occasionally interrupt playback. Exempting Voyage from battery optimization " +
+                        "fixes this.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FilledTonalButton(
+                    shape = Pill,
+                    onClick = {
+                        val intent = Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        runCatching { batteryLauncher.launch(intent) }
+                    }
+                ) {
+                    Icon(Icons.Default.BatteryChargingFull, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp)); Text("Remove battery restrictions")
+                }
+            }
+        }
+    }
     item {
         var logText by remember { mutableStateOf(AppLog.recentText()) }
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

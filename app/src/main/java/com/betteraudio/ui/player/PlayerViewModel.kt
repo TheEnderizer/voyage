@@ -174,6 +174,47 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { repository.setSkipSilenceEnabled(targetBookId, enabled) }
     }
 
+    // Skip-silence tuning (global) — surfaced so the player's long-press sheet (SkipSilenceSettingsSheet)
+    // can show/edit the same values as Settings → Playback without pulling SettingsViewModel into
+    // the player's nested NavHost.
+    val skipSilenceMinMs: StateFlow<Long> =
+        settings.skipSilenceMinMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_MIN_MS)
+    val skipSilenceThreshold: StateFlow<Int> =
+        settings.skipSilenceThreshold.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_THRESHOLD)
+    val skipSilencePaddingMs: StateFlow<Long> =
+        settings.skipSilencePaddingMs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SKIP_SILENCE_PADDING_MS)
+    fun setSkipSilenceMinMs(ms: Long) = viewModelScope.launch { settings.setSkipSilenceMinMs(ms) }
+    fun setSkipSilenceThreshold(level: Int) = viewModelScope.launch { settings.setSkipSilenceThreshold(level) }
+    fun setSkipSilencePaddingMs(ms: Long) = viewModelScope.launch { settings.setSkipSilencePaddingMs(ms) }
+
+    // Sleep timer (global) — surfaced so the player's long-press options sheet (SleepTimerSheet)
+    // can show/edit the same values as Settings → Playback without pulling SettingsViewModel into
+    // the player's nested NavHost.
+    val sleepTimerMinutes: StateFlow<Int> =
+        settings.sleepTimerMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_TIMER_MINUTES)
+    val sleepFadeSeconds: StateFlow<Int> =
+        settings.sleepFadeSeconds.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_FADE_SECONDS)
+    val sleepShakeEnabled: StateFlow<Boolean> =
+        settings.sleepShakeEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SHAKE_ENABLED)
+    val sleepShakeResetMinutes: StateFlow<Int> =
+        settings.sleepShakeResetMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SHAKE_RESET_MINUTES)
+    val sleepScheduleEnabled: StateFlow<Boolean> =
+        settings.sleepScheduleEnabled.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val sleepScheduleStartMinutes: StateFlow<Int> =
+        settings.sleepScheduleStartMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_START_MINUTES)
+    val sleepScheduleEndMinutes: StateFlow<Int> =
+        settings.sleepScheduleEndMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_END_MINUTES)
+    val sleepScheduleDefaultMinutes: StateFlow<Int> =
+        settings.sleepScheduleDefaultMinutes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES)
+    fun setSleepTimerMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepTimerMinutes(minutes) }
+    fun setSleepFadeSeconds(seconds: Int) = viewModelScope.launch { settings.setSleepFadeSeconds(seconds) }
+    fun setSleepShakeEnabled(enabled: Boolean) = viewModelScope.launch { settings.setSleepShakeEnabled(enabled) }
+    fun setSleepShakeResetMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepShakeResetMinutes(minutes) }
+    fun setSleepScheduleEnabled(enabled: Boolean) = viewModelScope.launch { settings.setSleepScheduleEnabled(enabled) }
+    fun setSleepScheduleStartMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleStartMinutes(minutes) }
+    fun setSleepScheduleEndMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleEndMinutes(minutes) }
+    fun setSleepScheduleDefaultMinutes(minutes: Int) = viewModelScope.launch { settings.setSleepScheduleDefaultMinutes(minutes) }
+
     fun setEqBands(bands: IntArray?) {
         _eqBandsMillibels.value = bands
         val json = bands?.let { JSONArray(it.toList()).toString() }
@@ -732,6 +773,11 @@ class PlayerViewModel @Inject constructor(
                     dest.outputStream().use { input.copyTo(it) }
                 }
                 repository.updateCoverArt(bookId, dest.absolutePath)
+                // The widget's cached WidgetState still points at the same file:// path (book cover
+                // art is always written to a per-book fixed path), so re-broadcasting the cached
+                // state is enough to force a redraw with the new bytes — no need to wait for the
+                // next play/pause event.
+                com.betteraudio.widget.WidgetRender.refresh(context.applicationContext)
             } catch (_: Exception) {}
         }
     }

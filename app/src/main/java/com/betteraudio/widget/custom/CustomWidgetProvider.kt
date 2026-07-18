@@ -119,11 +119,16 @@ abstract class CustomWidgetProvider(private val bucket: WidgetSizeBucket) : AppW
         val elements = WidgetElementCodec.decode(design.elementsJson)
         val cellIntents = arrayOfNulls<android.app.PendingIntent>(WidgetGrid.ROWS * WidgetGrid.COLS)
         val hideIdle = settings.currentWidgetHideWhenIdle && !state.isPlaying
+        // Same effective (aspect-corrected, icon-square) rect the renderer draws each element at —
+        // see WidgetElement.effectiveRect — so a tap only lands on a button's cells, not on
+        // whatever oversized legacy footprint an older app version may have saved for it.
+        val realAspect = pxW.toFloat() / pxH.toFloat()
         if (!hideIdle) {
             for (el in elements) {
                 val pi = WidgetActionIntents.forElement(context, appWidgetId, el) ?: continue
-                for (r in WidgetGrid.rowRange(el.y, el.h)) {
-                    for (c in WidgetGrid.colRange(el.x, el.w)) {
+                val eff = el.effectiveRect(realAspect)
+                for (r in WidgetGrid.rowRange(eff[1], eff[3])) {
+                    for (c in WidgetGrid.colRange(eff[0], eff[2])) {
                         cellIntents[r * WidgetGrid.COLS + c] = pi
                     }
                 }

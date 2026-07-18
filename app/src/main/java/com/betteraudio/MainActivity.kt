@@ -12,6 +12,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -54,10 +56,14 @@ import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.author.AuthorDetailScreen
 import com.betteraudio.ui.home.HomeScreen
-import com.betteraudio.ui.theme.colorOsEnter
-import com.betteraudio.ui.theme.colorOsExit
-import com.betteraudio.ui.theme.colorOsPopEnter
-import com.betteraudio.ui.theme.colorOsPopExit
+import com.betteraudio.ui.immersive.immersiveEnter
+import com.betteraudio.ui.immersive.immersiveExit
+import com.betteraudio.ui.immersive.immersivePopEnter
+import com.betteraudio.ui.immersive.immersivePopExit
+import com.betteraudio.ui.material.materialEnter
+import com.betteraudio.ui.material.materialExit
+import com.betteraudio.ui.material.materialPopEnter
+import com.betteraudio.ui.material.materialPopExit
 import com.betteraudio.ui.player.PlayerSheet
 import com.betteraudio.ui.player.rememberPlayerSheetController
 import com.betteraudio.ui.search.SearchScreen
@@ -218,6 +224,8 @@ class MainActivity : ComponentActivity() {
             val customThemeColor by settings.customThemeColor.collectAsStateWithLifecycle(initialCustomThemeColor)
             val darkModeRaw by settings.darkMode.collectAsStateWithLifecycle(initialDarkMode)
             val pureBlack by settings.pureBlack.collectAsStateWithLifecycle(initialPureBlack)
+            val dynamicPills by settings.dynamicPills.collectAsStateWithLifecycle(false)
+            val widgetDefaultCoverPath by settings.widgetDefaultCoverPath.collectAsStateWithLifecycle("")
             val appTheme = com.betteraudio.ui.theme.AppTheme.from(appThemeRaw)
             val colorSource = com.betteraudio.ui.theme.ThemeColorSource.from(colorSourceRaw)
             val darkMode = com.betteraudio.ui.theme.DarkMode.from(darkModeRaw)
@@ -237,6 +245,7 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
                 val uiScope = androidx.compose.runtime.rememberCoroutineScope()
+                val isMaterialYou = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU
                 // Shared across the home grid and the player sheet so a grid card's cover bounds
                 // are available as a morph source for grid → Book Info (see CoverBoundsRegistry).
                 val coverBoundsRegistry = androidx.compose.runtime.remember { com.betteraudio.ui.player.CoverBoundsRegistry() }
@@ -307,12 +316,33 @@ class MainActivity : ComponentActivity() {
                     settings.setLastOpenBookId(id)
                 }
 
-                // Back collapses the expanded player before doing anything else.
-                BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
+                // Back collapses the expanded player before doing anything else. Material You
+                // tracks a predictive-back gesture in flight so the sheet shrinks with the finger
+                // (system-style peek); Immersive (and pre-gesture devices, which degrade
+                // PredictiveBackHandler to commit-only) keep a plain commit-on-back collapse.
+                if (isMaterialYou) {
+                    androidx.activity.compose.PredictiveBackHandler(enabled = sheetController.isExpanded) { progress ->
+                        try {
+                            progress.collect { event -> sheetController.seek(event.progress) }
+                            sheetController.commitSeek()
+                        } catch (_: kotlinx.coroutines.CancellationException) {
+                            sheetController.cancelSeek()
+                        }
+                    }
+                } else {
+                    BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
+                }
 
                 Box(Modifier.fillMaxSize()) {
                 androidx.compose.runtime.CompositionLocalProvider(
-                    com.betteraudio.ui.player.LocalCoverBoundsRegistry provides coverBoundsRegistry
+                    com.betteraudio.ui.player.LocalCoverBoundsRegistry provides coverBoundsRegistry,
+                    // So the mini player pill / floating nav pill can render a "liquid glass" look
+                    // matching this exact backdrop (see ImmersiveGlass.kt) — Material You ignores it.
+                    com.betteraudio.ui.immersive.components.LocalImmersiveBackdrop provides
+                        com.betteraudio.ui.immersive.components.ImmersiveBackdropPaths(
+                            coverPath, bakedCoverPath, widgetDefaultCoverPath.ifBlank { null }
+                        ),
+                    com.betteraudio.ui.immersive.components.LocalDynamicPillsEnabled provides dynamicPills
                 ) {
                 // Immersive: the playing/last-played cover under a very heavy blur fills the
                 // app. Material You: a plain opaque background (Home's scaffold is transparent
@@ -329,10 +359,22 @@ class MainActivity : ComponentActivity() {
                 NavHost(
                     navController = navController,
                     startDestination = "home",
-                    enterTransition = { colorOsEnter() },
-                    exitTransition = { colorOsExit() },
-                    popEnterTransition = { colorOsPopEnter() },
-                    popExitTransition = { colorOsPopExit() }
+                    enterTransition = {
+                        if (isMaterialYou) materialEnter()
+                        else immersiveEnter()
+                    },
+                    exitTransition = {
+                        if (isMaterialYou) materialExit()
+                        else immersiveExit()
+                    },
+                    popEnterTransition = {
+                        if (isMaterialYou) materialPopEnter()
+                        else immersivePopEnter()
+                    },
+                    popExitTransition = {
+                        if (isMaterialYou) materialPopExit()
+                        else immersivePopExit()
+                    }
                 ) {
 
                     composable("home") {
@@ -371,7 +413,14 @@ class MainActivity : ComponentActivity() {
 
                     composable(
                         route = "series/{seriesId}",
-                        arguments = listOf(navArgument("seriesId") { type = NavType.LongType })
+                        arguments = listOf(navArgument("seriesId") { type = NavType.LongType }),
+                        // No NavHost-level scale/fade here — the screen drives its own cover-morph
+                        // open/close (root-coordinate math against the tapped grid card), which
+                        // would double-transform against an ALSO-animating whole-screen transition.
+                        enterTransition = { EnterTransition.None },
+                        exitTransition = { ExitTransition.None },
+                        popEnterTransition = { EnterTransition.None },
+                        popExitTransition = { ExitTransition.None }
                     ) { backStack ->
                         SeriesDetailScreen(
                             onBack = { navController.popBackStack() },
