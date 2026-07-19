@@ -300,11 +300,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 LaunchedEffect(Unit) {
-                    if (openWidgetEditorColdStart) navController.navigate("widget_editor")
+                    if (openWidgetEditorColdStart) navController.navigate("widget_gallery")
                 }
                 LaunchedEffect(widgetEditorNavRequest) {
                     if (widgetEditorNavRequest) {
-                        navController.navigate("widget_editor")
+                        navController.navigate("widget_gallery")
                         widgetEditorNavRequest = false
                     }
                 }
@@ -392,8 +392,14 @@ class MainActivity : ComponentActivity() {
                     composable("settings") {
                         SettingsScreen(
                             onBack = { navController.popBackStack() },
-                            onCreateWidget = { navController.navigate("widget_editor") },
-                            onEditWidget = { designId -> navController.navigate("widget_editor?designId=$designId") }
+                            onOpenWidgetGallery = { navController.navigate("widget_gallery") }
+                        )
+                    }
+
+                    composable("widget_gallery") {
+                        com.betteraudio.ui.widget.WidgetGalleryScreen(
+                            onBack = { navController.popBackStack() },
+                            onEditDesign = { designId -> navController.navigate("widget_editor?designId=$designId") }
                         )
                     }
 

@@ -56,8 +56,7 @@ import com.betteraudio.ui.settings.widgetSection
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onCreateWidget: () -> Unit = {},
-    onEditWidget: (Long) -> Unit = {},
+    onOpenWidgetGallery: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
@@ -100,7 +99,6 @@ fun SettingsScreen(
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
-    val widgetDesigns              by viewModel.widgetDesigns.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
     var showEbookBrowser by remember { mutableStateOf(false) }
@@ -220,8 +218,7 @@ fun SettingsScreen(
                     )
                     SettingsSection.Presets -> presetsSection(presets, viewModel)
                     SettingsSection.Widget -> widgetSection(
-                        widgetDefaultCover, widgetHideWhenIdle, widgetDesigns,
-                        onCreateWidget, onEditWidget, viewModel
+                        widgetDefaultCover, widgetHideWhenIdle, onOpenWidgetGallery, viewModel
                     )
                     SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
                     SettingsSection.Backup -> backupSection(context, viewModel)

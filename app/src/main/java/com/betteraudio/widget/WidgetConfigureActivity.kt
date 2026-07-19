@@ -7,11 +7,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,7 +27,13 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -33,6 +42,9 @@ import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.ui.theme.VoyageTheme
+import com.betteraudio.ui.widget.SAMPLE_WIDGET_SNAPSHOT
+import com.betteraudio.widget.model.WidgetDesignCodec
+import com.betteraudio.widget.render.WidgetPainter
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -152,19 +164,33 @@ private fun ConfigureScreen(
 
 @Composable
 private fun DesignRow(design: WidgetDesign, onClick: () -> Unit) {
+    val context = LocalContext.current
+    val accent = MaterialTheme.colorScheme.primary.toArgb()
+    val thumbnail = remember(design.documentJson, design.aspectRatio, accent) {
+        val w = 480
+        val h = (w / design.aspectRatio).toInt().coerceAtLeast(1)
+        WidgetPainter.paint(
+            context, WidgetDesignCodec.decode(design.documentJson), design.aspectRatio,
+            SAMPLE_WIDGET_SNAPSHOT, w, h, WidgetPainter.PaintOptions(accentFallback = accent)
+        )
+    }
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(design.name.ifBlank { "Untitled widget" }, style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Aspect ${"%.2f".format(design.aspectRatio)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+        androidx.compose.foundation.layout.Row(
+            Modifier.padding(12.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Image(
+                bitmap = thumbnail.asImageBitmap(),
+                contentDescription = design.name,
+                modifier = Modifier.width(96.dp).aspectRatio(design.aspectRatio).clip(RoundedCornerShape(10.dp))
             )
+            Text(design.name.ifBlank { "Untitled widget" }, style = MaterialTheme.typography.titleMedium)
         }
     }
 }

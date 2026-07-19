@@ -98,16 +98,15 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onCreateWidget: () -> Unit = {},
-    onEditWidget: (Long) -> Unit = {},
+    onOpenWidgetGallery: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     when (LocalAppTheme.current) {
         AppTheme.IMMERSIVE -> com.betteraudio.ui.immersive.settings.SettingsScreen(
-            onBack, onCreateWidget, onEditWidget, viewModel
+            onBack, onOpenWidgetGallery, viewModel
         )
         AppTheme.MATERIAL_YOU -> com.betteraudio.ui.material.settings.SettingsScreen(
-            onBack, onCreateWidget, onEditWidget, viewModel
+            onBack, onOpenWidgetGallery, viewModel
         )
     }
 }
@@ -1981,34 +1980,11 @@ private fun PresetEditorDialog(
 internal fun LazyListScope.widgetSection(
     currentCoverPath: String,
     hideWhenIdle: Boolean,
-    widgetDesigns: List<com.betteraudio.data.db.entities.WidgetDesign>,
-    onCreateWidget: () -> Unit,
-    onEditWidget: (Long) -> Unit,
+    onOpenWidgetGallery: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     item {
-        Button(onClick = onCreateWidget, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Create widget")
-        }
-    }
-
-    if (widgetDesigns.isNotEmpty()) {
-        item {
-            Text(
-                "Your widgets",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        items(widgetDesigns, key = { it.id }) { design ->
-            WidgetDesignRow(
-                design = design,
-                onEdit = { onEditWidget(design.id) },
-                onDelete = { viewModel.deleteWidgetDesign(design.id) }
-            )
-        }
+        NavRow(Icons.Default.Widgets, "Widget designs", onOpenWidgetGallery)
     }
 
     item {
@@ -2079,47 +2055,6 @@ internal fun LazyListScope.widgetSection(
     }
 }
 
-@Composable
-private fun WidgetDesignRow(
-    design: com.betteraudio.data.db.entities.WidgetDesign,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
-) {
-    val context = LocalContext.current
-    val primaryArgb = MaterialTheme.colorScheme.primary.toArgb()
-    val thumbnail = remember(design, primaryArgb) {
-        val w = 480
-        val h = (w / design.aspectRatio).toInt().coerceAtLeast(1)
-        com.betteraudio.widget.render.WidgetPainter.paint(
-            context,
-            com.betteraudio.widget.model.WidgetDesignCodec.decode(design.documentJson),
-            design.aspectRatio,
-            com.betteraudio.widget.model.WidgetSnapshot(title = "Sample", author = "Author", isPlaying = true),
-            w, h,
-            com.betteraudio.widget.render.WidgetPainter.PaintOptions(accentFallback = primaryArgb)
-        )
-    }
-    CardContainer {
-        Row(
-            Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            androidx.compose.foundation.Image(
-                bitmap = thumbnail.asImageBitmap(),
-                contentDescription = design.name,
-                modifier = Modifier
-                    .weight(1f)
-                    .aspectRatio(design.aspectRatio)
-                    .clip(RoundedCornerShape(12.dp))
-            )
-            Column {
-                TextButton(onClick = onEdit) { Text("Edit") }
-                TextButton(onClick = onDelete) { Text("Delete") }
-            }
-        }
-    }
-}
 
 internal fun hasAllFilesAccess(): Boolean =
     Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()

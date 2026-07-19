@@ -5,9 +5,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.content.FileProvider
 import com.betteraudio.BuildConfig
-import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.AudioPreset
-import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
@@ -69,7 +67,6 @@ class SettingsViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
     private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager,
-    private val widgetDesignDao: WidgetDesignDao,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     private val backupManager: com.betteraudio.data.backup.BackupManager
 ) : ViewModel() {
@@ -257,15 +254,6 @@ class SettingsViewModel @Inject constructor(
     fun setWidgetHideWhenIdle(enabled: Boolean) = viewModelScope.launch {
         settings.setWidgetHideWhenIdle(enabled)
         widgetUpdater.requestRender()
-    }
-
-    val widgetDesigns: StateFlow<List<WidgetDesign>> =
-        widgetDesignDao.observeAll()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun deleteWidgetDesign(id: Long) = viewModelScope.launch {
-        widgetDesignDao.deleteById(id)
-        widgetUpdater.onDesignDeleted(id)
     }
 
     // ── App theme ────────────────────────────────────────────────────────────

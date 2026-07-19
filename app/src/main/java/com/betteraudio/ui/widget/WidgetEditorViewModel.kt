@@ -1,5 +1,6 @@
 package com.betteraudio.ui.widget
 
+import android.content.Context
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -60,6 +61,7 @@ class WidgetEditorViewModel @Inject constructor(
     private val designDao: WidgetDesignDao,
     private val widgetUpdater: WidgetUpdater,
     stateStore: WidgetStateStore,
+    @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
     private val requestedDesignId: Long = savedStateHandle.get<Long>("designId") ?: -1L
@@ -78,7 +80,7 @@ class WidgetEditorViewModel @Inject constructor(
         viewModelScope.launch {
             val design = if (requestedDesignId == -1L) {
                 val now = System.currentTimeMillis()
-                val starter = starterDoc()
+                val starter = starterWidgetDesignDoc()
                 val id = designDao.upsert(
                     WidgetDesign(
                         name = "New widget",
@@ -353,48 +355,10 @@ class WidgetEditorViewModel @Inject constructor(
                 )
             )
             widgetUpdater.requestRender()
+            sweepOrphanWidgetImages(appContext, designDao)
             _state.update { it.copy(dirty = false, saved = true) }
             onSaved()
         }
     }
 
-    private fun defaultElementFor(type: ElementType, aspectRatio: Float): ElementSpec {
-        val canvasH = CANVAS_UNITS / aspectRatio
-        val cx = CANVAS_UNITS / 2f
-        val cy = canvasH / 2f
-        return when {
-            type.isControl -> ElementSpec(type = type, x = cx - 55f, y = cy - 55f, w = 110f, h = 110f, icon = IconStyle())
-            type.isText -> ElementSpec(
-                type = type, x = 40f, y = 40f, w = 500f, h = 90f, text = TextStyle(),
-                customText = if (type == ElementType.CUSTOM_TEXT) "Custom text" else null,
-            )
-            type.isImage -> ElementSpec(type = type, x = cx - 150f, y = cy - 150f, w = 300f, h = 300f, image = ImageStyle())
-            type == ElementType.PROGRESS_BAR -> ElementSpec(
-                type = type, x = 40f, y = canvasH - 60f, w = CANVAS_UNITS - 80f, h = 16f, shape = ShapeStyle()
-            )
-            else -> ElementSpec(type = type, x = cx - 150f, y = cy - 60f, w = 300f, h = 120f, shape = ShapeStyle())
-        }
-    }
-
-    private fun starterDoc(): WidgetDesignDoc {
-        val aspect = 2f
-        val canvasH = CANVAS_UNITS / aspect
-        return WidgetDesignDoc(
-            background = BackgroundSpec(),
-            elements = listOf(
-                ElementSpec(
-                    type = ElementType.BOOK_TITLE, x = 40f, y = canvasH - 190f, w = 620f, h = 70f,
-                    text = TextStyle(sizeUnits = 60f, weight = 700),
-                ),
-                ElementSpec(
-                    type = ElementType.AUTHOR, x = 40f, y = canvasH - 120f, w = 620f, h = 50f,
-                    text = TextStyle(sizeUnits = 38f, weight = 500),
-                ),
-                ElementSpec(
-                    type = ElementType.PLAY_PAUSE, x = CANVAS_UNITS - 150f, y = canvasH - 150f, w = 110f, h = 110f,
-                    icon = IconStyle(container = com.betteraudio.widget.model.ContainerShape.CIRCLE, containerColor = 0x40FFFFFF),
-                ),
-            ),
-        )
-    }
 }
