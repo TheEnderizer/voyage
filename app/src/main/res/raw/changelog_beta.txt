@@ -5,12 +5,16 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
-### Added
-- Widget maker, rebuilt from scratch: free placement with no grid-snapping, rotation for text/image/shape elements, a modern tight icon set, full per-element styling (icon container shapes, rich text color/weight/alignment/shadow, image fit/corner-radius/border/shadow, shape fill colors), and text/photo elements can now act as tap buttons too (e.g. tap the cover to play/pause). Widgets can be any aspect ratio instead of four fixed sizes, and a new "Widget designs" gallery (Settings → Widget) replaces the old inline list.
-- Widgets render directly instead of through a broadcast, so a freshly rebooted or restarted widget shows your actual last book/state immediately instead of a blank placeholder.
+## [1.9.0b] - 2026-07-19
 
-### Removed
-- Existing saved widget designs and the old fixed-size "Now Playing" widgets — this is a clean rebuild with no migration path; re-create your widget(s) after updating.
+### Added
+- Widget maker, rebuilt from scratch: free placement with no grid-snapping, rotation for text/image/shape elements, a modern tight icon set, full per-element styling (icon container shapes, rich text color/weight/alignment/shadow, image fit/corner-radius/border/shadow, shape fill colors), and text/photo elements can now act as tap buttons too (e.g. tap the cover to play/pause). Widgets can be any aspect ratio instead of four fixed sizes, and a new "Widget designs" gallery (Settings → Widget) replaces the old inline list. Widgets also render directly now instead of through a broadcast, so a freshly rebooted or restarted widget shows your actual last book/state immediately instead of a blank placeholder.
+
+### Changed
+- Immersive theme, polished: search bar, library tab chips, mini player bar, selection bar, bottom sheets, menus, and dialogs are now frosted/translucent so the blurred cover shows through everywhere — no more opaque Material panels breaking the look. Book-grid gradients are tinted toward the cover accent, and a soft theme gradient backs the app before the first book plays
+- The Immersive and Material You looks are now fully separate UI implementations under the hood, so each can keep evolving independently
+- Series screens now use the same pre-baked cover backdrop as books (sharper and cheaper to draw)
+- Android 13+ themed (monochrome) app icon
 
 ### Fixed
 - Backup & restore, repaired end to end:
@@ -20,16 +24,11 @@ Format follows https://keepachangelog.com/en/1.1.0/
   - If some books kept newer local progress during an import, the summary now says so and offers "Overwrite anyway"
   - An import keeps running (and applies completely or not at all) even if you leave the Settings screen mid-way
   - Sleep timer, balance/mono, headset mapping, and resume-on-headphones settings are now included in backups
-- Widgets: rendering moved off the main thread (smoother during sleep-timer countdowns), the widget speed buttons now persist the change, and resuming from a cold widget tap now applies series/preset defaults and auto-rewind exactly like resuming in-app
+- Resuming from a cold widget tap now applies series/preset defaults and auto-rewind exactly like resuming in-app
 - Resuming from the home-screen card now auto-rewinds the same way the full player does
 
-### Changed
-- Immersive theme, polished: search bar, library tab chips, mini player bar, selection bar, bottom sheets, menus, and dialogs are now frosted/translucent so the blurred cover shows through everywhere — no more opaque Material panels breaking the look. Book-grid gradients are tinted toward the cover accent, and a soft theme gradient backs the app before the first book plays
-- The Immersive and Material You looks are now fully separate UI implementations under the hood, so each can keep evolving independently
-- Series screens now use the same pre-baked cover backdrop as books (sharper and cheaper to draw)
-- Android 13+ themed (monochrome) app icon
-
 ### Removed
+- Existing saved widget designs and the old fixed-size "Now Playing" widgets — this is a clean rebuild with no migration path; re-create your widget(s) after updating.
 - The old retired "join books into a group" feature's leftover code and database tables (superseded by Series long ago; it had no working entry point)
 
 ## [1.8.8b] - 2026-07-16
