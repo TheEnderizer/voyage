@@ -240,6 +240,15 @@ class WidgetEditorViewModel @Inject constructor(
         }
     }
 
+    /** Incremental rotation — applied to the element's CURRENT angle each drag event, so the
+     *  gesture handler never has to track an accumulator or read a (possibly stale) captured base. */
+    fun rotateBy(deltaDeg: Float) {
+        val id = _state.value.selectedElementId ?: return
+        mutateDoc(immediate = false) { doc ->
+            doc.copy(elements = doc.elements.map { e -> if (e.id == id) e.copy(rotationDeg = e.rotationDeg + deltaDeg) else e })
+        }
+    }
+
     private fun applyResize(e: ElementSpec, corner: ResizeCorner, dx: Float, dy: Float): ElementSpec {
         val minSize = 20f
         if (e.type.isControl) {

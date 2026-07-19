@@ -265,13 +265,18 @@ class WidgetUpdater @Inject constructor(
                     claims += WidgetPainter.elementBoundingBox(el, box, scale) to pendingIntent
                 }
             }
+            // Fall-through click handling: the root view carries the open-app intent, and ONLY
+            // cells actually claimed by an element get their own intent. Unclaimed transparent
+            // cells have no click listener, so their taps bubble up to widget_root. This keeps the
+            // RemoteViews Binder payload tiny (a handful of intents, not one per grid cell) — the
+            // old "set an intent on all 144/256 cells" approach overran the transaction limit.
+            views.setOnClickPendingIntent(R.id.widget_root, WidgetIntents.openAppIntent(context))
             val assigned = HitGrid.assign(pxW, pxH, claims)
-            val openApp = WidgetIntents.openAppIntent(context)
             for (r in 0 until HitGrid.ROWS) {
                 for (c in 0 until HitGrid.COLS) {
+                    val pi = assigned[r * HitGrid.COLS + c] ?: continue
                     val cellId = HitGrid.cellId(context, r, c)
-                    if (cellId == 0) continue
-                    views.setOnClickPendingIntent(cellId, assigned[r * HitGrid.COLS + c] ?: openApp)
+                    if (cellId != 0) views.setOnClickPendingIntent(cellId, pi)
                 }
             }
 
@@ -297,14 +302,9 @@ class WidgetUpdater @Inject constructor(
         }
         views.setImageViewBitmap(R.id.iv_canvas, bmp)
 
-        val configureIntent = configurePendingIntent(appWidgetId)
-        views.setOnClickPendingIntent(R.id.widget_root, configureIntent)
-        for (r in 0 until HitGrid.ROWS) {
-            for (c in 0 until HitGrid.COLS) {
-                val cellId = HitGrid.cellId(context, r, c)
-                if (cellId != 0) views.setOnClickPendingIntent(cellId, configureIntent)
-            }
-        }
+        // Root-only intent — the transparent grid cells have no listener, so every tap bubbles
+        // up to widget_root and opens the design picker.
+        views.setOnClickPendingIntent(R.id.widget_root, configurePendingIntent(appWidgetId))
     }
 
     private fun configurePendingIntent(appWidgetId: Int): android.app.PendingIntent {
@@ -329,18 +329,22 @@ class WidgetUpdater @Inject constructor(
         }
     }
 
-    /** Caps a granted size to a sane bitmap budget: max edge 1440px, ~2.6 Mpx total, preserving
-     *  aspect — well under the launcher's RemoteViews bitmap memory ceiling. */
+    /** Caps a granted size to a conservative bitmap budget so the RemoteViews stays well under the
+     *  ~1 MB Binder transaction limit (a widget bitmap is parceled whole to the launcher). Max edge
+     *  1000px and ~800k px total keeps an ARGB_8888 bitmap around 3 MB worst case — but most of
+     *  that transports via the parcel's bitmap blob; the earlier 2.6 Mpx (~10 MB) cap combined with
+     *  a per-cell intent on all 256 grid cells is what made the launcher fail to load the widget.
+     *  A widget is viewed small, so 1000px on the long edge is plenty crisp. */
     private fun capSize(pxW: Int, pxH: Int): Pair<Int, Int> {
         var w = pxW
         var h = pxH
-        val maxEdge = 1440
+        val maxEdge = 1000
         if (max(w, h) > maxEdge) {
             val s = maxEdge.toFloat() / max(w, h)
             w = (w * s).toInt().coerceAtLeast(1)
             h = (h * s).toInt().coerceAtLeast(1)
         }
-        val maxPixels = 2_600_000L
+        val maxPixels = 800_000L
         if (w.toLong() * h.toLong() > maxPixels) {
             val s = sqrt(maxPixels.toDouble() / (w.toDouble() * h.toDouble()))
             w = (w * s).toInt().coerceAtLeast(1)

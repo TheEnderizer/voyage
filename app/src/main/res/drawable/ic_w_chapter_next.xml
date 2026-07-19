@@ -4,12 +4,11 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- "Next track": one solid triangle against a stop bar (distinct silhouette from the
-         double-chevron skip_forward, so the two are easy to tell apart at a glance). -->
+    <!-- Skip-to-next-chapter: filled triangle + end bar (standard Material skip-next silhouette). -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M4,4 L17,12 L4,20 Z" />
+        android:pathData="M5,4.5 L16,12 L5,19.5 Z" />
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M19,4 L21,4 L21,20 L19,20 Z" />
+        android:pathData="M17.5,4.5 L20,4.5 L20,19.5 L17.5,19.5 Z" />
 </vector>

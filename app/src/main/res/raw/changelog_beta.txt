@@ -5,6 +5,13 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.1b] - 2026-07-19
+
+### Fixed
+- Widgets that showed "problem loading widget" now load: the render was building a far-too-large RemoteViews (an oversized bitmap plus a tap target on every one of 256 grid cells), which overran the system's transaction limit. The tap grid is lighter now and only interactive elements get tap targets.
+- Widget editor: dragging an element now moves it instead of resizing it. Move/resize/rotate were fighting over the same touch area on smaller elements — the resize and rotate handles now sit outside the element, so the whole body reliably drags to move.
+- Refreshed several widget icons (speed, boost, skip-chapter, bookmark) to a cleaner, more consistent look that matches the rest of the app.
+
 ## [1.9.0b] - 2026-07-19
 
 ### Added

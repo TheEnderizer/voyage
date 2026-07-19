@@ -6,21 +6,27 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * The static 16×16 transparent tap-grid overlaid on the widget's rendered bitmap (see
- * res/layout/widget_hit_grid.xml, ids `hit_<row>_<col>`). RemoteViews can't position views per
- * design at runtime (setViewLayoutMargin/Width/Height are API 31+, minSdk is 26), so free element
- * placement is approximated by this much finer grid than the old system's 6×6.
+ * The static 12×12 transparent tap-grid overlaid on the widget's rendered bitmap (inlined into
+ * res/layout/widget_host.xml, ids `hit_<row>_<col>`). RemoteViews can't position views per design
+ * at runtime (setViewLayoutMargin/Width/Height are API 31+, minSdk is 26), so free element
+ * placement is approximated by this grid, finer than the old system's 6×6.
+ *
+ * The grid is deliberately not larger: every cell is a real View the launcher must inflate, and
+ * every claimed cell adds a PendingIntent to the RemoteViews Binder transaction — a 16×16 grid
+ * (256 views/intents) plus a full-size bitmap overran the ~1 MB transaction limit and made the
+ * launcher show "problem loading widget". Only *claimed* cells get an intent now; the rest fall
+ * through to the root view's open-app intent (see WidgetUpdater), keeping the payload small.
  *
  * A cell is claimed by an element iff the element's visible rect contains the cell's CENTER, or
  * covers at least 40% of the cell's area — whichever element claims a cell last (by z-order, i.e.
- * later in the input list) wins. This bounds a tap's error to at most half a cell (~3% of the
- * widget on a 16×16 grid) past the element's true visible bounds, replacing the old system's
+ * later in the input list) wins. This bounds a tap's error to at most half a cell (~4% of the
+ * widget on a 12×12 grid) past the element's true visible bounds, replacing the old system's
  * ceil/floor cell-span rule that could over-claim a whole extra row/column and cause taps on one
  * button to silently fire a neighboring one.
  */
 object HitGrid {
-    const val ROWS = 16
-    const val COLS = 16
+    const val ROWS = 12
+    const val COLS = 12
 
     fun cellId(context: Context, row: Int, col: Int): Int =
         context.resources.getIdentifier("hit_${row}_$col", "id", context.packageName)
