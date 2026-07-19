@@ -5,6 +5,12 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.3b] - 2026-07-19
+
+### Added
+- Creating a widget now starts by picking a size (Banner, Wide, Medium, Large, Square, Tall) so you design against the shape you'll actually use.
+- The editor has a "Preview size" row: tap a size to see how your design reflows at that shape (the placed widget is still freely resizable on the home screen). Your design isn't changed — it's just a preview. The chip marked with a dot is your design's native size.
+
 ## [1.9.2b] - 2026-07-19
 
 ### Fixed

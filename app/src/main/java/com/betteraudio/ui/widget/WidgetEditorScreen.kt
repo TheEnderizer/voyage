@@ -1,6 +1,7 @@
 package com.betteraudio.ui.widget
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,6 +83,15 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
         return
     }
 
+    // New widget: pick a size first, then the design is created and the editor appears.
+    if (state.awaitingSizePick) {
+        SizePickerStep(
+            onPick = { preset -> viewModel.createWithSize(preset.aspect) },
+            onBack = onBack,
+        )
+        return
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -115,7 +126,7 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                         }
                         DropdownMenu(expanded = showOverflowMenu, onDismissRequest = { showOverflowMenu = false }) {
                             DropdownMenuItem(
-                                text = { Text("Change aspect ratio") },
+                                text = { Text("Change size (re-layout)") },
                                 onClick = { showOverflowMenu = false; showAspectMenu = true }
                             )
                             DropdownMenuItem(
@@ -127,10 +138,10 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                             )
                         }
                         DropdownMenu(expanded = showAspectMenu, onDismissRequest = { showAspectMenu = false }) {
-                            ASPECT_PRESETS.forEach { (ratio, label) ->
+                            WIDGET_SIZE_PRESETS.forEach { preset ->
                                 DropdownMenuItem(
-                                    text = { Text(label) },
-                                    onClick = { viewModel.setAspectRatio(ratio); showAspectMenu = false }
+                                    text = { Text("${preset.label}  (${preset.cols}×${preset.rows})") },
+                                    onClick = { viewModel.setAspectRatio(preset.aspect); showAspectMenu = false }
                                 )
                             }
                         }
@@ -148,7 +159,8 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                 EditorCanvas(
                     viewModel = viewModel,
                     doc = state.doc,
-                    aspectRatio = state.aspectRatio,
+                    layoutAspect = state.aspectRatio,
+                    frameAspect = state.previewAspect,
                     canvasHeightUnits = state.canvasHeightUnits,
                     snapshot = snapshot,
                     selectedElementId = state.selectedElementId,
@@ -156,6 +168,12 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+
+            PreviewSizeRow(
+                nativeAspect = state.aspectRatio,
+                previewAspect = state.previewAspect,
+                onPreviewAspect = viewModel::setPreviewAspect,
+            )
 
             SelectionToolbar(
                 viewModel = viewModel,
@@ -202,6 +220,42 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                 }
             }
         )
+    }
+}
+
+/** A row of size chips that re-frame the canvas to preview how the design looks at other
+ *  home-screen sizes (the placed widget is resizable, so this shows the reflow). Non-destructive —
+ *  it never changes the design, only the preview shape. The chip matching the design's native size
+ *  is labelled so the user knows which is their real layout. */
+@Composable
+private fun PreviewSizeRow(
+    nativeAspect: Float,
+    previewAspect: Float,
+    onPreviewAspect: (Float) -> Unit,
+) {
+    val nativePreset = remember(nativeAspect) { closestSizePreset(nativeAspect) }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Text(
+            "Preview size",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+        )
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            WIDGET_SIZE_PRESETS.forEach { preset ->
+                val selected = kotlin.math.abs(preset.aspect - previewAspect) < 0.02f
+                val isNative = preset.label == nativePreset.label
+                FilterChip(
+                    selected = selected,
+                    onClick = { onPreviewAspect(preset.aspect) },
+                    label = { Text(if (isNative) "${preset.label} •" else preset.label) },
+                )
+            }
+        }
     }
 }
 

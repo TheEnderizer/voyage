@@ -34,7 +34,12 @@ import com.betteraudio.widget.render.WidgetPainter
 fun EditorCanvas(
     viewModel: WidgetEditorViewModel,
     doc: WidgetDesignDoc,
-    aspectRatio: Float,
+    /** The design's native aspect — determines element layout (design-unit content box). */
+    layoutAspect: Float,
+    /** The canvas frame aspect being previewed. Equals [layoutAspect] for the native view; when
+     *  different, the design is rendered fit-inside with full-bleed background, exactly as the
+     *  placed widget reflows when resized to that shape. */
+    frameAspect: Float,
     canvasHeightUnits: Float,
     snapshot: WidgetSnapshot,
     selectedElementId: String?,
@@ -47,17 +52,20 @@ fun EditorCanvas(
 
     Box(
         modifier
-            .aspectRatio(aspectRatio)
+            .aspectRatio(frameAspect)
             .onSizeChanged { sizePx = it }
             .checkerboard()
     ) {
         if (sizePx.width > 0 && sizePx.height > 0) {
-            val box = remember(sizePx, aspectRatio) { WidgetPainter.contentBox(sizePx.width, sizePx.height, aspectRatio) }
+            // Content box uses the DESIGN aspect against the actual frame pixels, so elements sit
+            // in the same fit-inside/letterboxed region the real widget uses — and gestures map to
+            // it exactly.
+            val box = remember(sizePx, layoutAspect) { WidgetPainter.contentBox(sizePx.width, sizePx.height, layoutAspect) }
             val scale = remember(box) { WidgetPainter.unitScale(box) }
 
-            val bitmap = remember(doc, snapshot, sizePx, accent) {
+            val bitmap = remember(doc, snapshot, sizePx, accent, layoutAspect) {
                 WidgetPainter.paint(
-                    context, doc, aspectRatio, snapshot, sizePx.width, sizePx.height,
+                    context, doc, layoutAspect, snapshot, sizePx.width, sizePx.height,
                     WidgetPainter.PaintOptions(accentFallback = accent)
                 )
             }

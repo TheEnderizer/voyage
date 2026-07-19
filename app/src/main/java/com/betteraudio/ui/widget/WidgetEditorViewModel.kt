@@ -34,9 +34,17 @@ enum class ResizeCorner { TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT }
 
 data class WidgetEditorState(
     val loading: Boolean = true,
+    /** For a brand-new widget: true until the user picks a size, which is when the design is
+     *  actually created. The editor shows the size picker instead of the canvas while true. */
+    val awaitingSizePick: Boolean = false,
     val designId: Long = -1L,
     val name: String = "",
+    /** The design's native aspect (the size the user picked) — determines element layout. */
     val aspectRatio: Float = 2f,
+    /** Editor-only preview frame aspect. Defaults to [aspectRatio]; changing it re-frames the
+     *  canvas to show how the SAME design reflows when the placed widget is resized to another
+     *  shape (fit-inside content + full-bleed background). Never saved. */
+    val previewAspect: Float = 2f,
     val doc: WidgetDesignDoc = WidgetDesignDoc(),
     val selectedElementId: String? = null,
     val previewMode: PreviewMode = PreviewMode.SAMPLE,
@@ -49,11 +57,6 @@ data class WidgetEditorState(
     val selectedElement: ElementSpec? get() = doc.elements.find { it.id == selectedElementId }
     val canvasHeightUnits: Float get() = CANVAS_UNITS / aspectRatio
 }
-
-/** Common aspect-ratio presets offered in the editor's aspect picker. */
-val ASPECT_PRESETS = listOf(
-    1f to "1:1", 2f to "2:1", 0.5f to "1:2", 1.5f to "3:2", 4f to "4:1", 2f / 1f to "4:2"
-).distinctBy { it.first }
 
 @HiltViewModel
 class WidgetEditorViewModel @Inject constructor(
@@ -77,34 +80,51 @@ class WidgetEditorViewModel @Inject constructor(
     private var pendingUndoSnapshot: WidgetDesignDoc? = null
 
     init {
-        viewModelScope.launch {
-            val design = if (requestedDesignId == -1L) {
-                val now = System.currentTimeMillis()
-                val starter = starterWidgetDesignDoc()
-                val id = designDao.upsert(
-                    WidgetDesign(
-                        name = "New widget",
-                        aspectRatio = 2f,
-                        documentJson = WidgetDesignCodec.encode(starter),
-                        createdAt = now,
-                        updatedAt = now,
+        if (requestedDesignId == -1L) {
+            // New widget: don't create anything yet — let the user pick a size first.
+            _state.value = WidgetEditorState(loading = false, awaitingSizePick = true)
+        } else {
+            viewModelScope.launch {
+                val design = designDao.getById(requestedDesignId)
+                if (design != null) {
+                    _state.value = WidgetEditorState(
+                        loading = false,
+                        designId = design.id,
+                        name = design.name,
+                        aspectRatio = design.aspectRatio,
+                        previewAspect = design.aspectRatio,
+                        doc = WidgetDesignCodec.decode(design.documentJson),
                     )
-                )
-                designDao.getById(id)
-            } else {
-                designDao.getById(requestedDesignId)
+                } else {
+                    _state.update { it.copy(loading = false) }
+                }
             }
-            if (design != null) {
-                _state.value = WidgetEditorState(
-                    loading = false,
-                    designId = design.id,
-                    name = design.name,
-                    aspectRatio = design.aspectRatio,
-                    doc = WidgetDesignCodec.decode(design.documentJson),
+        }
+    }
+
+    /** Called from the size picker for a new widget: creates the design at the chosen [aspect]
+     *  and drops into the editor. */
+    fun createWithSize(aspect: Float) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val starter = starterWidgetDesignDoc(aspect)
+            val id = designDao.upsert(
+                WidgetDesign(
+                    name = "New widget",
+                    aspectRatio = aspect,
+                    documentJson = WidgetDesignCodec.encode(starter),
+                    createdAt = now,
+                    updatedAt = now,
                 )
-            } else {
-                _state.update { it.copy(loading = false) }
-            }
+            )
+            _state.value = WidgetEditorState(
+                loading = false,
+                designId = id,
+                name = "New widget",
+                aspectRatio = aspect,
+                previewAspect = aspect,
+                doc = starter,
+            )
         }
     }
 
@@ -328,6 +348,8 @@ class WidgetEditorViewModel @Inject constructor(
         _state.update { it.copy(name = name, dirty = true) }
     }
 
+    /** Changes the design's NATIVE size (re-lays-out elements to the new aspect). Also resets the
+     *  preview frame to match, since the native shape changed. */
     fun setAspectRatio(ratio: Float) {
         val s = _state.value
         val oldH = CANVAS_UNITS / s.aspectRatio
@@ -337,10 +359,17 @@ class WidgetEditorViewModel @Inject constructor(
         _state.update {
             it.copy(
                 aspectRatio = ratio,
+                previewAspect = ratio,
                 doc = it.doc.copy(elements = it.doc.elements.map { e -> e.copy(y = e.y * scaleY, h = e.h * scaleY) }),
                 dirty = true,
             )
         }
+    }
+
+    /** Editor-only: re-frame the canvas to preview how the design looks at another size. Does NOT
+     *  change the design or mark it dirty — it's purely a "what would this look like resized" view. */
+    fun setPreviewAspect(aspect: Float) {
+        _state.update { it.copy(previewAspect = aspect) }
     }
 
     fun setPreviewMode(mode: PreviewMode) {

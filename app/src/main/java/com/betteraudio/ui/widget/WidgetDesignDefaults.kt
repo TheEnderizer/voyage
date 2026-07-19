@@ -12,23 +12,25 @@ import com.betteraudio.widget.model.TextStyle
 import com.betteraudio.widget.model.WidgetDesignDoc
 
 /** A new design's starting point: cover background, title/author, and a play button — enough to
- *  be immediately useful and demonstrate the canvas, without being a blank void. */
-fun starterWidgetDesignDoc(): WidgetDesignDoc {
-    val aspect = 2f
+ *  be immediately useful and demonstrate the canvas, without being a blank void. Laid out relative
+ *  to the chosen [aspect] so the starter looks sensible whatever size the user picked. */
+fun starterWidgetDesignDoc(aspect: Float = 2f): WidgetDesignDoc {
     val canvasH = CANVAS_UNITS / aspect
+    val margin = 40f
+    val play = 110f.coerceAtMost(canvasH * 0.5f)
     return WidgetDesignDoc(
         background = BackgroundSpec(),
         elements = listOf(
             ElementSpec(
-                type = ElementType.BOOK_TITLE, x = 40f, y = canvasH - 190f, w = 620f, h = 70f,
+                type = ElementType.BOOK_TITLE, x = margin, y = canvasH - 190f, w = CANVAS_UNITS - 2 * margin - play - 40f, h = 70f,
                 text = TextStyle(sizeUnits = 60f, weight = 700),
             ),
             ElementSpec(
-                type = ElementType.AUTHOR, x = 40f, y = canvasH - 120f, w = 620f, h = 50f,
+                type = ElementType.AUTHOR, x = margin, y = canvasH - 120f, w = CANVAS_UNITS - 2 * margin - play - 40f, h = 50f,
                 text = TextStyle(sizeUnits = 38f, weight = 500),
             ),
             ElementSpec(
-                type = ElementType.PLAY_PAUSE, x = CANVAS_UNITS - 150f, y = canvasH - 150f, w = 110f, h = 110f,
+                type = ElementType.PLAY_PAUSE, x = CANVAS_UNITS - margin - play, y = canvasH - margin - play, w = play, h = play,
                 icon = IconStyle(container = ContainerShape.CIRCLE, containerColor = 0x40FFFFFF),
             ),
         ),
