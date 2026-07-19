@@ -5,6 +5,13 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Added
+- Widget maker, rebuilt from scratch: free placement with no grid-snapping, rotation for text/image/shape elements, a modern tight icon set, full per-element styling (icon container shapes, rich text color/weight/alignment/shadow, image fit/corner-radius/border/shadow, shape fill colors), and text/photo elements can now act as tap buttons too (e.g. tap the cover to play/pause). Widgets can be any aspect ratio instead of four fixed sizes, and a new "Widget designs" gallery (Settings → Widget) replaces the old inline list.
+- Widgets render directly instead of through a broadcast, so a freshly rebooted or restarted widget shows your actual last book/state immediately instead of a blank placeholder.
+
+### Removed
+- Existing saved widget designs and the old fixed-size "Now Playing" widgets — this is a clean rebuild with no migration path; re-create your widget(s) after updating.
+
 ### Fixed
 - Backup & restore, repaired end to end:
   - Restoring a backup now reliably applies resume positions — a race with the player's own position saving could silently skip or overwrite the restored progress for the book you were listening to

@@ -159,7 +159,7 @@ object WidgetPainter {
         }
         val alpha = (el.opacity.coerceIn(0f, 1f) * 255).toInt()
         val layered = alpha < 255
-        if (layered) canvas.saveLayerAlpha(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat(), alpha)
+        if (layered) canvas.saveLayerAlpha(RectF(0f, 0f, canvas.width.toFloat(), canvas.height.toFloat()), alpha)
 
         when {
             el.type.isControl -> drawControl(context, canvas, el, rect, snapshot, accent, scale)

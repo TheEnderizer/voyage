@@ -31,8 +31,10 @@ import kotlin.math.min
 import kotlin.math.sqrt
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,17 +67,22 @@ class WidgetUpdater @Inject constructor(
      *  that actually need it instead of every placed widget. */
     private val countdownCache = ConcurrentHashMap<Int, Boolean>()
 
-    init {
-        scope.launch {
-            stateStore.loadIntoMemory()
-            gcOrphanBindings()
-        }
+    /** Loads the persisted snapshot into memory and sweeps orphan bindings, ONCE, before this
+     *  singleton does anything else. A cold provider render can arrive the instant Hilt finishes
+     *  constructing this class (e.g. onUpdate() firing right after a reboot restores widgets) —
+     *  without awaiting this job first, that render could read [WidgetStateStore.current] before
+     *  [WidgetStateStore.loadIntoMemory] finishes its suspend point, defeating the whole point of
+     *  persisting state for cold starts. Every path that touches `current` awaits this first. */
+    private val readyJob: Deferred<Unit> = scope.async {
+        stateStore.loadIntoMemory()
+        gcOrphanBindings()
     }
 
     /** Persists [snapshot] and re-renders every placed widget from it. Called by PlaybackService
      *  on every playback event. */
     fun push(snapshot: WidgetSnapshot) {
         scope.launch {
+            readyJob.await()
             stateStore.write(snapshot)
             triggerRenderAll()
         }
@@ -94,6 +101,7 @@ class WidgetUpdater @Inject constructor(
      *  it isn't cancelled by the caller tearing itself down right afterward. */
     fun pushPaused() {
         scope.launch {
+            readyJob.await()
             stateStore.write(
                 stateStore.current.copy(isPlaying = false, sleepEndAtElapsedMs = 0, sleepRemainingMs = 0)
             )
@@ -207,6 +215,7 @@ class WidgetUpdater @Inject constructor(
 
     private suspend fun renderOneInternal(manager: AppWidgetManager, appWidgetId: Int) {
         try {
+            readyJob.await()
             val views = RemoteViews(context.packageName, R.layout.widget_host)
             val designId = bindingDao.getDesignId(appWidgetId)
             val design = designId?.let { designDao.getById(it) }
