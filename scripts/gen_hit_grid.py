@@ -17,13 +17,18 @@ ROWS = 12
 COLS = 12
 OUT = pathlib.Path(__file__).resolve().parent.parent / "app/src/main/res/layout/widget_host.xml"
 
+# Cells are ImageView, NOT the bare View class: RemoteViews only inflates a fixed set of view
+# types in the launcher's process, and plain <View> is not among them — using it made the whole
+# widget fail to inflate ("problem loading widget"). ImageView is RemoteViews-supported (the
+# previous widget system used it for its tap cells too).
 CELL = (
-    '                <View\n'
+    '                <ImageView\n'
     '                    android:id="@+id/hit_{r}_{c}"\n'
     '                    android:layout_width="0dp"\n'
     '                    android:layout_height="match_parent"\n'
     '                    android:layout_weight="1"\n'
-    '                    android:background="@android:color/transparent" />\n'
+    '                    android:background="@android:color/transparent"\n'
+    '                    android:contentDescription="@null" />\n'
 )
 
 ROW_OPEN = (

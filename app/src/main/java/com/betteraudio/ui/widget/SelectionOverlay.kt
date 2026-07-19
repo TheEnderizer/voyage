@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -17,9 +18,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.betteraudio.widget.model.ElementSpec
@@ -28,15 +30,19 @@ import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
- * Selection + transform overlay. Redesigned to fix the "dragging the body resizes instead of
- * moving" bug: the old version stacked four 20 dp resize-handle children, each with its own drag
- * gesture, directly on the element's corners — on a small element those handles blanketed almost
- * the entire touch area, so the center drag (move) rarely won the gesture.
+ * Selection + transform overlay.
  *
- * Now there is a SINGLE drag gesture on one overlay node. Where the drag STARTS decides the mode
- * (rotate / resize-corner / move) via nearest-anchor hit-testing, and the resize/rotate handles
- * sit fully OUTSIDE the element's bounds — so the element body is, unambiguously and at any size, a
- * move target. No snapping anywhere (the editor's core requirement).
+ * This is a **stationary, full-canvas gesture surface** — not a box sized/positioned to the
+ * element. That distinction is the fix for two bugs: (1) the earlier version stacked four handle
+ * children each with its own drag gesture, which on a small element blanketed the whole touch area
+ * so a body drag resized instead of moved; and (2) making the *moving* element its own gesture
+ * surface created a self-offset feedback loop — as the element (and thus the gesture node) shifted
+ * under the finger, each frame's measured delta was partly cancelled, so it "only moved a little".
+ *
+ * Here one pointerInput lives on a node that never moves (the canvas). Where a drag STARTS decides
+ * the mode (rotate / resize-corner / move) by nearest-anchor hit-testing against the element's
+ * current bounds, read fresh from the ViewModel. Drag deltas are in stable canvas pixels, so
+ * movement tracks the finger exactly. No snapping (the editor's core requirement).
  */
 private enum class DragMode { MOVE, ROTATE, RESIZE_TL, RESIZE_TR, RESIZE_BL, RESIZE_BR }
 
@@ -48,55 +54,33 @@ fun SelectionOverlay(
     scale: Float,
 ) {
     val density = LocalDensity.current
-    val rectPx = remember(element.x, element.y, element.w, element.h, box, scale) {
-        WidgetPainter.elementRect(element, box, scale)
+    val handleOut = with(density) { 13.dp.toPx() }   // resize anchor sits this far past a corner
+    val rotOut = with(density) { 34.dp.toPx() }       // rotate anchor sits this far above the top
+    val hitR = with(density) { 26.dp.toPx() }         // anchor hit radius
+
+    // Axis-aligned bounds of the element in canvas pixels (== the exact rect when un-rotated).
+    val aabb = remember(element.x, element.y, element.w, element.h, element.rotationDeg, box, scale) {
+        WidgetPainter.elementBoundingBox(element, box, scale)
     }
-    val w = rectPx.width()
-    val h = rectPx.height()
-
-    // Uniform padding around the element so handles live in the margin, never over the body.
-    // Uniform (not extra-top) so the overlay's center coincides with the element center, letting a
-    // plain center-pivot rotation track the rendered element exactly.
-    val pad = with(density) { 40.dp.toPx() }
-    val handleOut = with(density) { 15.dp.toPx() }   // how far a resize anchor sits past a corner
-    val rotOut = with(density) { 30.dp.toPx() }      // how far the rotate anchor sits above the top
-    val hitR = with(density) { 22.dp.toPx() }        // anchor hit radius
-
-    // Element rect expressed in the overlay's own (un-rotated) local pixel space.
-    val elL = pad; val elT = pad; val elR = pad + w; val elB = pad + h
-    val cx = pad + w / 2f
-
-    val resizeAnchors = remember(w, h) {
-        mapOf(
-            DragMode.RESIZE_TL to Offset(elL - handleOut, elT - handleOut),
-            DragMode.RESIZE_TR to Offset(elR + handleOut, elT - handleOut),
-            DragMode.RESIZE_BL to Offset(elL - handleOut, elB + handleOut),
-            DragMode.RESIZE_BR to Offset(elR + handleOut, elB + handleOut),
-        )
-    }
-    val rotAnchor = Offset(cx, elT - rotOut)
     val rotatable = element.type.canRotate
 
-    var mode by remember { mutableStateOf(DragMode.MOVE) }
+    var mode by remember { mutableStateOf<DragMode?>(null) }
 
     Box(
         Modifier
-            .offset { IntOffset((rectPx.left - pad).roundToInt(), (rectPx.top - pad).roundToInt()) }
-            .size(
-                with(density) { (w + 2 * pad).toDp() },
-                with(density) { (h + 2 * pad).toDp() },
-            )
-            // Rotate around the element center (== overlay center, thanks to uniform pad) so the
-            // overlay stays aligned with the rendered, rotated element.
-            .graphicsLayer { rotationZ = element.rotationDeg }
-            .pointerInput(element.id, w, h, scale, rotatable) {
+            .fillMaxSize()
+            // Key only on things that are stable during a drag — NOT x/y/w/h — so a move never
+            // restarts the in-flight gesture. Fresh element bounds are read from the VM at drag
+            // start instead.
+            .pointerInput(element.id, box, scale) {
                 detectDragGestures(
                     onDragStart = { p ->
-                        mode = classify(p, resizeAnchors, rotAnchor, rotatable, hitR)
+                        mode = classifyStart(p, viewModel, box, scale, handleOut, rotOut, hitR)
                     },
                     onDrag = { change, amount ->
+                        val m = mode ?: return@detectDragGestures
                         change.consume()
-                        when (mode) {
+                        when (m) {
                             DragMode.MOVE -> viewModel.moveSelected(amount.x / scale, amount.y / scale)
                             DragMode.ROTATE -> viewModel.rotateBy(amount.x * 0.4f)
                             DragMode.RESIZE_TL -> viewModel.resizeSelected(ResizeCorner.TOP_LEFT, amount.x / scale, amount.y / scale)
@@ -105,28 +89,33 @@ fun SelectionOverlay(
                             DragMode.RESIZE_BR -> viewModel.resizeSelected(ResizeCorner.BOTTOM_RIGHT, amount.x / scale, amount.y / scale)
                         }
                     },
-                    onDragEnd = { viewModel.endContinuousEdit() },
-                    onDragCancel = { viewModel.endContinuousEdit() },
+                    onDragEnd = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
+                    onDragCancel = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
                 )
             }
     ) {
-        // Selection border, drawn on the element region only (inside the padded overlay).
+        // Selection border, positioned at the element's current bounds.
         Box(
             Modifier
-                .offset { IntOffset(pad.roundToInt(), pad.roundToInt()) }
-                .size(with(density) { w.toDp() }, with(density) { h.toDp() })
+                .offset { IntOffset(aabb.left.roundToInt(), aabb.top.roundToInt()) }
+                .size(with(density) { aabb.width().toDp() }, with(density) { aabb.height().toDp() })
                 .border(2.dp, MaterialTheme.colorScheme.primary)
         )
 
-        // Visual-only handle dots (all gestures handled by the single parent pointerInput above).
-        resizeAnchors.values.forEach { a -> HandleDot(a, density, MaterialTheme.colorScheme.primary) }
-        if (rotatable) HandleDot(rotAnchor, density, MaterialTheme.colorScheme.tertiary)
+        // Visual-only handle dots (all gestures handled by the single canvas pointerInput above).
+        HandleDot(Offset(aabb.left - handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.right + handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.left - handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.right + handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
+        if (rotatable) {
+            HandleDot(Offset(aabb.centerX(), aabb.top - rotOut), density, MaterialTheme.colorScheme.tertiary)
+        }
     }
 }
 
 @Composable
-private fun HandleDot(center: Offset, density: androidx.compose.ui.unit.Density, color: androidx.compose.ui.graphics.Color) {
-    val d = with(density) { 16.dp.toPx() }
+private fun HandleDot(center: Offset, density: Density, color: Color) {
+    val d = with(density) { 15.dp.toPx() }
     Box(
         Modifier
             .offset { IntOffset((center.x - d / 2f).roundToInt(), (center.y - d / 2f).roundToInt()) }
@@ -137,23 +126,47 @@ private fun HandleDot(center: Offset, density: androidx.compose.ui.unit.Density,
     )
 }
 
-private fun classify(
+/** Classifies a drag-start canvas point into a transform mode, reading the element's CURRENT
+ *  bounds from the ViewModel (so it's correct even after prior moves in the same session). Returns
+ *  null when the drag starts on empty canvas, so it becomes a no-op instead of moving the
+ *  selection from nowhere. */
+private fun classifyStart(
     p: Offset,
-    resizeAnchors: Map<DragMode, Offset>,
-    rotAnchor: Offset,
-    rotatable: Boolean,
+    viewModel: WidgetEditorViewModel,
+    box: RectF,
+    scale: Float,
+    handleOut: Float,
+    rotOut: Float,
     hitR: Float,
-): DragMode {
-    if (rotatable && dist(p, rotAnchor) <= hitR) return DragMode.ROTATE
+): DragMode? {
+    val el = viewModel.state.value.selectedElement ?: return null
+    val aabb = WidgetPainter.elementBoundingBox(el, box, scale)
+
+    if (el.type.canRotate) {
+        val rot = Offset(aabb.centerX(), aabb.top - rotOut)
+        if (dist(p, rot) <= hitR) return DragMode.ROTATE
+    }
+    val anchors = listOf(
+        DragMode.RESIZE_TL to Offset(aabb.left - handleOut, aabb.top - handleOut),
+        DragMode.RESIZE_TR to Offset(aabb.right + handleOut, aabb.top - handleOut),
+        DragMode.RESIZE_BL to Offset(aabb.left - handleOut, aabb.bottom + handleOut),
+        DragMode.RESIZE_BR to Offset(aabb.right + handleOut, aabb.bottom + handleOut),
+    )
     var best: DragMode? = null
     var bestD = hitR
-    for ((m, a) in resizeAnchors) {
+    for ((m, a) in anchors) {
         val d = dist(p, a)
         if (d <= bestD) { bestD = d; best = m }
     }
     if (best != null) return best
-    // Anything else — including the element body and the empty margin — moves.
-    return DragMode.MOVE
+
+    // A generous move zone: the element's bounds expanded a little, so grabbing the body (or just
+    // outside it) drags. Anywhere else is empty canvas → ignore the drag.
+    val pad = handleOut
+    if (p.x in (aabb.left - pad)..(aabb.right + pad) && p.y in (aabb.top - pad)..(aabb.bottom + pad)) {
+        return DragMode.MOVE
+    }
+    return null
 }
 
 private fun dist(a: Offset, b: Offset): Float = hypot(a.x - b.x, a.y - b.y)

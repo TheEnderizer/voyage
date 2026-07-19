@@ -5,6 +5,12 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.2b] - 2026-07-19
+
+### Fixed
+- Widget "problem loading widget" — the real cause: the widget layout used a view type the home-screen widget framework doesn't support for its tap grid, so the whole widget failed to inflate. Switched to a supported view type (and added a safety net that shrinks the render if the system still rejects it as too large).
+- Widget editor: dragging an element now moves it the full distance you drag. The move gesture was fighting itself because the element being dragged was also the touch surface; the gesture now lives on a fixed layer so movement tracks your finger exactly.
+
 ## [1.9.1b] - 2026-07-19
 
 ### Fixed

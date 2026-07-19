@@ -21,936 +21,1080 @@
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_0_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_0_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_1_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_1_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_2_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_2_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_3_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_3_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_4_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_4_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_5_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_5_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_6_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_6_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_7_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_7_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_8_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_8_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_9_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_9_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_10_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_10_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_weight="1"
                 android:orientation="horizontal">
-                <View
+                <ImageView
                     android:id="@+id/hit_11_0"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_1"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_2"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_3"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_4"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_5"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_6"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_7"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_8"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_9"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_10"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
-                <View
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
+                <ImageView
                     android:id="@+id/hit_11_11"
                     android:layout_width="0dp"
                     android:layout_height="match_parent"
                     android:layout_weight="1"
-                    android:background="@android:color/transparent" />
+                    android:background="@android:color/transparent"
+                    android:contentDescription="@null" />
             </LinearLayout>
     </LinearLayout>
 </FrameLayout>

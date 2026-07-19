@@ -63,10 +63,13 @@ fun EditorCanvas(
             }
             Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
 
+            // Tap-to-select layer. Keyed on stable (box, scale) only — NOT doc.elements — so it
+            // doesn't relaunch every frame while an element is being dragged; the current element
+            // list is read fresh from the ViewModel at tap time instead.
             Box(
-                Modifier.fillMaxSize().pointerInput(doc.elements) {
+                Modifier.fillMaxSize().pointerInput(box, scale) {
                     detectTapGestures { offset ->
-                        val hit = doc.elements.asReversed().firstOrNull { el ->
+                        val hit = viewModel.state.value.doc.elements.asReversed().firstOrNull { el ->
                             WidgetPainter.elementBoundingBox(el, box, scale).contains(offset.x, offset.y)
                         }
                         viewModel.selectElement(hit?.id)

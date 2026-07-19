@@ -216,7 +216,6 @@ class WidgetUpdater @Inject constructor(
     private suspend fun renderOneInternal(manager: AppWidgetManager, appWidgetId: Int) {
         try {
             readyJob.await()
-            val views = RemoteViews(context.packageName, R.layout.widget_host)
             val designId = bindingDao.getDesignId(appWidgetId)
             val design = designId?.let { designDao.getById(it) }
 
@@ -228,6 +227,7 @@ class WidgetUpdater @Inject constructor(
 
             if (design == null) {
                 countdownCache[appWidgetId] = false
+                val views = RemoteViews(context.packageName, R.layout.widget_host)
                 renderPlaceholder(views, pxW, pxH, appWidgetId)
                 manager.updateAppWidget(appWidgetId, views)
                 return
@@ -248,42 +248,77 @@ class WidgetUpdater @Inject constructor(
                 defaultCoverPath = defaultCover,
             )
 
-            val bitmap = WidgetPainter.paint(context, doc, design.aspectRatio, snapshot, pxW, pxH, paintOpts)
-            views.setImageViewBitmap(R.id.iv_canvas, bitmap)
-
-            val box = WidgetPainter.contentBox(pxW, pxH, design.aspectRatio)
-            val scale = WidgetPainter.unitScale(box)
-            val hideIdle = paintOpts.hideWhenIdle && !snapshot.isPlaying
-            val claims = mutableListOf<Pair<RectF, android.app.PendingIntent>>()
-            if (!hideIdle) {
-                for (el in doc.elements) {
-                    val pendingIntent = if (el.type.isControl) {
-                        WidgetIntents.forControl(context, appWidgetId, el)
-                    } else {
-                        WidgetIntents.forTapAction(context, appWidgetId, el)
-                    } ?: continue
-                    claims += WidgetPainter.elementBoundingBox(el, box, scale) to pendingIntent
+            // Push at the capped size, then progressively smaller if the system rejects the
+            // RemoteViews as too large (updateAppWidget can throw IllegalArgumentException /
+            // TransactionTooLargeException synchronously when the bitmap exceeds the widget memory
+            // or Binder limits). A safety net on top of the conservative capSize — a shrunk-but-
+            // visible widget always beats "problem loading widget".
+            var attemptW = pxW
+            var attemptH = pxH
+            var lastError: Exception? = null
+            repeat(3) { attempt ->
+                try {
+                    val views = buildDesignViews(appWidgetId, design, doc, snapshot, paintOpts, attemptW, attemptH)
+                    manager.updateAppWidget(appWidgetId, views)
+                    return
+                } catch (e: Exception) {
+                    lastError = e
+                    AppLog.e("Widget", "updateAppWidget attempt ${attempt + 1} failed at ${attemptW}x$attemptH for id=$appWidgetId", e)
+                    attemptW = (attemptW * 0.6f).toInt().coerceAtLeast(1)
+                    attemptH = (attemptH * 0.6f).toInt().coerceAtLeast(1)
                 }
             }
-            // Fall-through click handling: the root view carries the open-app intent, and ONLY
-            // cells actually claimed by an element get their own intent. Unclaimed transparent
-            // cells have no click listener, so their taps bubble up to widget_root. This keeps the
-            // RemoteViews Binder payload tiny (a handful of intents, not one per grid cell) — the
-            // old "set an intent on all 144/256 cells" approach overran the transaction limit.
-            views.setOnClickPendingIntent(R.id.widget_root, WidgetIntents.openAppIntent(context))
-            val assigned = HitGrid.assign(pxW, pxH, claims)
-            for (r in 0 until HitGrid.ROWS) {
-                for (c in 0 until HitGrid.COLS) {
-                    val pi = assigned[r * HitGrid.COLS + c] ?: continue
-                    val cellId = HitGrid.cellId(context, r, c)
-                    if (cellId != 0) views.setOnClickPendingIntent(cellId, pi)
-                }
-            }
-
-            manager.updateAppWidget(appWidgetId, views)
+            AppLog.e("Widget", "renderOne exhausted retries for id=$appWidgetId", lastError)
+            return
         } catch (e: Exception) {
             AppLog.e("Widget", "renderOne failed for id=$appWidgetId", e)
         }
+    }
+
+    /** Builds the RemoteViews for a bound design at a specific render size (bitmap + click
+     *  intents). Kept separate so [renderOneInternal] can rebuild it at a smaller size on a
+     *  too-large failure. */
+    private fun buildDesignViews(
+        appWidgetId: Int,
+        design: com.betteraudio.data.db.entities.WidgetDesign,
+        doc: com.betteraudio.widget.model.WidgetDesignDoc,
+        snapshot: WidgetSnapshot,
+        paintOpts: WidgetPainter.PaintOptions,
+        pxW: Int,
+        pxH: Int,
+    ): RemoteViews {
+        val views = RemoteViews(context.packageName, R.layout.widget_host)
+        val bitmap = WidgetPainter.paint(context, doc, design.aspectRatio, snapshot, pxW, pxH, paintOpts)
+        views.setImageViewBitmap(R.id.iv_canvas, bitmap)
+
+        val box = WidgetPainter.contentBox(pxW, pxH, design.aspectRatio)
+        val scale = WidgetPainter.unitScale(box)
+        val hideIdle = paintOpts.hideWhenIdle && !snapshot.isPlaying
+        val claims = mutableListOf<Pair<RectF, android.app.PendingIntent>>()
+        if (!hideIdle) {
+            for (el in doc.elements) {
+                val pendingIntent = if (el.type.isControl) {
+                    WidgetIntents.forControl(context, appWidgetId, el)
+                } else {
+                    WidgetIntents.forTapAction(context, appWidgetId, el)
+                } ?: continue
+                claims += WidgetPainter.elementBoundingBox(el, box, scale) to pendingIntent
+            }
+        }
+        // Fall-through click handling: the root view carries the open-app intent, and ONLY cells
+        // actually claimed by an element get their own intent. Unclaimed transparent cells have no
+        // click listener, so their taps bubble up to widget_root — keeping the RemoteViews payload
+        // small (a handful of intents, not one per grid cell).
+        views.setOnClickPendingIntent(R.id.widget_root, WidgetIntents.openAppIntent(context))
+        val assigned = HitGrid.assign(pxW, pxH, claims)
+        for (r in 0 until HitGrid.ROWS) {
+            for (c in 0 until HitGrid.COLS) {
+                val pi = assigned[r * HitGrid.COLS + c] ?: continue
+                val cellId = HitGrid.cellId(context, r, c)
+                if (cellId != 0) views.setOnClickPendingIntent(cellId, pi)
+            }
+        }
+        return views
     }
 
     /** Shown when a widget has no binding, or its bound design was deleted — tapping anywhere
@@ -329,22 +364,24 @@ class WidgetUpdater @Inject constructor(
         }
     }
 
-    /** Caps a granted size to a conservative bitmap budget so the RemoteViews stays well under the
-     *  ~1 MB Binder transaction limit (a widget bitmap is parceled whole to the launcher). Max edge
-     *  1000px and ~800k px total keeps an ARGB_8888 bitmap around 3 MB worst case — but most of
-     *  that transports via the parcel's bitmap blob; the earlier 2.6 Mpx (~10 MB) cap combined with
-     *  a per-cell intent on all 256 grid cells is what made the launcher fail to load the widget.
-     *  A widget is viewed small, so 1000px on the long edge is plenty crisp. */
+    /** Caps the render size hard. A widget's bitmap is set via RemoteViews.setImageViewBitmap,
+     *  and on modern Android (10+) Bitmap.writeToParcel copies the pixels INLINE into the Binder
+     *  transaction that ships the RemoteViews to the launcher. That transaction has a ~1 MB hard
+     *  limit, so an ARGB_8888 bitmap must stay well under 256k px (1 MB / 4 bytes) or the launcher
+     *  throws TransactionTooLargeException and shows "problem loading widget" — which is exactly
+     *  what a large free-size widget hit. ~190k px (≈760 KB) leaves headroom for the rest of the
+     *  RemoteViews. The bitmap is stretched (fitXY) to the widget's real size, so it stays legible;
+     *  a widget is viewed small anyway. */
     private fun capSize(pxW: Int, pxH: Int): Pair<Int, Int> {
         var w = pxW
         var h = pxH
-        val maxEdge = 1000
+        val maxEdge = 620
         if (max(w, h) > maxEdge) {
             val s = maxEdge.toFloat() / max(w, h)
             w = (w * s).toInt().coerceAtLeast(1)
             h = (h * s).toInt().coerceAtLeast(1)
         }
-        val maxPixels = 800_000L
+        val maxPixels = 190_000L
         if (w.toLong() * h.toLong() > maxPixels) {
             val s = sqrt(maxPixels.toDouble() / (w.toDouble() * h.toDouble()))
             w = (w * s).toInt().coerceAtLeast(1)
