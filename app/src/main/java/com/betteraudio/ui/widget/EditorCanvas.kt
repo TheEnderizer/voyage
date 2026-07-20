@@ -1,5 +1,6 @@
 package com.betteraudio.ui.widget
 
+import android.graphics.Bitmap
 import android.graphics.RectF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -9,19 +10,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ZoomIn
-import androidx.compose.material.icons.filled.ZoomOut
-import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
@@ -43,6 +38,8 @@ import com.betteraudio.widget.model.WidgetDesignDoc
 import com.betteraudio.widget.model.WidgetSnapshot
 import com.betteraudio.widget.render.ShapePaths
 import com.betteraudio.widget.render.WidgetPainter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Matches WidgetPainter's private DEFAULT_OUTER_RADIUS — duplicated here purely so the editor-only
  *  shape outline (never touches WidgetPainter/the real render path) can draw the same fallback. */
@@ -93,6 +90,10 @@ fun EditorCanvas(
             .aspectRatio(layoutAspect)
             .onSizeChanged { sizePx = it }
             .clipToBounds()
+            // Static, unscaled backdrop — deliberately NOT inside the zoomed/panned layer below, so
+            // it never needs to redraw as part of that layer's frequent invalidation (every drag
+            // delta, every pinch frame) — a meaningful chunk of the stutter this used to cause.
+            .checkerboard()
             // Two-finger pinch/pan only — consumes nothing for a single pointer, so element
             // tap/drag (handled by children below) is completely unaffected.
             .pointerInput(Unit) {
@@ -123,7 +124,6 @@ fun EditorCanvas(
                     scaleX = zoom; scaleY = zoom
                     translationX = pan.x; translationY = pan.y
                 }
-                .checkerboard()
         ) {
             if (sizePx.width > 0 && sizePx.height > 0) {
                 // Content box uses the DESIGN aspect against the actual frame pixels — matches the
@@ -132,13 +132,25 @@ fun EditorCanvas(
                 val box = remember(sizePx, layoutAspect) { WidgetPainter.contentBox(sizePx.width, sizePx.height, layoutAspect) }
                 val scale = remember(box) { WidgetPainter.unitScale(box) }
 
-                val bitmap = remember(doc, snapshot, sizePx, accent, layoutAspect) {
-                    WidgetPainter.paint(
-                        context, doc, layoutAspect, snapshot, sizePx.width, sizePx.height,
-                        WidgetPainter.PaintOptions(accentFallback = accent)
-                    )
+                // WidgetPainter.paint() is genuinely expensive (cover decode/scale, Palette color
+                // extraction) and doc changes on every single drag delta — running it synchronously
+                // in `remember` blocked the main thread each frame and was the main source of the
+                // editor's stutter, especially now the canvas is much bigger than before. Rendering
+                // it on a background dispatcher keeps the last frame on screen while the next one is
+                // computed, so drag/pinch stay smooth even if a render or two falls behind.
+                var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+                LaunchedEffect(doc, snapshot, sizePx, accent, layoutAspect) {
+                    val result = withContext(Dispatchers.Default) {
+                        WidgetPainter.paint(
+                            context, doc, layoutAspect, snapshot, sizePx.width, sizePx.height,
+                            WidgetPainter.PaintOptions(accentFallback = accent)
+                        )
+                    }
+                    bitmap = result
                 }
-                Image(bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
+                bitmap?.let { bmp ->
+                    Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
+                }
 
                 val baseLayer = doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }
                 WidgetShapeOutline(
@@ -189,22 +201,6 @@ fun EditorCanvas(
                         )
                     }
                     SelectionOverlay(viewModel = viewModel, element = selected, box = box, scale = scale, isBaseLayer = isBaseLayer)
-                }
-            }
-        }
-
-        // Zoom controls — live outside the scaled/panned layer so they stay a fixed size/position.
-        Box(
-            Modifier.align(Alignment.BottomEnd).padding(10.dp),
-        ) {
-            androidx.compose.foundation.layout.Column(
-                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
-            ) {
-                FilledIconButton(onClick = { setZoom(zoom + 0.5f) }) {
-                    Icon(Icons.Default.ZoomIn, contentDescription = "Zoom in")
-                }
-                FilledIconButton(onClick = { setZoom(zoom - 0.5f) }) {
-                    Icon(Icons.Default.ZoomOut, contentDescription = "Zoom out")
                 }
             }
         }

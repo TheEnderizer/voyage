@@ -14,6 +14,7 @@ import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.IconStyle
 import com.betteraudio.widget.model.ImageStyle
+import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
 import com.betteraudio.widget.model.TextStyle
 import com.betteraudio.widget.model.WidgetDesignCodec
@@ -184,8 +185,15 @@ class WidgetEditorViewModel @Inject constructor(
 
     // ── Element lifecycle ───────────────────────────────────────────────────
 
-    fun addElement(type: ElementType) {
-        val el = defaultElementFor(type, _state.value.aspectRatio)
+    /** [shapeKindOverride] lets the picker offer named shape variants (e.g. "Circle") that are
+     *  really just a RECT element pre-set to a different [com.betteraudio.widget.model.ShapeKind] —
+     *  the model already supports any shape kind on a RECT's style, this just skips the extra step
+     *  of opening the shape and picking it manually. */
+    fun addElement(type: ElementType, shapeKindOverride: ShapeKind? = null) {
+        var el = defaultElementFor(type, _state.value.aspectRatio)
+        if (shapeKindOverride != null) {
+            el = el.copy(shape = (el.shape ?: ShapeStyle()).copy(kind = shapeKindOverride))
+        }
         val hasBaseLayer = _state.value.doc.elements.firstOrNull()?.type == ElementType.BACKGROUND_LAYER
         if (type == ElementType.BACKGROUND_LAYER && !hasBaseLayer) {
             // First background added becomes the design's base layer — full-bleed, defines the

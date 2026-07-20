@@ -5,6 +5,18 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.6b] - 2026-07-20
+
+### Fixed
+- Fixed the widget editor stuttering while dragging or pinching — rendering the preview (cover decode, color extraction) was blocking the main thread on every single drag frame; it now happens on a background thread so the UI stays smooth even on a big, freshly-resized canvas.
+
+### Changed
+- Removed the on-screen zoom in/out buttons — pinch is now the only way to zoom the canvas (double-tap still resets).
+
+### Added
+- A new "Circle" entry in the Shapes picker, alongside Rectangle and Progress bar.
+- The layers list now shows the actual cover/custom image as a thumbnail for image elements, instead of a generic icon.
+
 ## [1.9.5b] - 2026-07-20
 
 ### Added

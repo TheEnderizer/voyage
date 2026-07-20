@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -24,15 +25,19 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
+import com.betteraudio.widget.model.WidgetSnapshot
 
 /** Layer stack, topmost (last-drawn, last-tapped) element first. Reorder via up/down — this is now
  *  the ONLY place to reorder layers (the canvas toolbar dropped its own up/down buttons once the
  *  layers sheet became the dedicated place for layer management). */
 @Composable
-fun LayersSheet(viewModel: WidgetEditorViewModel, onDismiss: () -> Unit) {
+fun LayersSheet(viewModel: WidgetEditorViewModel, snapshot: WidgetSnapshot, onDismiss: () -> Unit) {
     val state by viewModel.state.collectAsState()
     val elementsTopFirst = state.doc.elements.asReversed()
     val baseLayerId = state.doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }?.id
@@ -44,6 +49,7 @@ fun LayersSheet(viewModel: WidgetEditorViewModel, onDismiss: () -> Unit) {
                 items(elementsTopFirst, key = { it.id }) { el ->
                     LayerRow(
                         element = el,
+                        thumbnailPath = imageThumbnailPath(el, snapshot),
                         isBaseLayer = el.id == baseLayerId,
                         selected = el.id == state.selectedElementId,
                         canMoveUp = elementsTopFirst.first().id != el.id,
@@ -62,9 +68,19 @@ fun LayersSheet(viewModel: WidgetEditorViewModel, onDismiss: () -> Unit) {
     }
 }
 
+/** The real image file backing an image-type element, if one is currently set — used so the layers
+ *  list can show the actual cover/custom image as its "icon" instead of a generic placeholder. */
+private fun imageThumbnailPath(element: ElementSpec, snapshot: WidgetSnapshot): String? = when (element.type) {
+    ElementType.BOOK_COVER -> snapshot.bookCoverPath
+    ElementType.SERIES_COVER -> snapshot.seriesCoverPath ?: snapshot.bookCoverPath
+    ElementType.CUSTOM_IMAGE -> element.imagePath
+    else -> null
+}
+
 @Composable
 private fun LayerRow(
     element: ElementSpec,
+    thumbnailPath: String?,
     isBaseLayer: Boolean,
     selected: Boolean,
     canMoveUp: Boolean,
@@ -85,7 +101,16 @@ private fun LayerRow(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ElementTypeIcon(element.type, modifier = Modifier.size(20.dp))
+                if (thumbnailPath != null) {
+                    AsyncImage(
+                        model = thumbnailPath,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(24.dp).clip(RoundedCornerShape(4.dp)),
+                    )
+                } else {
+                    ElementTypeIcon(element.type, modifier = Modifier.size(20.dp))
+                }
                 Column {
                     Text(labelFor(element.type))
                     if (isBaseLayer) {

@@ -204,7 +204,7 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
         ElementPickerSheet(onDismiss = { showElementPicker = false }, onPick = viewModel::addElement)
     }
     if (showLayers) {
-        LayersSheet(viewModel, onDismiss = { showLayers = false })
+        LayersSheet(viewModel, snapshot, onDismiss = { showLayers = false })
     }
     val selectedForOptions = state.selectedElement
     if (showOptions && selectedForOptions != null) {

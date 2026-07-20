@@ -36,33 +36,54 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.betteraudio.widget.model.ElementType
+import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.render.IconAssets
 
-private data class ElementCategory(val title: String, val types: List<ElementType>)
+/** A pickable entry — usually one-to-one with an [ElementType], but [shapeKind]/[label]/[icon] let
+ *  a single [ElementType.RECT] under the hood be offered as several named shape variants (e.g.
+ *  "Circle" = a RECT preset to [ShapeKind.CIRCLE]) instead of requiring the user to add a plain
+ *  rectangle and then find the shape chip buried in its options. */
+private data class PickerEntry(
+    val type: ElementType,
+    val shapeKind: ShapeKind? = null,
+    val label: String = labelFor(type),
+    val icon: ImageVector? = null,
+)
+
+private data class ElementCategory(val title: String, val entries: List<PickerEntry>)
 
 private val CATEGORIES = listOf(
-    ElementCategory("Background", listOf(ElementType.BACKGROUND_LAYER)),
+    ElementCategory("Background", listOf(PickerEntry(ElementType.BACKGROUND_LAYER))),
     ElementCategory(
         "Controls", listOf(
             ElementType.PLAY_PAUSE, ElementType.SKIP_FORWARD, ElementType.SKIP_BACK,
             ElementType.CHAPTER_FORWARD, ElementType.CHAPTER_BACK, ElementType.SPEED_UP,
             ElementType.SPEED_DOWN, ElementType.BOOST_UP, ElementType.BOOST_DOWN,
             ElementType.SLEEP_TIMER, ElementType.QUICK_BOOKMARK, ElementType.CLOSE_BOOK,
-        )
+        ).map { PickerEntry(it) }
     ),
     ElementCategory(
         "Text", listOf(
             ElementType.BOOK_TITLE, ElementType.AUTHOR, ElementType.CHAPTER_TITLE,
             ElementType.SERIES_NAME, ElementType.SPEED_LABEL, ElementType.TIME_REMAINING_BOOK,
             ElementType.TIME_REMAINING_CHAPTER, ElementType.PROGRESS_PERCENT, ElementType.CUSTOM_TEXT,
+        ).map { PickerEntry(it) }
+    ),
+    ElementCategory(
+        "Images",
+        listOf(ElementType.BOOK_COVER, ElementType.SERIES_COVER, ElementType.CUSTOM_IMAGE).map { PickerEntry(it) }
+    ),
+    ElementCategory(
+        "Shapes", listOf(
+            PickerEntry(ElementType.RECT, label = "Rectangle"),
+            PickerEntry(ElementType.RECT, shapeKind = ShapeKind.CIRCLE, label = "Circle", icon = Icons.Default.Circle),
+            PickerEntry(ElementType.PROGRESS_BAR),
         )
     ),
-    ElementCategory("Images", listOf(ElementType.BOOK_COVER, ElementType.SERIES_COVER, ElementType.CUSTOM_IMAGE)),
-    ElementCategory("Shapes", listOf(ElementType.RECT, ElementType.PROGRESS_BAR)),
 )
 
 @Composable
-fun ElementPickerSheet(onDismiss: () -> Unit, onPick: (ElementType) -> Unit) {
+fun ElementPickerSheet(onDismiss: () -> Unit, onPick: (ElementType, ShapeKind?) -> Unit) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp),
@@ -76,9 +97,9 @@ fun ElementPickerSheet(onDismiss: () -> Unit, onPick: (ElementType) -> Unit) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(category.types) { type ->
+                    items(category.entries) { entry ->
                         Card(
-                            onClick = { onPick(type); onDismiss() },
+                            onClick = { onPick(entry.type, entry.shapeKind); onDismiss() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
@@ -86,8 +107,12 @@ fun ElementPickerSheet(onDismiss: () -> Unit, onPick: (ElementType) -> Unit) {
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
-                                ElementTypeIcon(type, modifier = Modifier.size(22.dp))
-                                Text(labelFor(type), style = MaterialTheme.typography.labelMedium)
+                                if (entry.icon != null) {
+                                    Icon(entry.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                                } else {
+                                    ElementTypeIcon(entry.type, modifier = Modifier.size(22.dp))
+                                }
+                                Text(entry.label, style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
