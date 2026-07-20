@@ -4,14 +4,15 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- Filled speaker + minus = volume/gain boost down. -->
+    <!-- Filled speaker + a small corner minus = volume/gain boost down. Matches the speed icons'
+         corner-mark size so all four adjustment icons read as one family. -->
     <path
         android:fillColor="#FFFFFF"
-        android:pathData="M3,9 L6.5,9 L11,4.5 L11,19.5 L6.5,15 L3,15 Z" />
+        android:pathData="M2,8 L7,8 L13,3 L13,21 L7,16 L2,16 Z" />
     <path
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="2.2"
+        android:strokeWidth="2"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
-        android:pathData="M14.5,12 L23.5,12" />
+        android:pathData="M17.5,4 L22.5,4" />
 </vector>

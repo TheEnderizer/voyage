@@ -59,5 +59,6 @@ object ShapePaths {
             com.betteraudio.widget.model.ShapeKind.RECT -> roundedRect(rect, cornerRadius)
             com.betteraudio.widget.model.ShapeKind.PILL -> pill(rect)
             com.betteraudio.widget.model.ShapeKind.CIRCLE -> circle(rect)
+            com.betteraudio.widget.model.ShapeKind.SQUIRCLE -> squircle(rect)
         }
 }

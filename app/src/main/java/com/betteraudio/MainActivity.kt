@@ -501,7 +501,8 @@ class MainActivity : ComponentActivity() {
                 PlayerSheet(
                     controller = sheetController,
                     playerController = playerController,
-                    hideMiniBar = currentRoute == "settings" || currentRoute?.startsWith("reader/") == true,
+                    hideMiniBar = currentRoute == "settings" || currentRoute?.startsWith("reader/") == true ||
+                        currentRoute?.startsWith("widget_editor") == true,
                     liftForNavPill = currentRoute == "home",
                     onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )

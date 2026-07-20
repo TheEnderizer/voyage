@@ -5,6 +5,36 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.5b] - 2026-07-20
+
+### Added
+- The widget editor is now a big, zoomable canvas — pinch to zoom in/out (or use the on-screen zoom buttons), double-tap to reset. A dashed outline shows the exact size and shape your widget will be on the home screen (editor-only, not part of the real widget).
+- Element options moved out of the always-visible panel into an on-demand sheet, opened by tapping the new Options button once something is selected — the canvas gets almost the whole screen now.
+- Image elements can lock their aspect ratio (1:1, 2:3, 3:2, 16:9, or a custom value), so combined with a full corner radius you can make a perfectly circular or square image instead of it stretching freely.
+- The layers list and element picker now show each element's real icon, not just its name.
+
+### Changed
+- The opacity slider now gets its own full-width row in the element options sheet instead of being squeezed into the toolbar next to other buttons.
+- Layer reordering (bring forward/send backward) now lives only in the Layers sheet, with per-row buttons and a delete button — removed from the main toolbar to keep it uncluttered.
+- Tapping empty canvas now reliably deselects, and tapping again selects the background — previously a full-bleed background could swallow every tap.
+- The editor preview now shows your actual last-played book's cover/color when one exists, instead of always using sample data.
+- Removed the "Preview size" row — the editor canvas is always shown at your widget's real native size now.
+- The transparency checkerboard behind the canvas is lighter, so dark-colored elements stay visible against it.
+- The mini player no longer shows while the widget editor is open.
+
+## [1.9.4b] - 2026-07-19
+
+### Added
+- Widget backgrounds are now a placeable layer instead of a fixed setting: start a design blank and add a Background from the element picker. It can be a rectangle, pill, circle, or squircle — the bottom one you add shapes the whole widget itself (a circle background makes a genuinely round widget), and you can stack more on top as independent decorative layers, each with its own color/gradient/cover/custom image, dim, and blur. Old designs keep looking exactly the same after this update.
+- Background layers can have a tap action too (play/pause, open player, skip, etc.), same as text and image elements.
+- Saving a design now shows a "Widget updated" confirmation so it's clear a push to the home-screen widget was actually attempted.
+
+### Fixed
+- Cleaned up the boost up/down icons — the old +/- mark spanned almost the whole icon; it's now a small corner badge matching the speed icons, so the adjustment icons read as one consistent family.
+
+### Changed
+- A new widget design now starts completely blank instead of pre-filled with a cover, title, and play button — add elements deliberately, starting with a Background.
+
 ## [1.9.3b] - 2026-07-19
 
 ### Added

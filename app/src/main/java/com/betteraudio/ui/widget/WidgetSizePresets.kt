@@ -16,8 +16,3 @@ val WIDGET_SIZE_PRESETS: List<WidgetSizePreset> = listOf(
     WidgetSizePreset("Square", 2, 2),   // 1.0
     WidgetSizePreset("Tall", 2, 3),     // 0.667
 )
-
-/** The preset closest to [aspect] — used to highlight the current selection when the design's
- *  aspect came from a preset (or a custom value near one). */
-fun closestSizePreset(aspect: Float): WidgetSizePreset =
-    WIDGET_SIZE_PRESETS.minBy { kotlin.math.abs(it.aspect - aspect) }

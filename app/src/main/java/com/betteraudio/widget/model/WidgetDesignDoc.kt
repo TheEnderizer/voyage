@@ -13,16 +13,22 @@ const val CANVAS_UNITS = 1000f
 
 @Serializable
 data class WidgetDesignDoc(
-    val schemaVersion: Int = 1,
-    val background: BackgroundSpec = BackgroundSpec(),
-    /** List order = z-order; last element is drawn (and tapped) on top. */
+    val schemaVersion: Int = 2,
+    /** List order = z-order; last element is drawn (and tapped) on top. If element 0 is a
+     *  [ElementType.BACKGROUND_LAYER], it is rendered full-bleed and its shape/corner-radius become
+     *  the outer clip for the entire widget (see WidgetPainter.paint) — that's "the" background.
+     *  Any other BACKGROUND_LAYER element (not at index 0) is just an ordinary freely-placed
+     *  decorative layer. An empty list is a genuinely blank widget. */
     val elements: List<ElementSpec> = emptyList(),
 )
 
 enum class BgSource { BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE, SOLID, GRADIENT, TRANSPARENT }
 
+/** Fill style for a [ElementType.BACKGROUND_LAYER] element — everything the old fixed
+ *  WidgetDesignDoc.background field used to carry, now attached to a placeable element so more
+ *  than one can be stacked and the bottom one can define the widget's own outer silhouette. */
 @Serializable
-data class BackgroundSpec(
+data class BackgroundLayerStyle(
     val source: BgSource = BgSource.BOOK_COVER,
     val imagePath: String? = null,
     val color: Long = 0xFF1A1A22,
@@ -32,9 +38,11 @@ data class BackgroundSpec(
     val dim: Float = 0f,
     /** Stack-blur radius in design units (0 = off). */
     val blurRadius: Float = 0f,
-    /** Outer corner radius in design units. */
-    val cornerRadius: Float = 60f,
     val opacity: Float = 1f,
+    /** Only meaningful when this element sits at index 0 — governs the whole widget's outer clip. */
+    val shapeKind: ShapeKind = ShapeKind.RECT,
+    /** Corner radius in design units, used when [shapeKind] == RECT. */
+    val cornerRadius: Float = 60f,
 )
 
 /** Every element type the widget editor can place. */
@@ -49,13 +57,19 @@ enum class ElementType {
     // Images
     BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE,
     // Shapes
-    RECT, PROGRESS_BAR;
+    RECT, PROGRESS_BAR,
+    // Background — a placeable fill/shape layer; see WidgetDesignDoc's elements-list doc comment.
+    BACKGROUND_LAYER;
 
     val isControl: Boolean get() = this in CONTROL_TYPES
     val isText: Boolean get() = this in TEXT_TYPES
     val isImage: Boolean get() = this in IMAGE_TYPES
     val isShape: Boolean get() = this == RECT || this == PROGRESS_BAR
-    /** Text/image/shape elements can rotate; controls stay axis-aligned so tap mapping is exact. */
+    val isBackgroundLayer: Boolean get() = this == BACKGROUND_LAYER
+    /** Text/image/shape/background-layer elements can rotate; controls stay axis-aligned so tap
+     *  mapping is exact. A BACKGROUND_LAYER at index 0 ignores this (forced full-bleed, no handles
+     *  shown) — see WidgetEditorViewModel/SelectionOverlay; one not at index 0 rotates like any
+     *  other decorative shape. */
     val canRotate: Boolean get() = !isControl
 
     companion object {
@@ -82,7 +96,7 @@ enum class TapAction {
 enum class ContainerShape { NONE, CIRCLE, ROUNDED, SQUIRCLE }
 enum class HorizontalTextAlign { LEFT, CENTER, RIGHT }
 enum class ImageFit { COVER, CONTAIN }
-enum class ShapeKind { RECT, PILL, CIRCLE }
+enum class ShapeKind { RECT, PILL, CIRCLE, SQUIRCLE }
 
 @Serializable
 data class IconStyle(
@@ -113,6 +127,9 @@ data class ImageStyle(
     val borderWidth: Float = 0f,
     val borderColor: Long = 0xFFFFFFFF,
     val shadow: Boolean = false,
+    /** When set, resizing this element preserves this width/height ratio (e.g. 1f for a perfect
+     *  square/circle) instead of resizing the two axes independently. Null = unlocked. */
+    val lockedAspect: Float? = null,
 )
 
 @Serializable
@@ -144,6 +161,7 @@ data class ElementSpec(
     val text: TextStyle? = null,
     val image: ImageStyle? = null,
     val shape: ShapeStyle? = null,
+    val backgroundLayer: BackgroundLayerStyle? = null,
     val sleepDurationMs: Long? = null,
     val showCountdown: Boolean = true,
     val customText: String? = null,

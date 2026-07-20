@@ -8,7 +8,7 @@ import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.widget.WidgetStateStore
 import com.betteraudio.widget.WidgetUpdater
-import com.betteraudio.widget.model.BackgroundSpec
+import com.betteraudio.widget.model.BackgroundLayerStyle
 import com.betteraudio.widget.model.CANVAS_UNITS
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
@@ -39,12 +39,9 @@ data class WidgetEditorState(
     val awaitingSizePick: Boolean = false,
     val designId: Long = -1L,
     val name: String = "",
-    /** The design's native aspect (the size the user picked) — determines element layout. */
+    /** The design's native aspect (the size the user picked) — determines element layout AND the
+     *  editor canvas's own frame shape (the editor no longer previews a separate reflow size). */
     val aspectRatio: Float = 2f,
-    /** Editor-only preview frame aspect. Defaults to [aspectRatio]; changing it re-frames the
-     *  canvas to show how the SAME design reflows when the placed widget is resized to another
-     *  shape (fit-inside content + full-bleed background). Never saved. */
-    val previewAspect: Float = 2f,
     val doc: WidgetDesignDoc = WidgetDesignDoc(),
     val selectedElementId: String? = null,
     val previewMode: PreviewMode = PreviewMode.SAMPLE,
@@ -79,10 +76,15 @@ class WidgetEditorViewModel @Inject constructor(
     private val redoStack = ArrayDeque<WidgetDesignDoc>()
     private var pendingUndoSnapshot: WidgetDesignDoc? = null
 
+    // A book has actually been played before (the DataStore-persisted snapshot survives process
+    // restarts), so its real cover/accent color is available — default the preview to it instead
+    // of the fake sample so what the user designs against matches what they'll actually see.
+    private val initialPreviewMode = if (stateStore.current.bookId != -1L) PreviewMode.LIVE else PreviewMode.SAMPLE
+
     init {
         if (requestedDesignId == -1L) {
             // New widget: don't create anything yet — let the user pick a size first.
-            _state.value = WidgetEditorState(loading = false, awaitingSizePick = true)
+            _state.value = WidgetEditorState(loading = false, awaitingSizePick = true, previewMode = initialPreviewMode)
         } else {
             viewModelScope.launch {
                 val design = designDao.getById(requestedDesignId)
@@ -92,8 +94,8 @@ class WidgetEditorViewModel @Inject constructor(
                         designId = design.id,
                         name = design.name,
                         aspectRatio = design.aspectRatio,
-                        previewAspect = design.aspectRatio,
                         doc = WidgetDesignCodec.decode(design.documentJson),
+                        previewMode = initialPreviewMode,
                     )
                 } else {
                     _state.update { it.copy(loading = false) }
@@ -122,8 +124,8 @@ class WidgetEditorViewModel @Inject constructor(
                 designId = id,
                 name = "New widget",
                 aspectRatio = aspect,
-                previewAspect = aspect,
                 doc = starter,
+                previewMode = initialPreviewMode,
             )
         }
     }
@@ -184,7 +186,15 @@ class WidgetEditorViewModel @Inject constructor(
 
     fun addElement(type: ElementType) {
         val el = defaultElementFor(type, _state.value.aspectRatio)
-        mutateDoc { it.copy(elements = it.elements + el) }
+        val hasBaseLayer = _state.value.doc.elements.firstOrNull()?.type == ElementType.BACKGROUND_LAYER
+        if (type == ElementType.BACKGROUND_LAYER && !hasBaseLayer) {
+            // First background added becomes the design's base layer — full-bleed, defines the
+            // widget's outer shape (see WidgetPainter.paint). A second one added later falls
+            // through to the normal append below and behaves as an ordinary decorative layer.
+            mutateDoc { it.copy(elements = listOf(el) + it.elements) }
+        } else {
+            mutateDoc { it.copy(elements = it.elements + el) }
+        }
         selectElement(el.id)
     }
 
@@ -288,6 +298,26 @@ class WidgetEditorViewModel @Inject constructor(
             }
             return e.copy(x = x, y = y, w = newSize, h = newSize)
         }
+        val lockedRatio = e.image?.lockedAspect
+        if (e.type.isImage && lockedRatio != null && lockedRatio > 0f) {
+            // Aspect-locked image resize (perfect circles/squares etc.): same drive-by-horizontal-
+            // drag convention as the control branch above, height derived from the locked ratio.
+            val growDx = when (corner) {
+                ResizeCorner.TOP_RIGHT, ResizeCorner.BOTTOM_RIGHT -> dx
+                ResizeCorner.TOP_LEFT, ResizeCorner.BOTTOM_LEFT -> -dx
+            }
+            val newW = (e.w + growDx).coerceAtLeast(minSize)
+            val newH = (newW / lockedRatio).coerceAtLeast(minSize)
+            var x = e.x
+            var y = e.y
+            when (corner) {
+                ResizeCorner.BOTTOM_RIGHT -> {}
+                ResizeCorner.BOTTOM_LEFT -> x = e.x + (e.w - newW)
+                ResizeCorner.TOP_RIGHT -> y = e.y + (e.h - newH)
+                ResizeCorner.TOP_LEFT -> { x = e.x + (e.w - newW); y = e.y + (e.h - newH) }
+            }
+            return e.copy(x = x, y = y, w = newW, h = newH)
+        }
         if (e.rotationDeg != 0f) {
             // Rotated elements resize symmetrically about their center — resizing about a fixed
             // corner under rotation needs extra geometry that isn't worth the complexity here.
@@ -338,9 +368,8 @@ class WidgetEditorViewModel @Inject constructor(
     fun updateShape(immediate: Boolean = true, transform: (ShapeStyle) -> ShapeStyle) =
         updateSelected(immediate) { it.copy(shape = transform(it.shape ?: ShapeStyle())) }
 
-    fun updateBackground(immediate: Boolean = true, transform: (BackgroundSpec) -> BackgroundSpec) {
-        mutateDoc(immediate) { it.copy(background = transform(it.background)) }
-    }
+    fun updateBackgroundLayer(immediate: Boolean = true, transform: (BackgroundLayerStyle) -> BackgroundLayerStyle) =
+        updateSelected(immediate) { it.copy(backgroundLayer = transform(it.backgroundLayer ?: BackgroundLayerStyle())) }
 
     // ── Meta ────────────────────────────────────────────────────────────────
 
@@ -348,8 +377,7 @@ class WidgetEditorViewModel @Inject constructor(
         _state.update { it.copy(name = name, dirty = true) }
     }
 
-    /** Changes the design's NATIVE size (re-lays-out elements to the new aspect). Also resets the
-     *  preview frame to match, since the native shape changed. */
+    /** Changes the design's NATIVE size (re-lays-out elements to the new aspect). */
     fun setAspectRatio(ratio: Float) {
         val s = _state.value
         val oldH = CANVAS_UNITS / s.aspectRatio
@@ -359,17 +387,10 @@ class WidgetEditorViewModel @Inject constructor(
         _state.update {
             it.copy(
                 aspectRatio = ratio,
-                previewAspect = ratio,
                 doc = it.doc.copy(elements = it.doc.elements.map { e -> e.copy(y = e.y * scaleY, h = e.h * scaleY) }),
                 dirty = true,
             )
         }
-    }
-
-    /** Editor-only: re-frame the canvas to preview how the design looks at another size. Does NOT
-     *  change the design or mark it dirty — it's purely a "what would this look like resized" view. */
-    fun setPreviewAspect(aspect: Float) {
-        _state.update { it.copy(previewAspect = aspect) }
     }
 
     fun setPreviewMode(mode: PreviewMode) {

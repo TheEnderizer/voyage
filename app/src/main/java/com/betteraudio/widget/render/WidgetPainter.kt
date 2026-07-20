@@ -13,7 +13,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import com.betteraudio.R
 import com.betteraudio.util.AppLog
-import com.betteraudio.widget.model.BackgroundSpec
+import com.betteraudio.widget.model.BackgroundLayerStyle
 import com.betteraudio.widget.model.BgSource
 import com.betteraudio.widget.model.CANVAS_UNITS
 import com.betteraudio.widget.model.ContainerShape
@@ -40,6 +40,10 @@ import kotlin.math.min
 object WidgetPainter {
 
     private const val DEFAULT_ACCENT = 0xFFFFA552.toInt()
+
+    /** Outer corner radius used when the design has no BACKGROUND_LAYER element at index 0 yet
+     *  (a brand-new blank design) — matches the old fixed BackgroundSpec's own default. */
+    private const val DEFAULT_OUTER_RADIUS = 60f
 
     data class PaintOptions(
         val accentFallback: Int = DEFAULT_ACCENT,
@@ -85,20 +89,40 @@ object WidgetPainter {
         val box = contentBox(w, h, aspectRatio)
         val scale = unitScale(box)
 
-        val coverBitmap = resolveBackgroundCover(doc.background, snapshot, opts, w, h)
+        // Only the bottom-most element defines "the" background: full-bleed fill, and its shape
+        // becomes the outer clip for everything drawn afterward (see WidgetDesignDoc's doc comment
+        // on `elements`). Anything else at index 0, including an empty design, falls back to a
+        // plain rect with a transparent fill — a genuinely blank widget.
+        val baseLayer = doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }
+        val baseFill = baseLayer?.backgroundLayer
+        val outerRect = RectF(0f, 0f, w.toFloat(), h.toFloat())
+        val outerShape = ShapePaths.forShapeKind(
+            baseFill?.shapeKind ?: ShapeKind.RECT,
+            outerRect,
+            (baseFill?.cornerRadius ?: DEFAULT_OUTER_RADIUS) * scale,
+        )
+
+        val coverBitmap = resolveBackgroundCover(baseFill, snapshot, opts, w, h)
         val accent = resolveAccent(coverBitmap, opts.accentFallback)
 
-        drawBackground(context, canvas, doc.background, coverBitmap, w, h, scale)
+        canvas.save()
+        canvas.clipPath(outerShape)
+        if (baseFill != null) drawBackgroundLayer(context, canvas, baseFill, coverBitmap, w, h, scale)
 
-        if (opts.hideWhenIdle && !snapshot.isPlaying) return bmp
+        if (opts.hideWhenIdle && !snapshot.isPlaying) {
+            canvas.restore()
+            return bmp
+        }
 
         for (el in doc.elements) {
+            if (el === baseLayer) continue
             try {
                 drawElement(context, canvas, el, box, scale, snapshot, accent, opts)
             } catch (e: Exception) {
                 AppLog.e("Widget", "failed to draw element ${el.id} (${el.type})", e)
             }
         }
+        canvas.restore()
         return bmp
     }
 
@@ -166,6 +190,9 @@ object WidgetPainter {
             el.type.isText -> drawText(el, rect, snapshot, accent, scale, canvas)
             el.type.isImage -> drawImage(context, canvas, el, rect, snapshot, opts, scale)
             el.type.isShape -> drawShape(canvas, el, rect, snapshot, scale)
+            // Only reached for a BACKGROUND_LAYER NOT at index 0 — the base layer is drawn
+            // full-bleed by `paint()` itself and skipped here (see the `el === baseLayer` check).
+            el.type.isBackgroundLayer -> drawBackgroundLayerElement(context, canvas, el, rect, snapshot, opts, scale)
         }
 
         if (layered) canvas.restore()
@@ -366,7 +393,8 @@ object WidgetPainter {
 
     // ── Background ─────────────────────────────────────────────────────────
 
-    private fun resolveBackgroundCover(bg: BackgroundSpec, snapshot: WidgetSnapshot, opts: PaintOptions, w: Int, h: Int): Bitmap? {
+    private fun resolveBackgroundCover(bg: BackgroundLayerStyle?, snapshot: WidgetSnapshot, opts: PaintOptions, w: Int, h: Int): Bitmap? {
+        if (bg == null) return null
         val path = when (bg.source) {
             BgSource.BOOK_COVER -> snapshot.bookCoverPath
             BgSource.SERIES_COVER -> snapshot.seriesCoverPath ?: snapshot.bookCoverPath
@@ -376,22 +404,20 @@ object WidgetPainter {
         return WidgetBitmapCache.decodeFile(path, w, h) ?: WidgetBitmapCache.decodeFile(opts.defaultCoverPath, w, h)
     }
 
-    private fun drawBackground(
+    /** Fills the full granted rect for the design's base background element. The outer clip
+     *  (shape + corner radius) is already applied by the caller ([paint]), since it also has to
+     *  constrain every element drawn on top — this only needs to handle its own opacity layer. */
+    private fun drawBackgroundLayer(
         context: Context,
         canvas: Canvas,
-        bg: BackgroundSpec,
+        bg: BackgroundLayerStyle,
         coverBitmap: Bitmap?,
         w: Int,
         h: Int,
         scale: Float,
     ) {
         val outerRect = RectF(0f, 0f, w.toFloat(), h.toFloat())
-        val radius = bg.cornerRadius * scale
-        val clipPath = ShapePaths.roundedRect(outerRect, radius)
         val alpha = (bg.opacity.coerceIn(0f, 1f) * 255).toInt()
-
-        canvas.save()
-        canvas.clipPath(clipPath)
         if (alpha < 255) canvas.saveLayerAlpha(outerRect, alpha)
 
         when (bg.source) {
@@ -410,7 +436,7 @@ object WidgetPainter {
             BgSource.SOLID -> canvas.drawColor(bg.color.toInt())
             BgSource.GRADIENT -> {
                 val end = bg.colorEnd ?: bg.color
-                canvas.drawRect(outerRect, gradientPaint(bg.color.toInt(), end.toInt(), bg.gradientAngleDeg, w, h))
+                canvas.drawRect(outerRect, gradientPaint(bg.color.toInt(), end.toInt(), bg.gradientAngleDeg, outerRect))
             }
             BgSource.TRANSPARENT -> {}
         }
@@ -420,15 +446,66 @@ object WidgetPainter {
         }
 
         if (alpha < 255) canvas.restore()
+    }
+
+    /** A BACKGROUND_LAYER element that is NOT the design's base layer (not at index 0) — an
+     *  ordinary freely-positioned decorative fill/shape, drawn within its own [rect] rather than
+     *  full-bleed, with its own independent cover/color/gradient/dim/blur/opacity. */
+    private fun drawBackgroundLayerElement(
+        context: Context,
+        canvas: Canvas,
+        el: ElementSpec,
+        rect: RectF,
+        snapshot: WidgetSnapshot,
+        opts: PaintOptions,
+        scale: Float,
+    ) {
+        val style = el.backgroundLayer ?: BackgroundLayerStyle()
+        val reqW = rect.width().toInt().coerceAtLeast(1)
+        val reqH = rect.height().toInt().coerceAtLeast(1)
+        val cover = resolveBackgroundCover(style, snapshot, opts, reqW, reqH)
+        val path = ShapePaths.forShapeKind(style.shapeKind, rect, style.cornerRadius * scale)
+        val alpha = (style.opacity.coerceIn(0f, 1f) * 255).toInt()
+
+        canvas.save()
+        canvas.clipPath(path)
+        if (alpha < 255) canvas.saveLayerAlpha(rect, alpha)
+
+        when (style.source) {
+            BgSource.BOOK_COVER, BgSource.SERIES_COVER, BgSource.CUSTOM_IMAGE -> {
+                if (cover != null) {
+                    val fitted = fitBitmap(cover, reqW, reqH, ImageFit.COVER)
+                    val blurred = if (style.blurRadius > 0f) BlurUtil.blur(fitted, BlurUtil.clampRadius(style.blurRadius * scale, max(reqW, reqH))) else fitted
+                    canvas.drawBitmap(blurred, rect.left, rect.top, null)
+                } else {
+                    ContextCompat.getDrawable(context, R.drawable.ic_audiobook_placeholder)?.apply {
+                        setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
+                        draw(canvas)
+                    }
+                }
+            }
+            BgSource.SOLID -> canvas.drawColor(style.color.toInt())
+            BgSource.GRADIENT -> {
+                val end = style.colorEnd ?: style.color
+                canvas.drawRect(rect, gradientPaint(style.color.toInt(), end.toInt(), style.gradientAngleDeg, rect))
+            }
+            BgSource.TRANSPARENT -> {}
+        }
+
+        if (style.dim > 0f) {
+            canvas.drawColor(Color.argb((style.dim.coerceIn(0f, 0.8f) * 255).toInt(), 0, 0, 0))
+        }
+
+        if (alpha < 255) canvas.restore()
         canvas.restore()
     }
 
-    private fun gradientPaint(start: Int, end: Int, angleDeg: Float, w: Int, h: Int): Paint {
+    private fun gradientPaint(start: Int, end: Int, angleDeg: Float, rect: RectF): Paint {
         val rad = Math.toRadians(angleDeg.toDouble())
-        val dx = (Math.cos(rad) * w / 2).toFloat()
-        val dy = (Math.sin(rad) * h / 2).toFloat()
-        val cx = w / 2f
-        val cy = h / 2f
+        val dx = (Math.cos(rad) * rect.width() / 2).toFloat()
+        val dy = (Math.sin(rad) * rect.height() / 2).toFloat()
+        val cx = rect.centerX()
+        val cy = rect.centerY()
         return Paint(Paint.ANTI_ALIAS_FLAG).apply {
             shader = LinearGradient(cx - dx, cy - dy, cx + dx, cy + dy, start, end, Shader.TileMode.CLAMP)
         }

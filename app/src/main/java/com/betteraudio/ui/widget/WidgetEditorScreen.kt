@@ -1,7 +1,6 @@
 package com.betteraudio.ui.widget
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,8 +8,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,21 +20,22 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -45,21 +45,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.betteraudio.ui.widget.panels.BackgroundPanel
+import com.betteraudio.ui.widget.panels.BackgroundLayerPanel
 import com.betteraudio.ui.widget.panels.IconPanel
 import com.betteraudio.ui.widget.panels.ImagePanel
+import com.betteraudio.ui.widget.panels.LabeledSlider
 import com.betteraudio.ui.widget.panels.ShapePanel
 import com.betteraudio.ui.widget.panels.TextPanel
+import com.betteraudio.widget.model.ElementSpec
 
 /**
- * The widget maker v2 editor: a free-placement canvas (no snapping — drag/pinch/rotate anywhere),
- * a context-sensitive style panel, an element picker, and a layers sheet. The canvas renders
+ * The widget maker v2 editor: a free-placement canvas (no snapping — drag/pinch/rotate anywhere)
+ * that fills nearly the whole screen with pinch-to-zoom, a slim bottom toolbar, an on-demand
+ * options sheet per selected element, an element picker, and a layers sheet. The canvas renders
  * through the same [com.betteraudio.widget.render.WidgetPainter] the real widget uses, so what's
  * shown here is exactly what appears on the home screen.
  */
@@ -69,9 +74,12 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
     val liveSnapshot by viewModel.liveSnapshot.collectAsStateWithLifecycle()
     var showElementPicker by remember { mutableStateOf(false) }
     var showLayers by remember { mutableStateOf(false) }
+    var showOptions by remember { mutableStateOf(false) }
     var showAspectMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     val snapshot = if (state.previewMode == PreviewMode.LIVE) liveSnapshot else SAMPLE_WIDGET_SNAPSHOT
     val requestBack = { if (state.dirty) showUnsavedDialog = true else onBack() }
@@ -93,6 +101,7 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -146,56 +155,48 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                             }
                         }
                     }
-                    TextButton(onClick = { viewModel.save(onSaved = onBack) }) { Text("Save") }
+                    TextButton(onClick = {
+                        // Stays on the editor (unlike the unsaved-changes dialog's Save, which
+                        // exits) so the confirmation is actually visible instead of flashing past
+                        // during a navigation — the only signal today that a push to the real
+                        // placed widget was even attempted (see CLAUDE.md's widget section for
+                        // why that matters on OEMs that can drop/delay updateAppWidget calls).
+                        viewModel.save {
+                            scope.launch { snackbarHostState.showSnackbar("Widget updated") }
+                        }
+                    }) { Text("Save") }
                 }
             )
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Box(
-                Modifier.weight(1f).fillMaxWidth().padding(20.dp),
+                Modifier.weight(1f).fillMaxWidth().padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 EditorCanvas(
                     viewModel = viewModel,
                     doc = state.doc,
                     layoutAspect = state.aspectRatio,
-                    frameAspect = state.previewAspect,
                     canvasHeightUnits = state.canvasHeightUnits,
                     snapshot = snapshot,
                     selectedElementId = state.selectedElementId,
                     isDragging = state.isDragging,
                     modifier = Modifier.fillMaxWidth()
                 )
-            }
-
-            PreviewSizeRow(
-                nativeAspect = state.aspectRatio,
-                previewAspect = state.previewAspect,
-                onPreviewAspect = viewModel::setPreviewAspect,
-            )
-
-            SelectionToolbar(
-                viewModel = viewModel,
-                selectedOpacity = state.selectedElement?.opacity,
-                onAddElement = { showElementPicker = true },
-                onShowLayers = { showLayers = true },
-            )
-
-            Box(
-                Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 320.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
-            ) {
-                val selected = state.selectedElement
-                when {
-                    selected == null -> BackgroundPanel(viewModel, state.doc.background)
-                    selected.type.isControl -> IconPanel(viewModel, selected)
-                    selected.type.isText -> TextPanel(viewModel, selected)
-                    selected.type.isImage -> ImagePanel(viewModel, selected)
-                    else -> ShapePanel(viewModel, selected)
+                if (state.doc.elements.isEmpty()) {
+                    EmptyCanvasHint(onAdd = { showElementPicker = true })
                 }
             }
+
+            BottomToolbar(
+                hasSelection = state.selectedElementId != null,
+                onDuplicate = viewModel::duplicateSelected,
+                onDelete = viewModel::deleteSelected,
+                onOptions = { showOptions = true },
+                onShowLayers = { showLayers = true },
+                onAddElement = { showElementPicker = true },
+            )
         }
     }
 
@@ -204,6 +205,10 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
     }
     if (showLayers) {
         LayersSheet(viewModel, onDismiss = { showLayers = false })
+    }
+    val selectedForOptions = state.selectedElement
+    if (showOptions && selectedForOptions != null) {
+        ElementOptionsSheet(viewModel, selectedForOptions, onDismiss = { showOptions = false })
     }
     if (showUnsavedDialog) {
         AlertDialog(
@@ -223,83 +228,97 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
     }
 }
 
-/** A row of size chips that re-frame the canvas to preview how the design looks at other
- *  home-screen sizes (the placed widget is resizable, so this shows the reflow). Non-destructive —
- *  it never changes the design, only the preview shape. The chip matching the design's native size
- *  is labelled so the user knows which is their real layout. */
+/** Shown centered over the canvas when the design has no elements yet — a blank canvas has no
+ *  fixed "background" concept anymore (see WidgetDesignDoc), so the first step is always adding
+ *  one deliberately from the element picker. */
 @Composable
-private fun PreviewSizeRow(
-    nativeAspect: Float,
-    previewAspect: Float,
-    onPreviewAspect: (Float) -> Unit,
-) {
-    val nativePreset = remember(nativeAspect) { closestSizePreset(nativeAspect) }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-        Text(
-            "Preview size",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
-        )
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            WIDGET_SIZE_PRESETS.forEach { preset ->
-                val selected = kotlin.math.abs(preset.aspect - previewAspect) < 0.02f
-                val isNative = preset.label == nativePreset.label
-                FilterChip(
-                    selected = selected,
-                    onClick = { onPreviewAspect(preset.aspect) },
-                    label = { Text(if (isNative) "${preset.label} •" else preset.label) },
-                )
+private fun EmptyCanvasHint(onAdd: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "Tap + to add your first element — start with a Background",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = onAdd) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Text("Add element")
             }
         }
     }
 }
 
+/** Slim bottom toolbar: only the actions that make sense with no element selected at all (Layers,
+ *  Add) plus the handful that act on the current selection (Duplicate, Delete, Options). Reordering
+ *  (bring forward/send backward) and the opacity slider both moved into their dedicated homes — the
+ *  layers sheet and the options sheet, respectively — so this row stays uncluttered. */
 @Composable
-private fun SelectionToolbar(
-    viewModel: WidgetEditorViewModel,
-    selectedOpacity: Float?,
-    onAddElement: () -> Unit,
+private fun BottomToolbar(
+    hasSelection: Boolean,
+    onDuplicate: () -> Unit,
+    onDelete: () -> Unit,
+    onOptions: () -> Unit,
     onShowLayers: () -> Unit,
+    onAddElement: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val hasSelection = selectedOpacity != null
-        IconButton(onClick = viewModel::sendBackward, enabled = hasSelection) {
-            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Send backward")
-        }
-        IconButton(onClick = viewModel::bringForward, enabled = hasSelection) {
-            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Bring forward")
-        }
-        IconButton(onClick = viewModel::duplicateSelected, enabled = hasSelection) {
+        IconButton(onClick = onDuplicate, enabled = hasSelection) {
             Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
         }
-        IconButton(onClick = viewModel::deleteSelected, enabled = hasSelection) {
+        IconButton(onClick = onDelete, enabled = hasSelection) {
             Icon(Icons.Default.Delete, contentDescription = "Delete")
         }
-        if (hasSelection) {
-            Slider(
-                value = selectedOpacity ?: 1f,
-                onValueChange = { v -> viewModel.updateSelected(immediate = false) { it.copy(opacity = v) } },
-                onValueChangeFinished = viewModel::endContinuousEdit,
-                valueRange = 0.1f..1f,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-            )
-        } else {
-            Spacer(Modifier.weight(1f))
+        IconButton(onClick = onOptions, enabled = hasSelection) {
+            Icon(Icons.Default.Tune, contentDescription = "Element options")
         }
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onShowLayers) {
             Icon(Icons.Default.Layers, contentDescription = "Layers")
         }
         Spacer(Modifier.width(4.dp))
         FloatingActionButton(onClick = onAddElement) {
             Icon(Icons.Default.Add, contentDescription = "Add element")
+        }
+    }
+}
+
+/** All of the selected element's options, opened on demand instead of permanently occupying screen
+ *  space below the canvas. Leads with a name/icon header and a full-width opacity slider (previously
+ *  squeezed into the toolbar next to other buttons, where it was hard to control precisely), then
+ *  the same per-type panel the editor always used. */
+@Composable
+private fun ElementOptionsSheet(viewModel: WidgetEditorViewModel, element: ElementSpec, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ElementTypeIcon(element.type, modifier = Modifier.size(22.dp))
+                Text(labelFor(element.type), style = MaterialTheme.typography.titleMedium)
+            }
+
+            LabeledSlider(
+                "Opacity", element.opacity, 0.1f, 1f,
+                onValueChangeFinished = viewModel::endContinuousEdit,
+            ) { v -> viewModel.updateSelected(immediate = false) { it.copy(opacity = v) } }
+
+            when {
+                element.type.isBackgroundLayer -> BackgroundLayerPanel(viewModel, element)
+                element.type.isControl -> IconPanel(viewModel, element)
+                element.type.isText -> TextPanel(viewModel, element)
+                element.type.isImage -> ImagePanel(viewModel, element)
+                else -> ShapePanel(viewModel, element)
+            }
         }
     }
 }

@@ -40,8 +40,10 @@ suspend fun sweepOrphanWidgetImages(context: Context, designDao: WidgetDesignDao
         val referenced = mutableSetOf<String>()
         for (d in designs) {
             val doc = WidgetDesignCodec.decode(d.documentJson)
-            doc.background.imagePath?.let { referenced += it }
-            doc.elements.forEach { el -> el.imagePath?.let { referenced += it } }
+            doc.elements.forEach { el ->
+                el.imagePath?.let { referenced += it }
+                el.backgroundLayer?.imagePath?.let { referenced += it }
+            }
         }
         for (f in files) {
             if (f.absolutePath !in referenced) f.delete()
