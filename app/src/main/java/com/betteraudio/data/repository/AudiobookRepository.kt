@@ -1,5 +1,7 @@
 package com.betteraudio.data.repository
 
+import androidx.room.withTransaction
+import com.betteraudio.data.db.AppDatabase
 import com.betteraudio.data.db.dao.AudioFileDao
 import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.BookDao
@@ -25,6 +27,7 @@ import javax.inject.Singleton
 
 @Singleton
 class AudiobookRepository @Inject constructor(
+    private val db: AppDatabase,
     private val bookDao: BookDao,
     private val audioFileDao: AudioFileDao,
     private val progressDao: PlaybackProgressDao,
@@ -82,9 +85,15 @@ class AudiobookRepository @Inject constructor(
     suspend fun getChaptersForBookOnce(bookId: Long): List<Chapter> = chapterDao.getChaptersForBookOnce(bookId)
     suspend fun chapterCountForBook(bookId: Long): Int = chapterDao.countForBook(bookId)
     suspend fun replaceChapters(bookId: Long, chapters: List<Chapter>) {
-        chapterDao.deleteForBook(bookId)
-        chapterDao.insertAll(chapters)
+        db.withTransaction {
+            chapterDao.deleteForBook(bookId)
+            chapterDao.insertAll(chapters)
+        }
     }
+
+    /** Exposes a DB transaction to callers (e.g. the scanner) that need several repository
+     *  calls to commit atomically — a killed process must never see files/chapters half applied. */
+    suspend fun <T> withTransaction(block: suspend () -> T): T = db.withTransaction { block() }
     fun searchBooks(query: String): Flow<List<Book>> = bookDao.searchBooks(query)
     fun getBooksInSeries(seriesName: String): Flow<List<Book>> = bookDao.getBooksInSeries(seriesName)
     fun getAllBooksWithProgressUngrouped(): Flow<List<BookWithProgress>> = bookDao.getAllBooksWithProgressUngrouped()
@@ -346,8 +355,10 @@ class AudiobookRepository @Inject constructor(
     suspend fun updateAudioPreset(preset: AudioPreset) = audioPresetDao.update(preset)
     suspend fun deleteAudioPreset(id: Long) = audioPresetDao.deleteById(id)
     suspend fun setDefaultAudioPreset(id: Long) {
-        audioPresetDao.clearDefault()
-        audioPresetDao.setDefault(id)
+        db.withTransaction {
+            audioPresetDao.clearDefault()
+            audioPresetDao.setDefault(id)
+        }
     }
     /** The global default preset (applied to every book unless the book overrides it), or null. */
     suspend fun getDefaultAudioPreset(): AudioPreset? = audioPresetDao.getDefault()

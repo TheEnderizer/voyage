@@ -414,15 +414,17 @@ class AudioFileScanner @Inject constructor(
         }
 
         // Only rewrite audio files when the file set actually changed (re-inserting would
-        // null out PlaybackProgress.currentFileId and reset the resume position).
-        if (filesChanged) {
-            repository.clearAudioFiles(bookId)
-            repository.insertAudioFiles(audioEntities.map { it.copy(bookId = bookId) })
-        }
-
-        // (Re)build chapters when files changed or none exist yet.
+        // null out PlaybackProgress.currentFileId and reset the resume position). Files and
+        // their chapters commit atomically — a process death here must never leave a book
+        // whose fileCount/audio_files disagree, or whose files changed but chapters didn't.
         if (filesChanged || repository.chapterCountForBook(bookId) == 0) {
-            buildChapters(bookId, embeddedByPath)
+            repository.withTransaction {
+                if (filesChanged) {
+                    repository.clearAudioFiles(bookId)
+                    repository.insertAudioFiles(audioEntities.map { it.copy(bookId = bookId) })
+                }
+                buildChapters(bookId, embeddedByPath)
+            }
         }
 
         // Cover priority: an explicit "cover.png" dropped in the book's own folder always wins
