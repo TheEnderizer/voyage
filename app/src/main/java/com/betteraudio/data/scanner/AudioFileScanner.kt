@@ -211,7 +211,7 @@ class AudioFileScanner @Inject constructor(
 
     // A folder with direct audio files is one or more books (split by filename clustering).
     // A folder of only sub-dirs is a series container; each child becomes a book in that series.
-    private suspend fun scanFolder(dir: File, seriesName: String?, seriesOrder: Float?): Int {
+    private suspend fun scanFolder(dir: File, seriesName: String?, seriesOrder: Float?, depth: Int = 0): Int {
         val directAudio = dir.listAudioFiles()
         var count = 0
 
@@ -242,12 +242,14 @@ class AudioFileScanner @Inject constructor(
                 importBook(dir, dir.absolutePath, dir.name, allFiles, false, seriesName, seriesOrder, preserveOrder = true)
                 count++
             } else {
-                // Only a pure container (no direct audio) with >1 child is treated as a series
-                val isSeriesContainer = directAudio.isEmpty() && subdirs.size > 1
+                // Only a pure container (no direct audio) with >1 child is treated as a series —
+                // and only below the library root (depth > 0), or the root itself becomes a
+                // phantom series the first time it holds more than one top-level folder.
+                val isSeriesContainer = depth > 0 && directAudio.isEmpty() && subdirs.size > 1
                 count += subdirs.mapIndexed { index, subdir ->
                     val childSeriesName = if (isSeriesContainer) dir.name else seriesName
                     val childOrder = if (isSeriesContainer) (index + 1).toFloat() else seriesOrder
-                    scanFolder(subdir, childSeriesName, childOrder)
+                    scanFolder(subdir, childSeriesName, childOrder, depth + 1)
                 }.sum()
             }
         }
