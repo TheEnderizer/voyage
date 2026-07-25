@@ -31,6 +31,12 @@ android {
                 "proguard-rules.pro"
             )
         }
+        debug {
+            // Room's MigrationTestHelper runs as an instrumented (androidTest) test, and the
+            // emulator harness (scripts/emu.sh) runs on an x86_64 system image — scoped to debug
+            // only so release APK size/ABI coverage is unaffected.
+            ndk { abiFilters += listOf("x86_64") }
+        }
     }
 
     compileOptions {
@@ -50,6 +56,17 @@ android {
         compose = true
         buildConfig = true
     }
+
+    sourceSets {
+        getByName("androidTest") {
+            java.srcDirs("src/androidTest/java")
+        }
+    }
+}
+
+ksp {
+    // Room schema history, diffable per version — see CLAUDE.md's migration-verification recipe.
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -111,5 +128,12 @@ dependencies {
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.room.testing)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 }
 
