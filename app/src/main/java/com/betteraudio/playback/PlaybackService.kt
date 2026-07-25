@@ -34,6 +34,7 @@ import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.di.ApplicationScope
 import com.betteraudio.util.AppLog
 import com.betteraudio.widget.WidgetUpdater
 import com.betteraudio.widget.model.WidgetSnapshot
@@ -63,6 +64,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var widgetUpdater: WidgetUpdater
     @Inject lateinit var jumpRestoreStore: JumpRestoreStore
+    @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     private var mediaSession: MediaSession? = null
     // The real ExoPlayer (the MediaSession is fed a ForwardingPlayer wrapping it). Audio
@@ -428,7 +430,10 @@ class PlaybackService : MediaSessionService() {
         val fileId = item.mediaId.toLongOrNull() ?: return
         val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
         if (bookId == -1L) return
-        serviceScope.launch(Dispatchers.IO) {
+        // @ApplicationScope, not serviceScope: onDestroy calls this then cancels serviceScope
+        // twenty lines later, and coroutine dispatch is async — a save launched on serviceScope
+        // can lose the race and never run. Mirrors widgetUpdater.pushPaused()'s own durable scope.
+        appScope.launch(Dispatchers.IO) {
             AppLog.i("Player", "saveCurrentPosition book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
         }
