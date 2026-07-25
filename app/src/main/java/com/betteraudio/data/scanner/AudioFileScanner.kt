@@ -19,22 +19,6 @@ import javax.inject.Singleton
 
 private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus", "wav")
 
-// Sub-folder names that label a disc/part of one book rather than a separate book,
-// e.g. "Mistborn 1 - The Final Empire (1 of 3)" or "Disc 2".
-private val DISC_FOLDER_REGEX = Regex(
-    "\\(\\d+\\s+of\\s+\\d+\\)|\\b(?:disc|disk|cd|part|pt)\\s*\\d+",
-    RegexOption.IGNORE_CASE
-)
-
-// Detects an inline volume number in a filename, e.g. "Shadow Slave Volume 7 ...".
-// Deliberately excludes "part"/"pt"/"book" — those mean "same book, multiple files"
-// (see stemKey), never a genuinely distinct volume, and including them mis-splits
-// e.g. "... pt 1.mp3" / "... pt 2.mp3" / "... pt 3.mp3" into three separate books.
-private val VOLUME_IN_NAME_REGEX = Regex(
-    "\\b(?:volume|vol)\\s*(\\d+)\\b",
-    RegexOption.IGNORE_CASE
-)
-
 @Singleton
 class AudioFileScanner @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -152,7 +136,7 @@ class AudioFileScanner @Inject constructor(
             preserveOrder = false
         } else if (bookDir.isDiscSplitBook()) {
             files = bookDir.listDirs().filter { it.listAudioFiles().isNotEmpty() }.flatMap { disc ->
-                disc.listAudioFiles().sortedWith(compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
+                disc.listAudioFiles().sortedWith(compareBy({ ScannerHeuristics.extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
             }
             preserveOrder = true
         } else {
@@ -168,7 +152,7 @@ class AudioFileScanner @Inject constructor(
 
     /** Series position from a leading number in the book-folder name, else scan order. */
     private fun seriesOrderFor(bookDir: File, index: Int): Float {
-        val n = extractTrackNumber(bookDir.name)
+        val n = ScannerHeuristics.extractTrackNumber(bookDir.name)
         return if (n != Int.MAX_VALUE) n.toFloat() else (index + 1).toFloat()
     }
 
@@ -181,7 +165,7 @@ class AudioFileScanner @Inject constructor(
     private fun File.isDiscSplitBook(): Boolean {
         if (hasDirectAudio()) return false
         val audioSubs = listDirs().filter { it.listAudioFiles().isNotEmpty() }
-        return audioSubs.size >= 2 && audioSubs.all { looksLikePartFolder(it) }
+        return audioSubs.size >= 2 && audioSubs.all { ScannerHeuristics.looksLikePartFolder(it) }
     }
 
     // ── Reconcile DB against disk (hide missing books, drop missing files) ──────
@@ -250,10 +234,10 @@ class AudioFileScanner @Inject constructor(
             // (e.g. "(1 of 3)", "(2 of 3)") is one book split across discs, not a series.
             val isDiscContainer = directAudio.isEmpty() && subdirsWithAudio.size >= 2 &&
                 subdirsWithAudio.size == subdirs.size &&
-                subdirsWithAudio.all { looksLikePartFolder(it) }
+                subdirsWithAudio.all { ScannerHeuristics.looksLikePartFolder(it) }
             if (isDiscContainer) {
                 val allFiles = subdirsWithAudio.flatMap { disc ->
-                    disc.listAudioFiles().sortedWith(compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
+                    disc.listAudioFiles().sortedWith(compareBy({ ScannerHeuristics.extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
                 }
                 importBook(dir, dir.absolutePath, dir.name, allFiles, false, seriesName, seriesOrder, preserveOrder = true)
                 count++
@@ -269,10 +253,6 @@ class AudioFileScanner @Inject constructor(
         }
         return count
     }
-
-    // A sub-folder name that labels a disc/part of one book rather than a separate book,
-    // e.g. "Mistborn 1 - The Final Empire (1 of 3)" or "Disc 2".
-    private fun looksLikePartFolder(dir: File): Boolean = DISC_FOLDER_REGEX.containsMatchIn(dir.name)
 
     private suspend fun importBook(
         folder: File,
@@ -294,7 +274,7 @@ class AudioFileScanner @Inject constructor(
         // a filename-only track number would interleave each disc's "track 1, track 2, ..."
         // back together across discs.
         val sortedFiles = if (preserveOrder) audioFiles else audioFiles.sortedWith(
-            compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name })
+            compareBy({ ScannerHeuristics.extractTrackNumber(it.nameWithoutExtension) }, { it.name })
         )
 
         // Refresh is additive: for a book already in the library, only re-read files when the
@@ -587,72 +567,15 @@ class AudioFileScanner @Inject constructor(
             allTagged && distinctAlbums.size >= 2 ->
                 files.groupBy { albumOf[it]!! }
                     .entries
-                    .sortedBy { e -> e.value.minOf { extractTrackNumber(it.nameWithoutExtension) } }
+                    .sortedBy { e -> e.value.minOf { ScannerHeuristics.extractTrackNumber(it.nameWithoutExtension) } }
                     .map { (album, fs) ->
-                        album to fs.sortedWith(compareBy({ extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
+                        album to fs.sortedWith(compareBy({ ScannerHeuristics.extractTrackNumber(it.nameWithoutExtension) }, { it.name }))
                     }
             allTagged && distinctAlbums.size == 1 ->
                 listOf("" to files)   // single tagged album → one book
             else ->
-                clusterBySimilarName(files)
+                ScannerHeuristics.clusterBySimilarName(files)
         }
-    }
-
-    // ── Filename clustering ───────────────────────────────────────────────────
-
-    /**
-     * Group a folder's flat audio files into books by similar name. Files whose names
-     * share a common "stem" (after stripping leading/trailing sequence numbers) cluster
-     * together. The folder is only split into multiple books when there is more than one
-     * stem AND at least one stem forms a real sequence (≥2 files) — this avoids shattering
-     * a single book whose chapters happen to have unique titles.
-     */
-    private fun clusterBySimilarName(files: List<File>): List<Pair<String, List<File>>> {
-        val groups = files.groupBy { stemKey(it.nameWithoutExtension) }
-        // Only split when there are ≥2 genuine sequences. One sequence plus a few stray
-        // files (intro/outro/bonus) is far more likely a single book than several books.
-        val sequenceGroups = groups.values.count { it.size >= 2 }
-        if (groups.size <= 1 || sequenceGroups < 2) {
-            return splitBySequentialVolumeNumber(files) ?: listOf("" to files)
-        }
-        // Stable order: by the earliest track number / name within each group
-        return groups.entries
-            .sortedBy { entry ->
-                entry.value.minOf { extractTrackNumber(it.nameWithoutExtension) }
-            }
-            .map { it.key to it.value }
-    }
-
-    /**
-     * Fallback for folders where every file is its own one-file "sequence" (so the stem
-     * clustering above refuses to split them), but each filename still carries a distinct
-     * inline volume/part number — e.g. "Shadow Slave Volume 7 ..." / "... Volume 8 ...".
-     * `stemKey` only strips leading/trailing sequence tokens, so a mid-filename number like
-     * this survives into the stem and the two files never share a stem.
-     */
-    private fun splitBySequentialVolumeNumber(files: List<File>): List<Pair<String, List<File>>>? {
-        if (files.size < 2) return null
-        val numbered = files.map { f ->
-            f to VOLUME_IN_NAME_REGEX.find(f.nameWithoutExtension)?.groupValues?.get(1)?.toIntOrNull()
-        }
-        if (numbered.any { it.second == null }) return null
-        val numbers = numbered.map { it.second!! }
-        if (numbers.toSet().size != files.size) return null
-        return numbered.sortedBy { it.second }.map { (f, n) -> "vol$n" to listOf(f) }
-    }
-
-    private fun stemKey(name: String): String {
-        var s = name.lowercase().trim()
-        // strip a leading sequence token: "01 - ", "1. ", "3) "
-        s = s.replace(Regex("^\\s*\\d{1,4}\\s*[-_.)\\]]*\\s*"), "")
-        // strip a trailing sequence token (optionally prefixed by a word like part/track/cd)
-        s = s.replace(
-            Regex(
-                "[\\s\\-_.(\\[]*(?:cd|disc|disk|part|pt|track|chapter|chap|ch|vol|volume|book|episode|ep)?[\\s\\-_.#]*\\d{1,4}\\s*[)\\]]*\\s*$"
-            ),
-            ""
-        )
-        return s.replace(Regex("[\\s\\-_.]+"), " ").trim()
     }
 
     private fun String.titleCase(): String =
@@ -666,7 +589,4 @@ class AudioFileScanner @Inject constructor(
 
     private fun File.listAudioFiles(): List<File> =
         listFiles()?.filter { it.isFile && it.extension.lowercase() in AUDIO_EXTENSIONS } ?: emptyList()
-
-    private fun extractTrackNumber(name: String): Int =
-        Regex("^(\\d+)").find(name.trim())?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE
 }
