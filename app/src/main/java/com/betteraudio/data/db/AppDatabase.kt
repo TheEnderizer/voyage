@@ -54,6 +54,12 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             (6x6-grid, bucketed-size design model) entirely in favor of widget_designs
 //             (free aspect ratio + a JSON design-unit document) and widget_bindings. No migration
 //             of old designs: this is a deliberate clean break (see widget/model/WidgetDesignDoc.kt).
+//
+// Phantom "whole library" series rows created by a scanner bug (the AUTO scan mode could treat
+// the library root itself as a series container — fixed in AudioFileScanner.scanFolder's depth
+// guard) are cleaned up as a one-shot app-startup job (VoyageApp.cleanupPhantomSeries), not a
+// Room migration: identifying a phantom row needs the configured library-root folder name
+// (SettingsStore), which a migration has no access to.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
     version = 19,

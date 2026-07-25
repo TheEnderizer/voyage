@@ -68,6 +68,8 @@ class SettingsStore @Inject constructor(
         // Separate root folder scanned ONLY for standalone .epub files (no matching audiobook).
         // Mirrors LIBRARY_FOLDER; "" = not set.
         val EBOOK_FOLDER                 = stringPreferencesKey("ebook_folder")
+        // One-shot: VoyageApp's phantom-series cleanup (see cleanupPhantomSeries) has run.
+        val PHANTOM_SERIES_CLEANUP_DONE  = booleanPreferencesKey("phantom_series_cleanup_done")
         // Top-level home section: AUDIO (default) | EBOOKS.
         val HOME_SECTION                 = stringPreferencesKey("home_section")
         // Reader text size, as a percentage (100 = default CSS font-size).
@@ -186,6 +188,7 @@ class SettingsStore @Inject constructor(
     val themeColorSource: Flow<String>        = context.dataStore.data.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }
     val widgetDefaultCoverPath: Flow<String>  = context.dataStore.data.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }
     val ebookFolder: Flow<String>              = context.dataStore.data.map { it[Keys.EBOOK_FOLDER] ?: "" }
+    val phantomSeriesCleanupDone: Flow<Boolean> = context.dataStore.data.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }
     val readerFontSize: Flow<Int>              = context.dataStore.data.map { it[Keys.READER_FONT_SIZE] ?: 100 }
     val homeSection: Flow<String>              = context.dataStore.data.map { it[Keys.HOME_SECTION] ?: "AUDIO" }
     val customThemeColor: Flow<String>         = context.dataStore.data.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }
@@ -296,6 +299,8 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.WIDGET_DEFAULT_COVER_PATH] = path }.let { }
     suspend fun setEbookFolder(path: String) =
         context.dataStore.edit { it[Keys.EBOOK_FOLDER] = path }.let { }
+    suspend fun setPhantomSeriesCleanupDone(done: Boolean) =
+        context.dataStore.edit { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] = done }.let { }
     suspend fun setReaderFontSize(pct: Int) =
         context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }.let { }
     suspend fun setHomeSection(name: String) =
