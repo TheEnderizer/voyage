@@ -11,6 +11,9 @@
 #   ./scripts/emu.sh log [TAGS]   # app log tail (default: the app's own tags)
 #   ./scripts/emu.sh sql "QUERY"  # run SQL against the on-device database
 #   ./scripts/emu.sh baseline     # dump DB tables + Home/Series/Book Info/Player shots
+#   ./scripts/emu.sh upgrade [OLD_APK]  # fresh-install OLD_APK (default: latest beta via
+#                                  # gh), onboard+scan, then install current build over it
+#                                  # and assert row counts survive (the real migration test)
 #   ./scripts/emu.sh all          # boot + build + install + seedlib + launch
 #
 # Notes
@@ -33,6 +36,7 @@ SERIAL="${VOYAGE_SERIAL:-emulator-5554}"
 PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JAVA_HOME="${JAVA_HOME:-C:\\Program Files\\Android\\Android Studio\\jbr}"
 FFMPEG="${FFMPEG:-C:/ffmpeg/ffmpeg-8.1.2-essentials_build/bin/ffmpeg}"
+GH="${GH:-C:/Program Files/GitHub CLI/gh.exe}"
 
 PKG="com.betteraudio"
 DB="/data/data/$PKG/databases/betteraudio.db"
@@ -70,6 +74,75 @@ install() {
   a shell pm grant $PKG android.permission.READ_MEDIA_AUDIO 2>/dev/null
   a shell pm grant $PKG android.permission.POST_NOTIFICATIONS 2>/dev/null
   echo "installed + permissions granted"
+}
+
+# Drive first-run onboarding (import-structure picker -> theme picker -> scan) on a truly
+# fresh install. Needed by `upgrade` below, which must start from a real "just installed,
+# never configured" state to exercise the actual migration path a real user hits.
+onboard() {
+  sleep 2
+  tap_cd "Automatic" || return 1
+  sleep 1
+  tap_cd "Continue" || return 1     # closes the import-structure dialog
+  sleep 1
+  tap_cd "Continue" || return 1     # closes the theme-picker dialog (Material You default)
+  sleep 1
+  tap_cd "Scan Library" || return 1
+  sleep 3
+}
+
+# The single highest-leverage item in Gate 0: fresh-install testing (what `all` does) proves
+# nothing about migrations, since Room never runs one against a database that doesn't exist
+# yet. This installs an OLD released APK, onboards + scans a real library, then installs the
+# CURRENT locally-built APK over it (data preserved) and asserts the row counts survive.
+upgrade() {
+  local old_apk="${1:-}"
+  if [ -z "$old_apk" ]; then
+    echo "no OLD_APK given — fetching the latest beta prerelease via gh..."
+    local tag; tag="$("$GH" release list --repo TheEnderizer/voyage --limit 10 2>/dev/null \
+      | awk -F'\t' '$2=="Pre-release"{print $3; exit}')"
+    if [ -z "$tag" ]; then echo "upgrade: could not find a prerelease via gh" >&2; return 1; fi
+    old_apk="$PROJ/scripts/.upgrade_old.apk"
+    "$GH" release download "$tag" --repo TheEnderizer/voyage --pattern "*.apk" \
+      -O "$(cygpath -w "$old_apk")" --clobber || return 1
+    echo "fetched $tag -> $old_apk"
+  fi
+  [ -f "$old_apk" ] || { echo "upgrade: OLD_APK not found: $old_apk" >&2; return 1; }
+
+  echo "== fresh install: $old_apk =="
+  a uninstall $PKG >/dev/null 2>&1
+  a install -r -t "$(cygpath -w "$old_apk")" | tail -2
+  a shell appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow
+  a shell pm grant $PKG android.permission.READ_MEDIA_AUDIO 2>/dev/null
+  a shell pm grant $PKG android.permission.POST_NOTIFICATIONS 2>/dev/null
+
+  seedlib
+  a shell am start -W -n $PKG/.MainActivity >/dev/null 2>&1
+  onboard || { echo "upgrade: onboarding automation failed — aborting" >&2; return 1; }
+
+  local before
+  before="$(a shell "run-as $PKG sqlite3 $DB \"SELECT (SELECT COUNT(*) FROM books)||'/'||(SELECT COUNT(*) FROM series)||'/'||(SELECT COUNT(*) FROM playback_progress)\"" | tr -d '\r')"
+  echo "before upgrade: books/series/progress = $before"
+  if [ -z "$before" ] || [ "$before" = "0/0/0" ]; then
+    echo "upgrade: old build imported nothing — aborting before touching it" >&2; return 1
+  fi
+
+  echo "== build + install the current tree over it (data preserved) =="
+  build
+  install >/dev/null
+  a shell am start -W -n $PKG/.MainActivity >/dev/null 2>&1
+  sleep 3
+
+  local after
+  after="$(a shell "run-as $PKG sqlite3 $DB \"SELECT (SELECT COUNT(*) FROM books)||'/'||(SELECT COUNT(*) FROM series)||'/'||(SELECT COUNT(*) FROM playback_progress)\"" | tr -d '\r')"
+  echo "after upgrade:  books/series/progress = $after"
+
+  if [ "$before" = "$after" ]; then
+    echo "upgrade: OK — row counts identical, database opened fine after upgrade"
+  else
+    echo "upgrade: MISMATCH before='$before' after='$after'" >&2
+    return 1
+  fi
 }
 
 # Synthetic library covering each scanner heuristic in AudioFileScanner.
@@ -286,6 +359,7 @@ case "${1:-all}" in
   log|logs) shift; logs "$@" ;;
   sql) sql "${2:?usage: emu.sh sql \"SELECT ...\"}" ;;
   baseline) baseline ;;
+  upgrade) upgrade "${2:-}" ;;
   all) boot && build && install && seedlib && launch ;;
-  *) sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \?//' ;;
+  *) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \?//' ;;
 esac
