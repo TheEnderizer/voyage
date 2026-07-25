@@ -21,6 +21,7 @@ import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -366,6 +368,10 @@ class HomeViewModel @Inject constructor(
         repository.hasAnyBooks()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
+    // .flowOn(Dispatchers.Default): combine's transform (buildGridItems, and below, the tab
+    // filter/count) ran on Dispatchers.Main.immediate via stateIn(viewModelScope) — sorting and
+    // grouping the whole library on the main thread on every emission (including once per
+    // playback-position write, before G2-3 slows those down).
     val gridItems: StateFlow<List<HomeGridItem>> =
         combine(
             repository.getHomeGridBooks(),
@@ -375,7 +381,8 @@ class HomeViewModel @Inject constructor(
             _sortFilter
         ) { gridBooks, seriesList, authorMetas, (mode, section), sf ->
             buildGridItems(gridBooks, seriesList, authorMetas, mode, section, sf)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Library status tabs ──────────────────────────────────────────────────
 
@@ -387,7 +394,8 @@ class HomeViewModel @Inject constructor(
     val visibleGridItems: StateFlow<List<HomeGridItem>> =
         combine(gridItems, _libraryTab) { items, tab ->
             if (tab == LibraryTab.ALL) items else items.filter { statusOf(it) == tab }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Per-tab counts for the tab labels. */
     val tabCounts: StateFlow<Map<LibraryTab, Int>> =
@@ -395,7 +403,8 @@ class HomeViewModel @Inject constructor(
             LibraryTab.entries.associateWith { tab ->
                 if (tab == LibraryTab.ALL) items.size else items.count { statusOf(it) == tab }
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<LibraryTab, Int>())
+        }.flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<LibraryTab, Int>())
 
     private fun statusOf(item: HomeGridItem): LibraryTab = when (item) {
         is HomeGridItem.SingleBook -> tabFor(item.book.status)
@@ -463,7 +472,11 @@ class HomeViewModel @Inject constructor(
             }
         }
 
-        // Sort using the user-selected SortFilter
+        // Sort using the user-selected SortFilter. Decorate-sort-undecorate: numericKey/textKey
+        // used to be called from inside compareBy/thenBy, so they ran O(n log n) times each —
+        // and numericKey for a series/author tile re-scans its whole member list on every single
+        // comparison. Compute each item's key exactly once (O(n)), then sort using the
+        // precomputed keys.
         fun members(item: HomeGridItem): List<HomeGridBook> = when (item) {
             is HomeGridItem.SingleBook -> listOf(item.book)
             is HomeGridItem.SeriesItem -> item.books
@@ -496,18 +509,19 @@ class HomeViewModel @Inject constructor(
         val useNumeric = sf.option in setOf(
             SortOption.DATE_ADDED, SortOption.DURATION, SortOption.LAST_PLAYED, SortOption.PROGRESS
         )
-        val comparator: Comparator<HomeGridItem> = if (useNumeric) {
+        val decorated = result.map { Triple(it, numericKey(it), textKey(it)) }
+        val comparator: Comparator<Triple<HomeGridItem, Double, String>> = if (useNumeric) {
             if (sf.direction == SortDirection.DESC)
-                compareByDescending<HomeGridItem> { numericKey(it) }.thenBy { textKey(it) }
+                compareByDescending<Triple<HomeGridItem, Double, String>> { it.second }.thenBy { it.third }
             else
-                compareBy<HomeGridItem> { numericKey(it) }.thenBy { textKey(it) }
+                compareBy<Triple<HomeGridItem, Double, String>> { it.second }.thenBy { it.third }
         } else {
             if (sf.direction == SortDirection.DESC)
-                compareByDescending<HomeGridItem> { textKey(it) }
+                compareByDescending { it.third }
             else
-                compareBy<HomeGridItem> { textKey(it) }
+                compareBy { it.third }
         }
-        return result.sortedWith(comparator)
+        return decorated.sortedWith(comparator).map { it.first }
     }
 
     // ── Currently playing book (for hero card) ────────────────────────────────
