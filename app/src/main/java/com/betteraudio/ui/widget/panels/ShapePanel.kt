@@ -7,18 +7,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.widget.ColorPickerRow
 import com.betteraudio.ui.widget.WidgetEditorViewModel
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
+import com.betteraudio.widget.model.ProgressShape
 import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
 
 @Composable
 fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
     val style = element.shape ?: ShapeStyle()
+    val recentColors by viewModel.recentColors.collectAsState()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(if (element.type == ElementType.PROGRESS_BAR) "Progress bar" else "Shape")
@@ -36,7 +40,9 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             Text("Fill color")
             ColorPickerRow(
                 color = style.fillColor,
-                onColorChange = { viewModel.updateShape { s -> s.copy(fillColor = it) } }
+                onColorChange = { viewModel.updateShape { s -> s.copy(fillColor = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
             if (style.kind == ShapeKind.RECT) {
                 LabeledSlider("Corner radius", style.cornerRadius, 0f, 200f, onValueChangeFinished = viewModel::endContinuousEdit) { v ->
@@ -44,18 +50,49 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
                 }
             }
         } else {
+            Text("Shape")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ProgressShape.entries.forEach { shape ->
+                    FilterChip(
+                        selected = style.progressShape == shape,
+                        onClick = { viewModel.updateShape { it.copy(progressShape = shape) } },
+                        label = { Text(labelForProgressShape(shape)) }
+                    )
+                }
+            }
             Text("Track color")
             ColorPickerRow(
                 color = style.trackColor,
-                onColorChange = { viewModel.updateShape { s -> s.copy(trackColor = it) } }
+                onColorChange = { viewModel.updateShape { s -> s.copy(trackColor = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
             Text("Fill color")
             ColorPickerRow(
                 color = style.fillColorBar,
-                onColorChange = { viewModel.updateShape { s -> s.copy(fillColorBar = it) } }
+                onColorChange = { viewModel.updateShape { s -> s.copy(fillColorBar = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
+            if (style.progressShape != ProgressShape.LINE) {
+                LabeledSlider("Stroke width", style.strokeWidth, 4f, 80f, onValueChangeFinished = viewModel::endContinuousEdit) { v ->
+                    viewModel.updateShape(immediate = false) { it.copy(strokeWidth = v) }
+                }
+                if (style.progressShape == ProgressShape.ROUNDED_SQUARE) {
+                    LabeledSlider("Corner radius", style.cornerRadius, 0f, 200f, onValueChangeFinished = viewModel::endContinuousEdit) { v ->
+                        viewModel.updateShape(immediate = false) { it.copy(cornerRadius = v) }
+                    }
+                }
+            }
         }
 
         TapActionPicker(element, viewModel)
     }
+}
+
+private fun labelForProgressShape(shape: ProgressShape): String = when (shape) {
+    ProgressShape.LINE -> "Line"
+    ProgressShape.RING -> "Circle"
+    ProgressShape.SQUARE -> "Square"
+    ProgressShape.ROUNDED_SQUARE -> "Rounded"
 }

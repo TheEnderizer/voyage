@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetDesign
+import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.widget.WidgetStateStore
 import com.betteraudio.widget.WidgetUpdater
 import com.betteraudio.widget.model.BackgroundLayerStyle
@@ -62,6 +63,7 @@ class WidgetEditorViewModel @Inject constructor(
     private val designDao: WidgetDesignDao,
     private val widgetUpdater: WidgetUpdater,
     stateStore: WidgetStateStore,
+    private val settings: SettingsStore,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -72,6 +74,16 @@ class WidgetEditorViewModel @Inject constructor(
 
     val liveSnapshot: StateFlow<WidgetSnapshot> =
         stateStore.flow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), stateStore.current)
+
+    /** Custom colors set on any element in any design, newest first — shared across every
+     *  [com.betteraudio.ui.widget.panels] color picker so a color picked once is immediately
+     *  reusable everywhere else. */
+    val recentColors: StateFlow<List<Long>> =
+        settings.widgetCustomColors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun addRecentColor(color: Long) {
+        viewModelScope.launch { settings.addWidgetCustomColor(color) }
+    }
 
     private val undoStack = ArrayDeque<WidgetDesignDoc>()
     private val redoStack = ArrayDeque<WidgetDesignDoc>()
@@ -95,7 +107,7 @@ class WidgetEditorViewModel @Inject constructor(
                         designId = design.id,
                         name = design.name,
                         aspectRatio = design.aspectRatio,
-                        doc = WidgetDesignCodec.decode(design.documentJson),
+                        doc = WidgetDesignCodec.decode(design.documentJson, design.aspectRatio),
                         previewMode = initialPreviewMode,
                     )
                 } else {
@@ -194,11 +206,10 @@ class WidgetEditorViewModel @Inject constructor(
         if (shapeKindOverride != null) {
             el = el.copy(shape = (el.shape ?: ShapeStyle()).copy(kind = shapeKindOverride))
         }
-        val hasBaseLayer = _state.value.doc.elements.firstOrNull()?.type == ElementType.BACKGROUND_LAYER
-        if (type == ElementType.BACKGROUND_LAYER && !hasBaseLayer) {
-            // First background added becomes the design's base layer — full-bleed, defines the
-            // widget's outer shape (see WidgetPainter.paint). A second one added later falls
-            // through to the normal append below and behaves as an ordinary decorative layer.
+        if (type == ElementType.BACKGROUND_LAYER) {
+            // A background defaults to the bottom of the stack so it doesn't cover existing
+            // elements — just its starting z-order; it's an ordinary element afterward, freely
+            // movable/resizable/rotatable and reorderable like any other via the layers panel.
             mutateDoc { it.copy(elements = listOf(el) + it.elements) }
         } else {
             mutateDoc { it.copy(elements = it.elements + el) }

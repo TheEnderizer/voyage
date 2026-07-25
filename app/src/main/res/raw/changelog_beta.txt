@@ -5,6 +5,24 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.7b] - 2026-07-20
+
+### Changed
+- The widget editor is redesigned as a photo-editor-style workspace: persistent docked panels for Elements/Layers/Options (no more sheets covering the canvas) with Copy/Delete/Collapse in the same dock, and a pannable/zoomable canvas that isn't limited to the widget's own shape — zoom out to see it floating in the workspace, zoom in past its edges, pan anywhere.
+- The widget itself is now always a plain rectangle. The Background element is a normal movable/resizable/rotatable layer like any other — including rectangle, pill, and round shape options, cover/image/color/gradient fill, and dim/blur/opacity — it just starts full-bleed and at the bottom of the stack by default.
+- The custom color picker now has a visual hue + saturation/value picker alongside the hex/alpha fields, and any custom color you set is saved and offered as a swatch for every other color picker in the editor.
+- The widget designs list's ⋮ menu now shows an icon next to Rename, matching Edit/Duplicate/Delete.
+- The Material You theme now keeps the last-played book's cover as the app's accent color after you close the book, instead of reverting — it only changes when a different book is opened.
+- The series info screen now opens/closes with the same smooth cover-morph animation as Book Info (it was jumping to/from nothing before, since it tore down the library grid mid-animation).
+
+### Added
+- Progress bar elements can now be a line, a circle, a square, or a rounded-corner square, with a settable stroke width — progress sweeps around the outline for the non-line shapes.
+
+### Fixed
+- Removed the last "headphones" placeholder icon (used only as a cover fallback in the widget) in favor of the app's own icon.
+- The mini player no longer shows on the Widget designs screen (it already didn't on Settings/the editor itself).
+- Some Settings buttons could squeeze down to one letter per line on narrow screens — the affected rows now scroll horizontally instead.
+
 ## [1.9.6b] - 2026-07-20
 
 ### Fixed

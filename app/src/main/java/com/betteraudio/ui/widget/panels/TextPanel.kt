@@ -9,6 +9,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.widget.ColorPickerRow
@@ -23,6 +25,7 @@ private val WEIGHTS = listOf(400 to "Regular", 500 to "Medium", 600 to "Semibold
 @Composable
 fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
     val style = element.text ?: TextStyle()
+    val recentColors by viewModel.recentColors.collectAsState()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Text")
@@ -62,7 +65,9 @@ fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             color = style.color,
             usesAccent = style.usesAccent,
             onAccentToggle = { viewModel.updateText { s -> s.copy(usesAccent = it) } },
-            onColorChange = { viewModel.updateText { s -> s.copy(color = it) } }
+            onColorChange = { viewModel.updateText { s -> s.copy(color = it) } },
+            recentColors = recentColors,
+            onCustomColorCommitted = viewModel::addRecentColor,
         )
 
         Text("Alignment")

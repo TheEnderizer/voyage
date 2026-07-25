@@ -23,6 +23,7 @@ import com.betteraudio.widget.model.HorizontalTextAlign
 import com.betteraudio.widget.model.IconStyle
 import com.betteraudio.widget.model.ImageFit
 import com.betteraudio.widget.model.ImageStyle
+import com.betteraudio.widget.model.ProgressShape
 import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
 import com.betteraudio.widget.model.TextStyle
@@ -40,10 +41,6 @@ import kotlin.math.min
 object WidgetPainter {
 
     private const val DEFAULT_ACCENT = 0xFFFFA552.toInt()
-
-    /** Outer corner radius used when the design has no BACKGROUND_LAYER element at index 0 yet
-     *  (a brand-new blank design) — matches the old fixed BackgroundSpec's own default. */
-    private const val DEFAULT_OUTER_RADIUS = 60f
 
     data class PaintOptions(
         val accentFallback: Int = DEFAULT_ACCENT,
@@ -89,40 +86,23 @@ object WidgetPainter {
         val box = contentBox(w, h, aspectRatio)
         val scale = unitScale(box)
 
-        // Only the bottom-most element defines "the" background: full-bleed fill, and its shape
-        // becomes the outer clip for everything drawn afterward (see WidgetDesignDoc's doc comment
-        // on `elements`). Anything else at index 0, including an empty design, falls back to a
-        // plain rect with a transparent fill — a genuinely blank widget.
-        val baseLayer = doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }
-        val baseFill = baseLayer?.backgroundLayer
-        val outerRect = RectF(0f, 0f, w.toFloat(), h.toFloat())
-        val outerShape = ShapePaths.forShapeKind(
-            baseFill?.shapeKind ?: ShapeKind.RECT,
-            outerRect,
-            (baseFill?.cornerRadius ?: DEFAULT_OUTER_RADIUS) * scale,
-        )
-
-        val coverBitmap = resolveBackgroundCover(baseFill, snapshot, opts, w, h)
-        val accent = resolveAccent(coverBitmap, opts.accentFallback)
-
-        canvas.save()
-        canvas.clipPath(outerShape)
-        if (baseFill != null) drawBackgroundLayer(context, canvas, baseFill, coverBitmap, w, h, scale)
+        // The widget bitmap is always a plain rectangle — its own bounds are the only clip needed.
+        // BACKGROUND_LAYER elements (there may be zero, one, or several) are ordinary freely-placed
+        // elements drawn in z-order like anything else; see drawBackgroundLayerElement.
+        val accentCover = resolveAccentCover(doc, snapshot, opts, w, h)
+        val accent = resolveAccent(accentCover, opts.accentFallback)
 
         if (opts.hideWhenIdle && !snapshot.isPlaying) {
-            canvas.restore()
             return bmp
         }
 
         for (el in doc.elements) {
-            if (el === baseLayer) continue
             try {
                 drawElement(context, canvas, el, box, scale, snapshot, accent, opts)
             } catch (e: Exception) {
                 AppLog.e("Widget", "failed to draw element ${el.id} (${el.type})", e)
             }
         }
-        canvas.restore()
         return bmp
     }
 
@@ -190,8 +170,6 @@ object WidgetPainter {
             el.type.isText -> drawText(el, rect, snapshot, accent, scale, canvas)
             el.type.isImage -> drawImage(context, canvas, el, rect, snapshot, opts, scale)
             el.type.isShape -> drawShape(canvas, el, rect, snapshot, scale)
-            // Only reached for a BACKGROUND_LAYER NOT at index 0 — the base layer is drawn
-            // full-bleed by `paint()` itself and skipped here (see the `el === baseLayer` check).
             el.type.isBackgroundLayer -> drawBackgroundLayerElement(context, canvas, el, rect, snapshot, opts, scale)
         }
 
@@ -329,10 +307,7 @@ object WidgetPainter {
             val top = rect.top + (rect.height() - fitted.height) / 2f
             canvas.drawBitmap(fitted, left, top, null)
         } else {
-            ContextCompat.getDrawable(context, R.drawable.ic_audiobook_placeholder)?.apply {
-                setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
-                draw(canvas)
-            }
+            drawCoverPlaceholder(context, canvas, rect)
         }
         canvas.restore()
 
@@ -374,21 +349,55 @@ object WidgetPainter {
                 canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.fillColor.toInt() })
             }
             ElementType.PROGRESS_BAR -> {
-                val trackPath = ShapePaths.pill(rect)
-                canvas.drawPath(trackPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.trackColor.toInt() })
                 val fraction = bookProgressFraction(snapshot)
-                if (fraction > 0f) {
-                    val fillRect = RectF(rect.left, rect.top, rect.left + rect.width() * fraction, rect.bottom)
-                    if (fillRect.width() > 0f) {
-                        canvas.save()
-                        canvas.clipPath(trackPath)
-                        canvas.drawRect(fillRect, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.fillColorBar.toInt() })
-                        canvas.restore()
+                if (style.progressShape == ProgressShape.LINE) {
+                    val trackPath = ShapePaths.pill(rect)
+                    canvas.drawPath(trackPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.trackColor.toInt() })
+                    if (fraction > 0f) {
+                        val fillRect = RectF(rect.left, rect.top, rect.left + rect.width() * fraction, rect.bottom)
+                        if (fillRect.width() > 0f) {
+                            canvas.save()
+                            canvas.clipPath(trackPath)
+                            canvas.drawRect(fillRect, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.fillColorBar.toInt() })
+                            canvas.restore()
+                        }
                     }
+                } else {
+                    drawPerimeterProgressBar(canvas, style, rect, fraction, scale)
                 }
             }
             else -> {}
         }
+    }
+
+    /** RING/SQUARE/ROUNDED_SQUARE progress: a stroked outline track, with the fill drawn as a
+     *  partial stroke walking [fraction] of that same outline's perimeter (via PathMeasure) — one
+     *  unified recipe for all three non-line shapes. */
+    private fun drawPerimeterProgressBar(canvas: Canvas, shapeStyle: ShapeStyle, rect: RectF, fraction: Float, scale: Float) {
+        val outline = when (shapeStyle.progressShape) {
+            ProgressShape.RING -> ShapePaths.circle(rect)
+            ProgressShape.SQUARE -> ShapePaths.roundedRect(rect, 0f)
+            ProgressShape.ROUNDED_SQUARE -> ShapePaths.roundedRect(rect, shapeStyle.cornerRadius * scale)
+            ProgressShape.LINE -> return
+        }
+        val strokeWidthPx = shapeStyle.strokeWidth * scale
+        canvas.drawPath(outline, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = strokeWidthPx
+            color = shapeStyle.trackColor.toInt()
+        })
+        if (fraction <= 0f) return
+        val measure = android.graphics.PathMeasure(outline, true)
+        val length = measure.length
+        if (length <= 0f) return
+        val fillSegment = android.graphics.Path()
+        measure.getSegment(0f, length * fraction.coerceIn(0f, 1f), fillSegment, true)
+        canvas.drawPath(fillSegment, Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = strokeWidthPx
+            strokeCap = Paint.Cap.ROUND
+            color = shapeStyle.fillColorBar.toInt()
+        })
     }
 
     // ── Background ─────────────────────────────────────────────────────────
@@ -404,53 +413,33 @@ object WidgetPainter {
         return WidgetBitmapCache.decodeFile(path, w, h) ?: WidgetBitmapCache.decodeFile(opts.defaultCoverPath, w, h)
     }
 
-    /** Fills the full granted rect for the design's base background element. The outer clip
-     *  (shape + corner radius) is already applied by the caller ([paint]), since it also has to
-     *  constrain every element drawn on top — this only needs to handle its own opacity layer. */
-    private fun drawBackgroundLayer(
-        context: Context,
-        canvas: Canvas,
-        bg: BackgroundLayerStyle,
-        coverBitmap: Bitmap?,
-        w: Int,
-        h: Int,
-        scale: Float,
-    ) {
-        val outerRect = RectF(0f, 0f, w.toFloat(), h.toFloat())
-        val alpha = (bg.opacity.coerceIn(0f, 1f) * 255).toInt()
-        if (alpha < 255) canvas.saveLayerAlpha(outerRect, alpha)
-
-        when (bg.source) {
-            BgSource.BOOK_COVER, BgSource.SERIES_COVER, BgSource.CUSTOM_IMAGE -> {
-                if (coverBitmap != null) {
-                    val fitted = fitBitmap(coverBitmap, w, h, ImageFit.COVER)
-                    val blurred = if (bg.blurRadius > 0f) BlurUtil.blur(fitted, BlurUtil.clampRadius(bg.blurRadius * scale, max(w, h))) else fitted
-                    canvas.drawBitmap(blurred, 0f, 0f, null)
-                } else {
-                    ContextCompat.getDrawable(context, R.drawable.ic_audiobook_placeholder)?.apply {
-                        setBounds(0, 0, w, h)
-                        draw(canvas)
-                    }
-                }
-            }
-            BgSource.SOLID -> canvas.drawColor(bg.color.toInt())
-            BgSource.GRADIENT -> {
-                val end = bg.colorEnd ?: bg.color
-                canvas.drawRect(outerRect, gradientPaint(bg.color.toInt(), end.toInt(), bg.gradientAngleDeg, outerRect))
-            }
-            BgSource.TRANSPARENT -> {}
+    /** Resolves a cover bitmap to derive the widget's accent color from: prefers whichever
+     *  BACKGROUND_LAYER element (any position — a design can have zero, one, or several) actually
+     *  shows a cover image, falling back to the snapshot's own book/series cover so accent-tinted
+     *  elements (icons/text using `usesAccent`) still track "what's playing" in designs with no
+     *  image background at all. */
+    private fun resolveAccentCover(doc: WidgetDesignDoc, snapshot: WidgetSnapshot, opts: PaintOptions, w: Int, h: Int): Bitmap? {
+        for (el in doc.elements) {
+            val bg = el.backgroundLayer ?: continue
+            val cover = resolveBackgroundCover(bg, snapshot, opts, w, h)
+            if (cover != null) return cover
         }
-
-        if (bg.dim > 0f) {
-            canvas.drawColor(Color.argb((bg.dim.coerceIn(0f, 0.8f) * 255).toInt(), 0, 0, 0))
-        }
-
-        if (alpha < 255) canvas.restore()
+        return WidgetBitmapCache.decodeFile(snapshot.bookCoverPath, w, h)
+            ?: WidgetBitmapCache.decodeFile(snapshot.seriesCoverPath, w, h)
+            ?: WidgetBitmapCache.decodeFile(opts.defaultCoverPath, w, h)
     }
 
-    /** A BACKGROUND_LAYER element that is NOT the design's base layer (not at index 0) — an
-     *  ordinary freely-positioned decorative fill/shape, drawn within its own [rect] rather than
-     *  full-bleed, with its own independent cover/color/gradient/dim/blur/opacity. */
+    private fun drawCoverPlaceholder(context: Context, canvas: Canvas, rect: RectF) {
+        ContextCompat.getDrawable(context, R.mipmap.ic_launcher)?.apply {
+            setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
+            draw(canvas)
+        }
+    }
+
+    /** A BACKGROUND_LAYER element — an ordinary freely-positioned decorative fill/shape, drawn
+     *  within its own [rect] with its own independent cover/color/gradient/dim/blur/opacity; its
+     *  [BackgroundLayerStyle.shapeKind] clips only its own fill, never the whole widget bitmap
+     *  (the widget itself is always a plain rectangle). */
     private fun drawBackgroundLayerElement(
         context: Context,
         canvas: Canvas,
@@ -478,10 +467,7 @@ object WidgetPainter {
                     val blurred = if (style.blurRadius > 0f) BlurUtil.blur(fitted, BlurUtil.clampRadius(style.blurRadius * scale, max(reqW, reqH))) else fitted
                     canvas.drawBitmap(blurred, rect.left, rect.top, null)
                 } else {
-                    ContextCompat.getDrawable(context, R.drawable.ic_audiobook_placeholder)?.apply {
-                        setBounds(rect.left.toInt(), rect.top.toInt(), rect.right.toInt(), rect.bottom.toInt())
-                        draw(canvas)
-                    }
+                    drawCoverPlaceholder(context, canvas, rect)
                 }
             }
             BgSource.SOLID -> canvas.drawColor(style.color.toInt())

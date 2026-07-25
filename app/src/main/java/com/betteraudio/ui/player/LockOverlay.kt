@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -41,15 +42,30 @@ private const val UNLOCK_HOLD_MS = 1_500L
 
 /**
  * Blocks all touches to the player underneath (accidental taps in a pocket/bag, or a toddler's
- * hands) while playback keeps running normally — controls stay reachable from the notification,
- * lock screen, and widget. A long press on this overlay unlocks; system back is consumed instead
- * of collapsing the player, so a stray back gesture can't dismiss it either.
+ * hands) while playback keeps running normally — playback stays controllable from the
+ * notification, lock screen, and widget. The caller (PlayerScreen) also hides the on-screen
+ * transport/scrubber/secondary-action rows while [locked], keeping only the title and a
+ * read-only progress indicator visible underneath this overlay. A long press on this overlay
+ * unlocks; system back is consumed instead of collapsing the player, so a stray back gesture
+ * can't dismiss it either.
  *
  * Purely a UI-layer lock, not tied to playback state — [locked] is owned by the caller
  * (PlayerScreen), reset when the player closes.
+ *
+ * The hold-to-unlock gesture is detected across the ENTIRE overlay (not just the visible
+ * indicator), so [alignment]/[contentPadding]/[contentColor] only reposition/restyle where the
+ * decorative indicator+label are drawn — e.g. Material You's player places it where the
+ * transport/secondary-action rows sit, so it smoothly appears in the space those vacate on lock,
+ * instead of this overlay's own default bottom-of-screen placement (Immersive keeps that).
  */
 @Composable
-fun LockOverlay(locked: Boolean, onUnlock: () -> Unit) {
+fun LockOverlay(
+    locked: Boolean,
+    onUnlock: () -> Unit,
+    alignment: Alignment = Alignment.BottomCenter,
+    contentPadding: PaddingValues = PaddingValues(bottom = 64.dp),
+    contentColor: Color = Color.White
+) {
     BackHandler(enabled = locked) { /* consume — a stray back gesture must not collapse the player while locked */ }
 
     AnimatedVisibility(visible = locked, enter = fadeIn(), exit = fadeOut()) {
@@ -83,23 +99,23 @@ fun LockOverlay(locked: Boolean, onUnlock: () -> Unit) {
                         }
                     )
                 },
-            contentAlignment = Alignment.BottomCenter
+            contentAlignment = alignment
         ) {
             Column(
-                Modifier.padding(bottom = 64.dp),
+                Modifier.padding(contentPadding),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(
                         progress = { holdProgress },
                         modifier = Modifier.size(56.dp),
-                        color = Color.White,
-                        trackColor = Color.White.copy(alpha = 0.25f)
+                        color = contentColor,
+                        trackColor = contentColor.copy(alpha = 0.25f)
                     )
                     Icon(
                         if (holdProgress > 0f) Icons.Default.LockOpen else Icons.Default.Lock,
                         contentDescription = null,
-                        tint = Color.White.copy(alpha = 0.85f),
+                        tint = contentColor.copy(alpha = 0.85f),
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -107,7 +123,7 @@ fun LockOverlay(locked: Boolean, onUnlock: () -> Unit) {
                 Text(
                     "Hold to unlock",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.85f)
+                    color = contentColor.copy(alpha = 0.85f)
                 )
             }
         }

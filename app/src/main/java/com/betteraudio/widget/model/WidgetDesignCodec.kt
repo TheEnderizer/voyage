@@ -20,13 +20,17 @@ object WidgetDesignCodec {
     /** A doc saved before the background-as-element change has a top-level "background" object
      *  that the current [WidgetDesignDoc] shape no longer has a field for — ignoreUnknownKeys would
      *  silently drop it, losing the design's whole look. Detect it and migrate into a synthetic
-     *  BACKGROUND_LAYER element at index 0 instead, so old designs render pixel-identical. */
-    fun decode(text: String?): WidgetDesignDoc {
+     *  BACKGROUND_LAYER element at index 0 instead, so old designs render pixel-identical.
+     *  [aspectRatio] (the design's own, from [com.betteraudio.data.db.entities.WidgetDesign]) sizes
+     *  that synthetic element's full-bleed rect correctly — a background is now an ordinary element
+     *  rendered at its own stored bounds, not a painter-forced full-bleed special case, so a wrong
+     *  height here would visibly under/over-fill the widget instead of silently doing nothing. */
+    fun decode(text: String?, aspectRatio: Float = 2f): WidgetDesignDoc {
         if (text.isNullOrBlank()) return WidgetDesignDoc()
         return try {
             val root = json.parseToJsonElement(text)
             if (root is JsonObject && root.containsKey("background")) {
-                migrateLegacy(root)
+                migrateLegacy(root, aspectRatio)
             } else {
                 json.decodeFromString<WidgetDesignDoc>(text)
             }
@@ -36,12 +40,13 @@ object WidgetDesignCodec {
         }
     }
 
-    private fun migrateLegacy(root: JsonObject): WidgetDesignDoc {
+    private fun migrateLegacy(root: JsonObject, aspectRatio: Float): WidgetDesignDoc {
         val legacy = json.decodeFromJsonElement<LegacyWidgetDesignDoc>(root)
         val bg = legacy.background
+        val canvasH = CANVAS_UNITS / aspectRatio.coerceAtLeast(0.01f)
         val backgroundElement = ElementSpec(
             type = ElementType.BACKGROUND_LAYER,
-            x = 0f, y = 0f, w = CANVAS_UNITS, h = CANVAS_UNITS,
+            x = 0f, y = 0f, w = CANVAS_UNITS, h = canvasH,
             backgroundLayer = BackgroundLayerStyle(
                 source = bg.source,
                 imagePath = bg.imagePath,

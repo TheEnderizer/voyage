@@ -38,7 +38,8 @@ class SeriesPlayer @Inject constructor(
     // doesn't carry series context either; revisit if the widget path ever becomes series-aware.
     init {
         playerController.onSeriesBookEnded = { seriesId, orderedBookIds, endedBookId ->
-            val nextId = orderedBookIds.getOrNull(orderedBookIds.indexOf(endedBookId) + 1)
+            val endedIndex = orderedBookIds.indexOf(endedBookId)
+            val nextId = if (endedIndex >= 0) orderedBookIds.getOrNull(endedIndex + 1) else null
             if (nextId != null) {
                 scope.launch {
                     playBookInSeries(nextId, seriesId, orderedBookIds, resume = false)
@@ -109,6 +110,7 @@ class SeriesPlayer @Inject constructor(
         playerController.setSkipSilence(audio.skipSilence)
         repository.touchLastPlayed(bwp.book.id)
         settings.setLastPlayedBookId(bwp.book.id)
+        settings.setThemeBookId(bwp.book.id)
         // Playing through the series path shows the SERIES cover in the player (and themes the
         // app from it). Opening a book directly from the Books view resets this to false.
         settings.setPlayerShowSeriesCover(true)

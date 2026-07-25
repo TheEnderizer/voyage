@@ -81,19 +81,45 @@ class SyncAligner @Inject constructor(
         val modelDir = modelManager.modelDirOrNull()
             ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Speech model not downloaded") }; return }
 
-        val book = repository.getBookById(bookId).first() ?: return
-        val epubPath = book.ebookPath ?: return
-        if (book.fileCount == 0) return   // ebook-only: no audio to align
+        val book = repository.getBookById(bookId).first()
+            ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Book not found") }; return }
+        val epubPath = book.ebookPath
+            ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "No ebook linked to this book") }; return }
+        if (book.fileCount == 0) {
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "No audio to align") }
+            return
+        }
 
         val files = repository.getAudioFilesOnce(bookId).sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        if (files.isEmpty()) return
+        if (files.isEmpty()) {
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "No audio to align") }
+            return
+        }
         val chapters = repository.getChaptersForBookOnce(bookId)
         val spans = AudioSpanBuilder.build(files, chapters)
-        if (spans.isEmpty()) return
+        if (spans.isEmpty()) {
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Could not determine audio chapter spans") }
+            return
+        }
 
-        val parser = runCatching { EpubParser(File(epubPath)) }.getOrNull() ?: return
+        val parser = runCatching { EpubParser(File(epubPath)) }.getOrNull()
+            ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Could not open ebook file") }; return }
         val info = runCatching { parser.parse() }.getOrNull()
-        if (info == null || info.encrypted || info.spine.isEmpty()) { parser.close(); return }
+        if (info == null) {
+            parser.close()
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Could not parse ebook") }
+            return
+        }
+        if (info.encrypted) {
+            parser.close()
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Ebook is encrypted") }
+            return
+        }
+        if (info.spine.isEmpty()) {
+            parser.close()
+            setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "No readable text in ebook") }
+            return
+        }
 
         // Book-timeline ms → (file, in-file offset), so a probe window maps to a real file span.
         val cumStart = LongArray(files.size)
@@ -136,7 +162,7 @@ class SyncAligner @Inject constructor(
                     setProgress(bookId) { it.copy(anchorsFound = raw.size) }
                 }
             }
-            val ranges = spanSearchRanges(spans.size, startBookTokIdx, bookToks.size)
+            val ranges = SyncAlignerMath.spanSearchRanges(spans.size, startBookTokIdx, bookToks.size)
 
             // Pass 2: the remaining probes per span, restricted to that span's range.
             spans.forEachIndexed { i, span ->
@@ -156,7 +182,7 @@ class SyncAligner @Inject constructor(
             // sort first and then keep only what's monotonic.
             val accepted = ArrayList<SyncAnchor>()
             for (a in raw.sortedBy { it.audioMs }) {
-                if (accepted.isEmpty() || isMonotonic(accepted.last(), a)) accepted.add(a)
+                if (accepted.isEmpty() || SyncAlignerMath.isMonotonic(accepted.last(), a)) accepted.add(a)
             }
 
             // Replace-all on success only (cancellation throws before this and keeps old anchors).
@@ -315,41 +341,17 @@ class SyncAligner @Inject constructor(
         for (start in candidates) {
             windowTokens.clear()
             for (k in start until start + w) windowTokens.add(bookToks[k].token)
-            val jac = jaccard(windowTokens.toHashSet(), transSet)
+            val jac = SyncAlignerMath.jaccard(windowTokens.toHashSet(), transSet)
             if (jac >= 0.30f) {   // cheap prefilter before the O(w²) LCS
                 val lcs = TextSimilarity.lcsLength(windowTokens, transcript).toFloat() / w
                 val score = 0.6f * jac + 0.4f * lcs
                 if (score > bestScore) { bestScore = score; bestIdx = start }
             }
         }
+        // Contract: when no window scores above 0, this returns (0, 0f) as a sentinel rather than
+        // null — callers must re-check the score (< ACCEPT_SCORE) before trusting the index; never
+        // dereference the index alone.
         return if (bestIdx >= 0) bestIdx to bestScore else 0 to 0f
-    }
-
-    private fun jaccard(a: Set<String>, b: Set<String>): Float {
-        if (a.isEmpty() || b.isEmpty()) return 0f
-        return a.intersect(b).size.toFloat() / a.union(b).size
-    }
-
-    /** Anchors must advance in both audio time and text position. */
-    private fun isMonotonic(prev: SyncAnchor, next: SyncAnchor): Boolean =
-        next.audioMs > prev.audioMs &&
-            (next.spineIndex > prev.spineIndex || (next.spineIndex == prev.spineIndex && next.charOffset > prev.charOffset))
-
-    /** Per-span book-token search range for pass 2, bracketed by the nearest span-start matches
-     *  (in either direction) found in pass 1, padded a little for slack (a start-probe fires ~15s
-     *  into its span, so the span's true start in the text sits a bit before the matched window).
-     *  A span whose own start-probe failed just inherits the bracket of its nearest known
-     *  neighbors — still far smaller than the whole book unless failures are widespread. Falls
-     *  back to the whole book only at the very ends where there's no known neighbor at all. */
-    private fun spanSearchRanges(spanCount: Int, starts: Array<Int?>, bookTokCount: Int): Array<IntRange> {
-        val knownIdx = starts.indices.filter { starts[it] != null }
-        return Array(spanCount) { i ->
-            val lo = knownIdx.lastOrNull { it <= i }
-            val hi = knownIdx.firstOrNull { it > i }
-            val rangeStart = ((lo?.let { starts[it]!! } ?: 0) - RANGE_PAD_TOKENS).coerceIn(0, bookTokCount)
-            val rangeEnd = ((hi?.let { starts[it]!! } ?: bookTokCount) + RANGE_PAD_TOKENS).coerceIn(0, bookTokCount)
-            rangeStart..rangeEnd
-        }
     }
 
     private fun probeOffsets(span: AudioChapterSpan): List<Long> {
@@ -373,6 +375,5 @@ class SyncAligner @Inject constructor(
         private const val MIN_WORDS = 12
         private const val MIN_MEAN_CONF = 0.5
         private const val ACCEPT_SCORE = 0.55f
-        private const val RANGE_PAD_TOKENS = 800
     }
 }

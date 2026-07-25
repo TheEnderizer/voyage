@@ -95,8 +95,6 @@ fun HomeScreen(
     val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
-    val splitCandidate by viewModel.splitCandidate.collectAsStateWithLifecycle()
-    val splitProgress by viewModel.splitProgress.collectAsStateWithLifecycle()
     val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
     val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
@@ -465,9 +463,6 @@ fun HomeScreen(
                 onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
                 onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
                 onOpenReader = { onOpenReader(optionsBwp.book.id) },
-                splitCandidate = splitCandidate?.takeIf { it.bookId == optionsBwp.book.id },
-                splitProgress = splitProgress,
-                onSplitLargeFile = { viewModel.startSplit() },
                 onPinShortcut = { com.betteraudio.util.BookShortcuts.requestPin(context, optionsBwp.book) }
             )
         }

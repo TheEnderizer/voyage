@@ -15,6 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -27,6 +29,7 @@ import com.betteraudio.ui.widget.WidgetEditorViewModel
 @Composable
 fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
     val style = element.icon ?: com.betteraudio.widget.model.IconStyle()
+    val recentColors by viewModel.recentColors.collectAsState()
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Icon")
@@ -46,7 +49,9 @@ fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
                 color = style.containerColor,
                 usesAccent = style.containerUsesAccent,
                 onAccentToggle = { viewModel.updateIcon { s -> s.copy(containerUsesAccent = it) } },
-                onColorChange = { viewModel.updateIcon { s -> s.copy(containerColor = it) } }
+                onColorChange = { viewModel.updateIcon { s -> s.copy(containerColor = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
         }
 
@@ -55,7 +60,9 @@ fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             color = style.glyphColor,
             usesAccent = style.glyphUsesAccent,
             onAccentToggle = { viewModel.updateIcon { s -> s.copy(glyphUsesAccent = it) } },
-            onColorChange = { viewModel.updateIcon { s -> s.copy(glyphColor = it) } }
+            onColorChange = { viewModel.updateIcon { s -> s.copy(glyphColor = it) } },
+            recentColors = recentColors,
+            onCustomColorCommitted = viewModel::addRecentColor,
         )
 
         if (element.type == ElementType.SLEEP_TIMER) {

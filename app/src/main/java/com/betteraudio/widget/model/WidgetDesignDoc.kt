@@ -14,19 +14,19 @@ const val CANVAS_UNITS = 1000f
 @Serializable
 data class WidgetDesignDoc(
     val schemaVersion: Int = 2,
-    /** List order = z-order; last element is drawn (and tapped) on top. If element 0 is a
-     *  [ElementType.BACKGROUND_LAYER], it is rendered full-bleed and its shape/corner-radius become
-     *  the outer clip for the entire widget (see WidgetPainter.paint) — that's "the" background.
-     *  Any other BACKGROUND_LAYER element (not at index 0) is just an ordinary freely-placed
-     *  decorative layer. An empty list is a genuinely blank widget. */
+    /** List order = z-order; last element is drawn (and tapped) on top. The widget itself is
+     *  always a plain rectangle — a [ElementType.BACKGROUND_LAYER] element is an ordinary
+     *  freely-placed/resized/rotated element like any other, just usually defaulted to full-bleed
+     *  and the bottom of the stack when first added (see WidgetEditorViewModel.addElement). A
+     *  design can have zero, one, or several. An empty list is a genuinely blank widget. */
     val elements: List<ElementSpec> = emptyList(),
 )
 
 enum class BgSource { BOOK_COVER, SERIES_COVER, CUSTOM_IMAGE, SOLID, GRADIENT, TRANSPARENT }
 
-/** Fill style for a [ElementType.BACKGROUND_LAYER] element — everything the old fixed
- *  WidgetDesignDoc.background field used to carry, now attached to a placeable element so more
- *  than one can be stacked and the bottom one can define the widget's own outer silhouette. */
+/** Fill style for a [ElementType.BACKGROUND_LAYER] element — cover/color/gradient fill plus
+ *  dim/blur/opacity, and its own [shapeKind]/[cornerRadius] clipping only its own rect (never the
+ *  whole widget bitmap, which is always a plain rectangle). */
 @Serializable
 data class BackgroundLayerStyle(
     val source: BgSource = BgSource.BOOK_COVER,
@@ -39,7 +39,6 @@ data class BackgroundLayerStyle(
     /** Stack-blur radius in design units (0 = off). */
     val blurRadius: Float = 0f,
     val opacity: Float = 1f,
-    /** Only meaningful when this element sits at index 0 — governs the whole widget's outer clip. */
     val shapeKind: ShapeKind = ShapeKind.RECT,
     /** Corner radius in design units, used when [shapeKind] == RECT. */
     val cornerRadius: Float = 60f,
@@ -67,9 +66,7 @@ enum class ElementType {
     val isShape: Boolean get() = this == RECT || this == PROGRESS_BAR
     val isBackgroundLayer: Boolean get() = this == BACKGROUND_LAYER
     /** Text/image/shape/background-layer elements can rotate; controls stay axis-aligned so tap
-     *  mapping is exact. A BACKGROUND_LAYER at index 0 ignores this (forced full-bleed, no handles
-     *  shown) — see WidgetEditorViewModel/SelectionOverlay; one not at index 0 rotates like any
-     *  other decorative shape. */
+     *  mapping is exact. */
     val canRotate: Boolean get() = !isControl
 
     companion object {
@@ -97,6 +94,10 @@ enum class ContainerShape { NONE, CIRCLE, ROUNDED, SQUIRCLE }
 enum class HorizontalTextAlign { LEFT, CENTER, RIGHT }
 enum class ImageFit { COVER, CONTAIN }
 enum class ShapeKind { RECT, PILL, CIRCLE, SQUIRCLE }
+
+/** How a [ElementType.PROGRESS_BAR] element renders: a straight bar, or progress sweeping around
+ *  the perimeter of a ring/square/rounded-square outline. */
+enum class ProgressShape { LINE, RING, SQUARE, ROUNDED_SQUARE }
 
 @Serializable
 data class IconStyle(
@@ -139,6 +140,10 @@ data class ShapeStyle(
     val cornerRadius: Float = 30f,
     val trackColor: Long = 0x4DFFFFFF,
     val fillColorBar: Long = 0xFFFFFFFF,
+    /** Only meaningful on a PROGRESS_BAR element. */
+    val progressShape: ProgressShape = ProgressShape.LINE,
+    /** Stroke width in design units, used by RING/SQUARE/ROUNDED_SQUARE progress shapes. */
+    val strokeWidth: Float = 24f,
 )
 
 /**

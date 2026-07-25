@@ -35,9 +35,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /**
  * The single write path to every placed widget: PlaybackService pushes state here directly
@@ -59,8 +58,23 @@ class WidgetUpdater @Inject constructor(
             CoroutineExceptionHandler { _, e -> AppLog.e("Widget", "unhandled failure in WidgetUpdater scope", e) }
     )
 
-    private val renderMutex = Mutex()
-    private var pendingRender = false
+    /** Ordered, never-dropped state mutations. A single consumer coroutine applies these strictly
+     *  in submission order, so a burst of concurrent [push]/[pushPaused] calls can never let a
+     *  stale write land after (and overwrite) a newer one — the old design launched one coroutine
+     *  per call on a multi-thread dispatcher with no ordering guarantee between them. */
+    private sealed interface WriteOp {
+        data class Full(val snapshot: WidgetSnapshot) : WriteOp
+        data object PauseCurrent : WriteOp
+    }
+    private val writeOps = Channel<WriteOp>(capacity = Channel.UNLIMITED)
+
+    /** Coalesced "please re-render from current state" signal. Unlike [writeOps] this is safe to
+     *  drop/merge — a render always reads the latest already-applied state, so only the most
+     *  recent pending signal matters. A single consumer (no mutex needed: there is exactly one
+     *  reader) replaces the old renderMutex/pendingRender pair, which had a TOCTOU gap between the
+     *  holder's final "still pending?" check and its actual unlock, where a request landing in
+     *  that window was silently dropped. */
+    private val renderSignal = Channel<Unit>(capacity = Channel.CONFLATED)
 
     /** Whether a widget's bound design has a countdown-showing SLEEP_TIMER element — refreshed on
      *  every render, consulted by [tickCountdown] so the 1 Hz sleep tick only re-renders widgets
@@ -75,24 +89,65 @@ class WidgetUpdater @Inject constructor(
      *  persisting state for cold starts. Every path that touches `current` awaits this first. */
     private val readyJob: Deferred<Unit> = scope.async {
         stateStore.loadIntoMemory()
+        DefaultWidgetDesigns.ensureSeeded(designDao)
         gcOrphanBindings()
+    }
+
+    /** Every launcher-picker entry's ComponentName — the original freeform "Custom" provider plus
+     *  one per fixed default design (see AndroidManifest.xml). A widget placed via ANY of these is
+     *  a real placed AppWidgetManager id under its own ComponentName, so every enumeration below
+     *  (playback-driven re-render, the 1 Hz countdown tick, orphan-binding GC) must union ids
+     *  across all of them — querying only [VoyageWidgetProvider] would silently leave default-
+     *  placed widgets stale/un-GC'd. */
+    private fun allProviderComponents(): List<ComponentName> = listOf(
+        ComponentName(context, VoyageWidgetProvider::class.java),
+        ComponentName(context, VoyageWidgetProviderCoverControls::class.java),
+        ComponentName(context, VoyageWidgetProviderMinimalBar::class.java),
+    )
+
+    private fun allPlacedWidgetIds(manager: AppWidgetManager): IntArray =
+        allProviderComponents().flatMap { manager.getAppWidgetIds(it).toList() }.toIntArray()
+
+    init {
+        scope.launch {
+            readyJob.await()
+            for (op in writeOps) {
+                try {
+                    when (op) {
+                        is WriteOp.Full -> stateStore.write(op.snapshot)
+                        WriteOp.PauseCurrent -> stateStore.write(
+                            stateStore.current.copy(isPlaying = false, sleepEndAtElapsedMs = 0, sleepRemainingMs = 0)
+                        )
+                    }
+                } catch (e: Exception) {
+                    AppLog.e("Widget", "state write failed", e)
+                }
+                renderSignal.trySend(Unit)
+            }
+        }
+        scope.launch {
+            readyJob.await()
+            for (unit in renderSignal) {
+                try {
+                    renderAllInternal()
+                } catch (e: Exception) {
+                    AppLog.e("Widget", "renderAllInternal failed", e)
+                }
+            }
+        }
     }
 
     /** Persists [snapshot] and re-renders every placed widget from it. Called by PlaybackService
      *  on every playback event. */
     fun push(snapshot: WidgetSnapshot) {
-        scope.launch {
-            readyJob.await()
-            stateStore.write(snapshot)
-            triggerRenderAll()
-        }
+        writeOps.trySend(WriteOp.Full(snapshot))
     }
 
     /** Re-renders every placed widget from the currently persisted/in-memory state, without a new
      *  snapshot — used after a design is saved, a binding changes, or a widget-affecting setting
      *  (default cover, hide-when-idle, app color) changes. */
     fun requestRender() {
-        scope.launch { triggerRenderAll() }
+        triggerRenderAll()
     }
 
     /** Flips the last known snapshot to paused/idle — called from PlaybackService.onDestroy(),
@@ -100,13 +155,7 @@ class WidgetUpdater @Inject constructor(
      *  the service (and its player) are gone. Runs on this class's own scope, not the caller's, so
      *  it isn't cancelled by the caller tearing itself down right afterward. */
     fun pushPaused() {
-        scope.launch {
-            readyJob.await()
-            stateStore.write(
-                stateStore.current.copy(isPlaying = false, sleepEndAtElapsedMs = 0, sleepRemainingMs = 0)
-            )
-            triggerRenderAll()
-        }
+        writeOps.trySend(WriteOp.PauseCurrent)
     }
 
     fun renderOneAsync(appWidgetId: Int) {
@@ -132,7 +181,7 @@ class WidgetUpdater @Inject constructor(
         scope.launch {
             try {
                 val manager = AppWidgetManager.getInstance(context)
-                val ids = manager.getAppWidgetIds(ComponentName(context, VoyageWidgetProvider::class.java))
+                val ids = allPlacedWidgetIds(manager)
                 for (id in ids) {
                     if (countdownCache[id] == true) renderOneInternal(manager, id)
                 }
@@ -194,23 +243,32 @@ class WidgetUpdater @Inject constructor(
         }
     }
 
-    private suspend fun triggerRenderAll() {
-        if (renderMutex.isLocked) {
-            pendingRender = true
-            return
-        }
-        renderMutex.withLock {
-            do {
-                pendingRender = false
-                renderAllInternal()
-            } while (pendingRender)
-        }
+    private fun triggerRenderAll() {
+        renderSignal.trySend(Unit)
     }
 
     private suspend fun renderAllInternal() {
         val manager = AppWidgetManager.getInstance(context)
-        val ids = manager.getAppWidgetIds(ComponentName(context, VoyageWidgetProvider::class.java))
+        val ids = allPlacedWidgetIds(manager)
         for (id in ids) renderOneInternal(manager, id)
+    }
+
+    /** Entry point for the fixed-design providers ([VoyageWidgetProviderCoverControls]/
+     *  [VoyageWidgetProviderMinimalBar]): on first placement (no binding yet) auto-binds the
+     *  widget to the seeded design matching [designName], then renders normally — so it shows the
+     *  real design immediately instead of the "pick a design" placeholder. Re-asserts the binding
+     *  on every call (cheap/idempotent), which also self-heals if a design was ever re-seeded. */
+    suspend fun renderDefaultSuspend(appWidgetId: Int, designName: String) {
+        try {
+            readyJob.await()
+            val design = designDao.getByName(designName)
+            if (design != null && bindingDao.getDesignId(appWidgetId) != design.id) {
+                bindingDao.upsert(WidgetBinding(appWidgetId, design.id, System.currentTimeMillis()))
+            }
+            renderOneInternal(AppWidgetManager.getInstance(context), appWidgetId)
+        } catch (e: Exception) {
+            AppLog.e("Widget", "renderDefault failed for id=$appWidgetId name=$designName", e)
+        }
     }
 
     private suspend fun renderOneInternal(manager: AppWidgetManager, appWidgetId: Int) {
@@ -233,7 +291,7 @@ class WidgetUpdater @Inject constructor(
                 return
             }
 
-            val doc = WidgetDesignCodec.decode(design.documentJson)
+            val doc = WidgetDesignCodec.decode(design.documentJson, design.aspectRatio)
             countdownCache[appWidgetId] = doc.elements.any {
                 it.type == ElementType.SLEEP_TIMER && it.showCountdown
             }
@@ -356,7 +414,7 @@ class WidgetUpdater @Inject constructor(
     private suspend fun gcOrphanBindings() {
         try {
             val manager = AppWidgetManager.getInstance(context)
-            val liveIds = manager.getAppWidgetIds(ComponentName(context, VoyageWidgetProvider::class.java)).toSet()
+            val liveIds = allPlacedWidgetIds(manager).toSet()
             val stale = bindingDao.allBindings().map { it.appWidgetId }.filter { it !in liveIds }
             if (stale.isNotEmpty()) bindingDao.deleteByIds(stale)
         } catch (e: Exception) {

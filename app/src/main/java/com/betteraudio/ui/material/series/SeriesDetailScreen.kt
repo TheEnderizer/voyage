@@ -27,9 +27,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -39,11 +36,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.ui.components.BookInfoPanel
-import com.betteraudio.ui.components.ReflectedProgressiveBlurCover
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.SeriesOptions
-import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.series.SeriesDetailViewModel
 import com.betteraudio.ui.theme.Pill
@@ -53,9 +48,9 @@ import java.io.File
 import kotlinx.coroutines.launch
 
 /**
- * Series page — the exact same full-bleed frame as the book info page (cover backdrop,
- * progressive scrim, info block with AI synopsis and a play button). Swiping up slides in the
- * editable book list (add / remove / reorder); swiping the panel down returns to the info page.
+ * Series page — the exact same opaque Material You frame as the book info page (rounded cover
+ * card, info block with AI synopsis and a play button). Swiping up slides in the editable book
+ * list (add / remove / reorder); swiping the panel down returns to the info page.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,10 +116,10 @@ fun SeriesDetailScreen(
         onBack()
     }
 
-    val onScrim = MaterialStyle.scrimText()
-    val onScrimMuted = MaterialStyle.scrimText(muted = true)
+    val onScrim = MaterialTheme.colorScheme.onSurface
+    val onScrimMuted = MaterialTheme.colorScheme.onSurfaceVariant
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val panelHeightPx = constraints.maxHeight * 0.84f
 
         fun dragBy(delta: Float) = scope.launch {
@@ -135,54 +130,8 @@ fun SeriesDetailScreen(
             settlePanel(open)
         }
 
-        // ── Cover + reflection background (identical to the book info page), morphing in/out
-        // from the tapped series grid card — same two-layer recipe as Immersive's Book Info:
-        // the (blurred/reflected) backdrop fades in as it grows from the card, while a sharp
-        // copy of the cover travels from the card's exact position/size and dissolves once the
-        // backdrop has taken over. ──
         val coverPath = series?.coverArtPath
             ?: books.firstOrNull { it.coverArtPath != null }?.coverArtPath
-        Box(Modifier.fillMaxSize().clipToBounds()) {
-            ReflectedProgressiveBlurCover(
-                coverPath = coverPath,
-                bakedPath = series?.coverFxPath,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .morphFrom(
-                        coverSource, coverOpenProgress,
-                        anchorTopLeft = true, byWidth = true, fadeIn = true,
-                        sourceRadius = coverSourceRadius, destRadius = 0.dp
-                    )
-            )
-        }
-        AsyncImage(
-            model = coverPath?.let { File(it) },
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.72f)
-                .morphFrom(
-                    coverSource, coverOpenProgress,
-                    anchorTopLeft = true, byWidth = true,
-                    sourceRadius = coverSourceRadius, destRadius = 0.dp
-                )
-                .graphicsLayer {
-                    val p = coverOpenProgress.value
-                    alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
-                }
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(
-                    0f    to Color.Black.copy(alpha = 0.15f),
-                    0.38f to Color.Black.copy(alpha = 0.04f),
-                    0.54f to Color.Black.copy(alpha = 0.52f),
-                    0.75f to Color.Black.copy(alpha = 0.86f),
-                    1f    to Color.Black.copy(alpha = 0.97f)
-                )
-            )
-        )
 
         // ── Info page (swipe up anywhere to reveal the books panel) ────────────
         Column(
@@ -202,7 +151,7 @@ fun SeriesDetailScreen(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = { closeWithMorph() })
+                ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = true, onClick = { closeWithMorph() })
                 Spacer(Modifier.weight(1f))
                 Text(
                     "SERIES",
@@ -214,7 +163,7 @@ fun SeriesDetailScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 Box {
-                    ScrimButton(Icons.Default.MoreVert, "More") { showOverflow = true }
+                    ScrimButton(Icons.Default.MoreVert, "More", tonal = true) { showOverflow = true }
                     DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
                         DropdownMenuItem(
                             text = { Text("Series options") },
@@ -235,7 +184,29 @@ fun SeriesDetailScreen(
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            // Rounded cover card in the leftover space — same tonal treatment as the player's
+            // own cover and the book info page, instead of the old full-bleed blurred backdrop.
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                AsyncImage(
+                    model = coverPath?.let { File(it) },
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .aspectRatio(0.72f)
+                        .morphFrom(
+                            coverSource, coverOpenProgress,
+                            anchorTopLeft = true, byWidth = true,
+                            sourceRadius = coverSourceRadius, destRadius = 28.dp
+                        )
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                )
+            }
 
             // ── Bottom info block — same panel as a book, incl. the AI synopsis ─
             val effectiveAuthor = series?.author?.takeIf { it.isNotBlank() }

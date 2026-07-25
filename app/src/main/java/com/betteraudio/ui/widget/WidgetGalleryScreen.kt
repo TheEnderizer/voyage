@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -156,7 +157,7 @@ private fun GalleryCard(
         val w = 480
         val h = (w / design.aspectRatio).toInt().coerceAtLeast(1)
         WidgetPainter.paint(
-            context, WidgetDesignCodec.decode(design.documentJson), design.aspectRatio,
+            context, WidgetDesignCodec.decode(design.documentJson, design.aspectRatio), design.aspectRatio,
             SAMPLE_WIDGET_SNAPSHOT, w, h, WidgetPainter.PaintOptions(accentFallback = accent)
         )
     }
@@ -189,7 +190,8 @@ private fun GalleryCard(
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                         DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Default.Edit, null) },
                             onClick = { showMenu = false; onEdit() })
-                        DropdownMenuItem(text = { Text("Rename") }, onClick = { showMenu = false; onRename() })
+                        DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
+                            onClick = { showMenu = false; onRename() })
                         DropdownMenuItem(text = { Text("Duplicate") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                             onClick = { showMenu = false; onDuplicate() })
                         DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) },

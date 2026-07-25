@@ -37,6 +37,8 @@ class SettingsStore @Inject constructor(
         val SORT_DIRECTION          = stringPreferencesKey("sort_direction")
         val LAST_OPEN_BOOK_ID       = longPreferencesKey("last_open_book_id")
         val LAST_PLAYED_BOOK_ID     = longPreferencesKey("last_played_book_id")
+        val THEME_BOOK_ID           = longPreferencesKey("theme_book_id")
+        val WIDGET_CUSTOM_COLORS    = stringPreferencesKey("widget_custom_colors")
         val AUTO_REWIND_SECONDS          = intPreferencesKey("auto_rewind_seconds")
         val AUTO_REWIND_THRESHOLD_MINUTES = intPreferencesKey("auto_rewind_threshold_minutes")
         val APP_STOPPED_AT               = longPreferencesKey("app_stopped_at")
@@ -160,6 +162,16 @@ class SettingsStore @Inject constructor(
     val sortDirection: Flow<String>         = context.dataStore.data.map { it[Keys.SORT_DIRECTION] ?: "ASC" }
     val lastOpenBookId: Flow<Long>          = context.dataStore.data.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }
     val lastPlayedBookId: Flow<Long>        = context.dataStore.data.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }
+    /** The book whose cover the app-wide Material You theme should track — set alongside
+     *  [setLastPlayedBookId] whenever a book actually opens/plays, but (unlike that id) never reset
+     *  to -1 on close, so closing a book keeps its theme instead of reverting to the last one
+     *  before it. Only a genuinely different book opening changes it. */
+    val themeBookId: Flow<Long>              = context.dataStore.data.map { it[Keys.THEME_BOOK_ID] ?: -1L }
+    /** Custom colors the user has picked in the widget editor, newest first — so a color set once
+     *  (on any element) is immediately offered as a swatch everywhere else via [ColorPickerRow]. */
+    val widgetCustomColors: Flow<List<Long>> = context.dataStore.data.map { prefs ->
+        prefs[Keys.WIDGET_CUSTOM_COLORS]?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()
+    }
     val autoRewindSeconds: Flow<Int>          = context.dataStore.data.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }
     val autoRewindThresholdMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }
     val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
@@ -231,6 +243,10 @@ class SettingsStore @Inject constructor(
     @Volatile var currentHeadsetTriplePressAction   = DEFAULT_HEADSET_TRIPLE_PRESS_ACTION;      private set
     @Volatile var currentBtAutoResumeEnabled        = false;                                    private set
     @Volatile var currentBtAutoResumeWindowMinutes  = DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES;    private set
+    // The player's last-chosen sleep-timer duration — read synchronously by PlaybackService's
+    // ACTION_SLEEP_TIMER_TOGGLE handler (onStartCommand can't suspend-read the Flow) so a widget
+    // tap arms the SAME duration the player would, instead of a separate hardcoded fallback.
+    @Volatile var currentSleepTimerMinutes          = DEFAULT_SLEEP_TIMER_MINUTES;              private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -261,6 +277,7 @@ class SettingsStore @Inject constructor(
         scope.launch { headsetTriplePressAction.collect      { currentHeadsetTriplePressAction       = it } }
         scope.launch { btAutoResumeEnabled.collect           { currentBtAutoResumeEnabled            = it } }
         scope.launch { btAutoResumeWindowMinutes.collect     { currentBtAutoResumeWindowMinutes      = it } }
+        scope.launch { sleepTimerMinutes.collect             { currentSleepTimerMinutes              = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =
@@ -292,6 +309,13 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }.let { }
     suspend fun setLastPlayedBookId(id: Long) =
         context.dataStore.edit { it[Keys.LAST_PLAYED_BOOK_ID] = id }.let { }
+    suspend fun setThemeBookId(id: Long) =
+        context.dataStore.edit { it[Keys.THEME_BOOK_ID] = id }.let { }
+    suspend fun addWidgetCustomColor(color: Long) = context.dataStore.edit { prefs ->
+        val current = prefs[Keys.WIDGET_CUSTOM_COLORS]?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()
+        val updated = (listOf(color) + current.filterNot { it == color }).take(12)
+        prefs[Keys.WIDGET_CUSTOM_COLORS] = updated.joinToString(",")
+    }.let { }
     suspend fun setAutoRewindSeconds(s: Int) =
         context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }.let { }
     suspend fun setAutoRewindThresholdMinutes(m: Int) =

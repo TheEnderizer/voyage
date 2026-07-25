@@ -11,8 +11,9 @@ import java.io.RandomAccessFile
  * file — `long[] offsets` + `int[] sizes` + `long[] timestampsUs` + `int[] flags`, i.e.
  * [BYTES_PER_SAMPLE] per sample. Very long single-file audiobooks blow past the heap: a 48 h book
  * (7.5M AAC frames) wants ~172 MB, and a 261 h one (22M frames) wants ~505 MB, which no heap size
- * will satisfy. Reading `stsz.sample_count` up front lets us warn and offer to split before the
- * player OOMs.
+ * will satisfy. Reading `stsz.sample_count` up front lets
+ * [com.betteraudio.playback.LargeFileMediaSourceFactory] route such a file around `Mp4Extractor`
+ * entirely instead of letting the player OOM.
  */
 object Mp4Probe {
 
@@ -43,10 +44,6 @@ object Mp4Probe {
             0L
         }
     }
-
-    /** Estimated Java-heap cost of the sample table ExoPlayer would build for this file. */
-    fun estimatedSampleTableBytes(filePath: String, extension: String): Long =
-        sampleCount(filePath, extension) * BYTES_PER_SAMPLE
 
     /**
      * Duration in ms straight from `moov/mvhd`, or 0 if unreadable.

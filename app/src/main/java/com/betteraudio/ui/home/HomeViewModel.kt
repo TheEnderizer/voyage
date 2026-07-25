@@ -132,7 +132,7 @@ class HomeViewModel @Inject constructor(
     private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
-    private val largeAudioSplitter: com.betteraudio.data.files.LargeAudioSplitter,
+    private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
     val playerController: PlayerController
 ) : ViewModel() {
 
@@ -143,64 +143,18 @@ class HomeViewModel @Inject constructor(
 
     fun openBookOptions(bookId: Long) {
         _bookOptionsTarget.value = bookId
-        probeSplitCandidate(bookId)
     }
     fun closeBookOptions() {
         _bookOptionsTarget.value = null
-        _splitCandidate.value = null
-    }
-
-    // ── Over-large single-file books ────────────────────────────────────────
-
-    /** A book whose one audio file has too many samples for ExoPlayer to load (see Mp4Probe). */
-    data class SplitCandidate(val bookId: Long, val fileName: String, val parts: Int, val mbNeeded: Long)
-
-    private val _splitCandidate = MutableStateFlow<SplitCandidate?>(null)
-    val splitCandidate: StateFlow<SplitCandidate?> = _splitCandidate.asStateFlow()
-
-    val splitProgress = largeAudioSplitter.progress
-
-    /** The stored duration can be 0 for exactly the files we want to split (MediaMetadataRetriever
-     *  gives up on multi-GB m4b), so fall back to the container's own mvhd header. */
-    private fun durationUsOf(file: com.betteraudio.data.db.entities.AudioFile): Long {
-        if (file.durationMs > 0L) return file.durationMs * 1_000L
-        val src = File(file.filePath)
-        return com.betteraudio.data.scanner.Mp4Probe.durationMs(src.absolutePath, src.extension) * 1_000L
-    }
-
-    private fun probeSplitCandidate(bookId: Long) {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val files = repository.getAudioFilesOnce(bookId)
-            val only = files.singleOrNull() ?: return@launch
-            val src = File(only.filePath)
-            if (!src.isFile) return@launch
-            if (!largeAudioSplitter.shouldSuggestSplit(src.absolutePath, src.extension)) return@launch
-            val parts = largeAudioSplitter.plan(src, durationUsOf(only)).size
-            if (parts == 0) return@launch
-            _splitCandidate.value = SplitCandidate(bookId, src.name, parts, src.length() / (1024 * 1024))
-        }
-    }
-
-    /** Split the candidate's file into per-chapter parts, then rescan so the parts import. */
-    fun startSplit() {
-        val candidate = _splitCandidate.value ?: return
-        viewModelScope.launch {
-            val files = repository.getAudioFilesOnce(candidate.bookId)
-            val only = files.singleOrNull() ?: return@launch
-            val ok = runCatching {
-                largeAudioSplitter.split(File(only.filePath), durationUsOf(only))
-            }.isSuccess
-            if (ok) {
-                // The source is now `*.original` and the parts sit beside it; a rescan replaces the
-                // book's single unplayable file with the parts.
-                settings.libraryFolder.first().takeIf { it.isNotBlank() }?.let { scanner.scanDirectory(it) }
-                _splitCandidate.value = null
-            }
-        }
     }
 
     fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) {
-        viewModelScope.launch { repository.updateBookMetadata(bookId, titleOverride, authorOverride) }
+        viewModelScope.launch {
+            repository.updateBookMetadata(bookId, titleOverride, authorOverride)
+            // Keep the on-disk folder in step with the (possibly new) effective author — a no-op
+            // in AUTO import mode or when the book has no real single folder.
+            libraryRestructurer.restructureBooks(listOf(bookId))
+        }
     }
 
     fun updateBookSeries(bookId: Long, seriesName: String?, seriesOrder: Float?) {
@@ -522,7 +476,7 @@ class HomeViewModel @Inject constructor(
         }
         fun textKey(item: HomeGridItem): String = when (item) {
             is HomeGridItem.SingleBook -> when (sf.option) {
-                SortOption.AUTHOR -> item.bwp.book.author.lowercase()
+                SortOption.AUTHOR -> item.bwp.book.displayAuthor.lowercase()
                 SortOption.SERIES -> {
                     val s = item.bwp.book.seriesName?.lowercase() ?: "￿"
                     val o = item.bwp.book.seriesOrder ?: Float.MAX_VALUE
@@ -604,6 +558,7 @@ class HomeViewModel @Inject constructor(
             playerController.setSkipSilence(audio.skipSilence)
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
+            settings.setThemeBookId(bwp.book.id)
         }
     }
 

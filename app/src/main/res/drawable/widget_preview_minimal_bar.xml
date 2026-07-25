@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="45dp"
+    android:viewportWidth="240"
+    android:viewportHeight="60">
+    <!-- Static launcher-picker preview for the "Minimal Bar" default widget — a hand-drawn
+         approximation of DefaultWidgetDesigns.minimalBarDoc's layout (solid slim bar, title/
+         author on the left, transport on the right). See widget_preview_cover_controls.xml's
+         note on why this isn't a live WidgetPainter render. -->
+    <path
+        android:fillColor="#1A1A22"
+        android:pathData="M14,0L226,0A14,14 0 0 1 240,14L240,46A14,14 0 0 1 226,60L14,60A14,14 0 0 1 0,46L0,14A14,14 0 0 1 14,0Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M20,16L128,16A6,6 0 0 1 134,22A6,6 0 0 1 128,28L20,28A6,6 0 0 1 14,22A6,6 0 0 1 20,16Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M19,34L89,34A5,5 0 0 1 94,39A5,5 0 0 1 89,44L19,44A5,5 0 0 1 14,39A5,5 0 0 1 19,34Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M162,30A8,8 0 1 1 178,30A8,8 0 1 1 162,30Z" />
+    <path
+        android:fillColor="#6B8AFB"
+        android:pathData="M189,30A11,11 0 1 1 211,30A11,11 0 1 1 189,30Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M220,30A8,8 0 1 1 236,30A8,8 0 1 1 220,30Z" />
+</vector>

@@ -31,9 +31,10 @@
     <!--
       largeHeap: ExoPlayer's Mp4Extractor materialises a whole MP4's sample table on the Java heap
       (~24 bytes/sample). Long single-file audiobooks are enormous: a 48 h m4b with 7.5M AAC frames
-      needs ~172 MB of arrays, which OOMs at the default ~192-256 MB heap. Books far past that (a
-      261 h / 22M-sample file wants ~505 MB) can't be played at all and must be split — see
-      data/files/LargeAudioSplitter.
+      needs ~172 MB of arrays, which OOMs at the default ~192-256 MB heap. This buys headroom for
+      mid-large files and pre-API-30 devices; files far past that (261 h / 22M samples, ~505 MB)
+      are instead routed around Mp4Extractor entirely on API 30+ — see
+      playback/LargeFileMediaSourceFactory.
     -->
     <application
         android:name=".VoyageApp"
@@ -68,17 +69,46 @@
             </intent-filter>
         </service>
 
-        <!-- Home screen widget: one free-size provider, all rendering/click-handling driven by
-             WidgetUpdater (no ACTION_UPDATE_WIDGET broadcast — see widget/WidgetUpdater.kt). -->
+        <!-- Home screen widget: freeform "Custom" provider (opens the in-app designer via
+             WidgetConfigureActivity) plus two fixed-design providers below, each its own
+             launcher-picker entry with a real preview and no configure step — placing either
+             auto-binds to its seeded design (see DefaultWidgetDesigns/WidgetUpdater). All
+             rendering/click-handling is driven by WidgetUpdater (no ACTION_UPDATE_WIDGET
+             broadcast — see widget/WidgetUpdater.kt). -->
         <receiver
             android:name=".widget.VoyageWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/widget_label_custom">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.VoyageWidgetProviderCoverControls"
+            android:exported="true"
+            android:label="@string/widget_label_cover_controls">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_cover_controls" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.VoyageWidgetProviderMinimalBar"
+            android:exported="true"
+            android:label="@string/widget_label_minimal_bar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_minimal_bar" />
         </receiver>
 
         <activity

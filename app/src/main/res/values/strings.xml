@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Voyage</string>
-    <string name="widget_description">Shows the currently playing audiobook with playback controls</string>
+    <string name="widget_label_custom">Voyage — Custom</string>
+    <string name="widget_description">Custom — design your own widget in the app</string>
+    <string name="widget_label_cover_controls">Voyage — Cover &amp; Controls</string>
+    <string name="widget_description_cover_controls">Full-bleed book cover with title, author, progress and playback controls</string>
+    <string name="widget_label_minimal_bar">Voyage — Minimal Bar</string>
+    <string name="widget_description_minimal_bar">A slim bar with the book title and playback controls</string>
     <string name="widget_no_book">No book playing</string>
     <string name="cover_art">Cover art</string>
     <string name="skip_back">Skip back 15 seconds</string>

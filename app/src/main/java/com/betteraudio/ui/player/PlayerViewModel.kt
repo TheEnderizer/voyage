@@ -19,6 +19,8 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.data.synopsis.SynopsisResult
 import com.betteraudio.data.synopsis.SynopsisService
+import com.betteraudio.playback.JumpRestore
+import com.betteraudio.playback.JumpRestoreStore
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.playback.PositionState
@@ -80,6 +82,8 @@ class PlayerViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val synopsisService: SynopsisService,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
+    private val jumpRestoreStore: JumpRestoreStore,
+    private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
     val playerController: PlayerController
 ) : ViewModel() {
 
@@ -94,6 +98,15 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = playerController.playbackState
     val positionState: StateFlow<PositionState> = playerController.positionState
+
+    // An involuntary jump detected service-side (PlaybackService.handleJumpDetection), filtered to
+    // whichever book is actually playing right now — so the restore pill shows a jump caught
+    // during background/cold-widget playback the moment the player is next opened.
+    val jumpRestore: StateFlow<JumpRestore?> =
+        combine(jumpRestoreStore.restore, playbackState) { restore, pbState ->
+            val activeBookId = pbState.bookId.takeIf { it != -1L } ?: bookId
+            restore?.takeIf { it.bookId == activeBookId }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Series cover mode: when true, a book that belongs to a series shows the SERIES cover in the
     // player instead of the book's own cover. Persisted globally; toggled from the overflow menu.
@@ -534,6 +547,28 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Restore playback to the position it was at right before a detected involuntary jump
+     * (non-destructive — only runs when the user taps the restore pill). Records the correction
+     * as a confirmed `"jump"` skip, same as any other deliberate navigation.
+     */
+    fun restoreFromJump(preJumpBookPosMs: Long) {
+        val targetBookId = playbackState.value.bookId.takeIf { it != -1L } ?: bookId
+        val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
+            positionState.value.bookPositionMs
+        else
+            positionState.value.currentPositionMs
+        recordSkip(currentAbsPos, preJumpBookPosMs)
+        playerController.bookSeekTo(preJumpBookPosMs)
+        jumpRestoreStore.clear(targetBookId)
+    }
+
+    /** Dismiss a detected jump's restore offer without moving playback. */
+    fun dismissJumpRestore() {
+        val targetBookId = playbackState.value.bookId.takeIf { it != -1L } ?: bookId
+        jumpRestoreStore.clear(targetBookId)
+    }
+
+    /**
      * Record a *confirmed* navigation jump (chapter select / bookmark jump / large scrubber
      * drag) into listening history. Fixed-amount skip-button taps are intentionally excluded.
      */
@@ -649,6 +684,7 @@ class PlayerViewModel @Inject constructor(
             // Mark as just-played now so last-played sorting moves it to the top immediately.
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
+            settings.setThemeBookId(bwp.book.id)
         }
     }
 
@@ -757,7 +793,18 @@ class PlayerViewModel @Inject constructor(
 
     fun updateBookMetadata(titleOverride: String?, authorOverride: String?) {
         if (bookId == -1L) return
-        viewModelScope.launch { repository.updateBookMetadata(bookId, titleOverride, authorOverride) }
+        viewModelScope.launch {
+            repository.updateBookMetadata(bookId, titleOverride, authorOverride)
+            // Unlike Home/Series, this book can be LIVE in ExoPlayer right now — the running
+            // MediaSession queue still references its files by their OLD paths, so moving the
+            // folder out from under it (copy → repoint DB → delete original) would break playback
+            // at the next file transition/seek. Skip the on-disk move while this book is the one
+            // actually loaded in the service; it still restructures correctly from Home/Series,
+            // or here too once a different book is loaded.
+            if (playbackState.value.bookId != bookId) {
+                libraryRestructurer.restructureBooks(listOf(bookId))
+            }
+        }
     }
 
     fun updateSeriesInfo(seriesName: String?, seriesOrder: Float?) {

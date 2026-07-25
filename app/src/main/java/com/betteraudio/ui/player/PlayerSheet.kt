@@ -81,7 +81,6 @@ private val MINI_BAR_RADIUS = 32.dp
 /** Which book the expanded player should show. */
 data class PlayerTarget(
     val bookId: Long = -1L,
-    val startInfo: Boolean = false,
     // false on cold-start restore so the player doesn't auto-play when the app opens
     val startPlaying: Boolean = true,
 )
@@ -114,7 +113,7 @@ class PlayerSheetController {
 
     /** Set the target without expanding (used to show the mini bar for the last-played book). */
     fun prime(bookId: Long = -1L) {
-        if (target == null) target = PlayerTarget(bookId, startInfo = false)
+        if (target == null) target = PlayerTarget(bookId)
     }
 
     /** Cold-start restore of the mini bar (collapsed): load the last-played book PAUSED so the
@@ -122,12 +121,12 @@ class PlayerSheetController {
      *  startPlaying = false so reopening the app never auto-resumes. */
     fun restore(bookId: Long) {
         if (target == null && bookId != -1L)
-            target = PlayerTarget(bookId = bookId, startInfo = false, startPlaying = false)
+            target = PlayerTarget(bookId = bookId, startPlaying = false)
     }
 
     /** Open a book in the full player (expands the sheet). */
-    fun open(bookId: Long = -1L, startInfo: Boolean = false, startPlaying: Boolean = true) {
-        target = PlayerTarget(bookId, startInfo, startPlaying)
+    fun open(bookId: Long = -1L, startPlaying: Boolean = true) {
+        target = PlayerTarget(bookId, startPlaying)
         expandToken++
     }
 
@@ -225,6 +224,10 @@ fun PlayerSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val progressAnim = remember { Animatable(0f) }   // 0 = collapsed, 1 = expanded
+    // Captured by the mini bar's onDragStarted (see below) — whether THIS drag gesture began
+    // from a fully settled mini bar, which is the only case a firm downward fling may close the
+    // book (see Feature 10 in the mini bar's draggable onDragStopped).
+    var gestureStartedSettled by remember { mutableStateOf(true) }
 
     // Mirror the drag/expand progress onto the controller so MainActivity-level chrome (the
     // floating nav pill) can slide in lockstep with the sheet.
@@ -279,20 +282,21 @@ fun PlayerSheet(
     // grow out of the pill (see MaterialMotion.kt's expandingContainer) instead of crossfading.
     val miniBarRect = remember { mutableStateOf(Rect.Zero) }
 
-    // Book Info is ALWAYS opened by tapping a grid card, so it must ALWAYS morph from that card's
-    // published bounds — even if a DIFFERENT book is currently playing (and thus has a live mini
-    // bar showing its own, unrelated cover). Only a non-info open (tapping the mini bar itself, or
-    // resuming playback into the full player) morphs from the mini bar.
+    // Book Info now lives in its own overlay (see com.betteraudio.ui.bookinfo.BookInfoOverlay),
+    // so the only remaining "no live mini bar" case here is opening the full player straight into
+    // playback with nothing currently playing (e.g. resuming from Book Info, or a fresh book) —
+    // that still needs to morph from the tapped grid card's published bounds rather than a
+    // nonexistent mini bar.
     val coverBoundsRegistry = LocalCoverBoundsRegistry.current
-    val sourceIsGridCard = target?.startInfo == true || !usingLivePlayback
-    val effectiveCoverSource = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
+    val sourceIsGridCard = !usingLivePlayback
+    val effectiveCoverSource = remember(target?.bookId, usingLivePlayback) {
         if (sourceIsGridCard) {
             coverBoundsRegistry.boundsState(target?.bookId ?: -1L)
         } else {
             miniCoverRect
         }
     }
-    val effectiveCoverRadius = remember(target?.bookId, target?.startInfo, usingLivePlayback) {
+    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback) {
         if (sourceIsGridCard) {
             coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
         } else {
@@ -388,10 +392,18 @@ fun PlayerSheet(
                             progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
                         }
                     },
-                    // A firm downward fling while collapsed closes the book (stops playback and
-                    // dismisses the mini bar); otherwise settle open/closed as usual.
+                    // Only a flick that BEGAN from a genuinely settled mini bar is eligible to
+                    // close the book — otherwise a downward flick caught mid-expansion (tap to
+                    // expand, then immediately flick down before the open animation finishes)
+                    // would also satisfy "progress < 0.15f" at release and wrongly close it
+                    // instead of just returning to the mini bar.
+                    onDragStarted = { gestureStartedSettled = progressAnim.value < 0.001f },
+                    // A firm downward fling starting from the settled mini bar closes the book
+                    // (stops playback and dismisses the mini bar); otherwise settle open/closed
+                    // as usual — which, for an in-flight expansion flicked back down, means
+                    // returning to the mini bar rather than closing.
                     onDragStopped = { velocity ->
-                        if (velocity > 1800f && progressAnim.value < 0.15f) {
+                        if (velocity > 1800f && progressAnim.value < 0.15f && gestureStartedSettled) {
                             playerController.stop()
                             controller.clear()
                         } else settle(velocity)
@@ -405,8 +417,7 @@ fun PlayerSheet(
             val nested = rememberNavController()
             LaunchedEffect(target) {
                 nested.navigate(
-                    "player?bookId=${target!!.bookId}" +
-                    "&startInfo=${target!!.startInfo}&startPlaying=${target!!.startPlaying}"
+                    "player?bookId=${target!!.bookId}&startPlaying=${target!!.startPlaying}"
                 ) {
                     // Clear the entire nested back stack so every book switch gets a fresh
                     // ViewModel. launchSingleTop is intentionally NOT set — it matches on
@@ -469,16 +480,14 @@ fun PlayerSheet(
                     ) {
                         composable("blank") { Box(Modifier.fillMaxSize()) }
                         composable(
-                            route = "player?bookId={bookId}&startInfo={startInfo}&startPlaying={startPlaying}",
+                            route = "player?bookId={bookId}&startPlaying={startPlaying}",
                             arguments = listOf(
                                 navArgument("bookId") { type = NavType.LongType; defaultValue = -1L },
-                                navArgument("startInfo") { type = NavType.BoolType; defaultValue = false },
                                 navArgument("startPlaying") { type = NavType.BoolType; defaultValue = true }
                             )
                         ) {
                             PlayerContent(
                                 onCollapse = { controller.collapse() },
-                                initiallyShowInfo = it.arguments?.getBoolean("startInfo") ?: false,
                                 startPlaying = it.arguments?.getBoolean("startPlaying") ?: true,
                                 onOpenReader = { bookId -> controller.collapse(); onOpenReader(bookId) }
                             )

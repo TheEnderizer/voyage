@@ -48,8 +48,12 @@ object WidgetIntents {
     fun forControl(context: Context, appWidgetId: Int, element: ElementSpec): PendingIntent? {
         val action = CONTROL_ACTIONS[element.type] ?: return null
         return serviceIntent(context, appWidgetId, element.id, action) {
-            if (element.type == ElementType.SLEEP_TIMER) {
-                putExtra(PlaybackService.EXTRA_SLEEP_DURATION_MS, element.sleepDurationMs ?: 15 * 60_000L)
+            // Only set when this element has its OWN explicit duration — leaving the extra off
+            // entirely lets PlaybackService's ACTION_SLEEP_TIMER_TOGGLE handler fall back to the
+            // player's own last-chosen duration (SettingsStore.currentSleepTimerMinutes) instead
+            // of a fixed 15 minutes, so a default widget's sleep control matches the player.
+            if (element.type == ElementType.SLEEP_TIMER && element.sleepDurationMs != null) {
+                putExtra(PlaybackService.EXTRA_SLEEP_DURATION_MS, element.sleepDurationMs)
             }
         }
     }

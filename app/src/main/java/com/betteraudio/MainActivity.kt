@@ -55,6 +55,8 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.author.AuthorDetailScreen
+import com.betteraudio.ui.bookinfo.BookInfoOverlay
+import com.betteraudio.ui.bookinfo.rememberBookInfoOverlayController
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.immersive.immersiveEnter
 import com.betteraudio.ui.immersive.immersiveExit
@@ -67,7 +69,8 @@ import com.betteraudio.ui.material.materialPopExit
 import com.betteraudio.ui.player.PlayerSheet
 import com.betteraudio.ui.player.rememberPlayerSheetController
 import com.betteraudio.ui.search.SearchScreen
-import com.betteraudio.ui.series.SeriesDetailScreen
+import com.betteraudio.ui.series.SeriesOverlay
+import com.betteraudio.ui.series.rememberSeriesOverlayController
 import com.betteraudio.ui.settings.SettingsScreen
 import com.betteraudio.ui.theme.VoyageTheme
 import com.betteraudio.ui.update.UpdateAvailableScreen
@@ -156,10 +159,13 @@ class MainActivity : ComponentActivity() {
         val lastPlayedBookId = runBlocking { settings.lastPlayedBookId.first() }
         setContent {
             val playbackState by playerController.playbackState.collectAsStateWithLifecycle()
-            // When nothing is actively loaded, keep the app themed by the last-played book's cover
-            // so the whole UI stays cohesive with "what's playing" even while idle on the home screen.
+            // When nothing is actively loaded, keep the app themed by the last-opened book's cover
+            // so the whole UI stays cohesive with "what's playing" even while idle on the home
+            // screen. Tracks themeBookId (set on open/play, never cleared on close) rather than
+            // lastPlayedBookId (reset to -1 by PlayerController.stop()) — otherwise closing a book
+            // would revert the theme instead of keeping it until a different book opens.
             val lastPlayedCover by produceState<String?>(null) {
-                settings.lastPlayedBookId.collectLatest { id ->
+                settings.themeBookId.collectLatest { id ->
                     if (id == -1L) value = null
                     else repository.getBookById(id).collect { value = it?.coverArtPath }
                 }
@@ -191,7 +197,7 @@ class MainActivity : ComponentActivity() {
             // AppBlurredBackdrop so the app-wide Immersive background matches the player/book-info/
             // series screens' pre-baked variant instead of live-blurring the sharp cover.
             val lastPlayedCoverFx by produceState<String?>(null) {
-                settings.lastPlayedBookId.collectLatest { id ->
+                settings.themeBookId.collectLatest { id ->
                     if (id == -1L) value = null
                     else repository.getBookById(id).collect { value = it?.coverFxPath }
                 }
@@ -244,6 +250,8 @@ class MainActivity : ComponentActivity() {
             ) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
+                val seriesOverlayController = rememberSeriesOverlayController()
+                val bookInfoOverlayController = rememberBookInfoOverlayController()
                 val uiScope = androidx.compose.runtime.rememberCoroutineScope()
                 val isMaterialYou = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU
                 // Shared across the home grid and the player sheet so a grid card's cover bounds
@@ -260,9 +268,9 @@ class MainActivity : ComponentActivity() {
                 // Opening a book DIRECTLY (Books view, search, author page) always shows the
                 // book's own cover; the series cover appears only when playing via the series
                 // path (SeriesPlayer flips the flag back on).
-                fun openBookDirect(bookId: Long, startInfo: Boolean = false) {
+                fun openBookDirect(bookId: Long) {
                     uiScope.launch { settings.setPlayerShowSeriesCover(false) }
-                    sheetController.open(bookId = bookId, startInfo = startInfo)
+                    sheetController.open(bookId = bookId)
                 }
 
                 // Trace navigation so the in-app log shows the screen flow leading to a bug, and
@@ -284,16 +292,28 @@ class MainActivity : ComponentActivity() {
                 // bar so it shows that book (fixes the mini bar being empty after a cold launch).
                 LaunchedEffect(Unit) {
                     when {
-                        coldStartBookId != -1L ->
+                        coldStartBookId != -1L -> {
+                            // A widget tap should land on Home with the player shown (not
+                            // stacked over whatever route the cold-launched app happens to
+                            // start on), so Back from the player returns to Home.
+                            if (openPlayerFromWidget && currentRoute != "home") {
+                                navController.popBackStack("home", inclusive = false)
+                            }
                             sheetController.open(bookId = coldStartBookId, startPlaying = false)
+                        }
                         lastPlayedBookId != -1L ->
                             sheetController.restore(lastPlayedBookId)
                     }
                 }
 
-                // Warm-start widget taps (singleTask onNewIntent) expand the player sheet.
+                // Warm-start widget taps (singleTask onNewIntent) expand the player sheet. Pop
+                // any non-Home route first (e.g. Settings) so the player opens over Home instead
+                // of stacking on top of it — Back then collapses the player straight to Home.
                 LaunchedEffect(playerNavRequest) {
                     playerNavRequest?.let { id ->
+                        if (currentRoute != "home") {
+                            navController.popBackStack("home", inclusive = false)
+                        }
                         sheetController.open(bookId = id)
                         playerNavRequest = null
                     }
@@ -381,9 +401,9 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             onOpenSettings = { navController.navigate("settings") },
                             onOpenBook = { bookId -> openBookDirect(bookId) },
-                            onOpenBookInfo = { bookId -> openBookDirect(bookId, startInfo = true) },
+                            onOpenBookInfo = { bookId -> bookInfoOverlayController.open(bookId) },
                             onOpenSearch = { navController.navigate("search") },
-                            onOpenSeries = { seriesId -> navController.navigate("series/$seriesId") },
+                            onOpenSeries = { seriesId -> seriesOverlayController.open(seriesId) },
                             onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") },
                             onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                         )
@@ -418,23 +438,6 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable(
-                        route = "series/{seriesId}",
-                        arguments = listOf(navArgument("seriesId") { type = NavType.LongType }),
-                        // No NavHost-level scale/fade here — the screen drives its own cover-morph
-                        // open/close (root-coordinate math against the tapped grid card), which
-                        // would double-transform against an ALSO-animating whole-screen transition.
-                        enterTransition = { EnterTransition.None },
-                        exitTransition = { ExitTransition.None },
-                        popEnterTransition = { EnterTransition.None },
-                        popExitTransition = { ExitTransition.None }
-                    ) { backStack ->
-                        SeriesDetailScreen(
-                            onBack = { navController.popBackStack() },
-                            onOpenPlayer = { bookId -> sheetController.open(bookId = bookId) }
-                        )
-                    }
-
-                    composable(
                         route = "author/{authorName}",
                         arguments = listOf(navArgument("authorName") { type = NavType.StringType })
                     ) { backStack ->
@@ -459,6 +462,23 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                // Series info overlay — drawn ABOVE the NavHost's Home content (as a sibling, not
+                // a route) so Home stays mounted underneath for the cover-morph open/close
+                // animation to work, exactly like Book Info inside PlayerSheet below.
+                SeriesOverlay(
+                    controller = seriesOverlayController,
+                    onOpenPlayer = { bookId -> sheetController.open(bookId = bookId) }
+                )
+
+                // Book info overlay — same treatment as the series overlay above (a persistent
+                // sibling above Home, not a route) so its cover-morph open/close works the same
+                // way. Resume closes the overlay (with its own shrink-back-to-card morph) and
+                // opens the full player on that book.
+                BookInfoOverlay(
+                    controller = bookInfoOverlayController,
+                    onResume = { bookId -> sheetController.open(bookId = bookId, startPlaying = true) }
+                )
+
                 // Floating nav pill (ArchiveTune style) — home route only; the player sheet
                 // draws over it and it slides away in lockstep with the sheet's expansion.
                 val homeSectionRaw by settings.homeSection.collectAsStateWithLifecycle("AUDIO")
@@ -471,7 +491,8 @@ class MainActivity : ComponentActivity() {
                 }.getOrDefault(com.betteraudio.ui.home.HomeViewMode.BOOKS)
                 val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = currentRoute == "home",
+                    visible = currentRoute == "home" && seriesOverlayController.seriesId == -1L &&
+                        bookInfoOverlayController.bookId == -1L,
                     enter = androidx.compose.animation.fadeIn() +
                         androidx.compose.animation.slideInVertically { it },
                     exit = androidx.compose.animation.fadeOut() +
@@ -501,8 +522,12 @@ class MainActivity : ComponentActivity() {
                 PlayerSheet(
                     controller = sheetController,
                     playerController = playerController,
-                    hideMiniBar = currentRoute == "settings" || currentRoute?.startsWith("reader/") == true ||
-                        currentRoute?.startsWith("widget_editor") == true,
+                    // Mini bar shows only on Home — hidden on every other route (search, author,
+                    // settings, reader, widget editor/gallery) and while a full-bleed overlay
+                    // (series or book info) covers Home.
+                    hideMiniBar = currentRoute != "home" ||
+                        seriesOverlayController.seriesId != -1L ||
+                        bookInfoOverlayController.bookId != -1L,
                     liftForNavPill = currentRoute == "home",
                     onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )

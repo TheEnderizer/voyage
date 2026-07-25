@@ -1,7 +1,6 @@
 package com.betteraudio.ui.widget
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,7 +16,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,37 +31,30 @@ import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.WidgetSnapshot
 
-/** Layer stack, topmost (last-drawn, last-tapped) element first. Reorder via up/down — this is now
- *  the ONLY place to reorder layers (the canvas toolbar dropped its own up/down buttons once the
- *  layers sheet became the dedicated place for layer management). */
+/** Layer stack, topmost (last-drawn, last-tapped) element first — the Layers panel, docked inline
+ *  in the editor (not a modal sheet). Reorder via up/down — this is the ONLY place to reorder
+ *  layers (the canvas toolbar has no up/down buttons of its own). */
 @Composable
-fun LayersSheet(viewModel: WidgetEditorViewModel, snapshot: WidgetSnapshot, onDismiss: () -> Unit) {
+fun LayersPanel(viewModel: WidgetEditorViewModel, snapshot: WidgetSnapshot, modifier: Modifier = Modifier) {
     val state by viewModel.state.collectAsState()
     val elementsTopFirst = state.doc.elements.asReversed()
-    val baseLayerId = state.doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }?.id
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
-            Text("Layers", style = MaterialTheme.typography.titleMedium)
-            LazyColumn(Modifier.padding(top = 8.dp)) {
-                items(elementsTopFirst, key = { it.id }) { el ->
-                    LayerRow(
-                        element = el,
-                        thumbnailPath = imageThumbnailPath(el, snapshot),
-                        isBaseLayer = el.id == baseLayerId,
-                        selected = el.id == state.selectedElementId,
-                        canMoveUp = elementsTopFirst.first().id != el.id,
-                        canMoveDown = elementsTopFirst.last().id != el.id,
-                        onSelect = { viewModel.selectElement(el.id) },
-                        onMoveUp = { viewModel.selectElement(el.id); viewModel.bringForward() },
-                        onMoveDown = { viewModel.selectElement(el.id); viewModel.sendBackward() },
-                        onDelete = {
-                            viewModel.selectElement(el.id)
-                            viewModel.deleteSelected()
-                        },
-                    )
-                }
-            }
+    LazyColumn(modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+        items(elementsTopFirst, key = { it.id }) { el ->
+            LayerRow(
+                element = el,
+                thumbnailPath = imageThumbnailPath(el, snapshot),
+                selected = el.id == state.selectedElementId,
+                canMoveUp = elementsTopFirst.first().id != el.id,
+                canMoveDown = elementsTopFirst.last().id != el.id,
+                onSelect = { viewModel.selectElement(el.id) },
+                onMoveUp = { viewModel.selectElement(el.id); viewModel.bringForward() },
+                onMoveDown = { viewModel.selectElement(el.id); viewModel.sendBackward() },
+                onDelete = {
+                    viewModel.selectElement(el.id)
+                    viewModel.deleteSelected()
+                },
+            )
         }
     }
 }
@@ -81,7 +72,6 @@ private fun imageThumbnailPath(element: ElementSpec, snapshot: WidgetSnapshot): 
 private fun LayerRow(
     element: ElementSpec,
     thumbnailPath: String?,
-    isBaseLayer: Boolean,
     selected: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
@@ -111,16 +101,7 @@ private fun LayerRow(
                 } else {
                     ElementTypeIcon(element.type, modifier = Modifier.size(20.dp))
                 }
-                Column {
-                    Text(labelFor(element.type))
-                    if (isBaseLayer) {
-                        Text(
-                            "Background · widget shape",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                Text(labelFor(element.type))
             }
             Row {
                 IconButton(onClick = onMoveUp, enabled = canMoveUp) {

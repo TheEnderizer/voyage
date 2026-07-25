@@ -39,7 +39,8 @@ class SeriesDetailViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val seriesPlayer: SeriesPlayer,
     private val settings: SettingsStore,
-    private val synopsisService: SynopsisService
+    private val synopsisService: SynopsisService,
+    private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer
 ) : ViewModel() {
 
     val seriesId: Long = checkNotNull(savedStateHandle["seriesId"])
@@ -135,7 +136,15 @@ class SeriesDetailViewModel @Inject constructor(
 
     fun addBook(bookId: Long) = viewModelScope.launch { seriesRepository.addBookToSeries(bookId, seriesId) }
     fun removeBook(bookId: Long) = viewModelScope.launch { seriesRepository.removeBookFromSeries(bookId) }
-    fun rename(name: String) = viewModelScope.launch { if (name.isNotBlank()) seriesRepository.renameSeries(seriesId, name) }
+    fun rename(name: String) = viewModelScope.launch {
+        if (name.isNotBlank()) {
+            seriesRepository.renameSeries(seriesId, name)
+            // The series name is part of the folder scheme (AUTHOR_SERIES_BOOK /
+            // AUTHOR_DASH_SERIES_BOOK), so a rename needs every member's folder restructured too.
+            val memberIds = seriesRepository.getBooksInSeriesOnce(seriesId).map { it.id }
+            libraryRestructurer.restructureBooks(memberIds)
+        }
+    }
     fun saveOptions(updated: Series) =
         viewModelScope.launch {
             seriesRepository.updateSeries(updated)
@@ -149,6 +158,8 @@ class SeriesDetailViewModel @Inject constructor(
             updated.narrator?.takeIf { it.isNotBlank() }?.let { narrator ->
                 members.forEach { repository.updateBookNarrator(it.id, narrator) }
             }
+            // Keep every member's on-disk folder in step with the (possibly new) effective author.
+            libraryRestructurer.restructureBooks(members.map { it.id })
         }
 
     /** Move a member up or down and renumber the whole series so the order sticks. */

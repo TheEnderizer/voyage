@@ -8,9 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -20,6 +20,8 @@ import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Tune
@@ -27,11 +29,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -42,6 +42,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,20 +63,23 @@ import com.betteraudio.ui.widget.panels.ShapePanel
 import com.betteraudio.ui.widget.panels.TextPanel
 import com.betteraudio.widget.model.ElementSpec
 
+/** Which panel the persistent dock is currently showing. */
+private enum class DockTab { ELEMENTS, LAYERS, OPTIONS }
+
 /**
- * The widget maker v2 editor: a free-placement canvas (no snapping — drag/pinch/rotate anywhere)
- * that fills nearly the whole screen with pinch-to-zoom, a slim bottom toolbar, an on-demand
- * options sheet per selected element, an element picker, and a layers sheet. The canvas renders
- * through the same [com.betteraudio.widget.render.WidgetPainter] the real widget uses, so what's
- * shown here is exactly what appears on the home screen.
+ * The widget maker v2 editor: a photo-editor-style workspace — a big pannable/zoomable canvas
+ * (see [EditorCanvas]) with a persistent docked panel below it (Elements / Layers / Options,
+ * switchable by tab, collapsible to reclaim canvas space) instead of modal sheets that cover the
+ * canvas. Copy/Delete act directly on the current selection from the dock's own header row. The
+ * canvas renders through the same [com.betteraudio.widget.render.WidgetPainter] the real widget
+ * uses, so what's shown here is exactly what appears on the home screen.
  */
 @Composable
 fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val liveSnapshot by viewModel.liveSnapshot.collectAsStateWithLifecycle()
-    var showElementPicker by remember { mutableStateOf(false) }
-    var showLayers by remember { mutableStateOf(false) }
-    var showOptions by remember { mutableStateOf(false) }
+    var dockTab by remember { mutableStateOf(DockTab.ELEMENTS) }
+    var dockExpanded by remember { mutableStateOf(true) }
     var showAspectMenu by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
     var showUnsavedDialog by remember { mutableStateOf(false) }
@@ -83,6 +88,15 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
 
     val snapshot = if (state.previewMode == PreviewMode.LIVE) liveSnapshot else SAMPLE_WIDGET_SNAPSHOT
     val requestBack = { if (state.dirty) showUnsavedDialog = true else onBack() }
+
+    // Selecting a NEW element surfaces its options immediately, like a photo editor's properties
+    // panel — deselecting leaves the dock on whichever tab the user last chose instead of jumping.
+    LaunchedEffect(state.selectedElementId) {
+        if (state.selectedElementId != null) {
+            dockTab = DockTab.OPTIONS
+            dockExpanded = true
+        }
+    }
 
     BackHandler(onBack = requestBack)
 
@@ -170,10 +184,7 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Box(
-                Modifier.weight(1f).fillMaxWidth().padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 EditorCanvas(
                     viewModel = viewModel,
                     doc = state.doc,
@@ -182,34 +193,43 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                     snapshot = snapshot,
                     selectedElementId = state.selectedElementId,
                     isDragging = state.isDragging,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxSize()
                 )
                 if (state.doc.elements.isEmpty()) {
-                    EmptyCanvasHint(onAdd = { showElementPicker = true })
+                    EmptyCanvasHint(onAdd = { dockTab = DockTab.ELEMENTS; dockExpanded = true })
                 }
             }
 
-            BottomToolbar(
+            EditorDock(
+                tab = dockTab,
+                onTabChange = { dockTab = it },
+                expanded = dockExpanded,
+                onExpandedChange = { dockExpanded = it },
                 hasSelection = state.selectedElementId != null,
                 onDuplicate = viewModel::duplicateSelected,
                 onDelete = viewModel::deleteSelected,
-                onOptions = { showOptions = true },
-                onShowLayers = { showLayers = true },
-                onAddElement = { showElementPicker = true },
-            )
+            ) {
+                when (dockTab) {
+                    DockTab.ELEMENTS -> ElementPickerPanel(onPick = viewModel::addElement)
+                    DockTab.LAYERS -> LayersPanel(viewModel, snapshot)
+                    DockTab.OPTIONS -> {
+                        val selected = state.selectedElement
+                        if (selected != null) {
+                            ElementOptionsPanel(viewModel, selected)
+                        } else {
+                            Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    "Select an element on the canvas to edit its options",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    if (showElementPicker) {
-        ElementPickerSheet(onDismiss = { showElementPicker = false }, onPick = viewModel::addElement)
-    }
-    if (showLayers) {
-        LayersSheet(viewModel, snapshot, onDismiss = { showLayers = false })
-    }
-    val selectedForOptions = state.selectedElement
-    if (showOptions && selectedForOptions != null) {
-        ElementOptionsSheet(viewModel, selectedForOptions, onDismiss = { showOptions = false })
-    }
     if (showUnsavedDialog) {
         AlertDialog(
             onDismissRequest = { showUnsavedDialog = false },
@@ -230,7 +250,7 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
 
 /** Shown centered over the canvas when the design has no elements yet — a blank canvas has no
  *  fixed "background" concept anymore (see WidgetDesignDoc), so the first step is always adding
- *  one deliberately from the element picker. */
+ *  one deliberately from the Elements panel. */
 @Composable
 private fun EmptyCanvasHint(onAdd: () -> Unit) {
     Surface(
@@ -251,74 +271,94 @@ private fun EmptyCanvasHint(onAdd: () -> Unit) {
     }
 }
 
-/** Slim bottom toolbar: only the actions that make sense with no element selected at all (Layers,
- *  Add) plus the handful that act on the current selection (Duplicate, Delete, Options). Reordering
- *  (bring forward/send backward) and the opacity slider both moved into their dedicated homes — the
- *  layers sheet and the options sheet, respectively — so this row stays uncluttered. */
+/** The persistent docked panel: a header row of Elements/Layers/Options tabs plus Duplicate/Delete
+ *  (acting directly on the current selection) and a collapse toggle, with the selected tab's
+ *  content docked below — never a modal overlay, so it never blocks the canvas underneath it; the
+ *  canvas simply shares the screen with it (see the weight(1f) canvas Box above). */
 @Composable
-private fun BottomToolbar(
+private fun EditorDock(
+    tab: DockTab,
+    onTabChange: (DockTab) -> Unit,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     hasSelection: Boolean,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
-    onOptions: () -> Unit,
-    onShowLayers: () -> Unit,
-    onAddElement: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onDuplicate, enabled = hasSelection) {
-            Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
-        }
-        IconButton(onClick = onDelete, enabled = hasSelection) {
-            Icon(Icons.Default.Delete, contentDescription = "Delete")
-        }
-        IconButton(onClick = onOptions, enabled = hasSelection) {
-            Icon(Icons.Default.Tune, contentDescription = "Element options")
-        }
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onShowLayers) {
-            Icon(Icons.Default.Layers, contentDescription = "Layers")
-        }
-        Spacer(Modifier.width(4.dp))
-        FloatingActionButton(onClick = onAddElement) {
-            Icon(Icons.Default.Add, contentDescription = "Add element")
+    Surface(tonalElevation = 3.dp, shadowElevation = 3.dp) {
+        Column {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                DockTabButton(Icons.Default.Add, "Elements", tab == DockTab.ELEMENTS && expanded) {
+                    onTabChange(DockTab.ELEMENTS); onExpandedChange(true)
+                }
+                DockTabButton(Icons.Default.Layers, "Layers", tab == DockTab.LAYERS && expanded) {
+                    onTabChange(DockTab.LAYERS); onExpandedChange(true)
+                }
+                DockTabButton(Icons.Default.Tune, "Options", tab == DockTab.OPTIONS && expanded) {
+                    onTabChange(DockTab.OPTIONS); onExpandedChange(true)
+                }
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onDuplicate, enabled = hasSelection) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
+                }
+                IconButton(onClick = onDelete, enabled = hasSelection) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete")
+                }
+                IconButton(onClick = { onExpandedChange(!expanded) }) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
+                        contentDescription = if (expanded) "Collapse panel" else "Expand panel",
+                    )
+                }
+            }
+            if (expanded) {
+                Box(Modifier.fillMaxWidth().height(280.dp)) { content() }
+            }
         }
     }
 }
 
-/** All of the selected element's options, opened on demand instead of permanently occupying screen
- *  space below the canvas. Leads with a name/icon header and a full-width opacity slider (previously
- *  squeezed into the toolbar next to other buttons, where it was hard to control precisely), then
- *  the same per-type panel the editor always used. */
 @Composable
-private fun ElementOptionsSheet(viewModel: WidgetEditorViewModel, element: ElementSpec, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ElementTypeIcon(element.type, modifier = Modifier.size(22.dp))
-                Text(labelFor(element.type), style = MaterialTheme.typography.titleMedium)
-            }
+private fun DockTabButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            icon, contentDescription = label,
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
 
-            LabeledSlider(
-                "Opacity", element.opacity, 0.1f, 1f,
-                onValueChangeFinished = viewModel::endContinuousEdit,
-            ) { v -> viewModel.updateSelected(immediate = false) { it.copy(opacity = v) } }
+/** All of the selected element's options, docked inline. Leads with a name/icon header and a
+ *  full-width opacity slider, then the same per-type panel the editor always used. */
+@Composable
+private fun ElementOptionsPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
+    Column(
+        Modifier.fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 24.dp, top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ElementTypeIcon(element.type, modifier = Modifier.size(22.dp))
+            Text(labelFor(element.type), style = MaterialTheme.typography.titleMedium)
+        }
 
-            when {
-                element.type.isBackgroundLayer -> BackgroundLayerPanel(viewModel, element)
-                element.type.isControl -> IconPanel(viewModel, element)
-                element.type.isText -> TextPanel(viewModel, element)
-                element.type.isImage -> ImagePanel(viewModel, element)
-                else -> ShapePanel(viewModel, element)
-            }
+        LabeledSlider(
+            "Opacity", element.opacity, 0.1f, 1f,
+            onValueChangeFinished = viewModel::endContinuousEdit,
+        ) { v -> viewModel.updateSelected(immediate = false) { it.copy(opacity = v) } }
+
+        when {
+            element.type.isBackgroundLayer -> BackgroundLayerPanel(viewModel, element)
+            element.type.isControl -> IconPanel(viewModel, element)
+            element.type.isText -> TextPanel(viewModel, element)
+            element.type.isImage -> ImagePanel(viewModel, element)
+            else -> ShapePanel(viewModel, element)
         }
     }
 }

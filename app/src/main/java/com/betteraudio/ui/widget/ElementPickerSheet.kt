@@ -3,11 +3,14 @@ package com.betteraudio.ui.widget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AddPhotoAlternate
@@ -27,7 +30,6 @@ import androidx.compose.material.icons.filled.Wallpaper
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -82,38 +84,39 @@ private val CATEGORIES = listOf(
     ),
 )
 
+/** The Elements panel — docked inline in the editor (not a modal sheet), so picking an element
+ *  never covers the canvas. Scrollable since every category's grid is laid out at full (unclipped)
+ *  height inside it. */
 @Composable
-fun ElementPickerSheet(onDismiss: () -> Unit, onPick: (ElementType, ShapeKind?) -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            CATEGORIES.forEach { category ->
-                Text(category.title, style = MaterialTheme.typography.titleSmall)
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(3),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(category.entries) { entry ->
-                        Card(
-                            onClick = { onPick(entry.type, entry.shapeKind); onDismiss() },
-                            modifier = Modifier.fillMaxWidth()
+fun ElementPickerPanel(onPick: (ElementType, ShapeKind?) -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        CATEGORIES.forEach { category ->
+            Text(category.title, style = MaterialTheme.typography.titleSmall)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().height(((category.entries.size + 2) / 3 * 84).dp)
+            ) {
+                items(category.entries) { entry ->
+                    Card(
+                        onClick = { onPick(entry.type, entry.shapeKind) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier.padding(12.dp).fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Column(
-                                Modifier.padding(12.dp).fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                            ) {
-                                if (entry.icon != null) {
-                                    Icon(entry.icon, contentDescription = null, modifier = Modifier.size(22.dp))
-                                } else {
-                                    ElementTypeIcon(entry.type, modifier = Modifier.size(22.dp))
-                                }
-                                Text(entry.label, style = MaterialTheme.typography.labelMedium)
+                            if (entry.icon != null) {
+                                Icon(entry.icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                            } else {
+                                ElementTypeIcon(entry.type, modifier = Modifier.size(22.dp))
                             }
+                            Text(entry.label, style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }

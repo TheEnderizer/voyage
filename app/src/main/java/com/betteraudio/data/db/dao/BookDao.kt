@@ -70,10 +70,6 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE COALESCE(authorOverride, author) = :name AND isIgnored = 0")
     suspend fun getBooksByEffectiveAuthorOnce(name: String): List<Book>
 
-    // Distinct non-blank author names across the (non-ignored) library — for the Authors view.
-    @Query("SELECT DISTINCT author FROM books WHERE isIgnored = 0 AND author != ''")
-    fun getDistinctAuthors(): Flow<List<String>>
-
     // Match the effective author (authorOverride when set, else the scanned author).
     @Query("""
         SELECT * FROM books

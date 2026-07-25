@@ -45,6 +45,47 @@ class LibraryRestructurer @Inject constructor(
         }
     }
 
+    /**
+     * Targeted restructure for specific books — same move/verify safety as [run], scoped to just
+     * [bookIds] instead of sweeping the whole library. Used right after a metadata edit (author,
+     * series rename, …) so the on-disk folder tracks the in-app change automatically. [plan]'s
+     * `ImportStructure != AUTO` / blank-root guards live in [plan] itself, which this bypasses (it
+     * doesn't sweep every book), so they're re-asserted here.
+     */
+    suspend fun restructureBooks(bookIds: Collection<Long>): Result = withContext(Dispatchers.IO) {
+        if (bookIds.isEmpty()) return@withContext Result(0, 0, 0)
+        val structure = ImportStructure.fromName(settings.importStructure.first())
+        val root = settings.libraryFolder.first()
+        if (structure == ImportStructure.AUTO || root.isBlank()) return@withContext Result(0, 0, 0)
+
+        val idSet = bookIds.toSet()
+        val moves = repository.getAllBooksIncludingIgnoredOnce()
+            .filter { it.id in idSet }
+            .mapNotNull { book ->
+                val from = File(book.folderPath)
+                if (!from.isDirectory) return@mapNotNull null       // synthetic key / missing folder
+                val to = targetFolder(book, structure, root) ?: return@mapNotNull null
+                if (to.absolutePath == from.absolutePath) return@mapNotNull null
+                Move(book.id, book.displayTitle, from, to)
+            }
+
+        var moved = 0; var skipped = 0; var failed = 0
+        moves.forEach { move ->
+            try {
+                when (moveOne(move)) {
+                    MoveOutcome.MOVED -> moved++
+                    MoveOutcome.SKIPPED -> skipped++
+                    MoveOutcome.FAILED -> failed++
+                }
+            } catch (e: Exception) {
+                AppLog.e("Restructure", "targeted move failed for '${move.title}'", e); failed++
+            }
+        }
+        if (moved > 0) cleanupEmptyDirs(File(root))
+        AppLog.i("Restructure", "targeted done moved=$moved skipped=$skipped failed=$failed")
+        Result(moved, skipped, failed)
+    }
+
     suspend fun run(onProgress: (done: Int, total: Int) -> Unit): Result = withContext(Dispatchers.IO) {
         val moves = plan()
         var moved = 0; var skipped = 0; var failed = 0

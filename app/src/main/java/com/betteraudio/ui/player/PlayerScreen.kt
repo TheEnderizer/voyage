@@ -14,13 +14,12 @@ import com.betteraudio.ui.material.player.PlayerContent as MaterialPlayerContent
 @Composable
 fun PlayerContent(
     onCollapse: () -> Unit,
-    initiallyShowInfo: Boolean = false,
     startPlaying: Boolean = true,
     onOpenReader: (Long) -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     when (LocalAppTheme.current) {
-        AppTheme.IMMERSIVE -> ImmersivePlayerContent(onCollapse, initiallyShowInfo, startPlaying, onOpenReader, viewModel)
-        AppTheme.MATERIAL_YOU -> MaterialPlayerContent(onCollapse, initiallyShowInfo, startPlaying, onOpenReader, viewModel)
+        AppTheme.IMMERSIVE -> ImmersivePlayerContent(onCollapse, startPlaying, onOpenReader, viewModel)
+        AppTheme.MATERIAL_YOU -> MaterialPlayerContent(onCollapse, startPlaying, onOpenReader, viewModel)
     }
 }

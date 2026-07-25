@@ -23,7 +23,6 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
@@ -63,6 +62,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var widgetUpdater: WidgetUpdater
+    @Inject lateinit var jumpRestoreStore: JumpRestoreStore
 
     private var mediaSession: MediaSession? = null
     // The real ExoPlayer (the MediaSession is fed a ForwardingPlayer wrapping it). Audio
@@ -239,7 +239,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         val player = ExoPlayer.Builder(this, renderersFactory)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(skipHeadFactory))
+            .setMediaSourceFactory(LargeFileMediaSourceFactory(skipHeadFactory))
             .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .setHandleAudioBecomingNoisy(true)
             .build()
@@ -275,6 +275,11 @@ class PlaybackService : MediaSessionService() {
                 }
                 pushWidgetState()
             }
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) = handleJumpDetection(oldPosition, newPosition, reason)
         })
 
         // External transport controls (headphones, Bluetooth, lock screen, notification) drive
@@ -506,7 +511,15 @@ class PlaybackService : MediaSessionService() {
                 if (sleepMode != SLEEP_MODE_OFF) {
                     setSleepTimer(SLEEP_MODE_OFF, 0L, 0L)
                 } else {
-                    val durationMs = intent.getLongExtra(EXTRA_SLEEP_DURATION_MS, 15 * 60_000L)
+                    // No explicit per-element duration on the intent → arm the SAME duration the
+                    // player would (SettingsStore.currentSleepTimerMinutes, its synchronous
+                    // snapshot of the user's last-chosen SLEEP_TIMER_MINUTES) so widget and
+                    // player always agree, instead of a separate hardcoded 15-minute fallback.
+                    val durationMs = if (intent.hasExtra(EXTRA_SLEEP_DURATION_MS)) {
+                        intent.getLongExtra(EXTRA_SLEEP_DURATION_MS, 15 * 60_000L)
+                    } else {
+                        settings.currentSleepTimerMinutes * 60_000L
+                    }
                     setSleepTimer(SLEEP_MODE_COUNTDOWN, durationMs, 0L)
                 }
             }
@@ -714,6 +727,39 @@ class PlaybackService : MediaSessionService() {
             }
         }
         else -> 0L
+    }
+
+    /** Live jump detection: runs on the service's own `Player.Listener`, attached to the real
+     *  ExoPlayer, so it sees every discontinuity for both foreground and background/cold-widget
+     *  playback (unlike `PlayerController`, which only connects once `MainActivity` is opened).
+     *  Whitelist classification (see [JumpClassifier]) — only an unexplained INTERNAL move beyond
+     *  threshold is ever flagged; a SEEK/SEEK_ADJUSTMENT means the user (or the app) genuinely
+     *  navigated, so any pending restore offer for this book is no longer meaningful. */
+    private fun handleJumpDetection(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        val bookId = exoPlayer?.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+
+        if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT) {
+            jumpRestoreStore.clear(bookId)
+            return
+        }
+        if (reason != Player.DISCONTINUITY_REASON_INTERNAL) return
+        if (oldPosition.mediaItemIndex != newPosition.mediaItemIndex) {
+            // Cross-item INTERNAL discontinuities fall outside bookPositionMsFor's safe envelope
+            // (not-yet-reached windows can still read as C.TIME_UNSET) — bail rather than risk a
+            // mis-thresholded false flag.
+            return
+        }
+
+        val oldBookPosMs = bookPositionMsFor(oldPosition.mediaItemIndex, oldPosition.positionMs)
+        val newBookPosMs = bookPositionMsFor(newPosition.mediaItemIndex, newPosition.positionMs)
+        if (JumpClassifier.classify(reason, oldBookPosMs, newBookPosMs) == JumpDecision.FLAG) {
+            AppLog.i(
+                "History",
+                "Unexpected jump: $oldBookPosMs -> $newBookPosMs reason=INTERNAL deltaMs=${newBookPosMs - oldBookPosMs}; offering restore"
+            )
+            jumpRestoreStore.set(JumpRestore(oldBookPosMs, bookId, System.currentTimeMillis()))
+        }
     }
 
     /** Absolute book-level position for (media-item index, position within that item), summing

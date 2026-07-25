@@ -14,6 +14,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ private val ASPECT_PRESETS = listOf(
 @Composable
 fun ImagePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
     val style = element.image ?: ImageStyle()
+    val recentColors by viewModel.recentColors.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -84,7 +86,9 @@ fun ImagePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             Text("Border color")
             ColorPickerRow(
                 color = style.borderColor,
-                onColorChange = { viewModel.updateImage { s -> s.copy(borderColor = it) } }
+                onColorChange = { viewModel.updateImage { s -> s.copy(borderColor = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
         }
 

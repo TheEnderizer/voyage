@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.RectF
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -17,11 +18,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
@@ -32,32 +35,32 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import com.betteraudio.widget.model.ElementType
-import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.WidgetDesignDoc
 import com.betteraudio.widget.model.WidgetSnapshot
-import com.betteraudio.widget.render.ShapePaths
 import com.betteraudio.widget.render.WidgetPainter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Matches WidgetPainter's private DEFAULT_OUTER_RADIUS — duplicated here purely so the editor-only
- *  shape outline (never touches WidgetPainter/the real render path) can draw the same fallback. */
-private const val EDITOR_DEFAULT_OUTER_RADIUS = 60f
-private const val MIN_ZOOM = 1f
-private const val MAX_ZOOM = 4f
+private const val MIN_ZOOM = 0.3f
+private const val MAX_ZOOM = 5f
 
-/** The editor's live canvas: renders through the exact same [WidgetPainter] used for the real
- *  widget (so the preview IS the widget render), with a checkerboard behind it for transparency,
- *  a tap-to-select/deselect layer, a dashed outline tracing the widget's real outer silhouette
- *  (editor-only — never part of the actual render), pinch-to-zoom/pan, and (for the selected
- *  element) the drag/resize/rotate overlay and free-floating alignment guides. */
+/** Fraction of the workspace the widget frame occupies at zoom = 1 ("fit") — leaves a visible
+ *  pasteboard margin around it, photo-editor canvas style. */
+private const val FIT_FRACTION = 0.88f
+
+/** The editor's live canvas: a pannable/zoomable workspace (a "pasteboard" filling nearly the whole
+ *  screen, not itself shaped like the widget) containing the widget frame — a plain rectangle the
+ *  user can freely zoom/pan around, similar to a photo editor's canvas view. The frame renders
+ *  through the exact same [WidgetPainter] used for the real widget (so the preview IS the widget
+ *  render), with a checkerboard confined to its own bounds for transparency, a dashed outline
+ *  tracing its real size (editor-only — never part of the actual render), a tap-to-select/deselect
+ *  layer, and (for the selected element) the drag/resize/rotate overlay and alignment guides. */
 @Composable
 fun EditorCanvas(
     viewModel: WidgetEditorViewModel,
     doc: WidgetDesignDoc,
     /** The design's native aspect — determines element layout (design-unit content box) AND the
-     *  canvas frame shape (the editor no longer previews a different reflow size). */
+     *  widget frame's own shape (always a plain rectangle). */
     layoutAspect: Float,
     canvasHeightUnits: Float,
     snapshot: WidgetSnapshot,
@@ -69,31 +72,24 @@ fun EditorCanvas(
     val density = LocalDensity.current
     val accent = MaterialTheme.colorScheme.primary.toArgb()
     var sizePx by remember { mutableStateOf(IntSize.Zero) }
+    var workspaceSizePx by remember { mutableStateOf(IntSize.Zero) }
     var zoom by remember { mutableStateOf(1f) }
     var pan by remember { mutableStateOf(Offset.Zero) }
 
-    fun clampPan(raw: Offset, scale: Float): Offset {
-        if (scale <= MIN_ZOOM) return Offset.Zero
-        val maxX = sizePx.width * (scale - 1f) / 2f
-        val maxY = sizePx.height * (scale - 1f) / 2f
+    fun clampPan(raw: Offset): Offset {
+        // Generous margin rather than clamping the frame to the viewport's own edges — the whole
+        // point of the pannable workspace is letting the frame move away from center, so it's
+        // bounded only loosely, enough that a fling can't lose it off-screen entirely.
+        val maxX = workspaceSizePx.width.toFloat()
+        val maxY = workspaceSizePx.height.toFloat()
         return Offset(raw.x.coerceIn(-maxX, maxX), raw.y.coerceIn(-maxY, maxY))
-    }
-
-    fun setZoom(newZoom: Float) {
-        val clamped = newZoom.coerceIn(MIN_ZOOM, MAX_ZOOM)
-        zoom = clamped
-        pan = clampPan(pan, clamped)
     }
 
     Box(
         modifier
-            .aspectRatio(layoutAspect)
-            .onSizeChanged { sizePx = it }
-            .clipToBounds()
-            // Static, unscaled backdrop — deliberately NOT inside the zoomed/panned layer below, so
-            // it never needs to redraw as part of that layer's frequent invalidation (every drag
-            // delta, every pinch frame) — a meaningful chunk of the stutter this used to cause.
-            .checkerboard()
+            .fillMaxSize()
+            .onSizeChanged { workspaceSizePx = it }
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             // Two-finger pinch/pan only — consumes nothing for a single pointer, so element
             // tap/drag (handled by children below) is completely unaffected.
             .pointerInput(Unit) {
@@ -110,34 +106,43 @@ fun EditorCanvas(
                             val zoomDelta = if (prevSpread > 1f) currSpread / prevSpread else 1f
                             val newZoom = (zoom * zoomDelta).coerceIn(MIN_ZOOM, MAX_ZOOM)
                             zoom = newZoom
-                            pan = clampPan(pan + (currCentroid - prevCentroid), newZoom)
+                            pan = clampPan(pan + (currCentroid - prevCentroid))
                             pressed.forEach { it.consume() }
                         }
                     } while (event.changes.any { it.pressed })
                 }
-            }
+            },
+        contentAlignment = Alignment.Center,
     ) {
+        // The widget frame — sized to fit FIT_FRACTION of the workspace at zoom = 1, then
+        // scaled/translated as a single unit by pinch-zoom/pan. Always a plain rectangle; the
+        // widget's outer shape is no longer background-defined (backgrounds are ordinary movable
+        // elements now — see WidgetPainter/WidgetEditorViewModel).
         Box(
             Modifier
-                .fillMaxSize()
+                .fillMaxSize(FIT_FRACTION)
+                .aspectRatio(layoutAspect)
+                .onSizeChanged { sizePx = it }
                 .graphicsLayer {
                     scaleX = zoom; scaleY = zoom
                     translationX = pan.x; translationY = pan.y
                 }
+                .clipToBounds()
+                .checkerboard()
         ) {
             if (sizePx.width > 0 && sizePx.height > 0) {
                 // Content box uses the DESIGN aspect against the actual frame pixels — matches the
-                // frame exactly now that there's no separate preview-size reflow, so elements sit
-                // in the same region the real widget uses and gestures map to it exactly.
+                // frame exactly, so elements sit in the same region the real widget uses and
+                // gestures map to it exactly.
                 val box = remember(sizePx, layoutAspect) { WidgetPainter.contentBox(sizePx.width, sizePx.height, layoutAspect) }
                 val scale = remember(box) { WidgetPainter.unitScale(box) }
 
                 // WidgetPainter.paint() is genuinely expensive (cover decode/scale, Palette color
                 // extraction) and doc changes on every single drag delta — running it synchronously
                 // in `remember` blocked the main thread each frame and was the main source of the
-                // editor's stutter, especially now the canvas is much bigger than before. Rendering
-                // it on a background dispatcher keeps the last frame on screen while the next one is
-                // computed, so drag/pinch stay smooth even if a render or two falls behind.
+                // editor's stutter. Rendering it on a background dispatcher keeps the last frame on
+                // screen while the next one is computed, so drag/pinch stay smooth even if a render
+                // or two falls behind.
                 var bitmap by remember { mutableStateOf<Bitmap?>(null) }
                 LaunchedEffect(doc, snapshot, sizePx, accent, layoutAspect) {
                     val result = withContext(Dispatchers.Default) {
@@ -152,37 +157,24 @@ fun EditorCanvas(
                     Image(bmp.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize())
                 }
 
-                val baseLayer = doc.elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }
-                WidgetShapeOutline(
-                    shapeKind = baseLayer?.backgroundLayer?.shapeKind ?: ShapeKind.RECT,
-                    cornerRadiusUnits = baseLayer?.backgroundLayer?.cornerRadius ?: EDITOR_DEFAULT_OUTER_RADIUS,
-                    scale = scale,
+                WidgetFrameOutline(
                     strokeWidthPx = with(density) { 2.dp.toPx() },
                     modifier = Modifier.fillMaxSize(),
                 )
 
-                // Tap-to-select/deselect layer, plus double-tap to reset zoom. Keyed on stable
-                // (box, scale) only — NOT doc.elements — so it doesn't relaunch every frame while an
-                // element is being dragged; the current element list is read fresh from the
-                // ViewModel at tap time instead.
+                // Tap-to-select/deselect layer. Keyed on stable (box, scale) only — NOT
+                // doc.elements — so it doesn't relaunch every frame while an element is being
+                // dragged; the current element list is read fresh from the ViewModel at tap time.
                 Box(
                     Modifier.fillMaxSize().pointerInput(box, scale) {
                         detectTapGestures(
-                            onDoubleTap = { setZoom(if (zoom > MIN_ZOOM) MIN_ZOOM else 2f) },
+                            onDoubleTap = { zoom = 1f; pan = Offset.Zero },
                             onTap = { offset ->
                                 val elements = viewModel.state.value.doc.elements
-                                val base = elements.firstOrNull()?.takeIf { it.type == ElementType.BACKGROUND_LAYER }
-                                // The base background layer is always full-bleed, so its bounding
-                                // box covers every pixel — excluded here or no tap could ever miss.
                                 val hit = elements.asReversed().firstOrNull { el ->
-                                    el !== base && WidgetPainter.elementBoundingBox(el, box, scale).contains(offset.x, offset.y)
+                                    WidgetPainter.elementBoundingBox(el, box, scale).contains(offset.x, offset.y)
                                 }
-                                val newSelection = when {
-                                    hit != null -> hit.id
-                                    viewModel.state.value.selectedElementId != null -> null
-                                    else -> base?.id
-                                }
-                                viewModel.selectElement(newSelection)
+                                viewModel.selectElement(hit?.id)
                             }
                         )
                     }
@@ -190,37 +182,26 @@ fun EditorCanvas(
 
                 val selected = doc.elements.find { it.id == selectedElementId }
                 if (selected != null) {
-                    // The design's base background layer (index 0) is always full-bleed and defines
-                    // the widget's own outer shape (see WidgetPainter.paint) — it has no move/resize/
-                    // rotate handles, only its style panel is editable.
-                    val isBaseLayer = selected.type.isBackgroundLayer && doc.elements.firstOrNull()?.id == selected.id
                     if (isDragging) {
                         AlignmentGuides(
                             box = box, scale = scale, canvasHeightUnits = canvasHeightUnits,
                             selected = selected, others = doc.elements.filter { it.id != selected.id },
                         )
                     }
-                    SelectionOverlay(viewModel = viewModel, element = selected, box = box, scale = scale, isBaseLayer = isBaseLayer)
+                    SelectionOverlay(viewModel = viewModel, element = selected, box = box, scale = scale)
                 }
             }
         }
     }
 }
 
-/** Dashed outline tracing the widget's real outer silhouette (rect/pill/circle/squircle, per the
- *  base background layer) — purely an editor aid so the user can see the final placed shape at a
- *  glance; this line is never rendered by [WidgetPainter] and doesn't exist in the real widget. */
+/** Dashed outline tracing the widget's real (always-rectangular) bounds — purely an editor aid so
+ *  the user can see the final placed size at a glance; this line is never rendered by
+ *  [WidgetPainter] and doesn't exist in the real widget. */
 @Composable
-private fun WidgetShapeOutline(
-    shapeKind: ShapeKind,
-    cornerRadiusUnits: Float,
-    scale: Float,
-    strokeWidthPx: Float,
-    modifier: Modifier = Modifier,
-) {
+private fun WidgetFrameOutline(strokeWidthPx: Float, modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val rect = RectF(0f, 0f, size.width, size.height)
-        val path = ShapePaths.forShapeKind(shapeKind, rect, cornerRadiusUnits * scale)
         val paint = android.graphics.Paint().apply {
             style = android.graphics.Paint.Style.STROKE
             strokeWidth = strokeWidthPx
@@ -229,15 +210,15 @@ private fun WidgetShapeOutline(
             isAntiAlias = true
             pathEffect = android.graphics.DashPathEffect(floatArrayOf(16f, 12f), 0f)
         }
-        drawContext.canvas.nativeCanvas.drawPath(path, paint)
+        drawContext.canvas.nativeCanvas.drawRect(rect, paint)
     }
 }
 
-/** Light tile pattern behind the canvas so a transparent background is visibly distinct from an
+/** Light tile pattern behind the frame so a transparent background is visibly distinct from an
  *  opaque one while designing — light enough that dark-colored elements stay clearly visible. */
 private fun Modifier.checkerboard(tilePx: Float = 24f): Modifier = this.drawBehind {
-    val dark = androidx.compose.ui.graphics.Color(0xFFAEAEB4)
-    val light = androidx.compose.ui.graphics.Color(0xFFC9C9CF)
+    val dark = Color(0xFFAEAEB4)
+    val light = Color(0xFFC9C9CF)
     drawRect(dark)
     var y = 0f
     var row = 0

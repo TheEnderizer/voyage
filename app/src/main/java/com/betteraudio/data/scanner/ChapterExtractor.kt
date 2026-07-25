@@ -39,7 +39,7 @@ object ChapterExtractor {
      *
      * Note the count is a **u8**, so a book with more than 255 chapters yields a truncated list
      * whose last entry does not reach the end of the audio. Callers that derive spans from these
-     * (e.g. `LargeAudioSplitter`) must not assume the markers cover the whole file.
+     * markers must not assume they cover the whole file.
      */
     private fun parseChpl(raf: RandomAccessFile, box: Mp4Box): List<RawChapter> {
         raf.seek(box.contentStart)

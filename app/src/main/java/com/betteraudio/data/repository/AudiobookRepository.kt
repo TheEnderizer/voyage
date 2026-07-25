@@ -297,8 +297,8 @@ class AudiobookRepository @Inject constructor(
     suspend fun mergeStandaloneEbookProgress(fromBookId: Long, toBookId: Long) {
         val existingTarget = progressDao.getProgressForBookOnce(toBookId)
         if (existingTarget?.textSpineIndex == null) {
-            progressDao.getProgressForBookOnce(fromBookId)?.textSpineIndex?.let { spine ->
-                val source = progressDao.getProgressForBookOnce(fromBookId)!!
+            val source = progressDao.getProgressForBookOnce(fromBookId)
+            source?.textSpineIndex?.let { spine ->
                 updateTextPosition(toBookId, spine, source.textFraction ?: 0f, source.textOverallFraction)
             }
         }

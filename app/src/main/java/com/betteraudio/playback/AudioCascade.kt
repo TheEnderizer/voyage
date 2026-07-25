@@ -51,18 +51,35 @@ object AudioCascade {
             skipSilence = skipSilence(book.skipSilenceEnabled, series?.skipSilenceEnabled)
         )
 
-    /** How far to auto-rewind on resume: 0 if disabled/no prior pause; the full configured amount
-     *  if the app was fully stopped since that pause; otherwise only past a configured threshold.
-     *  Shared so a book rewinds the same way whether resumed from the full player, the home-screen
-     *  resume card, or a series continuation. */
-    fun autoRewindMs(settings: SettingsStore, lastPausedAt: Long): Long {
+    /** Pure core of the auto-rewind decision, as primitives (unlike the rest of [SettingsStore],
+     *  directly unit-testable — no Android Context/DataStore needed): 0 if disabled/no prior
+     *  pause; the full configured amount if the app was fully stopped since that pause; otherwise
+     *  only past a configured threshold. [nowMs] defaults to wall-clock but is overridable for
+     *  tests. */
+    fun autoRewindMs(
+        rewindSeconds: Int,
+        thresholdMinutes: Int,
+        appStoppedAt: Long,
+        lastPausedAt: Long,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Long {
         if (lastPausedAt <= 0L) return 0L
-        val rewindMs = settings.currentAutoRewindSeconds * 1_000L
+        val rewindMs = rewindSeconds * 1_000L
         if (rewindMs <= 0L) return 0L
-        if (settings.currentAppStoppedAt > lastPausedAt) return rewindMs
-        val thresholdMs = settings.currentAutoRewindThresholdMinutes * 60_000L
+        if (appStoppedAt > lastPausedAt) return rewindMs
+        val thresholdMs = thresholdMinutes * 60_000L
         if (thresholdMs <= 0L) return 0L
-        val elapsed = System.currentTimeMillis() - lastPausedAt
+        val elapsed = nowMs - lastPausedAt
         return if (elapsed >= thresholdMs) rewindMs else 0L
     }
+
+    /** How far to auto-rewind on resume. Shared so a book rewinds the same way whether resumed
+     *  from the full player, the home-screen resume card, or a series continuation. */
+    fun autoRewindMs(settings: SettingsStore, lastPausedAt: Long): Long =
+        autoRewindMs(
+            rewindSeconds = settings.currentAutoRewindSeconds,
+            thresholdMinutes = settings.currentAutoRewindThresholdMinutes,
+            appStoppedAt = settings.currentAppStoppedAt,
+            lastPausedAt = lastPausedAt,
+        )
 }

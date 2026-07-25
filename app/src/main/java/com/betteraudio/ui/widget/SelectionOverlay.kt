@@ -52,11 +52,6 @@ fun SelectionOverlay(
     element: ElementSpec,
     box: RectF,
     scale: Float,
-    /** True only for the design's base background layer (index 0, BACKGROUND_LAYER) — it's
-     *  forced full-bleed by the painter regardless of its stored bounds, so move/resize/rotate
-     *  would be misleading. Shows a plain outline and nothing else; edit its look via the style
-     *  panel instead. */
-    isBaseLayer: Boolean = false,
 ) {
     val density = LocalDensity.current
     val handleOut = with(density) { 13.dp.toPx() }   // resize anchor sits this far past a corner
@@ -77,28 +72,26 @@ fun SelectionOverlay(
             // Key only on things that are stable during a drag — NOT x/y/w/h — so a move never
             // restarts the in-flight gesture. Fresh element bounds are read from the VM at drag
             // start instead.
-            .let { m ->
-                if (isBaseLayer) m else m.pointerInput(element.id, box, scale) {
-                    detectDragGestures(
-                        onDragStart = { p ->
-                            mode = classifyStart(p, viewModel, box, scale, handleOut, rotOut, hitR)
-                        },
-                        onDrag = { change, amount ->
-                            val drag = mode ?: return@detectDragGestures
-                            change.consume()
-                            when (drag) {
-                                DragMode.MOVE -> viewModel.moveSelected(amount.x / scale, amount.y / scale)
-                                DragMode.ROTATE -> viewModel.rotateBy(amount.x * 0.4f)
-                                DragMode.RESIZE_TL -> viewModel.resizeSelected(ResizeCorner.TOP_LEFT, amount.x / scale, amount.y / scale)
-                                DragMode.RESIZE_TR -> viewModel.resizeSelected(ResizeCorner.TOP_RIGHT, amount.x / scale, amount.y / scale)
-                                DragMode.RESIZE_BL -> viewModel.resizeSelected(ResizeCorner.BOTTOM_LEFT, amount.x / scale, amount.y / scale)
-                                DragMode.RESIZE_BR -> viewModel.resizeSelected(ResizeCorner.BOTTOM_RIGHT, amount.x / scale, amount.y / scale)
-                            }
-                        },
-                        onDragEnd = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
-                        onDragCancel = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
-                    )
-                }
+            .pointerInput(element.id, box, scale) {
+                detectDragGestures(
+                    onDragStart = { p ->
+                        mode = classifyStart(p, viewModel, box, scale, handleOut, rotOut, hitR)
+                    },
+                    onDrag = { change, amount ->
+                        val drag = mode ?: return@detectDragGestures
+                        change.consume()
+                        when (drag) {
+                            DragMode.MOVE -> viewModel.moveSelected(amount.x / scale, amount.y / scale)
+                            DragMode.ROTATE -> viewModel.rotateBy(amount.x * 0.4f)
+                            DragMode.RESIZE_TL -> viewModel.resizeSelected(ResizeCorner.TOP_LEFT, amount.x / scale, amount.y / scale)
+                            DragMode.RESIZE_TR -> viewModel.resizeSelected(ResizeCorner.TOP_RIGHT, amount.x / scale, amount.y / scale)
+                            DragMode.RESIZE_BL -> viewModel.resizeSelected(ResizeCorner.BOTTOM_LEFT, amount.x / scale, amount.y / scale)
+                            DragMode.RESIZE_BR -> viewModel.resizeSelected(ResizeCorner.BOTTOM_RIGHT, amount.x / scale, amount.y / scale)
+                        }
+                    },
+                    onDragEnd = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
+                    onDragCancel = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
+                )
             }
     ) {
         // Selection border, positioned at the element's current bounds.
@@ -109,15 +102,13 @@ fun SelectionOverlay(
                 .border(2.dp, MaterialTheme.colorScheme.primary)
         )
 
-        if (!isBaseLayer) {
-            // Visual-only handle dots (all gestures handled by the single canvas pointerInput above).
-            HandleDot(Offset(aabb.left - handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
-            HandleDot(Offset(aabb.right + handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
-            HandleDot(Offset(aabb.left - handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
-            HandleDot(Offset(aabb.right + handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
-            if (rotatable) {
-                HandleDot(Offset(aabb.centerX(), aabb.top - rotOut), density, MaterialTheme.colorScheme.tertiary)
-            }
+        // Visual-only handle dots (all gestures handled by the single canvas pointerInput above).
+        HandleDot(Offset(aabb.left - handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.right + handleOut, aabb.top - handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.left - handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
+        HandleDot(Offset(aabb.right + handleOut, aabb.bottom + handleOut), density, MaterialTheme.colorScheme.primary)
+        if (rotatable) {
+            HandleDot(Offset(aabb.centerX(), aabb.top - rotOut), density, MaterialTheme.colorScheme.tertiary)
         }
     }
 }

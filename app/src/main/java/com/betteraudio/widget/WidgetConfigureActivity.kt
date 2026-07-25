@@ -170,7 +170,7 @@ private fun DesignRow(design: WidgetDesign, onClick: () -> Unit) {
         val w = 480
         val h = (w / design.aspectRatio).toInt().coerceAtLeast(1)
         WidgetPainter.paint(
-            context, WidgetDesignCodec.decode(design.documentJson), design.aspectRatio,
+            context, WidgetDesignCodec.decode(design.documentJson, design.aspectRatio), design.aspectRatio,
             SAMPLE_WIDGET_SNAPSHOT, w, h, WidgetPainter.PaintOptions(accentFallback = accent)
         )
     }

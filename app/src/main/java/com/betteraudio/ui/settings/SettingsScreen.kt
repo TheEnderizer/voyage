@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -1316,7 +1317,10 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                         }
                         Switch(checked = includeApiKey, onCheckedChange = { viewModel.setBackupIncludeApiKey(it) })
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         FilledTonalButton(
                             shape = Pill,
                             enabled = !backupState.exporting,
@@ -1533,7 +1537,10 @@ internal fun LazyListScope.diagnosticsSection(context: Context) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 FilledTonalButton(shape = Pill, onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("Voyage log", AppLog.recentText()))
@@ -2038,7 +2045,10 @@ internal fun LazyListScope.widgetSection(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     FilledTonalButton(onClick = {
                         picker.launch(
                             androidx.activity.result.PickVisualMediaRequest(

@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +33,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun BackgroundLayerPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
     val background = element.backgroundLayer ?: BackgroundLayerStyle()
+    val recentColors by viewModel.recentColors.collectAsState()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -62,14 +65,18 @@ fun BackgroundLayerPanel(viewModel: WidgetEditorViewModel, element: ElementSpec)
             Text("Color")
             ColorPickerRow(
                 color = background.color,
-                onColorChange = { viewModel.updateBackgroundLayer { bg -> bg.copy(color = it) } }
+                onColorChange = { viewModel.updateBackgroundLayer { bg -> bg.copy(color = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
         }
         if (background.source == BgSource.GRADIENT) {
             Text("Gradient end color")
             ColorPickerRow(
                 color = background.colorEnd ?: background.color,
-                onColorChange = { viewModel.updateBackgroundLayer { bg -> bg.copy(colorEnd = it) } }
+                onColorChange = { viewModel.updateBackgroundLayer { bg -> bg.copy(colorEnd = it) } },
+                recentColors = recentColors,
+                onCustomColorCommitted = viewModel::addRecentColor,
             )
         }
 

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp"
+    android:height="147dp"
+    android:viewportWidth="240"
+    android:viewportHeight="196">
+    <!-- Static launcher-picker preview for the "Cover & Controls" default widget — a hand-drawn
+         approximation of DefaultWidgetDesigns.coverControlsDoc's layout (full-bleed cover, title/
+         author bars, progress line, transport), not a live WidgetPainter render (that needs a
+         running app process this build step doesn't have). Update alongside the doc if it changes
+         shape meaningfully. -->
+    <path
+        android:fillColor="#4A3B5C"
+        android:pathData="M20,0L220,0A20,20 0 0 1 240,20L240,176A20,20 0 0 1 220,196L20,196A20,20 0 0 1 0,176L0,20A20,20 0 0 1 20,0Z" />
+    <path
+        android:fillColor="#66000000"
+        android:pathData="M0,100L240,100L240,196L0,196Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M23,118L149,118A7,7 0 0 1 156,125A7,7 0 0 1 149,132L23,132A7,7 0 0 1 16,125A7,7 0 0 1 23,118Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M22,138L104,138A6,6 0 0 1 110,144A6,6 0 0 1 104,150L22,150A6,6 0 0 1 16,144A6,6 0 0 1 22,138Z" />
+    <path
+        android:fillColor="#66FFFFFF"
+        android:pathData="M18,160L222,160A2,2 0 0 1 224,162A2,2 0 0 1 222,164L18,164A2,2 0 0 1 16,162A2,2 0 0 1 18,160Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M86,180A10,10 0 1 1 106,180A10,10 0 1 1 86,180Z" />
+    <path
+        android:fillColor="#6B8AFB"
+        android:pathData="M116,180A14,14 0 1 1 144,180A14,14 0 1 1 116,180Z" />
+    <path
+        android:fillColor="#CCFFFFFF"
+        android:pathData="M154,180A10,10 0 1 1 174,180A10,10 0 1 1 154,180Z" />
+</vector>

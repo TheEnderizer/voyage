@@ -381,6 +381,7 @@ class EbookReaderViewModel @Inject constructor(
 
         repository.touchLastPlayed(book.id)
         settings.setLastPlayedBookId(book.id)
+        settings.setThemeBookId(book.id)
         repository.setLastModeAudio(book.id)
         AppLog.i("Reader", "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveScrollFraction -> ${targetMs}ms")
         return book.id

@@ -2,8 +2,6 @@ package com.betteraudio.ui.immersive.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -12,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
-import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ReflectedCoverBackdrop
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
@@ -58,7 +56,6 @@ import java.util.concurrent.TimeUnit
 @Composable
 fun PlayerContent(
     onCollapse: () -> Unit,
-    initiallyShowInfo: Boolean = false,
     startPlaying: Boolean = true,
     onOpenReader: (Long) -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel()
@@ -81,6 +78,7 @@ fun PlayerContent(
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
+    val jumpRestore       by viewModel.jumpRestore.collectAsStateWithLifecycle()
     val skipForwardMs     by viewModel.skipForwardMs.collectAsStateWithLifecycle()
     val skipBackMs        by viewModel.skipBackMs.collectAsStateWithLifecycle()
     val sessions          by viewModel.listeningSessions.collectAsStateWithLifecycle()
@@ -94,11 +92,6 @@ fun PlayerContent(
     // A book with no author/narrator of its own falls back to the series' (metadata cascade).
     val effectiveAuthor = book?.displayAuthor?.takeIf { it.isNotBlank() } ?: currentSeries?.author
     val effectiveNarrator = book?.narrator?.takeIf { it.isNotBlank() } ?: currentSeries?.narrator
-
-    // Info panel mode: starts in info view when opened from book grid, switches to controls on play.
-    // Back is intentionally NOT intercepted here — the system back / swipe always returns straight
-    // to home from either info or controls, never bouncing back to the info panel.
-    val showInfoState = remember { mutableStateOf(initiallyShowInfo) }
 
     var showChapters       by remember { mutableStateOf(false) }
     var isLocked           by remember { mutableStateOf(false) }
@@ -133,7 +126,7 @@ fun PlayerContent(
     LaunchedEffect(bwp) {
         // Only auto-play when the user deliberately opened this book (startPlaying = true).
         // Cold-start restores (startPlaying = false) must not start playback automatically.
-        if (!startPlaying || showInfoState.value || hasAutoPlayed) return@LaunchedEffect
+        if (!startPlaying || hasAutoPlayed) return@LaunchedEffect
         if (bwp != null && state.bookId != viewModel.bookId) {
             hasAutoPlayed = true
             viewModel.play()
@@ -336,7 +329,21 @@ fun PlayerContent(
                             DropdownMenuItem(
                                 text = { Text("Lock screen") },
                                 leadingIcon = { Icon(Icons.Default.Lock, null) },
-                                onClick = { showOverflow = false; isLocked = true }
+                                onClick = {
+                                    showOverflow = false
+                                    isLocked = true
+                                    // A sheet hosted above LockOverlay would otherwise stay
+                                    // reachable while "locked" — close everything first.
+                                    showChapters = false
+                                    showBookOptions = false
+                                    showSleepTimer = false
+                                    showSkipSilenceSettings = false
+                                    showBookmarks = false
+                                    showAddBookmark = false
+                                    showReturnMenu = false
+                                    showAudioSettings = false
+                                    showHistory = false
+                                }
                             )
                         }
                     }
@@ -344,33 +351,11 @@ fun PlayerContent(
 
                 Spacer(Modifier.weight(1f))
 
-                // ── Bottom: info panel OR player controls (crossfade, background stays static) ──
-                Crossfade(targetState = showInfoState.value, animationSpec = tween(280)) { isInfo: Boolean ->
-                if (isInfo) {
-                    Box(Modifier.expandReveal(expandProgress)) {
-                    val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
-                        if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
-                    }
-                    BookInfoPanel(
-                        title            = book?.displayTitle ?: "",
-                        author           = effectiveAuthor,
-                        narrator         = effectiveNarrator,
-                        seriesLabel      = seriesLabel,
-                        status           = book?.status,
-                        progressFraction = bwp?.progressFraction ?: 0f,
-                        totalMs          = book?.totalDurationMs ?: 0L,
-                        synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
-                                           ?: book?.description?.takeIf { it.isNotBlank() },
-                        onResume         = { hasAutoPlayed = true; viewModel.play(); showInfoState.value = false },
-                        onShowHistory    = { showHistory = true }
-                    )
-                    } // end Box (info reveal)
-                } else {
                 // ── Player controls ─────────────────────────────────────────────────
                 Column(Modifier.fillMaxWidth()) {
 
                 // ── Bottom control cluster ──────────────────────────────
-                if (chapters.hasChapters && cur != null) {
+                if (!isLocked && chapters.hasChapters && cur != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -414,7 +399,7 @@ fun PlayerContent(
                 }
 
                 // ── Return / Confirm jump-history pills ─────────────────
-                if (positionStack.isNotEmpty()) {
+                if (!isLocked && positionStack.isNotEmpty()) {
                     Spacer(Modifier.height(14.dp))
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -449,8 +434,36 @@ fun PlayerContent(
                     }
                 }
 
+                // ── Unexpected-jump restore pill (non-destructive; never auto-seeks) ────
+                if (!isLocked) {
+                    jumpRestore?.let { restore ->
+                        Spacer(Modifier.height(14.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.expandReveal(expandProgress)
+                        ) {
+                            ScrimPill(
+                                icon = Icons.AutoMirrored.Filled.Undo,
+                                label = "Playback jumped — tap to go back",
+                                onClick = { viewModel.restoreFromJump(restore.preJumpBookPosMs) }
+                            )
+                            ScrimPill(
+                                icon = Icons.Default.Close,
+                                label = "Dismiss",
+                                onClick = { viewModel.dismissJumpRestore() }
+                            )
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(16.dp))
 
+                if (isLocked) {
+                    // ── Locked: read-only progress only, no draggable slider ────
+                    TimeRow(formatDuration(bookPos), formatDuration(bookTotal), onScrimMuted)
+                    Spacer(Modifier.height(6.dp))
+                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor, readOnly = true) {}
+                } else {
                 // ── Scrubber (reveals as the sheet opens) ───────────────
                 Column(Modifier.fillMaxWidth().expandReveal(expandProgress)) {
                 if (chapters.hasChapters && cur != null) {
@@ -508,11 +521,13 @@ fun PlayerContent(
                     TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
                 }
                 } // end Column (scrubber reveal)
+                } // end else (unlocked scrubber)
 
                 Spacer(Modifier.height(10.dp))
 
                 // ── Transport — the play button GROWS out of the mini player's accent play
                 // button (same round accent visual); the skip controls reveal around it. ──
+                if (!isLocked) {
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly,
@@ -564,10 +579,12 @@ fun PlayerContent(
                         }
                     }
                 }
+                } // end if (!isLocked) (transport)
 
                 Spacer(Modifier.height(14.dp))
 
                 // ── Secondary actions ───────────────────────────────────
+                if (!isLocked) {
                 Row(
                     Modifier.fillMaxWidth().expandReveal(expandProgress),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -631,11 +648,10 @@ fun PlayerContent(
                         }
                     }
                 }
+                } // end if (!isLocked) (secondary actions)
 
                 Spacer(Modifier.height(18.dp))
                 } // end Column (player controls)
-                } // end else (player mode)
-                } // end Crossfade
             }
         }
 
@@ -791,7 +807,6 @@ fun PlayerContent(
             sessions = sessions,
             skips = skips,
             onResumeSession = { endPos ->
-                showInfoState.value = false
                 viewModel.resumeFromHistory(endPos)
                 showHistory = false
             },
@@ -812,7 +827,9 @@ private fun currentChapter(items: List<ChapterRow.Item>, posMs: Long, totalMs: L
     return ChapterBounds(item.title, item.absStartMs, end, idx)
 }
 
-/** Slim whole-book progress, tappable to reveal a full book scrubber. Styled for the dark scrim. */
+/** Slim whole-book progress, tappable to reveal a full book scrubber. Styled for the dark scrim.
+ *  [readOnly] (used for the locked player) disables the tap-to-expand/drag entirely and hides the
+ *  expand chevron, leaving a purely passive progress display. */
 @Composable
 private fun CompactBookProgress(
     positionMs: Long,
@@ -820,13 +837,16 @@ private fun CompactBookProgress(
     accent: Color,
     muted: Color,
     trackColor: Color,
+    readOnly: Boolean = false,
     onSeek: (Long) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val frac = if (totalMs > 0) (positionMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
     Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clip(Pill).clickable { expanded = !expanded }.padding(vertical = 4.dp),
+            Modifier.fillMaxWidth()
+                .let { if (readOnly) it else it.clip(Pill).clickable { expanded = !expanded } }
+                .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Book", style = MaterialTheme.typography.labelSmall, color = muted)
@@ -839,14 +859,16 @@ private fun CompactBookProgress(
             )
             Spacer(Modifier.width(10.dp))
             Text("${(frac * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = muted)
-            Icon(
-                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                if (expanded) "Collapse" else "Expand book progress",
-                Modifier.size(18.dp),
-                tint = muted
-            )
+            if (!readOnly) {
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    if (expanded) "Collapse" else "Expand book progress",
+                    Modifier.size(18.dp),
+                    tint = muted
+                )
+            }
         }
-        if (expanded) {
+        if (!readOnly && expanded) {
             var dragFrac by remember { mutableStateOf<Float?>(null) }
             val displayFrac = dragFrac ?: frac
             Slider(

@@ -108,4 +108,45 @@ class AudioCascadeTest {
         assertNull(AudioCascade.text(null, null))
         assertNull(AudioCascade.text("", "  "))
     }
+
+    // ── auto-rewind ──────────────────────────────────────────────────────────
+
+    @Test
+    fun `no prior pause means no rewind`() {
+        assertEquals(0L, AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 0L, lastPausedAt = 0L, nowMs = 1_000L))
+        assertEquals(0L, AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 0L, lastPausedAt = -1L, nowMs = 1_000L))
+    }
+
+    @Test
+    fun `disabled rewind (zero seconds) means no rewind regardless of other state`() {
+        assertEquals(0L, AudioCascade.autoRewindMs(rewindSeconds = 0, thresholdMinutes = 5, appStoppedAt = 500L, lastPausedAt = 100L, nowMs = 1_000L))
+    }
+
+    @Test
+    fun `app fully stopped since the pause forces the full rewind regardless of elapsed time`() {
+        val r = AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 200L, lastPausedAt = 100L, nowMs = 150L)
+        assertEquals(30_000L, r)
+    }
+
+    @Test
+    fun `under the threshold since pause means no rewind`() {
+        // thresholdMinutes = 5 -> 300_000ms; only 100ms elapsed.
+        val r = AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 0L, lastPausedAt = 1_000L, nowMs = 1_100L)
+        assertEquals(0L, r)
+    }
+
+    @Test
+    fun `at or past the threshold since pause triggers the full rewind`() {
+        val thresholdMs = 5 * 60_000L
+        val atThreshold = AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 0L, lastPausedAt = 1_000L, nowMs = 1_000L + thresholdMs)
+        val pastThreshold = AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 5, appStoppedAt = 0L, lastPausedAt = 1_000L, nowMs = 1_000L + thresholdMs + 1)
+        assertEquals(30_000L, atThreshold)
+        assertEquals(30_000L, pastThreshold)
+    }
+
+    @Test
+    fun `zero threshold minutes means no rewind when app was not fully stopped`() {
+        val r = AudioCascade.autoRewindMs(rewindSeconds = 30, thresholdMinutes = 0, appStoppedAt = 0L, lastPausedAt = 1_000L, nowMs = 999_999L)
+        assertEquals(0L, r)
+    }
 }

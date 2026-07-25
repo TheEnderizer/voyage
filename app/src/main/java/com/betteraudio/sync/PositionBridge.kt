@@ -72,10 +72,11 @@ object PositionBridge {
         spineCount: Int
     ): TextLocator {
         if (spineCount <= 0) return TextLocator(0, 0f)
-        if (chapters.isEmpty() || map.audioToSpine.isEmpty()) {
-            // No chapter structure at all: fall back to whole-book proportional mapping using the
-            // last known total duration implied by the chapters list (if any), else spine 0.
-            return TextLocator(0, 0f)
+        if (chapters.isEmpty()) return TextLocator(0, 0f)
+        if (map.audioToSpine.isEmpty()) {
+            // No chapter map at all: fall back to whole-book proportional mapping using the total
+            // audio duration implied by the chapters list (chapters.last().endMs).
+            return proportionalText(bookPositionMs, chapters, spineCount)
         }
         val (chapterIdx, fracInChapter) = audioAnchor(bookPositionMs, chapters)
         val spineIdx = resolveSpine(chapterIdx, map, spineCount)

@@ -6,7 +6,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Launch
-import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.MenuBook
@@ -81,11 +80,6 @@ fun BookOptionsSheet(
     onConnectEpub: (path: String) -> Unit = {},
     onDisconnectEpub: () -> Unit = {},
     onOpenReader: () -> Unit = {},
-    // Set when this book is a single file too large for the player to load (see Mp4Probe).
-    splitCandidate: HomeViewModel.SplitCandidate? = null,
-    splitProgress: com.betteraudio.data.files.LargeAudioSplitter.Progress =
-        com.betteraudio.data.files.LargeAudioSplitter.Progress.Idle,
-    onSplitLargeFile: () -> Unit = {},
     onPinShortcut: () -> Unit = {},
     seriesOptions: SeriesOptions? = null
 ) {
@@ -247,47 +241,6 @@ fun BookOptionsSheet(
                         Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Refresh cover effect")
-                    }
-                }
-
-                // ── Over-large single file ───────────────────────────────────
-                // ExoPlayer keeps a whole MP4's sample table on the heap, so very long single-file
-                // audiobooks can't be loaded at all. Copying the AAC frames into chapter-sized parts
-                // (no re-encode) makes them playable; the original is kept as `*.original`.
-                if (splitCandidate != null) {
-                    OptionsSection("Large file") {
-                        val running = splitProgress as? com.betteraudio.data.files.LargeAudioSplitter.Progress.Running
-                        Text(
-                            "This file is too large for the player to open. It can be split into " +
-                                "${splitCandidate.parts} chapter-sized parts without re-encoding. " +
-                                "The original is kept (needs ~${splitCandidate.mbNeeded} MB free).",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        if (running != null) {
-                            LinearProgressIndicator(
-                                progress = { running.fraction },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "Splitting… part ${running.partsDone + 1} of ${running.partsTotal}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        } else {
-                            Button(onClick = onSplitLargeFile, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.ContentCut, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Split into chapters")
-                            }
-                            (splitProgress as? com.betteraudio.data.files.LargeAudioSplitter.Progress.Failed)?.let {
-                                Spacer(Modifier.height(6.dp))
-                                Text(it.message, style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error)
-                            }
-                        }
                     }
                 }
 
