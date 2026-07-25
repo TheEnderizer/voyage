@@ -14,10 +14,12 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -133,7 +135,8 @@ class HomeViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
-    val playerController: PlayerController
+    val playerController: PlayerController,
+    @ApplicationScope private val appScope: CoroutineScope
 ) : ViewModel() {
 
     // ── Book options sheet ─────────────────────────────────────────────────
@@ -591,7 +594,11 @@ class HomeViewModel @Inject constructor(
             _sortFilter.value = SortFilter(opt, dir)
         }
 
-        viewModelScope.launch {
+        // On @ApplicationScope, not viewModelScope: a configuration change or the ViewModel
+        // being cleared mid-scan must not cancel it — this is a background library rescan the
+        // user isn't watching a progress UI for, so a cancelled scan would silently corrupt
+        // nothing but leave the library stale with no indication anything went wrong.
+        appScope.launch {
             val folder = settings.libraryFolder.first()
             // Only rescan on launch if we actually have file access. Scanning before the
             // user grants "All files access" imports nothing useful and can surface stale
