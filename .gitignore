@@ -25,3 +25,7 @@ local.properties
 
 # Logs / temp
 build_out.txt
+
+# Emulator harness (scripts/emu.sh) scratch output — scripts/baseline/ IS committed (golden files)
+scripts/shots/
+scripts/.testlib/

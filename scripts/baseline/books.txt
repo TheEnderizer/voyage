@@ -1,0 +1,11 @@
+1|Foundation 01 - Foundation|Isaac Asimov|1|Foundation|1.0|/sdcard/Audiobooks/Foundation/Foundation 01 - Foundation|||6060|1784963946477|NOT_STARTED|2|||||||||0|0||0|
+2|Foundation 02 - Foundation and Empire|Isaac Asimov|1|Foundation|2.0|/sdcard/Audiobooks/Foundation/Foundation 02 - Foundation and Empire|||6060|1784963946770|IN_PROGRESS|2|||||||||0|0||0|
+3|Long Book|Test|2|Audiobooks|2.0|/sdcard/Audiobooks/LongBook|||600033|1784963946935|NOT_STARTED|1|||||Long Book||||0|0||0|
+4|Mistborn|Brandon Sanderson|2|Audiobooks|3.0|/sdcard/Audiobooks/Mistborn|||12120|1784963947128|NOT_STARTED|4|||||||||0|0||0|
+5|Dune|Frank Herbert|2|Audiobooks|4.0|/sdcard/Audiobooks/MixedFolder::Dune|||6060|1784963947372|NOT_STARTED|2|||||Dune||||0|0||0|
+6|Neuromancer|William Gibson|2|Audiobooks|4.0|/sdcard/Audiobooks/MixedFolder::Neuromancer|||6060|1784963947414|NOT_STARTED|2|||||Neuromancer||||0|0||0|
+7|Vol7|Guiltythree|2|Audiobooks|5.0|/sdcard/Audiobooks/ShadowSlave::vol7|||3030|1784963947467|NOT_STARTED|1|||||||||0|0||0|
+8|Vol8|Guiltythree|2|Audiobooks|5.0|/sdcard/Audiobooks/ShadowSlave::vol8|||3030|1784963947544|NOT_STARTED|1|||||||||0|0||0|
+9|Vol9|Guiltythree|2|Audiobooks|5.0|/sdcard/Audiobooks/ShadowSlave::vol9|||3030|1784963947592|NOT_STARTED|1|||||||||0|0||0|
+10|SingleBookParts|Test Author|2|Audiobooks|6.0|/sdcard/Audiobooks/SingleBookParts|||9090|1784963947756|NOT_STARTED|3|||||||||0|0||0|
+11|The Hobbit|J.R.R. Tolkien|2|Audiobooks|7.0|/sdcard/Audiobooks/TheHobbit|||9090|1784963947901|NOT_STARTED|3|||||The Hobbit||||0|0||0|

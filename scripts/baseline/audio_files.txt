@@ -1,0 +1,22 @@
+1|1|/sdcard/Audiobooks/Foundation/Foundation 01 - Foundation/01 - Ch1.mp3|01 - Ch1.mp3|1|Ch1|3030|12400|Ch1
+2|1|/sdcard/Audiobooks/Foundation/Foundation 01 - Foundation/02 - Ch2.mp3|02 - Ch2.mp3|2|Ch2|3030|12400|Ch2
+3|2|/sdcard/Audiobooks/Foundation/Foundation 02 - Foundation and Empire/01 - Ch1.mp3|01 - Ch1.mp3|1|Ch1|3030|12400|Ch1
+4|2|/sdcard/Audiobooks/Foundation/Foundation 02 - Foundation and Empire/02 - Ch2.mp3|02 - Ch2.mp3|2|Ch2|3030|12400|Ch2
+5|3|/sdcard/Audiobooks/LongBook/01 - Ch1.mp3|01 - Ch1.mp3|1|Ch1|600033|2400423|Ch1
+6|4|/sdcard/Audiobooks/Mistborn/Mistborn (1 of 2)/01 - track.mp3|01 - track.mp3|1|d1t1|3030|12406|d1t1
+7|4|/sdcard/Audiobooks/Mistborn/Mistborn (1 of 2)/02 - track.mp3|02 - track.mp3|2|d1t2|3030|12406|d1t2
+8|4|/sdcard/Audiobooks/Mistborn/Mistborn (2 of 2)/01 - track.mp3|01 - track.mp3|1|d2t1|3030|12406|d2t1
+9|4|/sdcard/Audiobooks/Mistborn/Mistborn (2 of 2)/02 - track.mp3|02 - track.mp3|2|d2t2|3030|12406|d2t2
+10|5|/sdcard/Audiobooks/MixedFolder/dune-01.mp3|dune-01.mp3|1|Part 1|3030|12420|Part 1
+11|5|/sdcard/Audiobooks/MixedFolder/dune-02.mp3|dune-02.mp3|2|Part 2|3030|12420|Part 2
+12|6|/sdcard/Audiobooks/MixedFolder/neuro-01.mp3|neuro-01.mp3|1|Part 1|3030|12428|Part 1
+13|6|/sdcard/Audiobooks/MixedFolder/neuro-02.mp3|neuro-02.mp3|2|Part 2|3030|12428|Part 2
+14|7|/sdcard/Audiobooks/ShadowSlave/Shadow Slave Volume 7.mp3|Shadow Slave Volume 7.mp3|1|Vol 7|3030|12401|Vol 7
+15|8|/sdcard/Audiobooks/ShadowSlave/Shadow Slave Volume 8.mp3|Shadow Slave Volume 8.mp3|1|Vol 8|3030|12401|Vol 8
+16|9|/sdcard/Audiobooks/ShadowSlave/Shadow Slave Volume 9.mp3|Shadow Slave Volume 9.mp3|1|Vol 9|3030|12401|Vol 9
+17|10|/sdcard/Audiobooks/SingleBookParts/story pt 1.mp3|story pt 1.mp3|1|pt 1|3030|12400|pt 1
+18|10|/sdcard/Audiobooks/SingleBookParts/story pt 2.mp3|story pt 2.mp3|2|pt 2|3030|12400|pt 2
+19|10|/sdcard/Audiobooks/SingleBookParts/story pt 3.mp3|story pt 3.mp3|3|pt 3|3030|12400|pt 3
+20|11|/sdcard/Audiobooks/TheHobbit/01 - Chapter 1.mp3|01 - Chapter 1.mp3|1|Chapter 1|3030|12430|Chapter 1
+21|11|/sdcard/Audiobooks/TheHobbit/02 - Chapter 2.mp3|02 - Chapter 2.mp3|2|Chapter 2|3030|12430|Chapter 2
+22|11|/sdcard/Audiobooks/TheHobbit/03 - Chapter 3.mp3|03 - Chapter 3.mp3|3|Chapter 3|3030|12430|Chapter 3
