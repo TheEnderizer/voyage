@@ -18,6 +18,7 @@ import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.util.AppLog
+import java.util.concurrent.ConcurrentHashMap
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -111,7 +112,10 @@ class PlayerController @Inject constructor(
     private val recoverySkipSeconds = listOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30)
     // Attempts made per media id during the current book load (cleared on each load). Doubles
     // as the give-up latch: a count past the schedule length means recovery failed for the file.
-    private val recoveryAttempts = mutableMapOf<String, Int>()
+    // Written from the player listener (main thread) and from a coroutine on Dispatchers.IO —
+    // this also doubles as the give-up latch, so a lost write means the escalating-skip
+    // schedule never terminates and the app retries a broken file forever.
+    private val recoveryAttempts = ConcurrentHashMap<String, Int>()
     // filePath + scanned duration per media id, captured at load so recovery can estimate a
     // bytes-per-second rate without an async DB round-trip mid-error-handling.
     private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
