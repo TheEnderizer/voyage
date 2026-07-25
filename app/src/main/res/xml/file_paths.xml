@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <external-cache-path name="apk_updates" path="." />
+    <cache-path name="apk_updates" path="." />
     <files-path name="logs" path="logs/" />
     <files-path name="backup_share" path="backup_share/" />
 </paths>

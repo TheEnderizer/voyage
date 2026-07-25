@@ -1,7 +1,11 @@
 package com.betteraudio.data.update
 
 import android.content.Context
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import com.betteraudio.BuildConfig
+import com.betteraudio.util.AppLog
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -73,8 +77,11 @@ class UpdateChecker @Inject constructor(
                 val body = response.body ?: return@withContext null
                 val total = body.contentLength()
                 // Always write to a fresh file so a stale/partial prior download can never be
-                // reinstalled. Delete any leftover from a previous attempt first.
-                val file = File(context.externalCacheDir, "voyage-update.apk")
+                // reinstalled. Delete any leftover from a previous attempt first. Internal
+                // cacheDir, not externalCacheDir: on API 26-28 any app holding
+                // WRITE_EXTERNAL_STORAGE can swap the file on external storage between this write
+                // and the install prompt (TOCTOU) — internal storage isn't writable by other apps.
+                val file = File(context.cacheDir, "voyage-update.apk")
                 file.delete()
                 var downloaded = 0L
                 body.byteStream().use { input ->
@@ -103,9 +110,40 @@ class UpdateChecker @Inject constructor(
                     file.delete()
                     return@withContext null
                 }
+                // Refuse to hand the installer anything not signed with this app's own
+                // certificate — the last line of defence against a swapped/tampered APK, on
+                // top of internal-cacheDir storage above.
+                if (!isSignedBySameCert(file)) {
+                    AppLog.e("Update", "downloaded APK signature does not match the running app — refusing to install")
+                    file.delete()
+                    return@withContext null
+                }
                 file
             } catch (_: Exception) { null }
         }
+
+    private fun signatureFlags(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES
+        else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+
+    private fun signersOf(info: PackageInfo): Set<String> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners?.map { it.toCharsString() }?.toSet() ?: emptySet()
+        } else {
+            @Suppress("DEPRECATION")
+            info.signatures?.map { it.toCharsString() }?.toSet() ?: emptySet()
+        }
+
+    private fun isSignedBySameCert(file: File): Boolean = try {
+        val pm = context.packageManager
+        val ownSigners = signersOf(pm.getPackageInfo(context.packageName, signatureFlags()))
+        val apkInfo = pm.getPackageArchiveInfo(file.absolutePath, signatureFlags())
+        val apkSigners = apkInfo?.let { signersOf(it) } ?: emptySet()
+        ownSigners.isNotEmpty() && ownSigners == apkSigners
+    } catch (e: Exception) {
+        AppLog.e("Update", "signature check failed", e)
+        false
+    }
 
     /**
      * The highest-version release for the current channel (beta → prereleases, stable →
