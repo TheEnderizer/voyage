@@ -109,6 +109,21 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE isIgnored = 0 ORDER BY addedDateMs DESC")
     fun getAllBooksWithProgressUngrouped(): Flow<List<com.betteraudio.data.model.BookWithProgress>>
 
+    // Home grid projection — never joins audio_files (see HomeGridBook's own doc comment).
+    @Query("""
+        SELECT b.id, b.title, b.titleOverride, b.author, b.authorOverride, b.ebookPath, b.seriesId,
+               b.seriesName, b.seriesOrder, b.status, b.totalDurationMs, b.addedDateMs, b.coverArtPath,
+               p.positionMs AS positionMs, p.lastPlayedMs AS lastPlayedMsRaw,
+               p.textOverallFraction AS textOverallFraction, p.filesBeforeCurrentMs AS filesBeforeCurrentMs
+        FROM books b LEFT JOIN playback_progress p ON p.bookId = b.id
+        WHERE b.isIgnored = 0
+        ORDER BY b.addedDateMs DESC
+    """)
+    fun getHomeGridBooks(): Flow<List<com.betteraudio.data.model.HomeGridBook>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM books WHERE isIgnored = 0)")
+    fun hasAnyBooks(): Flow<Boolean>
+
     @Query("SELECT * FROM books WHERE isIgnored = 1 ORDER BY title ASC")
     fun getAllIgnoredBooks(): Flow<List<Book>>
 

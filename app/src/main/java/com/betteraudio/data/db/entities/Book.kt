@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 enum class BookStatus { NOT_STARTED, IN_PROGRESS, FINISHED }
 
-@Entity(tableName = "books", indices = [Index("seriesId")])
+@Entity(tableName = "books", indices = [Index("seriesId"), Index("folderPath"), Index("ebookPath")])
 data class Book(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,

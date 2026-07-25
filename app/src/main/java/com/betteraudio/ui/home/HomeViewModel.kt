@@ -10,6 +10,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.model.BookWithProgress
+import com.betteraudio.data.model.HomeGridBook
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.scanner.AudioFileScanner
@@ -20,6 +21,7 @@ import com.betteraudio.playback.PlayerController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -102,14 +104,14 @@ sealed class HomeGridItem {
 
     /** A single book */
     data class SingleBook(
-        val bwp: BookWithProgress,
+        val book: HomeGridBook,
         override val lastPlayedMs: Long
     ) : HomeGridItem()
 
     /** A series tile (Series view) with its member books. */
     data class SeriesItem(
         val series: Series,
-        val books: List<BookWithProgress>,
+        val books: List<HomeGridBook>,
         val coverPath: String?,
         override val lastPlayedMs: Long
     ) : HomeGridItem()
@@ -118,7 +120,7 @@ sealed class HomeGridItem {
     data class AuthorItem(
         val name: String,
         val coverPath: String?,
-        val books: List<BookWithProgress>,
+        val books: List<HomeGridBook>,
         override val lastPlayedMs: Long
     ) : HomeGridItem()
 }
@@ -361,18 +363,18 @@ class HomeViewModel @Inject constructor(
     /** True when the library has any book at all (audio or ebook) — drives the empty-state gate so
      *  a user with only ebooks (or only audiobooks) isn't shown the full EmptyLibrary screen. */
     val hasAnyBooks: StateFlow<Boolean> =
-        repository.getAllBooksWithProgressUngrouped().map { it.isNotEmpty() }
+        repository.hasAnyBooks()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val gridItems: StateFlow<List<HomeGridItem>> =
         combine(
-            repository.getAllBooksWithProgressUngrouped(),
+            repository.getHomeGridBooks(),
             seriesRepository.getAllSeries(),
             repository.getAllAuthorMeta(),
             combine(homeViewMode, homeSection) { mode, section -> mode to section },
             _sortFilter
-        ) { bwpList, seriesList, authorMetas, (mode, section), sf ->
-            buildGridItems(bwpList, seriesList, authorMetas, mode, section, sf)
+        ) { gridBooks, seriesList, authorMetas, (mode, section), sf ->
+            buildGridItems(gridBooks, seriesList, authorMetas, mode, section, sf)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // ── Library status tabs ──────────────────────────────────────────────────
@@ -396,9 +398,9 @@ class HomeViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap<LibraryTab, Int>())
 
     private fun statusOf(item: HomeGridItem): LibraryTab = when (item) {
-        is HomeGridItem.SingleBook -> tabFor(item.bwp.book.status)
-        is HomeGridItem.SeriesItem -> collectionStatus(item.books.map { it.book.status })
-        is HomeGridItem.AuthorItem -> collectionStatus(item.books.map { it.book.status })
+        is HomeGridItem.SingleBook -> tabFor(item.book.status)
+        is HomeGridItem.SeriesItem -> collectionStatus(item.books.map { it.status })
+        is HomeGridItem.AuthorItem -> collectionStatus(item.books.map { it.status })
     }
 
     private fun collectionStatus(statuses: List<BookStatus>): LibraryTab = when {
@@ -415,7 +417,7 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun buildGridItems(
-        bwpList: List<BookWithProgress>,
+        gridBooks: List<HomeGridBook>,
         seriesList: List<Series>,
         authorMetas: List<AuthorMeta>,
         mode: HomeViewMode,
@@ -427,23 +429,23 @@ class HomeViewModel @Inject constructor(
         if (section == HomeSection.EBOOKS) {
             // The Ebooks section is a flat list of everything with a connected/standalone EPUB
             // (audiobooks-with-epub AND ebook-only rows); the Books/Series/Authors mode is ignored.
-            bwpList.filter { it.book.ebookPath != null }
+            gridBooks.filter { it.ebookPath != null }
                 .forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
         } else {
             // Audio section: exclude ebook-only rows (they have no audio) — this single filter also
             // keeps them out of visibleGridItems and tabCounts, which both derive from gridItems.
-            val audioList = bwpList.filter { !it.isEbookOnly }
+            val audioList = gridBooks.filter { !it.isEbookOnly }
             when (mode) {
                 HomeViewMode.BOOKS ->
                     audioList.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
 
                 HomeViewMode.SERIES -> {
                     val seriesById = seriesList.associateBy { it.id }
-                    val (inSeries, standalone) = audioList.partition { it.book.seriesId != null && seriesById.containsKey(it.book.seriesId) }
-                    inSeries.groupBy { it.book.seriesId!! }.forEach { (sid, members) ->
+                    val (inSeries, standalone) = audioList.partition { it.seriesId != null && seriesById.containsKey(it.seriesId) }
+                    inSeries.groupBy { it.seriesId!! }.forEach { (sid, members) ->
                         val series = seriesById.getValue(sid)
-                        val ordered = members.sortedWith(compareBy({ it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
-                        val cover = series.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                        val ordered = members.sortedWith(compareBy({ it.seriesOrder ?: Float.MAX_VALUE }, { it.title.lowercase() }))
+                        val cover = series.coverArtPath ?: ordered.firstOrNull { it.coverArtPath != null }?.coverArtPath
                         result.add(HomeGridItem.SeriesItem(series, ordered, cover, ordered.maxOfOrNull { it.lastPlayedMs } ?: series.createdAtMs))
                     }
                     standalone.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
@@ -452,9 +454,9 @@ class HomeViewModel @Inject constructor(
                 HomeViewMode.AUTHORS -> {
                     val metaByName = authorMetas.associateBy { it.name }
                     // Group by the effective author (override-aware) so an author you change is reflected.
-                    audioList.groupBy { it.book.displayAuthor.ifBlank { "Unknown" } }.forEach { (name, members) ->
-                        val ordered = members.sortedWith(compareBy({ it.book.seriesName ?: "" }, { it.book.seriesOrder ?: Float.MAX_VALUE }, { it.book.title.lowercase() }))
-                        val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.book.coverArtPath != null }?.book?.coverArtPath
+                    audioList.groupBy { it.displayAuthor.ifBlank { "Unknown" } }.forEach { (name, members) ->
+                        val ordered = members.sortedWith(compareBy({ it.seriesName ?: "" }, { it.seriesOrder ?: Float.MAX_VALUE }, { it.title.lowercase() }))
+                        val cover = metaByName[name]?.coverArtPath ?: ordered.firstOrNull { it.coverArtPath != null }?.coverArtPath
                         result.add(HomeGridItem.AuthorItem(name, cover, ordered, ordered.maxOfOrNull { it.lastPlayedMs } ?: 0L))
                     }
                 }
@@ -462,14 +464,14 @@ class HomeViewModel @Inject constructor(
         }
 
         // Sort using the user-selected SortFilter
-        fun members(item: HomeGridItem): List<BookWithProgress> = when (item) {
-            is HomeGridItem.SingleBook -> listOf(item.bwp)
+        fun members(item: HomeGridItem): List<HomeGridBook> = when (item) {
+            is HomeGridItem.SingleBook -> listOf(item.book)
             is HomeGridItem.SeriesItem -> item.books
             is HomeGridItem.AuthorItem -> item.books
         }
         fun numericKey(item: HomeGridItem): Double = when (sf.option) {
-            SortOption.DATE_ADDED -> members(item).maxOf { it.book.addedDateMs }.toDouble()
-            SortOption.DURATION -> members(item).sumOf { it.book.totalDurationMs }.toDouble()
+            SortOption.DATE_ADDED -> members(item).maxOf { it.addedDateMs }.toDouble()
+            SortOption.DURATION -> members(item).sumOf { it.totalDurationMs }.toDouble()
             SortOption.LAST_PLAYED -> item.lastPlayedMs.toDouble()
             // In the Ebooks section, PROGRESS sorts by reading progress, not audio position.
             SortOption.PROGRESS ->
@@ -479,13 +481,13 @@ class HomeViewModel @Inject constructor(
         }
         fun textKey(item: HomeGridItem): String = when (item) {
             is HomeGridItem.SingleBook -> when (sf.option) {
-                SortOption.AUTHOR -> item.bwp.book.displayAuthor.lowercase()
+                SortOption.AUTHOR -> item.book.displayAuthor.lowercase()
                 SortOption.SERIES -> {
-                    val s = item.bwp.book.seriesName?.lowercase() ?: "￿"
-                    val o = item.bwp.book.seriesOrder ?: Float.MAX_VALUE
+                    val s = item.book.seriesName?.lowercase() ?: "￿"
+                    val o = item.book.seriesOrder ?: Float.MAX_VALUE
                     "$s${o.toString().padStart(10, '0')}"
                 }
-                else -> item.bwp.book.title.lowercase()
+                else -> item.book.title.lowercase()
             }
             is HomeGridItem.SeriesItem -> item.series.name.lowercase()
             is HomeGridItem.AuthorItem -> item.name.lowercase()
@@ -531,8 +533,14 @@ class HomeViewModel @Inject constructor(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    fun playResumeBook(bwp: BookWithProgress) {
+    /** Fetches the full BookWithProgress (with its real audio file list) on demand — used by the
+     *  book options / cover search sheets, which only need it once the user opens them, via the
+     *  same cheap single-book flow [resumeBook] and [playResumeBook] already use. */
+    fun bookWithProgressFlow(bookId: Long): Flow<BookWithProgress?> = repository.getBookWithProgress(bookId)
+
+    fun playResumeBook(bookId: Long) {
         viewModelScope.launch {
+            val bwp = repository.getBookWithProgress(bookId).first() ?: return@launch
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
             val progress = bwp.progress

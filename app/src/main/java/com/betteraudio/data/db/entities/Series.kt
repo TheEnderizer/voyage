@@ -1,6 +1,7 @@
 package com.betteraudio.data.db.entities
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
@@ -13,7 +14,7 @@ import androidx.room.PrimaryKey
  * value overrides the series value when present. [coverArtPath]/[coverFxPath] are the series'
  * own cover (independent of any member book cover).
  */
-@Entity(tableName = "series")
+@Entity(tableName = "series", indices = [Index("name")])
 data class Series(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,

@@ -60,9 +60,17 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // guard) are cleaned up as a one-shot app-startup job (VoyageApp.cleanupPhantomSeries), not a
 // Room migration: identifying a phantom row needs the configured library-root folder name
 // (SettingsStore), which a migration has no access to.
+//
+// Version 20: indexes on the four hot equality-lookup columns (books.folderPath,
+//             books.ebookPath, audio_files.filePath, series.name) — none existed before, so
+//             getBookByFolder (called once per candidate book on every scan) was a full table
+//             scan. Also adds playback_progress.filesBeforeCurrentMs (backfilled via a
+//             correlated sum over audio_files, same trackNumber/fileName order
+//             BookWithProgress.audioFiles uses) so the home grid (HomeGridBook) can compute
+//             progress without ever loading a book's file list.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -392,6 +400,63 @@ abstract class AppDatabase : RoomDatabase() {
                         `boundAt` INTEGER NOT NULL
                     )
                 """.trimIndent())
+            }
+        }
+
+        val MIGRATION_19_20 = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 19 → 20 (hot-column indexes + filesBeforeCurrentMs)")
+
+                // Room compares the declared @Entity indices against the schema by name, so these
+                // must match Room's own naming convention (index_<table>_<column>) exactly or
+                // validation fails on launch.
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_folderPath` ON `books` (`folderPath`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_ebookPath` ON `books` (`ebookPath`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_audio_files_filePath` ON `audio_files` (`filePath`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_series_name` ON `series` (`name`)")
+
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN filesBeforeCurrentMs INTEGER NOT NULL DEFAULT 0")
+                // Backfill for every row already paused mid-book: without this, BookWithProgress's
+                // own live computation (audioFiles.takeWhile{it.id!=currentFileId}.sumOf{durationMs})
+                // and HomeGridBook's new denormalized column would disagree the moment this ships,
+                // and every such book's grid progress bar would collapse toward zero until its next
+                // file transition quietly recomputed it.
+                //
+                // Done in Kotlin, not a correlated SQL UPDATE: ordered by id (insertion order),
+                // NOT trackNumber/fileName — BookWithProgress's @Relation audioFiles has no
+                // explicit ORDER BY, so in practice it returns natural (rowid) order, and
+                // importBook always inserts audio_files rows in the already-resolved playback
+                // sequence — so id order matches what progressFraction actually computes today.
+                // trackNumber/fileName would silently disagree for a disc-merged book: each disc
+                // restarts its own track numbering (both disc 1 and disc 2 can contain
+                // "01 - track.mp3"/trackNumber=1), which groups by within-disc track position
+                // across discs rather than preserving disc-then-disc order.
+                db.query("SELECT bookId, currentFileId FROM playback_progress WHERE currentFileId IS NOT NULL").use { rows ->
+                    val bookIdIdx = rows.getColumnIndexOrThrow("bookId")
+                    val fileIdIdx = rows.getColumnIndexOrThrow("currentFileId")
+                    val targets = mutableListOf<Pair<Long, Long>>()
+                    while (rows.moveToNext()) {
+                        targets.add(rows.getLong(bookIdIdx) to rows.getLong(fileIdIdx))
+                    }
+                    targets.forEach { (bookId, currentFileId) ->
+                        var filesBeforeCurrentMs = 0L
+                        db.query(
+                            "SELECT id, durationMs FROM audio_files WHERE bookId = ? ORDER BY id ASC",
+                            arrayOf(bookId)
+                        ).use { files ->
+                            val idIdx = files.getColumnIndexOrThrow("id")
+                            val durIdx = files.getColumnIndexOrThrow("durationMs")
+                            while (files.moveToNext()) {
+                                if (files.getLong(idIdx) == currentFileId) return@use
+                                filesBeforeCurrentMs += files.getLong(durIdx)
+                            }
+                        }
+                        db.execSQL(
+                            "UPDATE playback_progress SET filesBeforeCurrentMs = ? WHERE bookId = ?",
+                            arrayOf(filesBeforeCurrentMs, bookId)
+                        )
+                    }
+                }
             }
         }
     }

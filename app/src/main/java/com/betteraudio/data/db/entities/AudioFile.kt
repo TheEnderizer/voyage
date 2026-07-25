@@ -15,7 +15,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("bookId")]
+    indices = [Index("bookId"), Index("filePath")]
 )
 data class AudioFile(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

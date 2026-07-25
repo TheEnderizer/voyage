@@ -81,6 +81,8 @@ class AudiobookRepository @Inject constructor(
     fun getAllBooks(): Flow<List<Book>> = bookDao.getAllBooksSorted()
     fun getBookById(bookId: Long): Flow<Book?> = bookDao.getBookById(bookId)
     fun getBookWithProgress(bookId: Long): Flow<BookWithProgress?> = bookDao.getBookWithProgress(bookId)
+    fun getHomeGridBooks(): Flow<List<com.betteraudio.data.model.HomeGridBook>> = bookDao.getHomeGridBooks()
+    fun hasAnyBooks(): Flow<Boolean> = bookDao.hasAnyBooks()
     fun getChaptersForBook(bookId: Long): Flow<List<Chapter>> = chapterDao.getChaptersForBook(bookId)
     suspend fun getChaptersForBookOnce(bookId: Long): List<Chapter> = chapterDao.getChaptersForBookOnce(bookId)
     suspend fun chapterCountForBook(bookId: Long): Int = chapterDao.countForBook(bookId)
@@ -152,47 +154,76 @@ class AudiobookRepository @Inject constructor(
     suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) =
         bookDao.updateSeriesInfo(bookId, seriesName, seriesOrder)
 
+    // Six read-then-write "upserts" (this one plus updateSpeed/updateBoostDb/updateEqBands/
+    // updateLastPausedAt/touchLastPlayed below) each wrap their check-then-write in a single
+    // transaction. Without it, the service's periodic saver and PlayerController's own save path
+    // — which genuinely do overlap — could both read "no row exists" and both insert, and the
+    // loser's insert (OnConflictStrategy.REPLACE) becomes a delete-then-insert that drops
+    // whichever other column the other writer had just set.
     suspend fun updatePosition(bookId: Long, fileId: Long, positionMs: Long) {
-        val existing = progressDao.getProgressForBookOnce(bookId)
-        if (existing == null) {
-            progressDao.upsert(
-                PlaybackProgress(
-                    bookId = bookId,
-                    currentFileId = fileId,
-                    positionMs = positionMs,
-                    lastPlayedMs = System.currentTimeMillis()
+        db.withTransaction {
+            val existing = progressDao.getProgressForBookOnce(bookId)
+            // Only recompute on an actual file change — cheap relative to how often this is now
+            // called after G2-3, but no need to redo it on every same-file position tick.
+            val filesBeforeCurrentMs = if (existing?.currentFileId == fileId) {
+                existing.filesBeforeCurrentMs
+            } else {
+                // Natural id (insertion) order, not trackNumber/fileName — matches what
+                // BookWithProgress.progressFraction actually computes (its @Relation has no
+                // explicit ORDER BY) and what the MIGRATION_19_20 backfill uses; see its comment
+                // for why trackNumber/fileName is the wrong key for a disc-merged book.
+                audioFileDao.getFilesForBookOnce(bookId)
+                    .sortedBy { it.id }
+                    .takeWhile { it.id != fileId }
+                    .sumOf { it.durationMs }
+            }
+            if (existing == null) {
+                progressDao.upsert(
+                    PlaybackProgress(
+                        bookId = bookId,
+                        currentFileId = fileId,
+                        positionMs = positionMs,
+                        lastPlayedMs = System.currentTimeMillis(),
+                        filesBeforeCurrentMs = filesBeforeCurrentMs
+                    )
                 )
-            )
-        } else {
-            progressDao.updatePosition(bookId, fileId, positionMs, System.currentTimeMillis())
+            } else {
+                progressDao.updatePosition(bookId, fileId, positionMs, System.currentTimeMillis(), filesBeforeCurrentMs)
+            }
+            bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
         }
-        bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
     }
 
     suspend fun updateSpeed(bookId: Long, speed: Float) {
-        val existing = progressDao.getProgressForBookOnce(bookId)
-        if (existing == null) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, playbackSpeed = speed))
-        } else {
-            progressDao.updateSpeed(bookId, speed)
+        db.withTransaction {
+            val existing = progressDao.getProgressForBookOnce(bookId)
+            if (existing == null) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, playbackSpeed = speed))
+            } else {
+                progressDao.updateSpeed(bookId, speed)
+            }
         }
     }
 
     suspend fun updateBoostDb(bookId: Long, boostDb: Int) {
-        val existing = progressDao.getProgressForBookOnce(bookId)
-        if (existing == null) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, boostDb = boostDb))
-        } else {
-            progressDao.updateBoostDb(bookId, boostDb)
+        db.withTransaction {
+            val existing = progressDao.getProgressForBookOnce(bookId)
+            if (existing == null) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, boostDb = boostDb))
+            } else {
+                progressDao.updateBoostDb(bookId, boostDb)
+            }
         }
     }
 
     suspend fun updateEqBands(bookId: Long, json: String?) {
-        val existing = progressDao.getProgressForBookOnce(bookId)
-        if (existing == null) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, eqBandsJson = json))
-        } else {
-            progressDao.updateEqBands(bookId, json)
+        db.withTransaction {
+            val existing = progressDao.getProgressForBookOnce(bookId)
+            if (existing == null) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, eqBandsJson = json))
+            } else {
+                progressDao.updateEqBands(bookId, json)
+            }
         }
     }
 
@@ -317,11 +348,13 @@ class AudiobookRepository @Inject constructor(
 
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */
     suspend fun touchLastPlayed(bookId: Long) {
-        val now = System.currentTimeMillis()
-        if (progressDao.touchLastPlayed(bookId, now) == 0) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, lastPlayedMs = now))
+        db.withTransaction {
+            val now = System.currentTimeMillis()
+            if (progressDao.touchLastPlayed(bookId, now) == 0) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, lastPlayedMs = now))
+            }
+            bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
         }
-        bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
     }
 
     suspend fun markBookFinished(bookId: Long) {
@@ -368,10 +401,12 @@ class AudiobookRepository @Inject constructor(
         progressDao.getProgressForBookOnce(bookId)
 
     suspend fun updateLastPausedAt(bookId: Long, ts: Long) {
-        if (progressDao.getProgressForBookOnce(bookId) == null) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, lastPausedAt = ts))
-        } else {
-            progressDao.updateLastPausedAt(bookId, ts)
+        db.withTransaction {
+            if (progressDao.getProgressForBookOnce(bookId) == null) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, lastPausedAt = ts))
+            } else {
+                progressDao.updateLastPausedAt(bookId, ts)
+            }
         }
     }
 

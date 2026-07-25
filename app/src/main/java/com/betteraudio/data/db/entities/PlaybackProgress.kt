@@ -43,5 +43,12 @@ data class PlaybackProgress(
     // Which position is freshest — "AUDIO" | "TEXT". Drives which side to convert FROM when the
     // other mode is opened (e.g. opening the reader while lastMode == AUDIO re-derives the text
     // locator from the current audio position instead of using a stale stored one).
-    val lastMode: String = "AUDIO"
+    val lastMode: String = "AUDIO",
+    // Sum of durationMs for every audio_files row before currentFileId (ordered by trackNumber,
+    // fileName — the same order BookWithProgress.audioFiles uses). Denormalized so the home grid's
+    // progress bar (HomeGridBook.progressFraction) never needs to load a book's full file list —
+    // that per-book join, done for every book in the library on every recomposition, was the
+    // dominant cost this column exists to remove. Recomputed by AudiobookRepository.updatePosition
+    // whenever currentFileId actually changes.
+    val filesBeforeCurrentMs: Long = 0L
 )

@@ -5,7 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
-import com.betteraudio.data.model.BookWithProgress
+import com.betteraudio.data.model.HomeGridBook
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -51,18 +51,20 @@ class SeriesDetailViewModel @Inject constructor(
     val books: StateFlow<List<Book>> = seriesRepository.getBooksInSeries(seriesId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Ordered member books with their progress — drives the aggregate bar and the book list. */
-    val booksWithProgress: StateFlow<List<BookWithProgress>> =
-        combine(books, repository.getAllBooksWithProgressUngrouped()) { ordered, all ->
-            val byId = all.associateBy { it.book.id }
+    /** Ordered member books with their progress — drives the aggregate bar. Uses the lightweight
+     *  home-grid projection (see HomeGridBook) since only totalDurationMs/progressFraction are
+     *  needed here, never the member books' full audio file lists. */
+    val booksWithProgress: StateFlow<List<HomeGridBook>> =
+        combine(books, repository.getHomeGridBooks()) { ordered, all ->
+            val byId = all.associateBy { it.id }
             ordered.mapNotNull { byId[it.id] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val progress: StateFlow<SeriesProgress> =
         booksWithProgress
-            .map { bwps ->
-                val total = bwps.sumOf { it.book.totalDurationMs }
-                val played = bwps.sumOf { (it.progressFraction * it.book.totalDurationMs).toLong() }
+            .map { gridBooks ->
+                val total = gridBooks.sumOf { it.totalDurationMs }
+                val played = gridBooks.sumOf { (it.progressFraction * it.totalDurationMs).toLong() }
                 SeriesProgress(
                     fraction = if (total > 0) (played.toFloat() / total).coerceIn(0f, 1f) else 0f,
                     totalMs = total

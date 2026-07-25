@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
+import com.betteraudio.data.model.HomeGridBook
 import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.home.*
 import com.betteraudio.ui.immersive.ImmersiveStyle
@@ -237,15 +238,15 @@ fun HomeScreen(
                     visibleItems.forEach { gridItem ->
                         when (gridItem) {
                             is HomeGridItem.SingleBook -> {
-                                item(key = "book_${gridItem.bwp.book.id}") {
-                                    val key = SelKey.BookK(gridItem.bwp.book.id)
-                                    val ebookOnly = gridItem.bwp.isEbookOnly
+                                item(key = "book_${gridItem.book.id}") {
+                                    val key = SelKey.BookK(gridItem.book.id)
+                                    val ebookOnly = gridItem.book.isEbookOnly
                                     BookGridCard(
                                         modifier = Modifier.animateItem(),
-                                        bwp = gridItem.bwp,
+                                        book = gridItem.book,
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
-                                        isNowPlaying = playbackState.bookId == gridItem.bwp.book.id,
+                                        isNowPlaying = playbackState.bookId == gridItem.book.id,
                                         useReadingProgress = homeSection == HomeSection.EBOOKS,
                                         onClick = {
                                             when {
@@ -253,15 +254,15 @@ fun HomeScreen(
                                                 // In the Ebooks section (or an audio-less ebook row)
                                                 // a tap opens the reader.
                                                 homeSection == HomeSection.EBOOKS || ebookOnly ->
-                                                    onOpenReader(gridItem.bwp.book.id)
-                                                else -> onOpenBookInfo(gridItem.bwp.book.id)
+                                                    onOpenReader(gridItem.book.id)
+                                                else -> onOpenBookInfo(gridItem.book.id)
                                             }
                                         },
                                         // Play in place (mini bar), do NOT open the full player —
                                         // unless this row has no audio, in which case play = read.
                                         onPlayClick = {
-                                            if (ebookOnly) onOpenReader(gridItem.bwp.book.id)
-                                            else viewModel.playResumeBook(gridItem.bwp)
+                                            if (ebookOnly) onOpenReader(gridItem.book.id)
+                                            else viewModel.playResumeBook(gridItem.book.id)
                                         },
                                         onLongClick = { viewModel.toggleSelection(key) }
                                     )
@@ -276,7 +277,7 @@ fun HomeScreen(
                                         title = gridItem.series.name,
                                         subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
                                         coverPath = gridItem.coverPath,
-                                        isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
+                                        isNowPlaying = gridItem.books.any { it.id == playbackState.bookId },
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         onClick = {
@@ -298,7 +299,7 @@ fun HomeScreen(
                                         title = gridItem.name,
                                         subtitle = "${gridItem.books.size} book${if (gridItem.books.size != 1) "s" else ""}",
                                         coverPath = gridItem.coverPath,
-                                        isNowPlaying = gridItem.books.any { it.book.id == playbackState.bookId },
+                                        isNowPlaying = gridItem.books.any { it.id == playbackState.bookId },
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         onClick = {
@@ -435,12 +436,14 @@ fun HomeScreen(
         )
     }
 
-    // Book options sheet (long hold — 1500 ms)
-    if (bookOptionsTarget != null) {
-        val optionsBwp = gridItems
-            .filterIsInstance<HomeGridItem.SingleBook>()
-            .firstOrNull { it.bwp.book.id == bookOptionsTarget }
-            ?.bwp
+    // Book options sheet (long hold — 1500 ms). Fetched fresh via the cheap single-book flow
+    // (not from gridItems, which no longer carries a full BookWithProgress) since this sheet
+    // shows the book's actual file list.
+    val bookOptionsTargetId = bookOptionsTarget
+    if (bookOptionsTargetId != null) {
+        val optionsBwpState by viewModel.bookWithProgressFlow(bookOptionsTargetId)
+            .collectAsStateWithLifecycle(initialValue = null)
+        val optionsBwp = optionsBwpState
         if (optionsBwp != null) {
             BookOptionsSheet(
                 bwp = optionsBwp,
@@ -468,15 +471,14 @@ fun HomeScreen(
         }
     }
 
-    // Online cover search sheet
+    // Online cover search sheet — only needs display strings, so the grid projection is enough.
     if (coverSearchTargetId != null) {
-        val targetBwp = gridItems
+        val targetBook = gridItems
             .filterIsInstance<HomeGridItem.SingleBook>()
-            .firstOrNull { it.bwp.book.id == coverSearchTargetId }
-            ?.bwp
-        val book = targetBwp?.book
+            .firstOrNull { it.book.id == coverSearchTargetId }
+            ?.book
         CoverSearchSheet(
-            initialQuery = book?.let {
+            initialQuery = targetBook?.let {
                 listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
             } ?: "",
             onSearch = { query -> viewModel.searchCovers(query) },
@@ -672,7 +674,7 @@ private fun SelectionHeader(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun BookGridCard(
-    bwp: BookWithProgress,
+    book: HomeGridBook,
     isSelected: Boolean,
     isSelectionMode: Boolean,
     isNowPlaying: Boolean,
@@ -682,7 +684,6 @@ private fun BookGridCard(
     modifier: Modifier = Modifier,
     useReadingProgress: Boolean = false
 ) {
-    val book = bwp.book
     val borderColor by animateColorAsState(
         when {
             isSelected -> MaterialTheme.colorScheme.primary
@@ -756,7 +757,7 @@ private fun BookGridCard(
                         maxLines = 1
                     )
                 }
-                val prog = if (useReadingProgress) bwp.readingFraction else bwp.progressFraction
+                val prog = if (useReadingProgress) book.readingFraction else book.progressFraction
                 if (prog > 0f) {
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
