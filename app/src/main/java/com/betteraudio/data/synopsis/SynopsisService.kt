@@ -9,6 +9,7 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -58,19 +59,20 @@ class SynopsisService @Inject constructor(
                     .toString()
 
                 val request = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
                     .header("Content-Type", "application/json")
+                    // Google's recommended way to pass the key — keeps it out of the URL, so it
+                    // can never end up in an exception message, a proxy log, or browser history.
+                    .header("x-goog-api-key", apiKey)
                     .post(body.toRequestBody("application/json".toMediaType()))
                     .build()
 
                 val response = client.newCall(request).execute()
-                val responseBody = response.body?.string() ?: return@withContext SynopsisResult.Error("Empty response from Gemini")
+                val responseBody = response.body?.string()
+                    ?: return@withContext SynopsisResult.Error("Empty response from Gemini")
 
                 if (!response.isSuccessful) {
-                    val errMsg = try {
-                        JSONObject(responseBody).getJSONObject("error").getString("message")
-                    } catch (_: Exception) { "HTTP ${response.code}" }
-                    return@withContext SynopsisResult.Error(errMsg)
+                    return@withContext SynopsisResult.Error(categorizeHttpError(response.code))
                 }
 
                 val text = JSONObject(responseBody)
@@ -83,8 +85,19 @@ class SynopsisService @Inject constructor(
                     .trim()
 
                 SynopsisResult.Success(text)
+            } catch (e: IOException) {
+                SynopsisResult.Error("No network connection")
             } catch (e: Exception) {
-                SynopsisResult.Error(e.message ?: "Unknown error")
+                SynopsisResult.Error("Unexpected error generating synopsis")
             }
         }
+
+    // Deliberately generic — never echoes the raw HTTP body back to the UI, since a Gemini
+    // error response can (and sometimes does) include the request's own query/headers.
+    private fun categorizeHttpError(code: Int): String = when (code) {
+        401, 403 -> "Invalid API key — check Settings → AI Synopsis"
+        429 -> "Rate limited — try again in a moment"
+        in 500..599 -> "Gemini server error — try again later"
+        else -> "Synopsis request failed (HTTP $code)"
+    }
 }

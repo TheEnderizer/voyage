@@ -22,6 +22,19 @@ object AppLog {
     private val writer = Executors.newSingleThreadExecutor()
     private val stamp = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
 
+    // Settings → Diagnostics offers app.log for sharing (e.g. attaching to a bug report), so
+    // scrub anything that shouldn't leave the device: a Gemini key, or an absolute path that
+    // could contain identifying folder/file names from the user's own library.
+    private val API_KEY_PATTERN = Regex("AIzaSy[\\w-]+")
+    // Spaces are allowed inside an intermediate segment (bounded by '/' on both sides) but not
+    // in the trailing one, which has no closing delimiter in free-form log text — allowing
+    // spaces there would eat into whatever word follows the path in the same log line.
+    private val ABS_PATH_PATTERN = Regex("""/(?:[\w.\- ]+/)+[\w.\-]+""")
+    // internal, not private: exercised directly by a fast JUnit test (AppLogRedactionTest)
+    // instead of needing an instrumented test just to reach a pure string transform.
+    internal fun redact(msg: String): String =
+        ABS_PATH_PATTERN.replace(API_KEY_PATTERN.replace(msg, "[REDACTED_KEY]"), "[PATH]")
+
     @Volatile private var file: File? = null
     @Volatile private var backup: File? = null
 
@@ -52,7 +65,8 @@ object AppLog {
     fun e(tag: String, msg: String, tr: Throwable? = null) =
         log("E", tag, if (tr != null) "$msg\n${Log.getStackTraceString(tr)}" else msg)
 
-    private fun log(level: String, tag: String, msg: String) {
+    private fun log(level: String, tag: String, rawMsg: String) {
+        val msg = redact(rawMsg)
         when (level) {
             "D" -> Log.d(tag, msg)
             "I" -> Log.i(tag, msg)
