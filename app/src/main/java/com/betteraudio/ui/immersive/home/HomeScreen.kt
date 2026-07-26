@@ -85,23 +85,21 @@ fun HomeScreen(
     var showStructureDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
-    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
-    val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
+    // Only state that genuinely drives top-level structural decisions (which screen state to
+    // render) or the onboarding LaunchedEffect below lives here. playbackState and the handful of
+    // dialog-only states are collected inside the specific composables that use them instead, so a
+    // 500ms-ish playback change or opening a dialog doesn't recompose this entire screen — see the
+    // per-item playbackState reads below and the *DialogHost composables near the bottom of this file.
     val visibleItems by viewModel.visibleGridItems.collectAsStateWithLifecycle()
     val libraryTab by viewModel.libraryTab.collectAsStateWithLifecycle()
     val tabCounts by viewModel.tabCounts.collectAsStateWithLifecycle()
     val scan by viewModel.scan.collectAsStateWithLifecycle()
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
     val structureChosen by viewModel.structureChosen.collectAsStateWithLifecycle()
-    val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
-    val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
-    val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
-    val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
     val homeSection by viewModel.homeSection.collectAsStateWithLifecycle()
     val hasAnyBooks by viewModel.hasAnyBooks.collectAsStateWithLifecycle()
-    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
 
     val isSelectionMode = selection.isNotEmpty()
 
@@ -199,6 +197,7 @@ fun HomeScreen(
                     // Header — stays put; the selection bar floats over it as an overlay.
                     // Section (Audio/Ebooks) + view-mode switching moved to the floating nav pill.
                     item(span = { GridItemSpan(maxLineSpan) }) {
+                        val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
                         HomeHeader(
                             itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
                             viewMode = homeViewMode,
@@ -239,6 +238,10 @@ fun HomeScreen(
                         when (gridItem) {
                             is HomeGridItem.SingleBook -> {
                                 item(key = "book_${gridItem.book.id}") {
+                                    // Collected per-item rather than at the top of HomeScreen so a
+                                    // playback change only recomposes this one card, not the whole
+                                    // screen (header, tabs, every other card, dialogs).
+                                    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
                                     val key = SelKey.BookK(gridItem.book.id)
                                     val ebookOnly = gridItem.book.isEbookOnly
                                     BookGridCard(
@@ -271,6 +274,7 @@ fun HomeScreen(
 
                             is HomeGridItem.SeriesItem -> {
                                 item(key = "series_${gridItem.series.id}") {
+                                    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
                                     val key = SelKey.SeriesK(gridItem.series.id)
                                     CollectionGridCard(
                                         modifier = Modifier.animateItem(),
@@ -293,6 +297,7 @@ fun HomeScreen(
 
                             is HomeGridItem.AuthorItem -> {
                                 item(key = "author_${gridItem.name}") {
+                                    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
                                     val key = SelKey.AuthorK(gridItem.name)
                                     CollectionGridCard(
                                         modifier = Modifier.animateItem(),
@@ -344,7 +349,7 @@ fun HomeScreen(
                     onCoverSearch = {
                         when (val s = single) {
                             is SelKey.BookK -> viewModel.openCoverSearch(s.id)
-                            is SelKey.SeriesK -> gridItems.filterIsInstance<HomeGridItem.SeriesItem>()
+                            is SelKey.SeriesK -> viewModel.gridItems.value.filterIsInstance<HomeGridItem.SeriesItem>()
                                 .find { it.series.id == s.id }
                                 ?.let { viewModel.openSeriesCoverSearch(it.series.id, it.series.name) }
                             is SelKey.AuthorK -> viewModel.openAuthorCoverSearch(s.name)
@@ -357,16 +362,10 @@ fun HomeScreen(
         }
     }
 
-    // Dialogs
-    ebookError?.let { message ->
-        AlertDialog(
-            containerColor = ImmersiveStyle.dialogColor(),
-            onDismissRequest = { viewModel.dismissEbookError() },
-            title = { Text("Couldn't connect ebook") },
-            text = { Text(message) },
-            confirmButton = { TextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
-        )
-    }
+    // Dialogs — each of these five collects its own viewModel state internally (see the
+    // *Host composables below) rather than reading it here, so opening/closing one doesn't
+    // recompose the whole screen and a screen recompose doesn't re-run these unnecessarily.
+    EbookErrorDialog(viewModel)
 
     if (showDeleteConfirm) {
         var deleteFiles by remember { mutableStateOf(false) }
@@ -428,76 +427,91 @@ fun HomeScreen(
         )
     }
 
-    if (showSortFilter) {
-        SortFilterSheet(
-            current = sortFilter,
-            onApply = { viewModel.setSortFilter(it) },
-            onDismiss = { showSortFilter = false }
+    SortFilterDialogHost(viewModel, show = showSortFilter, onDismiss = { showSortFilter = false })
+    BookOptionsSheetHost(viewModel, context, onOpenReader)
+    CoverSearchSheetHost(viewModel)
+    CollectionCoverSearchSheetHost(viewModel)
+}
+
+@Composable
+private fun EbookErrorDialog(viewModel: HomeViewModel) {
+    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
+    ebookError?.let { message ->
+        AlertDialog(
+            containerColor = ImmersiveStyle.dialogColor(),
+            onDismissRequest = { viewModel.dismissEbookError() },
+            title = { Text("Couldn't connect ebook") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
         )
     }
+}
 
-    // Book options sheet (long hold — 1500 ms). Fetched fresh via the cheap single-book flow
-    // (not from gridItems, which no longer carries a full BookWithProgress) since this sheet
-    // shows the book's actual file list.
-    val bookOptionsTargetId = bookOptionsTarget
-    if (bookOptionsTargetId != null) {
-        val optionsBwpState by viewModel.bookWithProgressFlow(bookOptionsTargetId)
-            .collectAsStateWithLifecycle(initialValue = null)
-        val optionsBwp = optionsBwpState
-        if (optionsBwp != null) {
-            BookOptionsSheet(
-                bwp = optionsBwp,
-                onDismiss = { viewModel.closeBookOptions() },
-                onUpdateMetadata = { title, author ->
-                    viewModel.updateBookMetadata(optionsBwp.book.id, title, author)
-                },
-                onUpdateSeries = { name, order ->
-                    viewModel.updateBookSeries(optionsBwp.book.id, name, order)
-                },
-                onUpdateStatus = { status ->
-                    viewModel.updateBookStatus(optionsBwp.book.id, status)
-                },
-                onSearchOnlineCover = { viewModel.openCoverSearch(optionsBwp.book.id) },
-                onRefreshCoverEffect = { viewModel.refreshCoverEffect(optionsBwp.book.id) },
-                onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
-                onDeletePermanently = { deleteFiles ->
-                    viewModel.deleteBook(optionsBwp.book.id, deleteFiles)
-                },
-                onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
-                onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
-                onOpenReader = { onOpenReader(optionsBwp.book.id) },
-                onPinShortcut = { com.betteraudio.util.BookShortcuts.requestPin(context, optionsBwp.book) }
-            )
-        }
-    }
+@Composable
+private fun SortFilterDialogHost(viewModel: HomeViewModel, show: Boolean, onDismiss: () -> Unit) {
+    if (!show) return
+    val sortFilter by viewModel.sortFilter.collectAsStateWithLifecycle()
+    SortFilterSheet(current = sortFilter, onApply = { viewModel.setSortFilter(it) }, onDismiss = onDismiss)
+}
 
-    // Online cover search sheet — only needs display strings, so the grid projection is enough.
-    if (coverSearchTargetId != null) {
-        val targetBook = gridItems
-            .filterIsInstance<HomeGridItem.SingleBook>()
-            .firstOrNull { it.book.id == coverSearchTargetId }
-            ?.book
-        CoverSearchSheet(
-            initialQuery = targetBook?.let {
-                listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
-            } ?: "",
-            onSearch = { query -> viewModel.searchCovers(query) },
-            onPick = { url ->
-                coverSearchTargetId?.let { viewModel.setBookCoverFromUrl(it, url) }
-            },
-            onDismiss = { viewModel.closeCoverSearch() }
-        )
-    }
+// Book options sheet (long hold — 1500 ms). Fetched fresh via the cheap single-book flow (not
+// from gridItems, which no longer carries a full BookWithProgress) since this sheet shows the
+// book's actual file list.
+@Composable
+private fun BookOptionsSheetHost(viewModel: HomeViewModel, context: Context, onOpenReader: (Long) -> Unit) {
+    val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
+    val bookOptionsTargetId = bookOptionsTarget ?: return
+    val optionsBwpState by viewModel.bookWithProgressFlow(bookOptionsTargetId)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val optionsBwp = optionsBwpState ?: return
+    BookOptionsSheet(
+        bwp = optionsBwp,
+        onDismiss = { viewModel.closeBookOptions() },
+        onUpdateMetadata = { title, author -> viewModel.updateBookMetadata(optionsBwp.book.id, title, author) },
+        onUpdateSeries = { name, order -> viewModel.updateBookSeries(optionsBwp.book.id, name, order) },
+        onUpdateStatus = { status -> viewModel.updateBookStatus(optionsBwp.book.id, status) },
+        onSearchOnlineCover = { viewModel.openCoverSearch(optionsBwp.book.id) },
+        onRefreshCoverEffect = { viewModel.refreshCoverEffect(optionsBwp.book.id) },
+        onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
+        onDeletePermanently = { deleteFiles -> viewModel.deleteBook(optionsBwp.book.id, deleteFiles) },
+        onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
+        onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
+        onOpenReader = { onOpenReader(optionsBwp.book.id) },
+        onPinShortcut = { com.betteraudio.util.BookShortcuts.requestPin(context, optionsBwp.book) }
+    )
+}
 
-    // Per-view cover search for a series or author tile
-    coverSearchCollection?.let { target ->
-        CoverSearchSheet(
-            initialQuery = target.seed,
-            onSearch = { query -> viewModel.searchCovers(query) },
-            onPick = { url -> viewModel.setCollectionCoverFromUrl(url) },
-            onDismiss = { viewModel.closeCollectionCoverSearch() }
-        )
-    }
+// Online cover search sheet — only needs display strings, so the grid projection is enough.
+@Composable
+private fun CoverSearchSheetHost(viewModel: HomeViewModel) {
+    val coverSearchTargetId by viewModel.coverSearchTargetId.collectAsStateWithLifecycle()
+    val targetId = coverSearchTargetId ?: return
+    val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
+    val targetBook = gridItems
+        .filterIsInstance<HomeGridItem.SingleBook>()
+        .firstOrNull { it.book.id == targetId }
+        ?.book
+    CoverSearchSheet(
+        initialQuery = targetBook?.let {
+            listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
+        } ?: "",
+        onSearch = { query -> viewModel.searchCovers(query) },
+        onPick = { url -> viewModel.setBookCoverFromUrl(targetId, url) },
+        onDismiss = { viewModel.closeCoverSearch() }
+    )
+}
+
+// Per-view cover search for a series or author tile
+@Composable
+private fun CollectionCoverSearchSheetHost(viewModel: HomeViewModel) {
+    val coverSearchCollection by viewModel.coverSearchCollection.collectAsStateWithLifecycle()
+    val target = coverSearchCollection ?: return
+    CoverSearchSheet(
+        initialQuery = target.seed,
+        onSearch = { query -> viewModel.searchCovers(query) },
+        onPick = { url -> viewModel.setCollectionCoverFromUrl(url) },
+        onDismiss = { viewModel.closeCollectionCoverSearch() }
+    )
 }
 
 // ─── Home header ──────────────────────────────────────────────────────────────
