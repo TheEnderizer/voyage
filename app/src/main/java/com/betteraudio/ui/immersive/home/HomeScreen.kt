@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.model.HomeGridBook

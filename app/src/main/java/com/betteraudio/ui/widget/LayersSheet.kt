@@ -26,7 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.WidgetSnapshot

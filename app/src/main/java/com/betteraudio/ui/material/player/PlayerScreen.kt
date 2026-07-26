@@ -30,7 +30,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
 import com.betteraudio.ui.components.frostedWhenVisible
@@ -331,7 +331,7 @@ fun PlayerContent(
                 ) {
                     val cacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
                     val imageModel = coverPath?.let {
-                        coil.request.ImageRequest.Builder(LocalContext.current)
+                        coil3.request.ImageRequest.Builder(LocalContext.current)
                             .data(File(it))
                             .memoryCacheKey(cacheKey)
                             .build()

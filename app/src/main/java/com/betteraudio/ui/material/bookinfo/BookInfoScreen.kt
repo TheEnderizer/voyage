@@ -39,7 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.betteraudio.ui.bookinfo.BookInfoViewModel
 import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ScrimButton

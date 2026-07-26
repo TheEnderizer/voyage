@@ -144,7 +144,7 @@ internal fun LazyListScope.widgetSection(
                     contentAlignment = Alignment.Center
                 ) {
                     if (currentCoverPath.isNotBlank()) {
-                        coil.compose.AsyncImage(
+                        coil3.compose.AsyncImage(
                             model = java.io.File(currentCoverPath),
                             contentDescription = "Widget default cover",
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,

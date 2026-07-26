@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.data.model.HomeGridBook
@@ -731,7 +731,7 @@ private fun BookGridCard(
             // the grid → Book Info morph reuses this exact decoded bitmap — no reload/re-decode,
             // only a redraw at the new (animated) size.
             model = book.coverArtPath?.let {
-                coil.request.ImageRequest.Builder(LocalContext.current)
+                coil3.request.ImageRequest.Builder(LocalContext.current)
                     .data(File(it))
                     .memoryCacheKey("cover-${book.id}")
                     .build()
