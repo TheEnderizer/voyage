@@ -112,9 +112,7 @@ class PlaybackService : MediaSessionService() {
     private var sleepPreFadeVolume: Float = 1f
     private var sleepGraceJob: Job? = null
     private var sleepWakeLock: android.os.PowerManager.WakeLock? = null
-    private var shakeSensorManager: android.hardware.SensorManager? = null
-    private var shakeListener: android.hardware.SensorEventListener? = null
-    private var shakeListening = false
+    private val shakeDetector: ShakeDetector by lazy { ShakeDetector(this) { onShakeDetected() } }
 
     // Screen off = nobody can see the widget. The 1 Hz sleep tick otherwise keeps re-rendering
     // it — a fresh bitmap, a full RemoteViews rebuild, a Binder call to the launcher — for the
@@ -191,7 +189,6 @@ class PlaybackService : MediaSessionService() {
 
         private const val SPEED_STEP = 0.1f
         private const val BOOST_STEP_MB = 300 // 3 dB
-        private const val SHAKE_MAGNITUDE_THRESHOLD = 12f       // m/s^2, on TYPE_LINEAR_ACCELERATION
         private const val SHAKE_ARM_WINDOW_MS = 30_000L         // start listening this close to firing
         private const val SHAKE_GRACE_WINDOW_MS = 30_000L       // keep listening this long after firing
         private const val HEADSET_MULTI_PRESS_WINDOW_MS = 400L
@@ -723,7 +720,7 @@ class PlaybackService : MediaSessionService() {
         sleepTickJob?.cancel()
         sleepGraceJob?.cancel()
         sleepGraceJob = null
-        stopShakeListening()
+        shakeDetector.stop()
         releaseSleepWakeLock()
         if (sleepFadeActive) {
             exoPlayer?.volume = sleepPreFadeVolume
@@ -890,7 +887,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun maybeArmShakeListening(remainingMs: Long) {
         if (!settings.currentSleepShakeEnabled) return
-        if (remainingMs in 1..SHAKE_ARM_WINDOW_MS) startShakeListening()
+        if (remainingMs in 1..SHAKE_ARM_WINDOW_MS) shakeDetector.start()
     }
 
     /** After firing, keep listening for a shake a little longer (with a short wakelock so the
@@ -898,41 +895,14 @@ class PlaybackService : MediaSessionService() {
      *  pause, not only in the countdown's final seconds. Best-effort past this window — no
      *  wakelock beyond it, so delivery isn't guaranteed with the screen off. */
     private fun armShakeGraceWindow() {
-        startShakeListening()
+        shakeDetector.start()
         acquireSleepWakeLock()
         sleepGraceJob = serviceScope.launch {
             delay(SHAKE_GRACE_WINDOW_MS)
-            stopShakeListening()
+            shakeDetector.stop()
             releaseSleepWakeLock()
             sleepGraceJob = null
         }
-    }
-
-    private fun startShakeListening() {
-        if (shakeListening) return
-        val sm = (getSystemService(Context.SENSOR_SERVICE) as? android.hardware.SensorManager) ?: return
-        val sensor = sm.getDefaultSensor(android.hardware.Sensor.TYPE_LINEAR_ACCELERATION) ?: return
-        val listener = object : android.hardware.SensorEventListener {
-            override fun onSensorChanged(event: android.hardware.SensorEvent) {
-                val mag = kotlin.math.sqrt(
-                    event.values[0] * event.values[0] +
-                    event.values[1] * event.values[1] +
-                    event.values[2] * event.values[2]
-                )
-                if (mag > SHAKE_MAGNITUDE_THRESHOLD) onShakeDetected()
-            }
-            override fun onAccuracyChanged(sensor: android.hardware.Sensor?, accuracy: Int) {}
-        }
-        shakeSensorManager = sm
-        shakeListener = listener
-        shakeListening = true
-        sm.registerListener(listener, sensor, android.hardware.SensorManager.SENSOR_DELAY_NORMAL)
-    }
-
-    private fun stopShakeListening() {
-        shakeListener?.let { shakeSensorManager?.unregisterListener(it) }
-        shakeListener = null
-        shakeListening = false
     }
 
     private fun onShakeDetected() {
@@ -1068,7 +1038,7 @@ class PlaybackService : MediaSessionService() {
         saveCurrentPosition()
         sleepTickJob?.cancel()
         sleepGraceJob?.cancel()
-        stopShakeListening()
+        shakeDetector.stop()
         releaseSleepWakeLock()
         headsetPressJob?.cancel()
         unregisterBtAutoResume()
