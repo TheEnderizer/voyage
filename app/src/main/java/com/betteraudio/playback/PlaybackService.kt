@@ -136,8 +136,9 @@ class PlaybackService : MediaSessionService() {
     private var scheduleArmedThisSession = false
 
     // ── Headset multi-press mapping ──────────────────────────────────────────────
-    private var headsetPressCount = 0
-    private var headsetPressJob: Job? = null
+    private val headsetGestureMapper: HeadsetGestureMapper by lazy {
+        HeadsetGestureMapper(serviceScope, settings) { action -> performHeadsetAction(action) }
+    }
 
     // ── Bluetooth/headphone auto-resume ──────────────────────────────────────────
     private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
@@ -191,7 +192,6 @@ class PlaybackService : MediaSessionService() {
         private const val BOOST_STEP_MB = 300 // 3 dB
         private const val SHAKE_ARM_WINDOW_MS = 30_000L         // start listening this close to firing
         private const val SHAKE_GRACE_WINDOW_MS = 30_000L       // keep listening this long after firing
-        private const val HEADSET_MULTI_PRESS_WINDOW_MS = 400L
     }
 
     override fun onCreate() {
@@ -597,24 +597,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     // ── Headset multi-press mapping ──────────────────────────────────────────────
-    private fun countHeadsetPress(session: MediaSession) {
-        headsetPressCount++
-        headsetPressJob?.cancel()
-        headsetPressJob = serviceScope.launch {
-            delay(HEADSET_MULTI_PRESS_WINDOW_MS)
-            val count = headsetPressCount
-            headsetPressCount = 0
-            val action = when (count) {
-                1 -> "play_pause"
-                2 -> settings.currentHeadsetDoublePressAction
-                else -> settings.currentHeadsetTriplePressAction
-            }
-            performHeadsetAction(session, action)
-        }
-    }
-
-    private fun performHeadsetAction(session: MediaSession, action: String) {
-        val player = session.player
+    private fun performHeadsetAction(action: String) {
+        val player = mediaSession?.player ?: return
         when (action) {
             "play_pause" -> if (player.isPlaying) player.pause() else player.play()
             "skip_forward" -> player.seekTo(player.currentPosition + settings.currentSkipForwardMs)
@@ -1040,7 +1024,7 @@ class PlaybackService : MediaSessionService() {
         sleepGraceJob?.cancel()
         shakeDetector.stop()
         releaseSleepWakeLock()
-        headsetPressJob?.cancel()
+        headsetGestureMapper.cancel()
         unregisterBtAutoResume()
         screenStateReceiver?.let { runCatching { unregisterReceiver(it) } }
         screenStateReceiver = null
@@ -1273,19 +1257,19 @@ class PlaybackService : MediaSessionService() {
                     // Count on ACTION_UP only — DOWN+UP both fire per physical click, and counting
                     // both would double every press.
                     if (event.action == KeyEvent.ACTION_UP && event.repeatCount == 0) {
-                        countHeadsetPress(session)
+                        headsetGestureMapper.onHeadsetHookPress()
                     }
                     true
                 }
                 KeyEvent.KEYCODE_MEDIA_NEXT -> {
                     if (event.action == KeyEvent.ACTION_DOWN) {
-                        performHeadsetAction(session, settings.currentHeadsetDoublePressAction)
+                        performHeadsetAction(settings.currentHeadsetDoublePressAction)
                     }
                     true
                 }
                 KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                     if (event.action == KeyEvent.ACTION_DOWN) {
-                        performHeadsetAction(session, settings.currentHeadsetTriplePressAction)
+                        performHeadsetAction(settings.currentHeadsetTriplePressAction)
                     }
                     true
                 }
