@@ -275,6 +275,21 @@ class PlaybackService : MediaSessionService() {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
                     scheduleArmedThisSession = false
                 }
+                // Persist the file change immediately, not just on the next periodic tick — the
+                // plan for widening that tick's interval (see startPositionSaver) assumed pause/
+                // stop/file-transition already flushed, but transition never did. Without this, a
+                // kill shortly after auto-advancing to the next file could resume from a stale
+                // (previous) file instead of just an old position within the right one. Calls
+                // repository.updatePosition directly rather than saveCurrentPosition(), which
+                // skips a positionMs <= 0 read — exactly the position a fresh transition starts at.
+                mediaItem?.let { item ->
+                    val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
+                    val fileId = item.mediaId.toLongOrNull()
+                    if (bookId != -1L && fileId != null) {
+                        val posMs = exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                        serviceScope.launch(Dispatchers.IO) { repository.updatePosition(bookId, fileId, posMs) }
+                    }
+                }
                 pushWidgetState()
             }
             override fun onPositionDiscontinuity(
@@ -452,7 +467,13 @@ class PlaybackService : MediaSessionService() {
         if (positionSaverJob?.isActive == true) return
         positionSaverJob = serviceScope.launch {
             while (isActive) {
-                delay(5_000)
+                // 30s, not 5s: pause/stop/file-transition/onTaskRemoved/onDestroy all flush
+                // separately (see onMediaItemTransition above and G1-5/G1-9's fixes to the
+                // others), so this interval only bounds how stale the position can get *within*
+                // the current file during continuous, uninterrupted playback — not which file.
+                // Each tick re-emits the entire home grid flow (G2-1/G2-2 made that emission
+                // itself cheap; this is about not causing it as often in the first place).
+                delay(30_000)
                 saveCurrentPosition()
             }
         }
