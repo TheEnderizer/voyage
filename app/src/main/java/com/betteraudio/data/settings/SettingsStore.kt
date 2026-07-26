@@ -127,6 +127,10 @@ class SettingsStore @Inject constructor(
         // ── Bluetooth/headphone auto-resume (PlaybackService.AudioDeviceCallback) ──────────────
         val BT_AUTO_RESUME_ENABLED        = booleanPreferencesKey("bt_auto_resume_enabled")
         val BT_AUTO_RESUME_WINDOW_MINUTES = intPreferencesKey("bt_auto_resume_window_minutes")
+        // Off by default: persisting every log line costs a stat+open/write/close otherwise
+        // (see AppLog) — Logcat mirroring is unconditional, so nothing is lost live, only the
+        // persisted copy is skipped unless the user opts in from Settings → Diagnostics.
+        val ENABLE_FILE_LOGGING = booleanPreferencesKey("enable_file_logging")
     }
 
     companion object {
@@ -226,6 +230,7 @@ class SettingsStore @Inject constructor(
     val headsetTriplePressAction: Flow<String> = prefsData.map { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] ?: DEFAULT_HEADSET_TRIPLE_PRESS_ACTION }.distinctUntilChanged()
     val btAutoResumeEnabled: Flow<Boolean>     = prefsData.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }.distinctUntilChanged()
     val btAutoResumeWindowMinutes: Flow<Int>   = prefsData.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }.distinctUntilChanged()
+    val enableFileLogging: Flow<Boolean>       = prefsData.map { it[Keys.ENABLE_FILE_LOGGING] ?: false }.distinctUntilChanged()
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -428,4 +433,6 @@ class SettingsStore @Inject constructor(
         context.dataStore.edit { it[Keys.BT_AUTO_RESUME_ENABLED] = enabled }.let { }
     suspend fun setBtAutoResumeWindowMinutes(minutes: Int) =
         context.dataStore.edit { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] = minutes.coerceIn(1, 120) }.let { }
+    suspend fun setEnableFileLogging(enabled: Boolean) =
+        context.dataStore.edit { it[Keys.ENABLE_FILE_LOGGING] = enabled }.let { }
 }

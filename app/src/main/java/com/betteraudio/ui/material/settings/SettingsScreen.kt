@@ -226,7 +226,7 @@ fun SettingsScreen(
                     SettingsSection.Backup -> backupSection(context, viewModel)
                     SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
                     SettingsSection.About -> aboutSection(updateState, viewModel)
-                    SettingsSection.Diagnostics -> diagnosticsSection(context)
+                    SettingsSection.Diagnostics -> diagnosticsSection(context, viewModel)
                 }
             }
         }

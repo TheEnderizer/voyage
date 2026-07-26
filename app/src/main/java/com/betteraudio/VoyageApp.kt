@@ -28,6 +28,7 @@ class VoyageApp : Application(), Configuration.Provider {
         AppLog.init(this)
         super.onCreate()
         appScope.launch { cleanupPhantomSeries() }
+        appScope.launch { settings.enableFileLogging.collect { AppLog.setFileLoggingEnabled(it) } }
     }
 
     /**

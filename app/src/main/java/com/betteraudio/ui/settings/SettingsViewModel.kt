@@ -416,6 +416,11 @@ class SettingsViewModel @Inject constructor(
     fun setBtAutoResumeEnabled(enabled: Boolean) = viewModelScope.launch { settings.setBtAutoResumeEnabled(enabled) }
     fun setBtAutoResumeWindowMinutes(minutes: Int) = viewModelScope.launch { settings.setBtAutoResumeWindowMinutes(minutes) }
 
+    // ── Diagnostics ──────────────────────────────────────────────────────────
+    val enableFileLogging: StateFlow<Boolean> =
+        settings.enableFileLogging.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    fun setEnableFileLogging(enabled: Boolean) = viewModelScope.launch { settings.setEnableFileLogging(enabled) }
+
     fun rescan() {
         val path = libraryFolder.value
         if (path.isBlank() || _rescanRunning.value) return

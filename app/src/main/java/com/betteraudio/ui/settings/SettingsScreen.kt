@@ -1492,7 +1492,27 @@ private fun relativeTime(ts: Long): String {
 
 // ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
 
-internal fun LazyListScope.diagnosticsSection(context: Context) {
+internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: SettingsViewModel) {
+    item {
+        val enableFileLogging by viewModel.enableFileLogging.collectAsStateWithLifecycle()
+        CardContainer {
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Save log to file", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Off by default. Turn on before reproducing a bug so the log below has something in it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = enableFileLogging, onCheckedChange = { viewModel.setEnableFileLogging(it) })
+            }
+        }
+    }
     item {
         val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager }
         var ignoringOptimizations by remember {

@@ -564,6 +564,10 @@ class MainActivity : ComponentActivity() {
         // the exit animation frame, which is what made pressing home stutter. appStoppedAt is
         // unrelated (AudioCascade's auto-rewind-after-away-time) and doesn't need to block either.
         lifecycleScope.launch { settings.setAppStoppedAt(System.currentTimeMillis()) }
+        // Flush AppLog's buffered writer now rather than waiting for its periodic timer — the app
+        // backgrounding is one of the two moments (the other being a crash) worth not losing
+        // buffered lines over. Non-blocking: posts to AppLog's own background executor.
+        AppLog.flush()
     }
 
     override fun onDestroy() {
