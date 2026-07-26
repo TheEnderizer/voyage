@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -154,69 +155,77 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES = 15
     }
 
-    val libraryFolder: Flow<String>  = context.dataStore.data.map { it[Keys.LIBRARY_FOLDER]  ?: "" }
-    val skipForwardMs: Flow<Long>    = context.dataStore.data.map { it[Keys.SKIP_FORWARD_MS] ?: DEFAULT_SKIP_FORWARD_MS }
-    val skipBackMs: Flow<Long>       = context.dataStore.data.map { it[Keys.SKIP_BACK_MS]    ?: DEFAULT_SKIP_BACK_MS }
-    val defaultSpeed: Flow<Float>    = context.dataStore.data.map { it[Keys.DEFAULT_SPEED]   ?: DEFAULT_SPEED }
-    val geminiApiKey: Flow<String>          = context.dataStore.data.map { it[Keys.GEMINI_API_KEY]          ?: "" }
-    val defaultAudioPresetId: Flow<Long>    = context.dataStore.data.map { it[Keys.DEFAULT_AUDIO_PRESET_ID] ?: -1L }
-    val sortOption: Flow<String>            = context.dataStore.data.map { it[Keys.SORT_OPTION]    ?: "TITLE" }
-    val sortDirection: Flow<String>         = context.dataStore.data.map { it[Keys.SORT_DIRECTION] ?: "ASC" }
-    val lastOpenBookId: Flow<Long>          = context.dataStore.data.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }
-    val lastPlayedBookId: Flow<Long>        = context.dataStore.data.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }
+    // Single shared reference to the underlying DataStore flow — every setting below derives from
+    // this one collection instead of each independently calling context.dataStore.data, and each
+    // adds its own distinctUntilChanged(). DataStore's data Flow re-emits the WHOLE Preferences
+    // snapshot on a write to ANY key; without distinctUntilChanged, changing one setting (e.g. skip
+    // duration) re-emitted every other setting's Flow too, recomposing every composable that reads
+    // ANY setting — not just the one that actually changed.
+    private val prefsData: Flow<androidx.datastore.preferences.core.Preferences> = context.dataStore.data
+
+    val libraryFolder: Flow<String>  = prefsData.map { it[Keys.LIBRARY_FOLDER]  ?: "" }.distinctUntilChanged()
+    val skipForwardMs: Flow<Long>    = prefsData.map { it[Keys.SKIP_FORWARD_MS] ?: DEFAULT_SKIP_FORWARD_MS }.distinctUntilChanged()
+    val skipBackMs: Flow<Long>       = prefsData.map { it[Keys.SKIP_BACK_MS]    ?: DEFAULT_SKIP_BACK_MS }.distinctUntilChanged()
+    val defaultSpeed: Flow<Float>    = prefsData.map { it[Keys.DEFAULT_SPEED]   ?: DEFAULT_SPEED }.distinctUntilChanged()
+    val geminiApiKey: Flow<String>          = prefsData.map { it[Keys.GEMINI_API_KEY]          ?: "" }.distinctUntilChanged()
+    val defaultAudioPresetId: Flow<Long>    = prefsData.map { it[Keys.DEFAULT_AUDIO_PRESET_ID] ?: -1L }.distinctUntilChanged()
+    val sortOption: Flow<String>            = prefsData.map { it[Keys.SORT_OPTION]    ?: "TITLE" }.distinctUntilChanged()
+    val sortDirection: Flow<String>         = prefsData.map { it[Keys.SORT_DIRECTION] ?: "ASC" }.distinctUntilChanged()
+    val lastOpenBookId: Flow<Long>          = prefsData.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }.distinctUntilChanged()
+    val lastPlayedBookId: Flow<Long>        = prefsData.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }.distinctUntilChanged()
     /** The book whose cover the app-wide Material You theme should track — set alongside
      *  [setLastPlayedBookId] whenever a book actually opens/plays, but (unlike that id) never reset
      *  to -1 on close, so closing a book keeps its theme instead of reverting to the last one
      *  before it. Only a genuinely different book opening changes it. */
-    val themeBookId: Flow<Long>              = context.dataStore.data.map { it[Keys.THEME_BOOK_ID] ?: -1L }
+    val themeBookId: Flow<Long>              = prefsData.map { it[Keys.THEME_BOOK_ID] ?: -1L }.distinctUntilChanged()
     /** Custom colors the user has picked in the widget editor, newest first — so a color set once
      *  (on any element) is immediately offered as a swatch everywhere else via [ColorPickerRow]. */
-    val widgetCustomColors: Flow<List<Long>> = context.dataStore.data.map { prefs ->
+    val widgetCustomColors: Flow<List<Long>> = prefsData.map { prefs ->
         prefs[Keys.WIDGET_CUSTOM_COLORS]?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()
-    }
-    val autoRewindSeconds: Flow<Int>          = context.dataStore.data.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }
-    val autoRewindThresholdMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }
-    val appStoppedAt: Flow<Long>              = context.dataStore.data.map { it[Keys.APP_STOPPED_AT] ?: 0L }
-    val skipSilenceMinMs: Flow<Long>          = context.dataStore.data.map { it[Keys.SKIP_SILENCE_MIN_MS] ?: DEFAULT_SKIP_SILENCE_MIN_MS }
-    val skipSilenceThreshold: Flow<Int>       = context.dataStore.data.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }
-    val skipSilencePaddingMs: Flow<Long>      = context.dataStore.data.map { it[Keys.SKIP_SILENCE_PADDING_MS] ?: DEFAULT_SKIP_SILENCE_PADDING_MS }
-    val importStructure: Flow<String>         = context.dataStore.data.map { it[Keys.IMPORT_STRUCTURE] ?: "" }
-    val skippedUpdateVersion: Flow<String>    = context.dataStore.data.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }
-    val playerShowSeriesCover: Flow<Boolean>  = context.dataStore.data.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }
-    val homeViewMode: Flow<String>            = context.dataStore.data.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }
-    val appTheme: Flow<String>                = context.dataStore.data.map { it[Keys.APP_THEME] ?: "" }
-    val themeColorSource: Flow<String>        = context.dataStore.data.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }
-    val widgetDefaultCoverPath: Flow<String>  = context.dataStore.data.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }
-    val ebookFolder: Flow<String>              = context.dataStore.data.map { it[Keys.EBOOK_FOLDER] ?: "" }
-    val phantomSeriesCleanupDone: Flow<Boolean> = context.dataStore.data.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }
-    val readerFontSize: Flow<Int>              = context.dataStore.data.map { it[Keys.READER_FONT_SIZE] ?: 100 }
-    val homeSection: Flow<String>              = context.dataStore.data.map { it[Keys.HOME_SECTION] ?: "AUDIO" }
-    val customThemeColor: Flow<String>         = context.dataStore.data.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }
-    val darkMode: Flow<String>                 = context.dataStore.data.map { it[Keys.DARK_MODE] ?: "AUTO" }
-    val pureBlack: Flow<Boolean>               = context.dataStore.data.map { it[Keys.PURE_BLACK] ?: false }
-    val dynamicPills: Flow<Boolean>            = context.dataStore.data.map { it[Keys.DYNAMIC_PILLS] ?: false }
-    val widgetAppColor: Flow<Int>              = context.dataStore.data.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }
-    val widgetHideWhenIdle: Flow<Boolean>      = context.dataStore.data.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }
-    val autoBackupEnabled: Flow<Boolean>       = context.dataStore.data.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }
-    val autoBackupFolderUri: Flow<String>      = context.dataStore.data.map { it[Keys.AUTO_BACKUP_FOLDER_URI] ?: "" }
-    val autoBackupLastRunMs: Flow<Long>        = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_RUN_MS] ?: 0L }
-    val autoBackupLastStatus: Flow<String>     = context.dataStore.data.map { it[Keys.AUTO_BACKUP_LAST_STATUS] ?: "" }
-    val backupIncludeApiKey: Flow<Boolean>     = context.dataStore.data.map { it[Keys.BACKUP_INCLUDE_API_KEY] ?: false }
-    val sleepFadeSeconds: Flow<Int>            = context.dataStore.data.map { it[Keys.SLEEP_FADE_SECONDS] ?: DEFAULT_SLEEP_FADE_SECONDS }
-    val sleepShakeEnabled: Flow<Boolean>       = context.dataStore.data.map { it[Keys.SLEEP_SHAKE_ENABLED] ?: DEFAULT_SLEEP_SHAKE_ENABLED }
-    val sleepShakeResetMinutes: Flow<Int>      = context.dataStore.data.map { it[Keys.SLEEP_SHAKE_RESET_MINUTES] ?: DEFAULT_SLEEP_SHAKE_RESET_MINUTES }
-    val sleepScheduleEnabled: Flow<Boolean>    = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_ENABLED] ?: false }
-    val sleepScheduleStartMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_START_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_START_MINUTES }
-    val sleepScheduleEndMinutes: Flow<Int>     = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_END_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_END_MINUTES }
-    val sleepScheduleDefaultMinutes: Flow<Int> = context.dataStore.data.map { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES }
-    val sleepTimerMinutes: Flow<Int>           = context.dataStore.data.map { it[Keys.SLEEP_TIMER_MINUTES] ?: DEFAULT_SLEEP_TIMER_MINUTES }
-    val audioBalance: Flow<Float>              = context.dataStore.data.map { it[Keys.AUDIO_BALANCE] ?: 0f }
-    val monoAudio: Flow<Boolean>               = context.dataStore.data.map { it[Keys.MONO_AUDIO] ?: false }
-    val headsetMultiPressEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.HEADSET_MULTI_PRESS_ENABLED] ?: false }
-    val headsetDoublePressAction: Flow<String> = context.dataStore.data.map { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] ?: DEFAULT_HEADSET_DOUBLE_PRESS_ACTION }
-    val headsetTriplePressAction: Flow<String> = context.dataStore.data.map { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] ?: DEFAULT_HEADSET_TRIPLE_PRESS_ACTION }
-    val btAutoResumeEnabled: Flow<Boolean>     = context.dataStore.data.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }
-    val btAutoResumeWindowMinutes: Flow<Int>   = context.dataStore.data.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }
+    }.distinctUntilChanged()
+    val autoRewindSeconds: Flow<Int>          = prefsData.map { it[Keys.AUTO_REWIND_SECONDS] ?: DEFAULT_AUTO_REWIND_SECONDS }.distinctUntilChanged()
+    val autoRewindThresholdMinutes: Flow<Int> = prefsData.map { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] ?: DEFAULT_AUTO_REWIND_THRESHOLD_MINUTES }.distinctUntilChanged()
+    val appStoppedAt: Flow<Long>              = prefsData.map { it[Keys.APP_STOPPED_AT] ?: 0L }.distinctUntilChanged()
+    val skipSilenceMinMs: Flow<Long>          = prefsData.map { it[Keys.SKIP_SILENCE_MIN_MS] ?: DEFAULT_SKIP_SILENCE_MIN_MS }.distinctUntilChanged()
+    val skipSilenceThreshold: Flow<Int>       = prefsData.map { it[Keys.SKIP_SILENCE_THRESHOLD] ?: DEFAULT_SKIP_SILENCE_THRESHOLD }.distinctUntilChanged()
+    val skipSilencePaddingMs: Flow<Long>      = prefsData.map { it[Keys.SKIP_SILENCE_PADDING_MS] ?: DEFAULT_SKIP_SILENCE_PADDING_MS }.distinctUntilChanged()
+    val importStructure: Flow<String>         = prefsData.map { it[Keys.IMPORT_STRUCTURE] ?: "" }.distinctUntilChanged()
+    val skippedUpdateVersion: Flow<String>    = prefsData.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }.distinctUntilChanged()
+    val playerShowSeriesCover: Flow<Boolean>  = prefsData.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }.distinctUntilChanged()
+    val homeViewMode: Flow<String>            = prefsData.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }.distinctUntilChanged()
+    val appTheme: Flow<String>                = prefsData.map { it[Keys.APP_THEME] ?: "" }.distinctUntilChanged()
+    val themeColorSource: Flow<String>        = prefsData.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }.distinctUntilChanged()
+    val widgetDefaultCoverPath: Flow<String>  = prefsData.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }.distinctUntilChanged()
+    val ebookFolder: Flow<String>              = prefsData.map { it[Keys.EBOOK_FOLDER] ?: "" }.distinctUntilChanged()
+    val phantomSeriesCleanupDone: Flow<Boolean> = prefsData.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }.distinctUntilChanged()
+    val readerFontSize: Flow<Int>              = prefsData.map { it[Keys.READER_FONT_SIZE] ?: 100 }.distinctUntilChanged()
+    val homeSection: Flow<String>              = prefsData.map { it[Keys.HOME_SECTION] ?: "AUDIO" }.distinctUntilChanged()
+    val customThemeColor: Flow<String>         = prefsData.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }.distinctUntilChanged()
+    val darkMode: Flow<String>                 = prefsData.map { it[Keys.DARK_MODE] ?: "AUTO" }.distinctUntilChanged()
+    val pureBlack: Flow<Boolean>               = prefsData.map { it[Keys.PURE_BLACK] ?: false }.distinctUntilChanged()
+    val dynamicPills: Flow<Boolean>            = prefsData.map { it[Keys.DYNAMIC_PILLS] ?: false }.distinctUntilChanged()
+    val widgetAppColor: Flow<Int>              = prefsData.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }.distinctUntilChanged()
+    val widgetHideWhenIdle: Flow<Boolean>      = prefsData.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }.distinctUntilChanged()
+    val autoBackupEnabled: Flow<Boolean>       = prefsData.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }.distinctUntilChanged()
+    val autoBackupFolderUri: Flow<String>      = prefsData.map { it[Keys.AUTO_BACKUP_FOLDER_URI] ?: "" }.distinctUntilChanged()
+    val autoBackupLastRunMs: Flow<Long>        = prefsData.map { it[Keys.AUTO_BACKUP_LAST_RUN_MS] ?: 0L }.distinctUntilChanged()
+    val autoBackupLastStatus: Flow<String>     = prefsData.map { it[Keys.AUTO_BACKUP_LAST_STATUS] ?: "" }.distinctUntilChanged()
+    val backupIncludeApiKey: Flow<Boolean>     = prefsData.map { it[Keys.BACKUP_INCLUDE_API_KEY] ?: false }.distinctUntilChanged()
+    val sleepFadeSeconds: Flow<Int>            = prefsData.map { it[Keys.SLEEP_FADE_SECONDS] ?: DEFAULT_SLEEP_FADE_SECONDS }.distinctUntilChanged()
+    val sleepShakeEnabled: Flow<Boolean>       = prefsData.map { it[Keys.SLEEP_SHAKE_ENABLED] ?: DEFAULT_SLEEP_SHAKE_ENABLED }.distinctUntilChanged()
+    val sleepShakeResetMinutes: Flow<Int>      = prefsData.map { it[Keys.SLEEP_SHAKE_RESET_MINUTES] ?: DEFAULT_SLEEP_SHAKE_RESET_MINUTES }.distinctUntilChanged()
+    val sleepScheduleEnabled: Flow<Boolean>    = prefsData.map { it[Keys.SLEEP_SCHEDULE_ENABLED] ?: false }.distinctUntilChanged()
+    val sleepScheduleStartMinutes: Flow<Int>   = prefsData.map { it[Keys.SLEEP_SCHEDULE_START_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_START_MINUTES }.distinctUntilChanged()
+    val sleepScheduleEndMinutes: Flow<Int>     = prefsData.map { it[Keys.SLEEP_SCHEDULE_END_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_END_MINUTES }.distinctUntilChanged()
+    val sleepScheduleDefaultMinutes: Flow<Int> = prefsData.map { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] ?: DEFAULT_SLEEP_SCHEDULE_DEFAULT_MINUTES }.distinctUntilChanged()
+    val sleepTimerMinutes: Flow<Int>           = prefsData.map { it[Keys.SLEEP_TIMER_MINUTES] ?: DEFAULT_SLEEP_TIMER_MINUTES }.distinctUntilChanged()
+    val audioBalance: Flow<Float>              = prefsData.map { it[Keys.AUDIO_BALANCE] ?: 0f }.distinctUntilChanged()
+    val monoAudio: Flow<Boolean>               = prefsData.map { it[Keys.MONO_AUDIO] ?: false }.distinctUntilChanged()
+    val headsetMultiPressEnabled: Flow<Boolean> = prefsData.map { it[Keys.HEADSET_MULTI_PRESS_ENABLED] ?: false }.distinctUntilChanged()
+    val headsetDoublePressAction: Flow<String> = prefsData.map { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] ?: DEFAULT_HEADSET_DOUBLE_PRESS_ACTION }.distinctUntilChanged()
+    val headsetTriplePressAction: Flow<String> = prefsData.map { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] ?: DEFAULT_HEADSET_TRIPLE_PRESS_ACTION }.distinctUntilChanged()
+    val btAutoResumeEnabled: Flow<Boolean>     = prefsData.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }.distinctUntilChanged()
+    val btAutoResumeWindowMinutes: Flow<Int>   = prefsData.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }.distinctUntilChanged()
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
