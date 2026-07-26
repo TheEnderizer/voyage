@@ -65,7 +65,16 @@ class AudiobookRepository @Inject constructor(
     }
 
     // ── Listening history ────────────────────────────────────────────────────
+    // Raw insert — used by BackupManager's restore, which must not prune away sessions it's in
+    // the middle of restoring one at a time.
     suspend fun insertListeningSession(session: ListeningSession): Long = listeningHistoryDao.insertSession(session)
+    /** Insert then prune older sessions for that book beyond [keep]. Used by the live recorder
+     *  (PlayerController.closeHistorySession) — the only place a session is appended one at a time
+     *  outside of a bulk restore. */
+    suspend fun insertListeningSessionPruned(session: ListeningSession, keep: Int) {
+        listeningHistoryDao.insertSession(session)
+        listeningHistoryDao.pruneSessionsForBook(session.bookId, keep)
+    }
     fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>> = listeningHistoryDao.getSessionsForBook(bookId)
     suspend fun insertSkipEvent(skip: SkipEvent): Long = listeningHistoryDao.insertSkip(skip)
     /** Insert then prune older rows of the same [SkipEvent.source] for that book beyond [keep]. */
@@ -238,22 +247,41 @@ class AudiobookRepository @Inject constructor(
     fun getAllIgnoredBooks(): Flow<List<Book>> = bookDao.getAllIgnoredBooks()
 
     suspend fun deleteBook(bookId: Long, deleteFiles: Boolean) {
-        if (deleteFiles) {
-            val book = bookDao.getBookOnce(bookId)
-            if (book != null) {
-                val folder = java.io.File(book.folderPath)
-                if (folder.exists() && folder.isDirectory) folder.deleteRecursively()
-            }
+        val book = bookDao.getBookOnce(bookId)
+        if (deleteFiles && book != null) {
+            val folder = java.io.File(book.folderPath)
+            if (folder.exists() && folder.isDirectory) folder.deleteRecursively()
         }
         bookDao.deleteById(bookId)
+        // The baked blur/reflection composite lives in filesDir/cover_fx regardless of
+        // deleteFiles (it's a derived file, not part of the user's own audio folder), so nothing
+        // else deletes it — a book removed from the app otherwise leaves it behind permanently.
+        book?.coverFxPath?.let { deleteQuietly(it, "book $bookId coverFx") }
     }
 
     /** All books by an effective author name (for deleting a whole author from the grid). */
     suspend fun getBooksByEffectiveAuthorOnce(name: String): List<com.betteraudio.data.db.entities.Book> =
         bookDao.getBooksByEffectiveAuthorOnce(name)
 
-    /** Remove an author's cover-meta row (after its books are deleted). */
-    suspend fun deleteAuthorMeta(name: String) = authorMetaDao.deleteByName(name)
+    /** Remove an author's cover-meta row (after its books are deleted), and the cover files it
+     *  owned — both live only in filesDir (authors have no folder of their own to keep them in). */
+    suspend fun deleteAuthorMeta(name: String) {
+        val meta = authorMetaDao.getByName(name)
+        authorMetaDao.deleteByName(name)
+        meta?.coverArtPath?.let { deleteQuietly(it, "author '$name' cover") }
+        meta?.coverFxPath?.let { deleteQuietly(it, "author '$name' coverFx") }
+    }
+
+    companion object {
+        internal fun deleteQuietly(path: String, what: String) {
+            try {
+                val f = java.io.File(path)
+                if (f.exists() && f.delete()) com.betteraudio.util.AppLog.i("DB", "deleted orphaned $what: $path")
+            } catch (e: Exception) {
+                com.betteraudio.util.AppLog.e("DB", "failed to delete orphaned $what: $path", e)
+            }
+        }
+    }
 
     // ── Ebook (EPUB) support ─────────────────────────────────────────────────
 
@@ -372,11 +400,7 @@ class AudiobookRepository @Inject constructor(
      * for affected books makes the next scan rebuild them via the (now synthetic-free)
      * chapter builder — embedded markers where present, else one chapter per file.
      */
-    suspend fun purgeSyntheticChapters() {
-        chapterDao.bookIdsWithSyntheticChapters().forEach { bookId ->
-            chapterDao.deleteForBook(bookId)
-        }
-    }
+    suspend fun purgeSyntheticChapters() = chapterDao.purgeSyntheticChapters()
 
     // ── Bookmarks ────────────────────────────────────────────────────────────
     fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>> = bookmarkDao.getForBook(bookId)

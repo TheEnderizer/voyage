@@ -75,10 +75,15 @@ class SeriesRepository @Inject constructor(
 
     /** Detach all members, then delete the series row. */
     suspend fun deleteSeries(seriesId: Long) {
+        val series = seriesDao.getByIdOnce(seriesId)
         bookDao.getBooksInSeriesByIdOnce(seriesId).forEach {
             bookDao.setSeriesMembership(it.id, null, null, null)
         }
         seriesDao.deleteById(seriesId)
+        // A series has no folder of its own — both its online cover and the baked composite live
+        // only in filesDir, so nothing else deletes them once the row is gone.
+        series?.coverArtPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId cover") }
+        series?.coverFxPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId coverFx") }
     }
 
     suspend fun setSeriesCover(seriesId: Long, path: String?) = seriesDao.updateCover(seriesId, path)

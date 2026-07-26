@@ -25,7 +25,10 @@ interface ChapterDao {
     @Query("DELETE FROM chapters WHERE bookId = :bookId")
     suspend fun deleteForBook(bookId: Long)
 
-    /** Distinct books that still carry legacy auto-sliced "synthetic" chapter rows. */
-    @Query("SELECT DISTINCT bookId FROM chapters WHERE source = 'synthetic'")
-    suspend fun bookIdsWithSyntheticChapters(): List<Long>
+    /** One-time cleanup of legacy auto-sliced "synthetic" chapters (see
+     *  AudiobookRepository.purgeSyntheticChapters) — clears every chapter row for any book that
+     *  carries at least one, in a single statement instead of one DELETE per affected book on
+     *  every launch. */
+    @Query("DELETE FROM chapters WHERE bookId IN (SELECT DISTINCT bookId FROM chapters WHERE source = 'synthetic')")
+    suspend fun purgeSyntheticChapters()
 }

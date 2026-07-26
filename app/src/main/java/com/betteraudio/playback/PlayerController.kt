@@ -81,6 +81,9 @@ class PlayerController @Inject constructor(
         // Position-history keep counts (see AudiobookRepository.insertSkipEventPruned) and timing.
         private const val SKIP_BUTTON_HISTORY_KEEP = 20
         private const val AUTO_CHECKPOINT_HISTORY_KEEP = 20
+        // Sessions are lower-frequency and higher-value than skip events (a real listening block,
+        // not a technical checkpoint) — kept far more generously.
+        private const val SESSION_HISTORY_KEEP = 200
         private const val SKIP_BUTTON_COALESCE_MS = 2_000L
         private const val AUTO_CHECKPOINT_INTERVAL_MS = 10 * 60_000L
     }
@@ -290,7 +293,7 @@ class PlayerController @Inject constructor(
             listenedMs = listened
         )
         AppLog.i("History", "session closed book=$bid listened=${listened}ms endPos=${pos}ms ch=$ci")
-        scope.launch { repository.insertListeningSession(session) }
+        scope.launch { repository.insertListeningSessionPruned(session, SESSION_HISTORY_KEEP) }
     }
 
     /** [boostDb] 0–24. Forwarded to the playback service, which owns the LoudnessEnhancer. */

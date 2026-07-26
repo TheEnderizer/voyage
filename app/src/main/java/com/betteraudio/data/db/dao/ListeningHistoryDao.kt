@@ -25,6 +25,17 @@ interface ListeningHistoryDao {
     @Query("UPDATE listening_sessions SET bookId = :toBookId WHERE bookId = :fromBookId")
     suspend fun reassignSessionsToBook(fromBookId: Long, toBookId: Long)
 
+    // Keeps only the most recent [keep] sessions per book — mirrors pruneSkipsBySource below.
+    // Was the only table in the schema with no growth control: a row is appended on every pause
+    // over twenty minutes or book change, forever, for as long as a book stays in the library.
+    @Query("""
+        DELETE FROM listening_sessions WHERE id IN (
+            SELECT id FROM listening_sessions WHERE bookId = :bookId
+            ORDER BY startMs DESC LIMIT -1 OFFSET :keep
+        )
+    """)
+    suspend fun pruneSessionsForBook(bookId: Long, keep: Int)
+
     // ── Confirmed skips ────────────────────────────────────────────────────
     @Insert
     suspend fun insertSkip(skip: SkipEvent): Long
