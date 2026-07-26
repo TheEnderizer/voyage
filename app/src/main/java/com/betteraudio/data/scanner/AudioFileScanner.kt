@@ -533,7 +533,8 @@ class AudioFileScanner @Inject constructor(
             val nomedia = File(folder, ".nomedia")
             if (!nomedia.exists()) nomedia.createNewFile()
             repository.updateCoverArt(bookId, coverFile.absolutePath)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            AppLog.e("Scan", "extractCoverArt failed for ${file.path}", e)
         } finally {
             retriever.release()
         }

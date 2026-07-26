@@ -825,7 +825,12 @@ class PlayerViewModel @Inject constructor(
                 // art is always written to a per-book fixed path), so a plain re-render is enough
                 // to force a redraw with the new bytes — no need to wait for the next play/pause event.
                 widgetUpdater.requestRender()
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                AppLog.e("Player", "updateCoverArt failed for book $bookId", e)
+                android.widget.Toast.makeText(
+                    context, "Couldn't set that cover image", android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

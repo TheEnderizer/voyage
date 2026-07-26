@@ -20,7 +20,7 @@ data class AudioPreset(
 
     /** Short one-line description of the bundle, e.g. "1.2× · +3 dB · EQ". */
     fun summary(): String = buildList {
-        add("${String.format("%.2f", speedMult)}×")
+        add("${String.format(java.util.Locale.US, "%.2f", speedMult)}×")
         if (boostDb != 0) add("+$boostDb dB")
         if (hasEq) add("EQ")
     }.joinToString(" · ")

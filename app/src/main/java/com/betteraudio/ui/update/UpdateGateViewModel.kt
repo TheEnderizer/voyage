@@ -48,7 +48,18 @@ class UpdateGateViewModel @Inject constructor(
         if (checked) return
         checked = true
         viewModelScope.launch {
-            val info = updateChecker.checkForUpdate() ?: return@launch
+            // A failed check has nothing to show the gate for either (there's no update-prompt
+            // screen appropriate for "the check itself failed" on a passive launch-time gate —
+            // the manual check button in Settings is where that's surfaced), but it's now at
+            // least distinguishable from UpToDate in the log instead of silently doing nothing.
+            val info = when (val result = updateChecker.checkForUpdate()) {
+                is com.betteraudio.data.update.UpdateCheckResult.Available -> result.info
+                is com.betteraudio.data.update.UpdateCheckResult.UpToDate -> return@launch
+                is com.betteraudio.data.update.UpdateCheckResult.Failed -> {
+                    com.betteraudio.util.AppLog.i("Update", "launch check skipped: ${result.reason}")
+                    return@launch
+                }
+            }
             val skipped = settings.skippedUpdateVersion.first()
             if (info.versionName != skipped) {
                 _state.update { it.copy(info = info) }

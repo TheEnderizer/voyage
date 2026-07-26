@@ -23,6 +23,12 @@ data class ReleaseInfo(
     val apkDownloadUrl: String
 )
 
+sealed class UpdateCheckResult {
+    data class Available(val info: ReleaseInfo) : UpdateCheckResult()
+    object UpToDate : UpdateCheckResult()
+    data class Failed(val reason: String) : UpdateCheckResult()
+}
+
 @Singleton
 class UpdateChecker @Inject constructor(
     @ApplicationContext private val context: Context
@@ -50,14 +56,21 @@ class UpdateChecker @Inject constructor(
     // Beta builds have a version name ending in "b" (e.g. "1.2.3b").
     private fun isBeta(): Boolean = installedVersionName().endsWith("b")
 
-    suspend fun checkForUpdate(): ReleaseInfo? = withContext(Dispatchers.IO) {
+    // Returns UpToDate/Available/Failed for all four outcomes — never a bare null, which
+    // previously made a genuine network failure indistinguishable from "no update needed" and
+    // silently told the user they were up to date when the check hadn't actually run.
+    suspend fun checkForUpdate(): UpdateCheckResult = withContext(Dispatchers.IO) {
         try {
-            val best = bestChannelRelease() ?: return@withContext null
+            val best = bestChannelRelease() ?: return@withContext UpdateCheckResult.UpToDate
             val remoteVersion = best.optString("tag_name", "").trimStart('v')
-            if (!isNewerVersion(remoteVersion, installedVersionName())) return@withContext null
-            val apkUrl = findApkAssetUrl(best) ?: return@withContext null
-            ReleaseInfo(remoteVersion, best.optString("body", ""), apkUrl)
-        } catch (_: Exception) { null }
+            if (!isNewerVersion(remoteVersion, installedVersionName())) return@withContext UpdateCheckResult.UpToDate
+            val apkUrl = findApkAssetUrl(best)
+                ?: return@withContext UpdateCheckResult.Failed("Release has no downloadable APK")
+            UpdateCheckResult.Available(ReleaseInfo(remoteVersion, best.optString("body", ""), apkUrl))
+        } catch (e: Exception) {
+            AppLog.e("Update", "checkForUpdate failed", e)
+            UpdateCheckResult.Failed(e.message ?: "Network error")
+        }
     }
 
     suspend fun fetchLatestReleaseNotes(): Pair<String, String>? = withContext(Dispatchers.IO) {
@@ -151,7 +164,7 @@ class UpdateChecker @Inject constructor(
      * version, NOT list order, so a newer release cut from an older tag is still found.
      */
     private fun bestChannelRelease(): JSONObject? {
-        val array = fetchReleasesArray() ?: return null
+        val array = fetchReleasesArray()
         val wantPrerelease = isBeta()
         var best: JSONObject? = null
         var bestKey: List<Int> = emptyList()
@@ -168,15 +181,19 @@ class UpdateChecker @Inject constructor(
         return best
     }
 
-    private fun fetchReleasesArray(): org.json.JSONArray? {
+    // Throws (rather than returning null) on any HTTP/network failure, so checkForUpdate's outer
+    // catch classifies it as Failed instead of the caller mistaking "couldn't fetch" for "no
+    // releases for this channel" (which legitimately means UpToDate).
+    private fun fetchReleasesArray(): org.json.JSONArray {
         val request = Request.Builder()
             .url(ALL_URL)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .build()
         val response = client.newCall(request).execute()
-        if (!response.isSuccessful) return null
-        return org.json.JSONArray(response.body?.string() ?: return null)
+        if (!response.isSuccessful) throw java.io.IOException("GitHub API returned ${response.code}")
+        val body = response.body?.string() ?: throw java.io.IOException("empty response body")
+        return org.json.JSONArray(body)
     }
 
     private fun findApkAssetUrl(json: JSONObject): String? {

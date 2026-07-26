@@ -117,7 +117,7 @@ fun AudioSettingsSheet(
                 // ── This book: per-book local value + reset/delete override ───────────────
                 val (thisBookValue, isOverridden, onResetBook) = when (selectedTab) {
                     0 -> Triple(
-                        "${String.format("%.2f", speedValue)}×",
+                        "${String.format(java.util.Locale.US, "%.2f", speedValue)}×",
                         speedValue != viewModel.defaultSpeed,
                         { viewModel.clearBookSpeed(); speedValue = viewModel.defaultSpeed }
                     )
@@ -254,7 +254,7 @@ private fun SpeedTab(
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Text(
-            text = "${String.format("%.2f", speedValue)}×",
+            text = "${String.format(java.util.Locale.US, "%.2f", speedValue)}×",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )

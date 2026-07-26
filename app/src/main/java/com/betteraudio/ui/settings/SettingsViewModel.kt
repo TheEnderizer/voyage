@@ -11,6 +11,7 @@ import com.betteraudio.data.scanner.AudioFileScanner
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.data.update.ReleaseInfo
 import com.betteraudio.data.update.UpdateChecker
+import com.betteraudio.util.AppLog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -172,12 +173,22 @@ class SettingsViewModel @Inject constructor(
     private val _resetRunning = MutableStateFlow(false)
     val resetRunning: StateFlow<Boolean> = _resetRunning.asStateFlow()
 
+    // User-visible error for the fire-and-forget operations below (reset/cover refresh/rescan) —
+    // otherwise a failure was previously invisible: no UI change, nothing in Logcat, nothing in
+    // the app's own log file.
+    private val _operationError = MutableStateFlow<String?>(null)
+    val operationError: StateFlow<String?> = _operationError.asStateFlow()
+    fun dismissOperationError() { _operationError.value = null }
+
     /** Clear the whole library from the DB (audio files on disk are kept). */
     fun resetLibrary() {
         if (_resetRunning.value) return
         viewModelScope.launch {
             _resetRunning.value = true
-            try { repository.resetLibrary() } catch (_: Exception) {}
+            try { repository.resetLibrary() } catch (e: Exception) {
+                AppLog.e("Settings", "resetLibrary failed", e)
+                _operationError.value = "Couldn't reset the library: ${e.message ?: "unknown error"}"
+            }
             _resetRunning.value = false
         }
     }
@@ -186,7 +197,10 @@ class SettingsViewModel @Inject constructor(
         if (_coverRefreshRunning.value) return
         viewModelScope.launch {
             _coverRefreshRunning.value = true
-            try { repository.regenerateAllCoverFx() } catch (_: Exception) {}
+            try { repository.regenerateAllCoverFx() } catch (e: Exception) {
+                AppLog.e("Settings", "regenerateAllCoverFx failed", e)
+                _operationError.value = "Couldn't refresh cover effects: ${e.message ?: "unknown error"}"
+            }
             _coverRefreshRunning.value = false
         }
     }
@@ -407,7 +421,10 @@ class SettingsViewModel @Inject constructor(
         if (path.isBlank() || _rescanRunning.value) return
         viewModelScope.launch {
             _rescanRunning.value = true
-            try { scanner.scanDirectory(path) } catch (_: Exception) {}
+            try { scanner.scanDirectory(path) } catch (e: Exception) {
+                AppLog.e("Settings", "rescan of $path failed", e)
+                _operationError.value = "Couldn't scan $path: ${e.message ?: "unknown error"}"
+            }
             _rescanRunning.value = false
         }
     }
@@ -416,10 +433,12 @@ class SettingsViewModel @Inject constructor(
         if (_updateState.value.checking) return
         viewModelScope.launch {
             _updateState.update { UpdateUiState(checking = true) }
-            val info = updateChecker.checkForUpdate()
             _updateState.update {
-                if (info != null) UpdateUiState(available = info)
-                else UpdateUiState(upToDate = true)
+                when (val result = updateChecker.checkForUpdate()) {
+                    is com.betteraudio.data.update.UpdateCheckResult.Available -> UpdateUiState(available = result.info)
+                    is com.betteraudio.data.update.UpdateCheckResult.UpToDate -> UpdateUiState(upToDate = true)
+                    is com.betteraudio.data.update.UpdateCheckResult.Failed -> UpdateUiState(error = result.reason)
+                }
             }
         }
     }

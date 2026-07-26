@@ -18,6 +18,7 @@ import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
+import com.betteraudio.util.AppLog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -628,9 +629,13 @@ class HomeViewModel @Inject constructor(
             // once permission is granted.
             // One-time cleanup of legacy auto-sliced chapters; the next scan rebuilds the
             // affected books' chapters from embedded markers (or one row per file).
-            try { repository.purgeSyntheticChapters() } catch (_: Exception) {}
+            try { repository.purgeSyntheticChapters() } catch (e: Exception) {
+                AppLog.e("Home", "startup purgeSyntheticChapters failed", e)
+            }
             if (folder.isNotBlank() && hasFileAccess()) {
-                try { scanner.scanDirectory(folder) } catch (_: Exception) {}
+                try { scanner.scanDirectory(folder) } catch (e: Exception) {
+                    AppLog.e("Home", "startup rescan of $folder failed", e)
+                }
             }
         }
     }

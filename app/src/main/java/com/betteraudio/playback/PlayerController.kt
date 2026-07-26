@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -232,9 +233,13 @@ class PlayerController @Inject constructor(
             val cum = HashMap<Long, Long>(files.size)
             var t = 0L
             files.forEach { f -> cum[f.id] = t; t += f.durationMs }
-            chapterBoundaries = chapters
+            val boundaries = chapters
                 .mapIndexed { i, c -> Triple((cum[c.fileId] ?: 0L) + c.startInFileMs, i, c.title) }
                 .sortedBy { it.first }
+            // Assign on Main so this field genuinely honours the class-level invariant (all
+            // session state touched only on the main thread) instead of being written from the
+            // IO dispatcher this whole coroutine otherwise runs on.
+            withContext(Dispatchers.Main) { chapterBoundaries = boundaries }
         }
     }
 
