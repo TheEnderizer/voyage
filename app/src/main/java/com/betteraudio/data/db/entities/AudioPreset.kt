@@ -26,9 +26,6 @@ data class AudioPreset(
     }.joinToString(" · ")
 
     companion object {
-        const val TYPE_SPEED = "SPEED"
-        const val TYPE_BOOST = "BOOST"
-        const val TYPE_EQ = "EQ"
         const val TYPE_BUNDLE = "BUNDLE"
     }
 }

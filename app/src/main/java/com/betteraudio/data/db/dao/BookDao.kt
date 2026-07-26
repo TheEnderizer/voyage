@@ -140,13 +140,13 @@ interface BookDao {
     suspend fun updateNarrator(id: Long, narrator: String?)
 
     @Query("SELECT * FROM books WHERE coverArtPath IS NOT NULL ORDER BY title ASC")
-    suspend fun getAllBooksSortedOnce(): List<Book>
+    suspend fun getBooksWithCoversOnce(): List<Book>
 
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: Long)
 
     // Full library wipe. Cascades to audio_files, chapters, playback_progress, bookmarks,
-    // listening_sessions, skip_events and book_group_members via their FKs.
+    // listening_sessions and skip_events via their FKs.
     @Query("DELETE FROM books")
     suspend fun deleteAll()
 

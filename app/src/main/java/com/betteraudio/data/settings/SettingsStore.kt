@@ -313,126 +313,180 @@ class SettingsStore @Inject constructor(
         scope.launch { lastPlayedBookId.collect                 { currentLastPlayedBookId               = it } }
     }
 
-    suspend fun setLibraryFolder(path: String) =
-        context.dataStore.edit { it[Keys.LIBRARY_FOLDER]  = path }.let { }
-    suspend fun setSkipForwardMs(ms: Long) =
-        context.dataStore.edit { it[Keys.SKIP_FORWARD_MS] = ms }.let { }
-    suspend fun setSkipBackMs(ms: Long) =
-        context.dataStore.edit { it[Keys.SKIP_BACK_MS]    = ms }.let { }
-    suspend fun setDefaultSpeed(speed: Float) =
-        context.dataStore.edit { it[Keys.DEFAULT_SPEED]   = speed }.let { }
-    suspend fun setGeminiApiKey(key: String) =
-        context.dataStore.edit { it[Keys.GEMINI_API_KEY]          = key }.let { }
-    suspend fun setDefaultAudioPresetId(id: Long) =
-        context.dataStore.edit { it[Keys.DEFAULT_AUDIO_PRESET_ID] = id }.let { }
-    suspend fun setWidgetDefaultCoverPath(path: String) =
-        context.dataStore.edit { it[Keys.WIDGET_DEFAULT_COVER_PATH] = path }.let { }
-    suspend fun setEbookFolder(path: String) =
-        context.dataStore.edit { it[Keys.EBOOK_FOLDER] = path }.let { }
-    suspend fun setPhantomSeriesCleanupDone(done: Boolean) =
-        context.dataStore.edit { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] = done }.let { }
-    suspend fun setReaderFontSize(pct: Int) =
-        context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }.let { }
-    suspend fun setHomeSection(name: String) =
-        context.dataStore.edit { it[Keys.HOME_SECTION] = name }.let { }
-    suspend fun setSort(option: String, direction: String) =
+    suspend fun setLibraryFolder(path: String) {
+        context.dataStore.edit { it[Keys.LIBRARY_FOLDER]  = path }
+    }
+    suspend fun setSkipForwardMs(ms: Long) {
+        context.dataStore.edit { it[Keys.SKIP_FORWARD_MS] = ms }
+    }
+    suspend fun setSkipBackMs(ms: Long) {
+        context.dataStore.edit { it[Keys.SKIP_BACK_MS]    = ms }
+    }
+    suspend fun setDefaultSpeed(speed: Float) {
+        context.dataStore.edit { it[Keys.DEFAULT_SPEED]   = speed }
+    }
+    suspend fun setGeminiApiKey(key: String) {
+        context.dataStore.edit { it[Keys.GEMINI_API_KEY]          = key }
+    }
+    suspend fun setDefaultAudioPresetId(id: Long) {
+        context.dataStore.edit { it[Keys.DEFAULT_AUDIO_PRESET_ID] = id }
+    }
+    suspend fun setWidgetDefaultCoverPath(path: String) {
+        context.dataStore.edit { it[Keys.WIDGET_DEFAULT_COVER_PATH] = path }
+    }
+    suspend fun setEbookFolder(path: String) {
+        context.dataStore.edit { it[Keys.EBOOK_FOLDER] = path }
+    }
+    suspend fun setPhantomSeriesCleanupDone(done: Boolean) {
+        context.dataStore.edit { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] = done }
+    }
+    suspend fun setReaderFontSize(pct: Int) {
+        context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }
+    }
+    suspend fun setHomeSection(name: String) {
+        context.dataStore.edit { it[Keys.HOME_SECTION] = name }
+    }
+    suspend fun setSort(option: String, direction: String) {
         context.dataStore.edit {
             it[Keys.SORT_OPTION]    = option
             it[Keys.SORT_DIRECTION] = direction
-        }.let { }
-    suspend fun setLastOpenBookId(id: Long) =
-        context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }.let { }
-    suspend fun setLastPlayedBookId(id: Long) =
-        context.dataStore.edit { it[Keys.LAST_PLAYED_BOOK_ID] = id }.let { }
-    suspend fun setThemeBookId(id: Long) =
-        context.dataStore.edit { it[Keys.THEME_BOOK_ID] = id }.let { }
-    suspend fun addWidgetCustomColor(color: Long) = context.dataStore.edit { prefs ->
-        val current = prefs[Keys.WIDGET_CUSTOM_COLORS]?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()
-        val updated = (listOf(color) + current.filterNot { it == color }).take(12)
-        prefs[Keys.WIDGET_CUSTOM_COLORS] = updated.joinToString(",")
-    }.let { }
-    suspend fun setAutoRewindSeconds(s: Int) =
-        context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }.let { }
-    suspend fun setAutoRewindThresholdMinutes(m: Int) =
-        context.dataStore.edit { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] = m }.let { }
-    suspend fun setAppStoppedAt(ts: Long) =
-        context.dataStore.edit { it[Keys.APP_STOPPED_AT] = ts }.let { }
-    suspend fun setSkipSilenceMinMs(ms: Long) =
-        context.dataStore.edit { it[Keys.SKIP_SILENCE_MIN_MS] = ms }.let { }
-    suspend fun setSkipSilenceThreshold(level: Int) =
-        context.dataStore.edit { it[Keys.SKIP_SILENCE_THRESHOLD] = level }.let { }
-    suspend fun setSkipSilencePaddingMs(ms: Long) =
-        context.dataStore.edit { it[Keys.SKIP_SILENCE_PADDING_MS] = ms.coerceIn(0L, 2_000L) }.let { }
-    suspend fun setImportStructure(name: String) =
-        context.dataStore.edit { it[Keys.IMPORT_STRUCTURE] = name }.let { }
-    suspend fun setSkippedUpdateVersion(version: String) =
-        context.dataStore.edit { it[Keys.SKIPPED_UPDATE_VERSION] = version }.let { }
-    suspend fun setHomeViewMode(mode: String) =
-        context.dataStore.edit { it[Keys.HOME_VIEW_MODE] = mode }.let { }
-    suspend fun setPlayerShowSeriesCover(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.PLAYER_SHOW_SERIES_COVER] = enabled }.let { }
-    suspend fun setAppTheme(name: String) =
-        context.dataStore.edit { it[Keys.APP_THEME] = name }.let { }
-    suspend fun setThemeColorSource(name: String) =
-        context.dataStore.edit { it[Keys.THEME_COLOR_SOURCE] = name }.let { }
-    suspend fun setCustomThemeColor(value: String) =
-        context.dataStore.edit { it[Keys.CUSTOM_THEME_COLOR] = value }.let { }
-    suspend fun setDarkMode(mode: String) =
-        context.dataStore.edit { it[Keys.DARK_MODE] = mode }.let { }
-    suspend fun setPureBlack(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.PURE_BLACK] = enabled }.let { }
-    suspend fun setDynamicPills(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.DYNAMIC_PILLS] = enabled }.let { }
-    suspend fun setWidgetAppColor(argb: Int) =
-        context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }.let { }
+        }
+    }
+    suspend fun setLastOpenBookId(id: Long) {
+        context.dataStore.edit { it[Keys.LAST_OPEN_BOOK_ID] = id }
+    }
+    suspend fun setLastPlayedBookId(id: Long) {
+        context.dataStore.edit { it[Keys.LAST_PLAYED_BOOK_ID] = id }
+    }
+    suspend fun setThemeBookId(id: Long) {
+        context.dataStore.edit { it[Keys.THEME_BOOK_ID] = id }
+    }
+    suspend fun addWidgetCustomColor(color: Long) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[Keys.WIDGET_CUSTOM_COLORS]?.split(",")?.mapNotNull { it.toLongOrNull() } ?: emptyList()
+            val updated = (listOf(color) + current.filterNot { it == color }).take(12)
+            prefs[Keys.WIDGET_CUSTOM_COLORS] = updated.joinToString(",")
+        }
+    }
+    suspend fun setAutoRewindSeconds(s: Int) {
+        context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }
+    }
+    suspend fun setAutoRewindThresholdMinutes(m: Int) {
+        context.dataStore.edit { it[Keys.AUTO_REWIND_THRESHOLD_MINUTES] = m }
+    }
+    suspend fun setAppStoppedAt(ts: Long) {
+        context.dataStore.edit { it[Keys.APP_STOPPED_AT] = ts }
+    }
+    suspend fun setSkipSilenceMinMs(ms: Long) {
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_MIN_MS] = ms }
+    }
+    suspend fun setSkipSilenceThreshold(level: Int) {
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_THRESHOLD] = level }
+    }
+    suspend fun setSkipSilencePaddingMs(ms: Long) {
+        context.dataStore.edit { it[Keys.SKIP_SILENCE_PADDING_MS] = ms.coerceIn(0L, 2_000L) }
+    }
+    suspend fun setImportStructure(name: String) {
+        context.dataStore.edit { it[Keys.IMPORT_STRUCTURE] = name }
+    }
+    suspend fun setSkippedUpdateVersion(version: String) {
+        context.dataStore.edit { it[Keys.SKIPPED_UPDATE_VERSION] = version }
+    }
+    suspend fun setHomeViewMode(mode: String) {
+        context.dataStore.edit { it[Keys.HOME_VIEW_MODE] = mode }
+    }
+    suspend fun setPlayerShowSeriesCover(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.PLAYER_SHOW_SERIES_COVER] = enabled }
+    }
+    suspend fun setAppTheme(name: String) {
+        context.dataStore.edit { it[Keys.APP_THEME] = name }
+    }
+    suspend fun setThemeColorSource(name: String) {
+        context.dataStore.edit { it[Keys.THEME_COLOR_SOURCE] = name }
+    }
+    suspend fun setCustomThemeColor(value: String) {
+        context.dataStore.edit { it[Keys.CUSTOM_THEME_COLOR] = value }
+    }
+    suspend fun setDarkMode(mode: String) {
+        context.dataStore.edit { it[Keys.DARK_MODE] = mode }
+    }
+    suspend fun setPureBlack(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.PURE_BLACK] = enabled }
+    }
+    suspend fun setDynamicPills(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.DYNAMIC_PILLS] = enabled }
+    }
+    suspend fun setWidgetAppColor(argb: Int) {
+        context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }
+    }
     suspend fun setWidgetHideWhenIdle(enabled: Boolean) {
         // Set the volatile snapshot eagerly (not just via the async collector above) so a widget
         // re-render fired immediately after this call — see WidgetUpdater.requestRender() callers
         // in SettingsViewModel — reads the new value instead of racing the DataStore write's own collect().
         currentWidgetHideWhenIdle = enabled
-        context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }.let { }
+        context.dataStore.edit { it[Keys.WIDGET_HIDE_WHEN_IDLE] = enabled }
     }
-    suspend fun setAutoBackupEnabled(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.AUTO_BACKUP_ENABLED] = enabled }.let { }
-    suspend fun setAutoBackupFolderUri(uri: String) =
-        context.dataStore.edit { it[Keys.AUTO_BACKUP_FOLDER_URI] = uri }.let { }
-    suspend fun setAutoBackupLastRun(ts: Long, status: String) =
+    suspend fun setAutoBackupEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.AUTO_BACKUP_ENABLED] = enabled }
+    }
+    suspend fun setAutoBackupFolderUri(uri: String) {
+        context.dataStore.edit { it[Keys.AUTO_BACKUP_FOLDER_URI] = uri }
+    }
+    suspend fun setAutoBackupLastRun(ts: Long, status: String) {
         context.dataStore.edit {
             it[Keys.AUTO_BACKUP_LAST_RUN_MS] = ts
             it[Keys.AUTO_BACKUP_LAST_STATUS] = status
-        }.let { }
-    suspend fun setBackupIncludeApiKey(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.BACKUP_INCLUDE_API_KEY] = enabled }.let { }
-    suspend fun setSleepFadeSeconds(seconds: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_FADE_SECONDS] = seconds.coerceIn(0, 60) }.let { }
-    suspend fun setSleepShakeEnabled(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.SLEEP_SHAKE_ENABLED] = enabled }.let { }
-    suspend fun setSleepShakeResetMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_SHAKE_RESET_MINUTES] = minutes.coerceIn(1, 120) }.let { }
-    suspend fun setSleepScheduleEnabled(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_ENABLED] = enabled }.let { }
-    suspend fun setSleepScheduleStartMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_START_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
-    suspend fun setSleepScheduleEndMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_END_MINUTES] = minutes.coerceIn(0, 1439) }.let { }
-    suspend fun setSleepScheduleDefaultMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] = minutes.coerceIn(1, 180) }.let { }
-    suspend fun setSleepTimerMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.SLEEP_TIMER_MINUTES] = minutes.coerceIn(1, 180) }.let { }
-    suspend fun setAudioBalance(value: Float) =
-        context.dataStore.edit { it[Keys.AUDIO_BALANCE] = value.coerceIn(-1f, 1f) }.let { }
-    suspend fun setMonoAudio(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.MONO_AUDIO] = enabled }.let { }
-    suspend fun setHeadsetMultiPressEnabled(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.HEADSET_MULTI_PRESS_ENABLED] = enabled }.let { }
-    suspend fun setHeadsetDoublePressAction(action: String) =
-        context.dataStore.edit { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] = action }.let { }
-    suspend fun setHeadsetTriplePressAction(action: String) =
-        context.dataStore.edit { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] = action }.let { }
-    suspend fun setBtAutoResumeEnabled(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_ENABLED] = enabled }.let { }
-    suspend fun setBtAutoResumeWindowMinutes(minutes: Int) =
-        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] = minutes.coerceIn(1, 120) }.let { }
-    suspend fun setEnableFileLogging(enabled: Boolean) =
-        context.dataStore.edit { it[Keys.ENABLE_FILE_LOGGING] = enabled }.let { }
+        }
+    }
+    suspend fun setBackupIncludeApiKey(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BACKUP_INCLUDE_API_KEY] = enabled }
+    }
+    suspend fun setSleepFadeSeconds(seconds: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_FADE_SECONDS] = seconds.coerceIn(0, 60) }
+    }
+    suspend fun setSleepShakeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SLEEP_SHAKE_ENABLED] = enabled }
+    }
+    suspend fun setSleepShakeResetMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_SHAKE_RESET_MINUTES] = minutes.coerceIn(1, 120) }
+    }
+    suspend fun setSleepScheduleEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_ENABLED] = enabled }
+    }
+    suspend fun setSleepScheduleStartMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_START_MINUTES] = minutes.coerceIn(0, 1439) }
+    }
+    suspend fun setSleepScheduleEndMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_END_MINUTES] = minutes.coerceIn(0, 1439) }
+    }
+    suspend fun setSleepScheduleDefaultMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_SCHEDULE_DEFAULT_MINUTES] = minutes.coerceIn(1, 180) }
+    }
+    suspend fun setSleepTimerMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.SLEEP_TIMER_MINUTES] = minutes.coerceIn(1, 180) }
+    }
+    suspend fun setAudioBalance(value: Float) {
+        context.dataStore.edit { it[Keys.AUDIO_BALANCE] = value.coerceIn(-1f, 1f) }
+    }
+    suspend fun setMonoAudio(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.MONO_AUDIO] = enabled }
+    }
+    suspend fun setHeadsetMultiPressEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.HEADSET_MULTI_PRESS_ENABLED] = enabled }
+    }
+    suspend fun setHeadsetDoublePressAction(action: String) {
+        context.dataStore.edit { it[Keys.HEADSET_DOUBLE_PRESS_ACTION] = action }
+    }
+    suspend fun setHeadsetTriplePressAction(action: String) {
+        context.dataStore.edit { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] = action }
+    }
+    suspend fun setBtAutoResumeEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_ENABLED] = enabled }
+    }
+    suspend fun setBtAutoResumeWindowMinutes(minutes: Int) {
+        context.dataStore.edit { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] = minutes.coerceIn(1, 120) }
+    }
+    suspend fun setEnableFileLogging(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.ENABLE_FILE_LOGGING] = enabled }
+    }
 }

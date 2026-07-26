@@ -12,6 +12,7 @@ import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.covers.CoverEffectBaker
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
+import com.betteraudio.data.db.entities.AuthorMeta
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
@@ -19,7 +20,9 @@ import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.SkipEvent
+import com.betteraudio.data.db.entities.SyncAnchor
 import com.betteraudio.data.model.BookWithProgress
+import com.betteraudio.util.AppLog
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -43,18 +46,18 @@ class AudiobookRepository @Inject constructor(
 ) {
 
     // ── Author view (lightweight per-author cover) ───────────────────────────
-    fun getAllAuthorMeta(): kotlinx.coroutines.flow.Flow<List<com.betteraudio.data.db.entities.AuthorMeta>> =
+    fun getAllAuthorMeta(): Flow<List<AuthorMeta>> =
         authorMetaDao.getAll()
-    fun getBooksByAuthor(author: String): kotlinx.coroutines.flow.Flow<List<Book>> =
+    fun getBooksByAuthor(author: String): Flow<List<Book>> =
         bookDao.getBooksByAuthor(author)
     suspend fun setAuthorCover(name: String, path: String?) {
         val existing = authorMetaDao.getByName(name)
         authorMetaDao.upsert(
-            (existing ?: com.betteraudio.data.db.entities.AuthorMeta(name = name)).copy(coverArtPath = path)
+            (existing ?: AuthorMeta(name = name)).copy(coverArtPath = path)
         )
     }
-    suspend fun getAllAuthorMetaOnce(): List<com.betteraudio.data.db.entities.AuthorMeta> = authorMetaDao.getAllOnce()
-    suspend fun upsertAuthorMeta(meta: com.betteraudio.data.db.entities.AuthorMeta) = authorMetaDao.upsert(meta)
+    suspend fun getAllAuthorMetaOnce(): List<AuthorMeta> = authorMetaDao.getAllOnce()
+    suspend fun upsertAuthorMeta(meta: AuthorMeta) = authorMetaDao.upsert(meta)
 
     /**
      * Wipe the entire library from the database — every book (which cascades to its files,
@@ -265,7 +268,7 @@ class AudiobookRepository @Inject constructor(
     }
 
     /** All books by an effective author name (for deleting a whole author from the grid). */
-    suspend fun getBooksByEffectiveAuthorOnce(name: String): List<com.betteraudio.data.db.entities.Book> =
+    suspend fun getBooksByEffectiveAuthorOnce(name: String): List<Book> =
         bookDao.getBooksByEffectiveAuthorOnce(name)
 
     /** Remove an author's cover-meta row (after its books are deleted), and the cover files it
@@ -281,9 +284,9 @@ class AudiobookRepository @Inject constructor(
         internal fun deleteQuietly(path: String, what: String) {
             try {
                 val f = java.io.File(path)
-                if (f.exists() && f.delete()) com.betteraudio.util.AppLog.i("DB", "deleted orphaned $what: $path")
+                if (f.exists() && f.delete()) AppLog.i("DB", "deleted orphaned $what: $path")
             } catch (e: Exception) {
-                com.betteraudio.util.AppLog.e("DB", "failed to delete orphaned $what: $path", e)
+                AppLog.e("DB", "failed to delete orphaned $what: $path", e)
             }
         }
     }
@@ -299,10 +302,10 @@ class AudiobookRepository @Inject constructor(
     }
 
     // ── Sync anchors (paragraph-resolution alignment points) ──────────────────
-    suspend fun getSyncAnchorsOnce(bookId: Long): List<com.betteraudio.data.db.entities.SyncAnchor> =
+    suspend fun getSyncAnchorsOnce(bookId: Long): List<SyncAnchor> =
         syncAnchorDao.getForBookOnce(bookId)
-    fun syncAnchorCount(bookId: Long): kotlinx.coroutines.flow.Flow<Int> = syncAnchorDao.countForBook(bookId)
-    suspend fun insertSyncAnchors(anchors: List<com.betteraudio.data.db.entities.SyncAnchor>) =
+    fun syncAnchorCount(bookId: Long): Flow<Int> = syncAnchorDao.countForBook(bookId)
+    suspend fun insertSyncAnchors(anchors: List<SyncAnchor>) =
         syncAnchorDao.insertAll(anchors)
     suspend fun deleteSyncAnchors(bookId: Long) = syncAnchorDao.deleteForBook(bookId)
 
@@ -444,7 +447,7 @@ class AudiobookRepository @Inject constructor(
      *  book with (done, total) so a long sweep over a large library can show real progress instead
      *  of an indefinite spinner; cancelling the calling coroutine stops the sweep between books. */
     suspend fun regenerateAllCoverFx(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
-        val books = bookDao.getAllBooksSortedOnce().filter { it.coverArtPath != null }
+        val books = bookDao.getBooksWithCoversOnce()
         books.forEachIndexed { index, book ->
             currentCoroutineContext().ensureActive()
             bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id.toString()))
