@@ -19,7 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -215,7 +215,7 @@ private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            if (isText) Icons.Default.MenuBook else Icons.Default.GraphicEq, null,
+            if (isText) Icons.AutoMirrored.Filled.MenuBook else Icons.Default.GraphicEq, null,
             Modifier.size(18.dp).clip(Pill), tint = accent
         )
         Spacer(Modifier.width(10.dp))

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -314,7 +315,7 @@ fun PlayerContent(
                             if (book?.ebookPath != null) {
                                 DropdownMenuItem(
                                     text = { Text("Read from here") },
-                                    leadingIcon = { Icon(Icons.Default.MenuBook, null) },
+                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                                     onClick = {
                                         showOverflow = false
                                         viewModel.readFromHere { bookId -> onOpenReader(bookId) }

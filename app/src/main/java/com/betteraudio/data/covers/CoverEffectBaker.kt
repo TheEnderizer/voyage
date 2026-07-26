@@ -143,8 +143,13 @@ class CoverEffectBaker @Inject constructor(
             outDir.listFiles { f -> f.name.startsWith("${cacheKey}_") }?.forEach { it.delete() }
             val dest = File(outDir, "${cacheKey}_v${VERSION}_${System.currentTimeMillis()}.webp")
             dest.outputStream().use { os ->
-                @Suppress("DEPRECATION")
-                outBmp.compress(Bitmap.CompressFormat.WEBP, 82, os)
+                val format = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    Bitmap.CompressFormat.WEBP_LOSSY
+                } else {
+                    @Suppress("DEPRECATION")
+                    Bitmap.CompressFormat.WEBP
+                }
+                outBmp.compress(format, 82, os)
             }
             dest.absolutePath
         } catch (_: Throwable) {

@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import androidx.core.content.ContextCompat
+import androidx.core.content.IntentCompat
 import android.media.AudioManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -1035,8 +1036,7 @@ class PlaybackService : MediaSessionService() {
             controller: MediaSession.ControllerInfo,
             intent: Intent
         ): Boolean {
-            @Suppress("DEPRECATION")
-            val event = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
+            val event = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_KEY_EVENT, KeyEvent::class.java) ?: return false
 
             when (event.keyCode) {
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,

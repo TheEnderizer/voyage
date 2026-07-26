@@ -42,10 +42,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
@@ -137,7 +137,7 @@ internal fun LazyListScope.librarySection(
     }
     item {
         SettingsCard(
-            icon = Icons.Default.MenuBook,
+            icon = Icons.AutoMirrored.Filled.MenuBook,
             iconTint = MaterialTheme.colorScheme.primary,
             title = "Ebook folder",
             subtitle = ebookFolder.ifBlank { "Not set — standalone ebooks live here" },
@@ -234,7 +234,7 @@ internal fun LazyListScope.librarySection(
         var showPicker by remember { mutableStateOf(false) }
         var showRestructure by remember { mutableStateOf(false) }
         SettingsCard(
-            icon = Icons.Default.DriveFileMove,
+            icon = Icons.AutoMirrored.Filled.DriveFileMove,
             iconTint = MaterialTheme.colorScheme.secondary,
             title = "Restructure files on disk",
             subtitle = "Move audio files to match a chosen Author / Series / Book layout",
@@ -258,7 +258,7 @@ internal fun LazyListScope.librarySection(
         if (showRestructure) {
             AlertDialog(
                 onDismissRequest = { if (!restructure.running) { showRestructure = false; viewModel.clearRestructure() } },
-                icon = { Icon(Icons.Default.DriveFileMove, null, tint = MaterialTheme.colorScheme.secondary) },
+                icon = { Icon(Icons.AutoMirrored.Filled.DriveFileMove, null, tint = MaterialTheme.colorScheme.secondary) },
                 title = { Text("Restructure files?") },
                 text = {
                     Column {

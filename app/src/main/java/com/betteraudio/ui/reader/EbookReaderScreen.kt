@@ -17,12 +17,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.NavigateBefore
-import androidx.compose.material.icons.filled.NavigateNext
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -170,7 +170,7 @@ private fun BoxScope.ReaderContent(
                 DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
                     DropdownMenuItem(
                         text = { Text("Chapters") },
-                        leadingIcon = { Icon(Icons.Default.List, null) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null) },
                         onClick = { showOverflow = false; showToc = true }
                     )
                     DropdownMenuItem(
@@ -181,7 +181,7 @@ private fun BoxScope.ReaderContent(
                     if (state.hasAudio) {
                         DropdownMenuItem(
                             text = { Text("Align chapters") },
-                            leadingIcon = { Icon(Icons.Default.Rule, null) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Rule, null) },
                             onClick = { showOverflow = false; showAlign = true }
                         )
                         val aligning = state.alignProgress?.running == true
@@ -229,7 +229,7 @@ private fun BoxScope.ReaderContent(
                 IconButton(
                     onClick = { viewModel.prevChapter() },
                     enabled = state.currentSpineIndex > 0
-                ) { Icon(Icons.Default.NavigateBefore, "Previous chapter") }
+                ) { Icon(Icons.AutoMirrored.Filled.NavigateBefore, "Previous chapter") }
 
                 if (state.hasAudio) {
                     FilledTonalButton(onClick = {
@@ -246,7 +246,7 @@ private fun BoxScope.ReaderContent(
                 IconButton(
                     onClick = { viewModel.nextChapter() },
                     enabled = state.currentSpineIndex < state.spine.size - 1
-                ) { Icon(Icons.Default.NavigateNext, "Next chapter") }
+                ) { Icon(Icons.AutoMirrored.Filled.NavigateNext, "Next chapter") }
             }
         }
     }

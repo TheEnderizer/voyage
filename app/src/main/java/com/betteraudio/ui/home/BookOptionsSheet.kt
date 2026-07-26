@@ -8,7 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.LinkOff
-import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -258,7 +258,7 @@ fun BookOptionsSheet(
                                 onClick = { onOpenReader(); onDismiss() },
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Icon(Icons.Default.MenuBook, null, Modifier.size(18.dp))
+                                Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Open reader")
                             }
@@ -274,7 +274,7 @@ fun BookOptionsSheet(
                             onClick = { showEpubPicker = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Icon(Icons.Default.MenuBook, null, Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Connect EPUB…")
                         }

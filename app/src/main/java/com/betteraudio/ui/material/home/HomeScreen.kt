@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -636,7 +638,7 @@ private fun SelectionHeader(
             // One series + some books → add those books to the series.
             if (showAddToSeries) {
                 IconButton(onClick = onAddToSeries) {
-                    Icon(Icons.Default.PlaylistAdd, "Add to series")
+                    Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to series")
                 }
             }
             IconButton(onClick = onDelete) {
@@ -991,7 +993,7 @@ private fun EmptyLibrary(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        Icons.Default.LibraryBooks, null,
+                        Icons.AutoMirrored.Filled.LibraryBooks, null,
                         Modifier.size(44.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
