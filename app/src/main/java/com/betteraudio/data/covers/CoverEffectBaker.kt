@@ -5,6 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -38,7 +40,10 @@ class CoverEffectBaker @Inject constructor(
         /** Bump when the visual algorithm changes (baked files embed this in their name). */
         const val VERSION = 1
 
-        private const val MAX_WIDTH = 1080
+        // 720 is plenty for a backdrop that's always shown blurred behind other content —
+        // it halves the pixel count (and so the per-iteration blur cost) versus the original
+        // 1080, with no visible quality loss since sharpness is never the point of this bitmap.
+        private const val MAX_WIDTH = 720
         private const val BLUR_ITERATIONS = 44
 
         // Fractions of the COMBINED (original + reflection) height = [0, 1].
@@ -49,6 +54,11 @@ class CoverEffectBaker @Inject constructor(
 
     private val outDir: File get() = File(context.filesDir, "cover_fx").apply { mkdirs() }
 
+    // Baking is CPU- and memory-heavy (several full-size IntArray buffers per call); running two
+    // at once — e.g. a "refresh all" sweep racing a cover just opened in the player — only makes
+    // both slower and doubles peak memory for no benefit, so serialize instead of parallelizing.
+    private val bakeSemaphore = Semaphore(1)
+
     /**
      * Bakes the effect for [sourceCoverPath] and writes it to internal storage, replacing any
      * previous bake for [cacheKey]. Returns the new file's absolute path, or null if the source
@@ -56,7 +66,11 @@ class CoverEffectBaker @Inject constructor(
      * and series ids are separate autoincrement sequences and can collide, so callers other than
      * a plain book id must namespace their key (e.g. `"series_$seriesId"`).
      */
-    suspend fun bake(sourceCoverPath: String, cacheKey: String): String? = withContext(Dispatchers.Default) {
+    suspend fun bake(sourceCoverPath: String, cacheKey: String): String? = bakeSemaphore.withPermit {
+        bakeLocked(sourceCoverPath, cacheKey)
+    }
+
+    private suspend fun bakeLocked(sourceCoverPath: String, cacheKey: String): String? = withContext(Dispatchers.Default) {
         val src = runCatching { BitmapFactory.decodeFile(sourceCoverPath) }.getOrNull()
             ?: return@withContext null
 
@@ -86,9 +100,15 @@ class CoverEffectBaker @Inject constructor(
             val rampLow = SHARP_UNTIL * h
             val rampSpan = (RAMP_END * h - rampLow).coerceAtLeast(1f)
 
+            // Scratch rows/columns for the box blur passes, allocated once and reused across all
+            // BLUR_ITERATIONS * 2 passes instead of once per pass — the loop below used to churn
+            // through ~88 short-lived IntArrays per bake.
+            val lineScratch = IntArray(w)
+            val colScratch = IntArray(h)
+
             for (k in 1..BLUR_ITERATIONS) {
-                boxBlurHorizontal(working, w, h, inc)
-                boxBlurVertical(working, w, h, inc)
+                boxBlurHorizontal(working, w, h, inc, lineScratch)
+                boxBlurVertical(working, w, h, inc, colScratch)
                 val levelLow = (k - 1).toFloat() / BLUR_ITERATIONS
                 val levelHigh = k.toFloat() / BLUR_ITERATIONS
                 for (y in 0 until h) {
@@ -136,11 +156,11 @@ class CoverEffectBaker @Inject constructor(
         }
     }
 
-    /** Separable box blur (running-sum, radius-independent cost), horizontal pass, in place. */
-    private fun boxBlurHorizontal(px: IntArray, w: Int, h: Int, r: Int) {
+    /** Separable box blur (running-sum, radius-independent cost), horizontal pass, in place.
+     *  [line] is caller-owned scratch of size >= w, reused across calls to avoid reallocating. */
+    private fun boxBlurHorizontal(px: IntArray, w: Int, h: Int, r: Int, line: IntArray) {
         if (r < 1 || w < 2) return
         val window = 2 * r + 1
-        val line = IntArray(w)
         for (y in 0 until h) {
             val base = y * w
             System.arraycopy(px, base, line, 0, w)
@@ -160,11 +180,11 @@ class CoverEffectBaker @Inject constructor(
         }
     }
 
-    /** Separable box blur, vertical pass, in place. */
-    private fun boxBlurVertical(px: IntArray, w: Int, h: Int, r: Int) {
+    /** Separable box blur, vertical pass, in place.
+     *  [col] is caller-owned scratch of size >= h, reused across calls to avoid reallocating. */
+    private fun boxBlurVertical(px: IntArray, w: Int, h: Int, r: Int, col: IntArray) {
         if (r < 1 || h < 2) return
         val window = 2 * r + 1
-        val col = IntArray(h)
         for (x in 0 until w) {
             for (y in 0 until h) col[y] = px[y * w + x]
             var sr = 0; var sg = 0; var sb = 0

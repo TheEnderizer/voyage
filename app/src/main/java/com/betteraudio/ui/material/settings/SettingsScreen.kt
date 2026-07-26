@@ -69,6 +69,7 @@ fun SettingsScreen(
     val ignoredBooks    by viewModel.ignoredBooks.collectAsStateWithLifecycle()
     val rescanRunning        by viewModel.rescanRunning.collectAsStateWithLifecycle()
     val coverRefreshRunning  by viewModel.coverRefreshRunning.collectAsStateWithLifecycle()
+    val coverRefreshProgress by viewModel.coverRefreshProgress.collectAsStateWithLifecycle()
     val resetRunning         by viewModel.resetRunning.collectAsStateWithLifecycle()
     val geminiApiKey    by viewModel.geminiApiKey.collectAsStateWithLifecycle()
     val updateState               by viewModel.updateState.collectAsStateWithLifecycle()
@@ -203,7 +204,7 @@ fun SettingsScreen(
                     )
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        coverRefreshRunning, resetRunning, ignoredBooks, importStructure,
+                        coverRefreshRunning, coverRefreshProgress, resetRunning, ignoredBooks, importStructure,
                         storageSettingsLauncher, { showBrowser = true },
                         ebookFolder, { showEbookBrowser = true }, viewModel
                     )

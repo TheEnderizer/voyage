@@ -14,6 +14,8 @@ import com.betteraudio.data.update.UpdateChecker
 import com.betteraudio.util.AppLog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -170,6 +172,12 @@ class SettingsViewModel @Inject constructor(
     private val _coverRefreshRunning = MutableStateFlow(false)
     val coverRefreshRunning: StateFlow<Boolean> = _coverRefreshRunning.asStateFlow()
 
+    /** (done, total) books baked so far in the current sweep, or null when idle. */
+    private val _coverRefreshProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val coverRefreshProgress: StateFlow<Pair<Int, Int>?> = _coverRefreshProgress.asStateFlow()
+
+    private var coverRefreshJob: Job? = null
+
     private val _resetRunning = MutableStateFlow(false)
     val resetRunning: StateFlow<Boolean> = _resetRunning.asStateFlow()
 
@@ -195,14 +203,25 @@ class SettingsViewModel @Inject constructor(
 
     fun refreshAllCoverEffects() {
         if (_coverRefreshRunning.value) return
-        viewModelScope.launch {
+        coverRefreshJob = viewModelScope.launch {
             _coverRefreshRunning.value = true
-            try { repository.regenerateAllCoverFx() } catch (e: Exception) {
+            try {
+                repository.regenerateAllCoverFx { done, total -> _coverRefreshProgress.value = done to total }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
                 AppLog.e("Settings", "regenerateAllCoverFx failed", e)
                 _operationError.value = "Couldn't refresh cover effects: ${e.message ?: "unknown error"}"
+            } finally {
+                _coverRefreshRunning.value = false
+                _coverRefreshProgress.value = null
             }
-            _coverRefreshRunning.value = false
         }
+    }
+
+    /** Stop an in-progress "refresh all cover effects" sweep between books. */
+    fun cancelCoverRefresh() {
+        coverRefreshJob?.cancel()
     }
 
     val geminiApiKey: StateFlow<String> =

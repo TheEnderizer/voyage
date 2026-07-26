@@ -382,6 +382,7 @@ internal fun LazyListScope.librarySection(
     bookCount: Int,
     rescanRunning: Boolean,
     coverRefreshRunning: Boolean,
+    coverRefreshProgress: Pair<Int, Int>?,
     resetRunning: Boolean,
     ignoredBooks: List<com.betteraudio.data.db.entities.Book>,
     importStructure: com.betteraudio.data.scanner.ImportStructure,
@@ -465,8 +466,10 @@ internal fun LazyListScope.librarySection(
             icon = Icons.Default.AutoAwesome,
             iconTint = MaterialTheme.colorScheme.secondary,
             title = "Refresh all cover effects",
-            subtitle = "Re-bake the blur effect for every book",
-            onClick = if (!coverRefreshRunning) ({ viewModel.refreshAllCoverEffects() }) else null,
+            subtitle = if (coverRefreshRunning && coverRefreshProgress != null)
+                "Baking ${coverRefreshProgress.first} / ${coverRefreshProgress.second}… (tap to cancel)"
+            else "Re-bake the blur effect for every book",
+            onClick = if (coverRefreshRunning) ({ viewModel.cancelCoverRefresh() }) else ({ viewModel.refreshAllCoverEffects() }),
             trailing = {
                 if (coverRefreshRunning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }

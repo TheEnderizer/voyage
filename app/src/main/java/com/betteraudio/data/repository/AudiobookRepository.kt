@@ -20,6 +20,8 @@ import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.model.BookWithProgress
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
@@ -435,12 +437,15 @@ class AudiobookRepository @Inject constructor(
         }
     }
 
-    /** Re-bake the cover effect for every book that has a cover. */
-    suspend fun regenerateAllCoverFx() {
-        bookDao.getAllBooksSortedOnce()
-            .filter { it.coverArtPath != null }
-            .forEach { book ->
-                bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id.toString()))
-            }
+    /** Re-bake the cover effect for every book that has a cover. [onProgress] is called after each
+     *  book with (done, total) so a long sweep over a large library can show real progress instead
+     *  of an indefinite spinner; cancelling the calling coroutine stops the sweep between books. */
+    suspend fun regenerateAllCoverFx(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) {
+        val books = bookDao.getAllBooksSortedOnce().filter { it.coverArtPath != null }
+        books.forEachIndexed { index, book ->
+            currentCoroutineContext().ensureActive()
+            bookDao.updateCoverFx(book.id, coverEffectBaker.bake(book.coverArtPath!!, book.id.toString()))
+            onProgress(index + 1, books.size)
+        }
     }
 }
