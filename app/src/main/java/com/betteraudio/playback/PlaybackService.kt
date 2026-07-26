@@ -141,7 +141,13 @@ class PlaybackService : MediaSessionService() {
     }
 
     // ── Bluetooth/headphone auto-resume ──────────────────────────────────────────
-    private var audioDeviceCallback: android.media.AudioDeviceCallback? = null
+    private val btAutoResumeWatcher: BtAutoResumeWatcher by lazy {
+        BtAutoResumeWatcher(
+            context = this,
+            isEnabled = { settings.currentBtAutoResumeEnabled },
+            onDeviceConnected = { maybeAutoResumeOnDeviceConnect() }
+        )
+    }
 
     companion object {
         const val ACTION_TOGGLE_PLAY_PAUSE = "com.betteraudio.action.WIDGET_PLAY_PAUSE"
@@ -348,7 +354,7 @@ class PlaybackService : MediaSessionService() {
             .setCallback(SessionCallback())
             .build()
 
-        registerBtAutoResume()
+        btAutoResumeWatcher.register()
         registerScreenStateReceiver()
     }
 
@@ -608,38 +614,6 @@ class PlaybackService : MediaSessionService() {
             "bookmark" -> addQuickBookmark()
             "none" -> {}
         }
-    }
-
-    // ── Bluetooth/headphone auto-resume ──────────────────────────────────────────
-    // AudioDeviceCallback (no runtime permission needed) rather than BluetoothDevice broadcasts —
-    // ACTION_ACL_CONNECTED fires for ANY paired device including watches and car head units doing
-    // phonebook sync, which would false-trigger a resume; this only fires for devices Android
-    // itself considers audio sinks.
-    private fun registerBtAutoResume() {
-        if (audioDeviceCallback != null) return
-        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        val callback = object : android.media.AudioDeviceCallback() {
-            override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>) {
-                if (!settings.currentBtAutoResumeEnabled) return
-                if (addedDevices.any { isAudioSinkDevice(it) }) maybeAutoResumeOnDeviceConnect()
-            }
-        }
-        am.registerAudioDeviceCallback(callback, android.os.Handler(mainLooper))
-        audioDeviceCallback = callback
-    }
-
-    private fun unregisterBtAutoResume() {
-        val am = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
-        audioDeviceCallback?.let { am.unregisterAudioDeviceCallback(it) }
-        audioDeviceCallback = null
-    }
-
-    private fun isAudioSinkDevice(info: android.media.AudioDeviceInfo): Boolean = when (info.type) {
-        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
-        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET,
-        android.media.AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
-        android.media.AudioDeviceInfo.TYPE_USB_HEADSET -> true
-        else -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && info.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET
     }
 
     /** Resumes only if something is actually loaded, not already playing, and was paused within
@@ -1025,7 +999,7 @@ class PlaybackService : MediaSessionService() {
         shakeDetector.stop()
         releaseSleepWakeLock()
         headsetGestureMapper.cancel()
-        unregisterBtAutoResume()
+        btAutoResumeWatcher.unregister()
         screenStateReceiver?.let { runCatching { unregisterReceiver(it) } }
         screenStateReceiver = null
         loudnessEnhancer?.release()
