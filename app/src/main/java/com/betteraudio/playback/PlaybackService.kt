@@ -938,7 +938,7 @@ class PlaybackService : MediaSessionService() {
         serviceScope.launch {
             val bookId = settings.lastPlayedBookId.first()
             if (bookId == -1L) return@launch
-            val book = repository.getBookById(bookId).first() ?: return@launch
+            val book = repository.getBookOnce(bookId) ?: return@launch
             val files = repository.getAudioFilesOnce(bookId)
                 .sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
@@ -1060,7 +1060,7 @@ class PlaybackService : MediaSessionService() {
             var seriesCoverPath: String? = null
             var bookDurationMs = 0L
             if (bookId != -1L) {
-                val book = repository.getBookById(bookId).first()
+                val book = repository.getBookOnce(bookId)
                 bookCoverPath = book?.coverArtPath
                 seriesName = book?.seriesName ?: ""
                 bookDurationMs = book?.totalDurationMs ?: 0L

@@ -79,6 +79,9 @@ import com.betteraudio.widget.WidgetIntents
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
+/** The whole-app theme's resolved art — a sharp cover plus its baked blurred+reflected composite. */
+private data class ThemeArt(val coverPath: String?, val fxPath: String?)
+
 @UnstableApi
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -132,73 +135,39 @@ class MainActivity : ComponentActivity() {
         // Same snapshot read once and reused for both the widget cold-start branch and this.
         val lastPlayedBookId = settings.currentLastPlayedBookId
         setContent {
-            val playbackState by playerController.playbackState.collectAsStateWithLifecycle()
-            // When nothing is actively loaded, keep the app themed by the last-opened book's cover
-            // so the whole UI stays cohesive with "what's playing" even while idle on the home
-            // screen. Tracks themeBookId (set on open/play, never cleared on close) rather than
-            // lastPlayedBookId (reset to -1 by PlayerController.stop()) — otherwise closing a book
-            // would revert the theme instead of keeping it until a different book opens.
-            val lastPlayedCover by produceState<String?>(null) {
-                settings.themeBookId.collectLatest { id ->
-                    if (id == -1L) value = null
-                    else repository.getBookById(id).collect { value = it?.coverArtPath }
+            // Resolves both the sharp cover and its baked blurred+reflected composite
+            // (CoverEffectBaker) that theme the whole app, in one flow instead of five separate
+            // produceState blocks that each re-queried the same book/series rows independently.
+            // Priority (both paths): series cover (if the "show series cover" toggle is on and the
+            // playing book is in a series) > active playback's own cover > the last-opened book's
+            // cover (themeBookId — set on open/play, never cleared on close, unlike lastPlayedBookId
+            // which PlayerController.stop() resets — so closing a book keeps its theme instead of
+            // reverting until a genuinely different book opens).
+            val themeArt by produceState(ThemeArt(null, null)) {
+                val activeBookIdFlow = playerController.playbackState.map { it.bookId }.distinctUntilChanged()
+                val activeCoverFlow = playerController.playbackState
+                    .map { s -> s.coverArtUri?.removePrefix("file://")?.takeIf { s.bookId != -1L && it.isNotBlank() } }
+                    .distinctUntilChanged()
+                val themeBookFlow = settings.themeBookId.distinctUntilChanged().flatMapLatest { id ->
+                    if (id == -1L) flowOf(null) else repository.getBookById(id)
                 }
-            }
-            val activeCover = playbackState.coverArtUri
-                ?.removePrefix("file://")
-                ?.takeIf { playbackState.bookId != -1L && it.isNotBlank() }
-            // When the "show series cover" toggle is on and the playing book is in a series, the
-            // whole-app theme should recolor from the series cover too (not just the player).
-            val seriesThemeCover by produceState<String?>(null) {
-                combine(
-                    settings.playerShowSeriesCover,
-                    playerController.playbackState.map { it.bookId }.distinctUntilChanged()
-                ) { show, id -> show to id }
-                    .flatMapLatest { (show, id) ->
-                        if (!show || id == -1L) flowOf(null)
-                        else repository.getBookById(id).flatMapLatest { b ->
-                            val sid = b?.seriesId
-                            if (sid == null) flowOf(null)
-                            else seriesRepository.getSeries(sid).map { it?.coverArtPath }
-                        }
-                    }
-                    .collectLatest { value = it }
-            }
-            val coverPath = seriesThemeCover ?: activeCover ?: lastPlayedCover
-
-            // Mirrors of the three cover flows above, but resolving each book/series' baked
-            // blurred+reflected composite (CoverEffectBaker) instead of the sharp cover — used by
-            // AppBlurredBackdrop so the app-wide Immersive background matches the player/book-info/
-            // series screens' pre-baked variant instead of live-blurring the sharp cover.
-            val lastPlayedCoverFx by produceState<String?>(null) {
-                settings.themeBookId.collectLatest { id ->
-                    if (id == -1L) value = null
-                    else repository.getBookById(id).collect { value = it?.coverFxPath }
+                val activeBookFlow = activeBookIdFlow.flatMapLatest { id ->
+                    if (id == -1L) flowOf(null) else repository.getBookById(id)
                 }
+                val seriesFlow = combine(settings.playerShowSeriesCover, activeBookFlow) { show, book ->
+                    if (show) book?.seriesId else null
+                }.distinctUntilChanged().flatMapLatest { sid ->
+                    if (sid == null) flowOf(null) else seriesRepository.getSeries(sid)
+                }
+                combine(themeBookFlow, activeBookFlow, activeCoverFlow, seriesFlow) { themeBook, activeBook, activeCover, series ->
+                    ThemeArt(
+                        coverPath = series?.coverArtPath ?: activeCover ?: themeBook?.coverArtPath,
+                        fxPath = series?.coverFxPath ?: activeBook?.coverFxPath ?: themeBook?.coverFxPath
+                    )
+                }.collectLatest { value = it }
             }
-            val activeCoverFx by produceState<String?>(null) {
-                playerController.playbackState.map { it.bookId }.distinctUntilChanged()
-                    .flatMapLatest { id ->
-                        if (id == -1L) flowOf(null) else repository.getBookById(id).map { it?.coverFxPath }
-                    }
-                    .collectLatest { value = it }
-            }
-            val seriesThemeCoverFx by produceState<String?>(null) {
-                combine(
-                    settings.playerShowSeriesCover,
-                    playerController.playbackState.map { it.bookId }.distinctUntilChanged()
-                ) { show, id -> show to id }
-                    .flatMapLatest { (show, id) ->
-                        if (!show || id == -1L) flowOf(null)
-                        else repository.getBookById(id).flatMapLatest { b ->
-                            val sid = b?.seriesId
-                            if (sid == null) flowOf(null)
-                            else seriesRepository.getSeries(sid).map { it?.coverFxPath }
-                        }
-                    }
-                    .collectLatest { value = it }
-            }
-            val bakedCoverPath = seriesThemeCoverFx ?: activeCoverFx ?: lastPlayedCoverFx
+            val coverPath = themeArt.coverPath
+            val bakedCoverPath = themeArt.fxPath
             val appThemeRaw by settings.appTheme.collectAsStateWithLifecycle(initialThemeRaw)
             val colorSourceRaw by settings.themeColorSource.collectAsStateWithLifecycle(initialColorSource)
             val customThemeColor by settings.customThemeColor.collectAsStateWithLifecycle(initialCustomThemeColor)

@@ -17,7 +17,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -81,7 +80,7 @@ class SyncAligner @Inject constructor(
         val modelDir = modelManager.modelDirOrNull()
             ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Speech model not downloaded") }; return }
 
-        val book = repository.getBookById(bookId).first()
+        val book = repository.getBookOnce(bookId)
             ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "Book not found") }; return }
         val epubPath = book.ebookPath
             ?: run { setProgress(bookId) { AlignProgress(false, 0, 0, 0, error = "No ebook linked to this book") }; return }

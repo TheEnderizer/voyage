@@ -19,6 +19,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id")
     fun getBookById(id: Long): Flow<Book?>
 
+    @Query("SELECT * FROM books WHERE id = :id")
+    suspend fun getBookOnce(id: Long): Book?
+
     @Transaction
     @Query("SELECT * FROM books WHERE id = :id")
     fun getBookWithProgress(id: Long): Flow<BookWithProgress?>

@@ -133,7 +133,7 @@ class EbookReaderViewModel @Inject constructor(
     }
 
     private suspend fun load() {
-        val book = repository.getBookById(bookId).first()
+        val book = repository.getBookOnce(bookId)
         val epubPath = book?.ebookPath
         if (book == null || epubPath.isNullOrBlank()) {
             _state.value = ReaderUiState(loading = false, error = ReaderError.MISSING_FILE)

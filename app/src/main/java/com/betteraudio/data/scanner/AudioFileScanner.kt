@@ -464,7 +464,7 @@ class AudioFileScanner @Inject constructor(
 
     private suspend fun importMappingFileIfPresent(bookId: Long, folder: File) {
         val mapping = com.betteraudio.data.sync.MappingFileIO.read(folder) ?: return
-        val book = repository.getBookById(bookId).first() ?: return
+        val book = repository.getBookOnce(bookId) ?: return
         if (book.ebookPath == null) return
         if (repository.syncAnchorCount(bookId).first() > 0) return
         mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }

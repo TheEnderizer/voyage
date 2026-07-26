@@ -80,6 +80,7 @@ class AudiobookRepository @Inject constructor(
 
     fun getAllBooks(): Flow<List<Book>> = bookDao.getAllBooksSorted()
     fun getBookById(bookId: Long): Flow<Book?> = bookDao.getBookById(bookId)
+    suspend fun getBookOnce(bookId: Long): Book? = bookDao.getBookOnce(bookId)
     fun getBookWithProgress(bookId: Long): Flow<BookWithProgress?> = bookDao.getBookWithProgress(bookId)
     fun getHomeGridBooks(): Flow<List<com.betteraudio.data.model.HomeGridBook>> = bookDao.getHomeGridBooks()
     fun hasAnyBooks(): Flow<Boolean> = bookDao.hasAnyBooks()
@@ -137,7 +138,7 @@ class AudiobookRepository @Inject constructor(
 
     /** Bake the cover effect if a cover exists but no valid baked file is present yet. */
     suspend fun ensureCoverFx(bookId: Long) {
-        val book = bookDao.getBookById(bookId).firstOrNull() ?: return
+        val book = bookDao.getBookOnce(bookId) ?: return
         val cover = book.coverArtPath ?: return
         val fx = book.coverFxPath
         if (fx != null && java.io.File(fx).exists()) return
@@ -146,7 +147,7 @@ class AudiobookRepository @Inject constructor(
 
     /** Force a re-bake from the current cover (manual "refresh cover effect"). */
     suspend fun regenerateCoverFx(bookId: Long) {
-        val book = bookDao.getBookById(bookId).firstOrNull() ?: return
+        val book = bookDao.getBookOnce(bookId) ?: return
         val cover = book.coverArtPath ?: return
         bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId.toString()))
     }
@@ -238,7 +239,7 @@ class AudiobookRepository @Inject constructor(
 
     suspend fun deleteBook(bookId: Long, deleteFiles: Boolean) {
         if (deleteFiles) {
-            val book = bookDao.getBookById(bookId).firstOrNull()
+            val book = bookDao.getBookOnce(bookId)
             if (book != null) {
                 val folder = java.io.File(book.folderPath)
                 if (folder.exists() && folder.isDirectory) folder.deleteRecursively()

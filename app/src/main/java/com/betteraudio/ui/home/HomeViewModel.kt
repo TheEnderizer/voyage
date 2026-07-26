@@ -216,7 +216,7 @@ class HomeViewModel @Inject constructor(
 
     fun setBookCoverFromUrl(bookId: Long, imageUrl: String) {
         viewModelScope.launch {
-            val book = repository.getBookById(bookId).first()
+            val book = repository.getBookOnce(bookId)
             val folder = book?.folderPath?.let { File(it) }
             // Prefer storing the cover INSIDE the book's folder as "cover.png" — a stable, visible
             // name (rather than a timestamped hidden file) so it persists with the audio, travels
