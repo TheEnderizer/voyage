@@ -101,18 +101,34 @@ class PlaybackService : MediaSessionService() {
     // it fires even if the app process (and PlayerController's own coroutine scope) has died;
     // only the service's process (tied to the foreground notification) needs to survive.
     // PlayerController mirrors a local countdown purely for immediate UI display; this is what
-    // actually pauses playback.
-    private var sleepMode: String = SLEEP_MODE_OFF
-    private var sleepEndAtElapsedMs: Long = 0L      // COUNTDOWN target, SystemClock.elapsedRealtime()
-    private var sleepTargetBookPositionMs: Long = 0L  // END_OF_CHAPTER target, absolute book-level ms
-    private var sleepResetMs: Long = 15 * 60_000L   // duration re-armed on shake-to-extend
-    private var sleepRemainingMsForWidget: Long = 0L
-    private var sleepTickJob: Job? = null
-    private var sleepFadeActive: Boolean = false
-    private var sleepPreFadeVolume: Float = 1f
-    private var sleepGraceJob: Job? = null
-    private var sleepWakeLock: android.os.PowerManager.WakeLock? = null
-    private val shakeDetector: ShakeDetector by lazy { ShakeDetector(this) { onShakeDetected() } }
+    // actually pauses playback. See SleepTimerEngine for the mode/tick/fade/shake orchestration —
+    // this class only wires it to the real player/session/widget/screen state.
+    private val shakeDetector: ShakeDetector by lazy { ShakeDetector(this) { sleepTimerEngine.onShakeDetected() } }
+    private val sleepTimerEngine: SleepTimerEngine by lazy {
+        SleepTimerEngine(
+            context = this,
+            scope = serviceScope,
+            settings = settings,
+            shakeDetector = shakeDetector,
+            player = object : SleepTimerEngine.Player {
+                override fun isPlaying() = exoPlayer?.isPlaying == true
+                override fun pause() { exoPlayer?.pause() }
+                override fun play() { exoPlayer?.play() }
+                override fun getVolume() = exoPlayer?.volume ?: 1f
+                override fun setVolume(volume: Float) { exoPlayer?.volume = volume }
+                override fun currentBookPositionMs(): Long {
+                    val p = exoPlayer ?: return 0L
+                    return bookPositionMsFor(p.currentMediaItemIndex, p.currentPosition)
+                }
+                override fun isScreenOn() = screenOn
+                override fun tickCountdownWidget() = widgetUpdater.tickCountdown()
+                override fun tickEndOfChapterWidget() = pushWidgetStateForSleepTick()
+                override fun pushFullWidgetState() = pushWidgetState()
+                override fun broadcastSleepState(mode: String, remainingMs: Long) =
+                    this@PlaybackService.broadcastSleepState(mode, remainingMs)
+            }
+        )
+    }
 
     // Screen off = nobody can see the widget. The 1 Hz sleep tick otherwise keeps re-rendering
     // it — a fresh bitmap, a full RemoteViews rebuild, a Binder call to the launcher — for the
@@ -131,9 +147,6 @@ class PlaybackService : MediaSessionService() {
     @Volatile private var eocMetaBookCoverPath: String? = null
     @Volatile private var eocMetaSeriesCoverPath: String? = null
     @Volatile private var eocMetaBookDurationMs: Long = 0L
-    // Guards the schedule from re-arming every time playback resumes within one listening
-    // session; reset when a fresh set of media items is loaded (a genuinely new session).
-    private var scheduleArmedThisSession = false
 
     // ── Headset multi-press mapping ──────────────────────────────────────────────
     private val headsetGestureMapper: HeadsetGestureMapper by lazy {
@@ -196,8 +209,6 @@ class PlaybackService : MediaSessionService() {
 
         private const val SPEED_STEP = 0.1f
         private const val BOOST_STEP_MB = 300 // 3 dB
-        private const val SHAKE_ARM_WINDOW_MS = 30_000L         // start listening this close to firing
-        private const val SHAKE_GRACE_WINDOW_MS = 30_000L       // keep listening this long after firing
     }
 
     override fun onCreate() {
@@ -291,13 +302,13 @@ class PlaybackService : MediaSessionService() {
                 attachEqualizer(audioSessionId)
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) { startPositionSaver(); maybeAutoArmScheduledSleep() }
+                if (isPlaying) { startPositionSaver(); sleepTimerEngine.maybeAutoArmScheduled() }
                 else { stopPositionSaver(); saveCurrentPosition() }
                 pushWidgetState()
             }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) {
-                    scheduleArmedThisSession = false
+                    sleepTimerEngine.resetScheduleArmedForNewSession()
                 }
                 // Persist the file change immediately, not just on the next periodic tick — the
                 // plan for widening that tick's interval (see startPositionSaver) assumed pause/
@@ -369,7 +380,7 @@ class PlaybackService : MediaSessionService() {
                         // immediate, fully correct re-render now rather than leaving it frozen at
                         // whatever value was showing when the screen went dark, until the sleep
                         // tick's next natural second ticks over.
-                        if (sleepMode != SLEEP_MODE_OFF) widgetUpdater.requestRender()
+                        if (sleepTimerEngine.mode != SLEEP_MODE_OFF) widgetUpdater.requestRender()
                     }
                 }
             }
@@ -583,8 +594,8 @@ class PlaybackService : MediaSessionService() {
             ACTION_QUICK_BOOKMARK -> addQuickBookmark()
             ACTION_CLOSE_BOOK -> closeBook()
             ACTION_SLEEP_TIMER_TOGGLE -> {
-                if (sleepMode != SLEEP_MODE_OFF) {
-                    setSleepTimer(SLEEP_MODE_OFF, 0L, 0L)
+                if (sleepTimerEngine.mode != SLEEP_MODE_OFF) {
+                    sleepTimerEngine.setTimer(SLEEP_MODE_OFF, 0L, 0L)
                 } else {
                     // No explicit per-element duration on the intent → arm the SAME duration the
                     // player would (SettingsStore.currentSleepTimerMinutes, its synchronous
@@ -595,7 +606,7 @@ class PlaybackService : MediaSessionService() {
                     } else {
                         settings.currentSleepTimerMinutes * 60_000L
                     }
-                    setSleepTimer(SLEEP_MODE_COUNTDOWN, durationMs, 0L)
+                    sleepTimerEngine.setTimer(SLEEP_MODE_COUNTDOWN, durationMs, 0L)
                 }
             }
         }
@@ -668,99 +679,19 @@ class PlaybackService : MediaSessionService() {
         pushWidgetState()
     }
 
-    // ── Sleep timer engine ──────────────────────────────────────────────────────
-    // Single authority for the widget's timer and the in-app player's (see the field comment).
-    // COUNTDOWN counts real wall-clock time down from [sleepEndAtElapsedMs] regardless of
-    // play/pause state (matches the pre-existing behaviour); END_OF_CHAPTER instead compares the
-    // current book-level position against a fixed target and fires when playback reaches it.
-
-    private fun setSleepTimer(mode: String, durationMs: Long, targetBookPositionMs: Long) {
-        sleepTickJob?.cancel()
-        sleepGraceJob?.cancel()
-        sleepGraceJob = null
-        shakeDetector.stop()
-        releaseSleepWakeLock()
-        if (sleepFadeActive) {
-            exoPlayer?.volume = sleepPreFadeVolume
-            sleepFadeActive = false
-        }
-
-        sleepMode = mode
-        if (durationMs > 0L) sleepResetMs = durationMs
-        when (mode) {
-            SLEEP_MODE_COUNTDOWN -> {
-                sleepEndAtElapsedMs = android.os.SystemClock.elapsedRealtime() + durationMs
-                startSleepTick()
-            }
-            SLEEP_MODE_END_OF_CHAPTER -> {
-                sleepTargetBookPositionMs = targetBookPositionMs
-                startSleepTick()
-            }
-            else -> {
-                sleepRemainingMsForWidget = 0L
-            }
-        }
-        pushWidgetState()
-        broadcastSleepState()
-    }
-
-    /** Pushes the current sleep-timer mode + remaining time to every connected controller (the
-     *  in-app player). Needed because a shake-extend or a scheduled auto-arm happens entirely
-     *  service-side — a controller has no way to notice either just by polling its own state. */
-    private fun broadcastSleepState() {
+    // ── Sleep timer ──────────────────────────────────────────────────────────────
+    // The mode/tick/fade/shake orchestration lives in SleepTimerEngine; this is just the glue
+    // that talks to the real MediaSession (a controller has no way to notice a shake-extend or a
+    // scheduled auto-arm just by polling its own state, since both happen entirely service-side).
+    private fun broadcastSleepState(mode: String, remainingMs: Long) {
         val session = mediaSession ?: return
         session.broadcastCustomCommand(
             SessionCommand(CMD_SLEEP_STATE_CHANGED, Bundle.EMPTY),
             Bundle().apply {
-                putString(KEY_SLEEP_MODE, sleepMode)
-                putLong(KEY_SLEEP_REMAINING_MS, sleepRemainingMsForWidget)
+                putString(KEY_SLEEP_MODE, mode)
+                putLong(KEY_SLEEP_REMAINING_MS, remainingMs)
             }
         )
-    }
-
-    private fun startSleepTick() {
-        sleepTickJob = serviceScope.launch {
-            while (isActive && sleepMode != SLEEP_MODE_OFF) {
-                val remaining = computeSleepRemainingMs()
-                sleepRemainingMsForWidget = remaining.coerceAtLeast(0L)
-                maybeArmShakeListening(remaining)
-                val fadeMs = settings.currentSleepFadeSeconds * 1_000L
-                if (remaining in 1..fadeMs && exoPlayer?.isPlaying == true) {
-                    applySleepFade(remaining, fadeMs)
-                }
-                if (remaining <= 0L) {
-                    fireSleepTimer()
-                    return@launch
-                }
-                // Screen off = no one can see the widget. Skip the render/push entirely — the
-                // screen-on receiver forces one immediate correct re-render the moment it matters
-                // again, so nothing is ever left stale, only un-rendered while unobserved.
-                if (screenOn) {
-                    // COUNTDOWN mode needs no new data each tick — the widget recomputes remaining
-                    // time at paint time from the already-persisted sleepEndAtElapsedMs deadline, so
-                    // a cheap tickCountdown() (re-renders only countdown-showing widgets) suffices.
-                    // END_OF_CHAPTER has no fixed deadline (remaining shrinks with playback position,
-                    // not just wall-clock time), so it still needs a state push each tick — via the
-                    // metadata-cached variant, since the book/series behind it essentially never
-                    // change between two ticks one second apart.
-                    if (sleepMode == SLEEP_MODE_END_OF_CHAPTER) pushWidgetStateForSleepTick() else widgetUpdater.tickCountdown()
-                }
-                broadcastSleepState()
-                delay(1_000)
-            }
-        }
-    }
-
-    private fun computeSleepRemainingMs(): Long = when (sleepMode) {
-        SLEEP_MODE_COUNTDOWN -> sleepEndAtElapsedMs - android.os.SystemClock.elapsedRealtime()
-        SLEEP_MODE_END_OF_CHAPTER -> {
-            val player = exoPlayer
-            if (player == null) 0L else {
-                val currentAbs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
-                sleepTargetBookPositionMs - currentAbs
-            }
-        }
-        else -> 0L
     }
 
     /** Live jump detection: runs on the service's own `Player.Listener`, attached to the real
@@ -812,100 +743,6 @@ class PlaybackService : MediaSessionService() {
             acc += timeline.getWindow(i, window).durationMs.coerceAtLeast(0L)
         }
         return acc + positionInItemMs
-    }
-
-    /** Ramps volume down to silence as [remainingMs] approaches 0 within [fadeMs]. Captures the
-     *  pre-fade volume once so it can be restored exactly (fade or cancel). Skips starting a NEW
-     *  fade while the volume already reads reduced (< 99%) — most likely a transient audio-focus
-     *  duck in progress, which this shouldn't fight or stomp on completion. */
-    private fun applySleepFade(remainingMs: Long, fadeMs: Long) {
-        val player = exoPlayer ?: return
-        if (!sleepFadeActive) {
-            if (player.volume < 0.99f) return
-            sleepPreFadeVolume = player.volume
-            sleepFadeActive = true
-        }
-        val fraction = (remainingMs.toFloat() / fadeMs.toFloat()).coerceIn(0f, 1f)
-        player.volume = sleepPreFadeVolume * fraction
-    }
-
-    private fun fireSleepTimer() {
-        exoPlayer?.pause()
-        if (sleepFadeActive) {
-            exoPlayer?.volume = sleepPreFadeVolume
-            sleepFadeActive = false
-        }
-        sleepMode = SLEEP_MODE_OFF
-        sleepRemainingMsForWidget = 0L
-        AppLog.i("Player", "sleep timer fired, pausing")
-        pushWidgetState()
-        broadcastSleepState()
-        if (settings.currentSleepShakeEnabled) armShakeGraceWindow()
-    }
-
-    private fun maybeArmShakeListening(remainingMs: Long) {
-        if (!settings.currentSleepShakeEnabled) return
-        if (remainingMs in 1..SHAKE_ARM_WINDOW_MS) shakeDetector.start()
-    }
-
-    /** After firing, keep listening for a shake a little longer (with a short wakelock so the
-     *  sensor keeps delivering with the screen off) so "shake to resume" works right after the
-     *  pause, not only in the countdown's final seconds. Best-effort past this window — no
-     *  wakelock beyond it, so delivery isn't guaranteed with the screen off. */
-    private fun armShakeGraceWindow() {
-        shakeDetector.start()
-        acquireSleepWakeLock()
-        sleepGraceJob = serviceScope.launch {
-            delay(SHAKE_GRACE_WINDOW_MS)
-            shakeDetector.stop()
-            releaseSleepWakeLock()
-            sleepGraceJob = null
-        }
-    }
-
-    private fun onShakeDetected() {
-        AppLog.i("Player", "shake detected — extending sleep timer by ${sleepResetMs / 60_000}min")
-        sleepGraceJob?.cancel()
-        sleepGraceJob = null
-        releaseSleepWakeLock()
-        if (exoPlayer?.isPlaying == false) exoPlayer?.play()
-        setSleepTimer(SLEEP_MODE_COUNTDOWN, sleepResetMs, 0L)
-    }
-
-    private fun acquireSleepWakeLock() {
-        if (sleepWakeLock?.isHeld == true) return
-        val pm = getSystemService(Context.POWER_SERVICE) as? android.os.PowerManager ?: return
-        sleepWakeLock = try {
-            pm.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "Voyage:SleepShakeGrace").apply {
-                setReferenceCounted(false)
-                acquire(SHAKE_GRACE_WINDOW_MS)
-            }
-        } catch (e: Exception) {
-            Log.e("PlaybackService", "sleep wakelock acquire failed", e)
-            null
-        }
-    }
-
-    private fun releaseSleepWakeLock() {
-        sleepWakeLock?.let { if (it.isHeld) it.release() }
-        sleepWakeLock = null
-    }
-
-    /** Auto-arms the default sleep timer once per listening session when playback starts inside
-     *  the configured schedule window (handles a window that wraps past midnight). */
-    private fun maybeAutoArmScheduledSleep() {
-        if (!settings.currentSleepScheduleEnabled) return
-        if (sleepMode != SLEEP_MODE_OFF) return
-        if (scheduleArmedThisSession) return
-        val cal = java.util.Calendar.getInstance()
-        val nowMinutes = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
-        val start = settings.currentSleepScheduleStartMinutes
-        val end = settings.currentSleepScheduleEndMinutes
-        val inWindow = if (start <= end) nowMinutes in start until end else (nowMinutes >= start || nowMinutes < end)
-        if (!inWindow) return
-        scheduleArmedThisSession = true
-        AppLog.i("Player", "auto-arming scheduled sleep timer (${settings.currentSleepScheduleDefaultMinutes}min)")
-        setSleepTimer(SLEEP_MODE_COUNTDOWN, settings.currentSleepScheduleDefaultMinutes * 60_000L, 0L)
     }
 
     /**
@@ -994,10 +831,7 @@ class PlaybackService : MediaSessionService() {
         widgetUpdater.pushPaused()
         stopPositionSaver()
         saveCurrentPosition()
-        sleepTickJob?.cancel()
-        sleepGraceJob?.cancel()
-        shakeDetector.stop()
-        releaseSleepWakeLock()
+        sleepTimerEngine.stop()
         headsetGestureMapper.cancel()
         btAutoResumeWatcher.unregister()
         screenStateReceiver?.let { runCatching { unregisterReceiver(it) } }
@@ -1030,8 +864,8 @@ class PlaybackService : MediaSessionService() {
         val chapterTitle = meta?.title?.toString() ?: ""
         val speed = player.playbackParameters.speed
         val boostDbVal = boostMb / 100
-        val sleepEnd = if (sleepMode == SLEEP_MODE_COUNTDOWN) sleepEndAtElapsedMs else 0L
-        val sleepRemaining = sleepRemainingMsForWidget
+        val sleepEnd = sleepTimerEngine.sleepEndAtElapsedMsForWidget
+        val sleepRemaining = sleepTimerEngine.remainingMsForWidget
         val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
         val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
         val chapterPositionMs = player.currentPosition
@@ -1091,7 +925,7 @@ class PlaybackService : MediaSessionService() {
         val chapterTitle = meta?.title?.toString() ?: ""
         val speed = player.playbackParameters.speed
         val boostDbVal = boostMb / 100
-        val sleepRemaining = sleepRemainingMsForWidget
+        val sleepRemaining = sleepTimerEngine.remainingMsForWidget
         val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
         val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
         val chapterPositionMs = player.currentPosition
@@ -1181,10 +1015,10 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 CMD_SET_SLEEP_TIMER -> {
-                    setSleepTimer(
-                        mode = args.getString(KEY_SLEEP_MODE, SLEEP_MODE_OFF),
+                    sleepTimerEngine.setTimer(
+                        newMode = args.getString(KEY_SLEEP_MODE, SLEEP_MODE_OFF),
                         durationMs = args.getLong(KEY_SLEEP_DURATION_MS, 0L),
-                        targetBookPositionMs = args.getLong(KEY_SLEEP_TARGET_POSITION_MS, 0L)
+                        targetBookPositionMsArg = args.getLong(KEY_SLEEP_TARGET_POSITION_MS, 0L)
                     )
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
