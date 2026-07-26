@@ -9,12 +9,12 @@ plugins {
 
 android {
     namespace = "com.betteraudio"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.betteraudio"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 56
         versionName = "1.9.7b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

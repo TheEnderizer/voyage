@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Better Audio (released as "Voyage") is a native Android audiobook player: it scans a local folder for audio files, organizes them into books, **series**, and authors, plays multi-file books (and whole series) as one resumable timeline, tracks per-book resume position, and integrates with the lock screen, a home-screen widget, and (optionally) Gemini AI for auto-generated synopses. Single Gradle module (`app/`), package `com.betteraudio`. Kotlin + Jetpack Compose + Media3 + Room + Hilt, MVVM. `minSdk = 26`, `compileSdk`/`targetSdk = 35`.
+Better Audio (released as "Voyage") is a native Android audiobook player: it scans a local folder for audio files, organizes them into books, **series**, and authors, plays multi-file books (and whole series) as one resumable timeline, tracks per-book resume position, and integrates with the lock screen, a home-screen widget, and (optionally) Gemini AI for auto-generated synopses. Single Gradle module (`app/`), package `com.betteraudio`. Kotlin + Jetpack Compose + Media3 + Room + Hilt, MVVM. `minSdk = 26`, `compileSdk`/`targetSdk = 36`.
 
 ## Build / run / deploy
 
