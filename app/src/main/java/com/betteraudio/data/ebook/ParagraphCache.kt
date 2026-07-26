@@ -13,7 +13,14 @@ import javax.inject.Singleton
 @Singleton
 class ParagraphCache @Inject constructor() {
 
-    private val cache = LruCache<Long, SpineParagraphs>(24)
+    // Sized by bytes (2 bytes/char, UTF-16 String storage) against a fraction of the heap,
+    // rather than a flat "24 spine items" — a spine item's paragraph text varies from a couple
+    // KB to hundreds of KB depending on the book/format.
+    private val maxBytes = (Runtime.getRuntime().maxMemory() / 64)
+        .coerceIn(1L * 1024 * 1024, 8L * 1024 * 1024).toInt()
+    private val cache = object : LruCache<Long, SpineParagraphs>(maxBytes) {
+        override fun sizeOf(key: Long, value: SpineParagraphs): Int = value.totalChars * 2
+    }
 
     private fun key(bookId: Long, spineIndex: Int): Long = (bookId shl 20) or (spineIndex.toLong() and 0xFFFFF)
 
@@ -34,4 +41,7 @@ class ParagraphCache @Inject constructor() {
         val prefix = bookId shl 20
         cache.snapshot().keys.filter { it and (0xFFFFFL.inv()) == prefix }.forEach { cache.remove(it) }
     }
+
+    /** Drop everything — called on system memory pressure (see VoyageApp.onTrimMemory). */
+    fun clear() = cache.evictAll()
 }

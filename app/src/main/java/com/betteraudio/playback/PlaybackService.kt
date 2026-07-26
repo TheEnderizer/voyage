@@ -1,8 +1,11 @@
 package com.betteraudio.playback
 
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import android.media.AudioManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
@@ -112,6 +115,24 @@ class PlaybackService : MediaSessionService() {
     private var shakeSensorManager: android.hardware.SensorManager? = null
     private var shakeListener: android.hardware.SensorEventListener? = null
     private var shakeListening = false
+
+    // Screen off = nobody can see the widget. The 1 Hz sleep tick otherwise keeps re-rendering
+    // it — a fresh bitmap, a full RemoteViews rebuild, a Binder call to the launcher — for the
+    // entire duration of a nighttime timer with the screen dark, for no one. Everything ELSE in
+    // the tick (remaining-time bookkeeping, shake-to-extend arming, the fade, firing the timer)
+    // keeps running regardless — only the widget push/render is skipped.
+    @Volatile private var screenOn = true
+    private var screenStateReceiver: BroadcastReceiver? = null
+
+    // Cached book/series metadata for the END_OF_CHAPTER sleep tick's once-a-second re-render —
+    // see pushWidgetStateForSleepTick(). The book/series rarely change between two ticks one
+    // second apart, so re-querying the DB every tick (as the general pushWidgetState() does) is
+    // wasted work in this specific hot loop; a bookId mismatch (a new book started) refetches.
+    @Volatile private var eocMetaBookId: Long = -1L
+    @Volatile private var eocMetaSeriesName: String = ""
+    @Volatile private var eocMetaBookCoverPath: String? = null
+    @Volatile private var eocMetaSeriesCoverPath: String? = null
+    @Volatile private var eocMetaBookDurationMs: Long = 0L
     // Guards the schedule from re-arming every time playback resumes within one listening
     // session; reset when a fresh set of media items is loaded (a genuinely new session).
     private var scheduleArmedThisSession = false
@@ -331,6 +352,31 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         registerBtAutoResume()
+        registerScreenStateReceiver()
+    }
+
+    private fun registerScreenStateReceiver() {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                when (intent.action) {
+                    Intent.ACTION_SCREEN_OFF -> screenOn = false
+                    Intent.ACTION_SCREEN_ON -> {
+                        screenOn = true
+                        // The widget bitmap only changes when we actually render it — force one
+                        // immediate, fully correct re-render now rather than leaving it frozen at
+                        // whatever value was showing when the screen went dark, until the sleep
+                        // tick's next natural second ticks over.
+                        if (sleepMode != SLEEP_MODE_OFF) widgetUpdater.requestRender()
+                    }
+                }
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        ContextCompat.registerReceiver(this, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenStateReceiver = receiver
     }
 
     private fun attachLoudnessEnhancer(audioSessionId: Int) {
@@ -731,12 +777,19 @@ class PlaybackService : MediaSessionService() {
                     fireSleepTimer()
                     return@launch
                 }
-                // COUNTDOWN mode needs no new data each tick — the widget recomputes remaining
-                // time at paint time from the already-persisted sleepEndAtElapsedMs deadline, so
-                // a cheap tickCountdown() (re-renders only countdown-showing widgets) suffices.
-                // END_OF_CHAPTER has no fixed deadline (remaining shrinks with playback position,
-                // not just wall-clock time), so it still needs a full state push each tick.
-                if (sleepMode == SLEEP_MODE_END_OF_CHAPTER) pushWidgetState() else widgetUpdater.tickCountdown()
+                // Screen off = no one can see the widget. Skip the render/push entirely — the
+                // screen-on receiver forces one immediate correct re-render the moment it matters
+                // again, so nothing is ever left stale, only un-rendered while unobserved.
+                if (screenOn) {
+                    // COUNTDOWN mode needs no new data each tick — the widget recomputes remaining
+                    // time at paint time from the already-persisted sleepEndAtElapsedMs deadline, so
+                    // a cheap tickCountdown() (re-renders only countdown-showing widgets) suffices.
+                    // END_OF_CHAPTER has no fixed deadline (remaining shrinks with playback position,
+                    // not just wall-clock time), so it still needs a state push each tick — via the
+                    // metadata-cached variant, since the book/series behind it essentially never
+                    // change between two ticks one second apart.
+                    if (sleepMode == SLEEP_MODE_END_OF_CHAPTER) pushWidgetStateForSleepTick() else widgetUpdater.tickCountdown()
+                }
                 broadcastSleepState()
                 delay(1_000)
             }
@@ -1019,6 +1072,8 @@ class PlaybackService : MediaSessionService() {
         releaseSleepWakeLock()
         headsetPressJob?.cancel()
         unregisterBtAutoResume()
+        screenStateReceiver?.let { runCatching { unregisterReceiver(it) } }
+        screenStateReceiver = null
         loudnessEnhancer?.release()
         loudnessEnhancer = null
         attachedSessionId = C.AUDIO_SESSION_ID_UNSET
@@ -1086,6 +1141,73 @@ class PlaybackService : MediaSessionService() {
                     chapterPositionMs = chapterPositionMs,
                     chapterDurationMs = chapterDurationMs,
                     sleepEndAtElapsedMs = sleepEnd,
+                    sleepRemainingMs = sleepRemaining,
+                    writtenAtElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),
+                )
+            )
+        }
+    }
+
+    /** Cheaper twin of [pushWidgetState] for the END_OF_CHAPTER sleep tick's once-a-second
+     *  re-render: reuses the book/series metadata cached in eocMeta* across ticks instead of
+     *  re-querying the DB every second for values that essentially never change between two
+     *  ticks one second apart. Only ever called while sleepMode == SLEEP_MODE_END_OF_CHAPTER, so
+     *  the COUNTDOWN deadline field is always 0 here (matches pushWidgetState's own sleepEnd for
+     *  that mode). */
+    private fun pushWidgetStateForSleepTick() {
+        val player = mediaSession?.player ?: return
+        val meta = player.currentMediaItem?.mediaMetadata
+        val isPlaying = player.isPlaying
+        val title = meta?.albumTitle?.toString() ?: ""
+        val author = meta?.artist?.toString() ?: ""
+        val chapterTitle = meta?.title?.toString() ?: ""
+        val speed = player.playbackParameters.speed
+        val boostDbVal = boostMb / 100
+        val sleepRemaining = sleepRemainingMsForWidget
+        val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
+        val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
+        val chapterPositionMs = player.currentPosition
+        val chapterDurationMs = player.duration.coerceAtLeast(0L)
+
+        serviceScope.launch(Dispatchers.IO) {
+            if (bookId != eocMetaBookId) {
+                var seriesName = ""
+                var bookCoverPath: String? = null
+                var seriesCoverPath: String? = null
+                var bookDurationMs = 0L
+                if (bookId != -1L) {
+                    val book = repository.getBookOnce(bookId)
+                    bookCoverPath = book?.coverArtPath
+                    seriesName = book?.seriesName ?: ""
+                    bookDurationMs = book?.totalDurationMs ?: 0L
+                    val seriesId = book?.seriesId
+                    if (seriesId != null) {
+                        seriesCoverPath = seriesRepository.getSeriesOnce(seriesId)?.coverArtPath
+                    }
+                }
+                eocMetaSeriesName = seriesName
+                eocMetaBookCoverPath = bookCoverPath
+                eocMetaSeriesCoverPath = seriesCoverPath
+                eocMetaBookDurationMs = bookDurationMs
+                eocMetaBookId = bookId
+            }
+            widgetUpdater.push(
+                WidgetSnapshot(
+                    bookId = bookId,
+                    title = title,
+                    author = author,
+                    chapterTitle = chapterTitle,
+                    seriesName = eocMetaSeriesName,
+                    isPlaying = isPlaying,
+                    speed = speed,
+                    boostDb = boostDbVal,
+                    bookCoverPath = eocMetaBookCoverPath,
+                    seriesCoverPath = eocMetaSeriesCoverPath,
+                    positionMs = positionMs,
+                    bookDurationMs = eocMetaBookDurationMs,
+                    chapterPositionMs = chapterPositionMs,
+                    chapterDurationMs = chapterDurationMs,
+                    sleepEndAtElapsedMs = 0L,
                     sleepRemainingMs = sleepRemaining,
                     writtenAtElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),
                 )

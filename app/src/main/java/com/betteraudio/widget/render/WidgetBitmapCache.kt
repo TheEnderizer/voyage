@@ -12,9 +12,14 @@ import java.io.File
  *  decoded for a small icon and a full background don't collide or waste memory holding the
  *  larger one when only the small one is needed. */
 object WidgetBitmapCache {
-    private const val MAX_ENTRIES = 24
-    private val cache = object : LruCache<String, Bitmap>(MAX_ENTRIES) {
-        override fun sizeOf(key: String, value: Bitmap): Int = 1
+    // Sized by actual bitmap bytes against a fraction of the heap, not a flat entry count — a
+    // decoded ARGB_8888 bitmap's true cost varies hugely with launcher grid size and screen
+    // density (a small icon vs. a full-bleed cover background), so "24 entries" could mean
+    // anywhere from ~1 MB to well over 100 MB depending on what's actually been decoded.
+    private val maxBytes = (Runtime.getRuntime().maxMemory() / 32)
+        .coerceIn(2L * 1024 * 1024, 16L * 1024 * 1024).toInt()
+    private val cache = object : LruCache<String, Bitmap>(maxBytes) {
+        override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
     fun decodeFile(path: String?, reqW: Int, reqH: Int): Bitmap? {

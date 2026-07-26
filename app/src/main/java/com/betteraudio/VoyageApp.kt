@@ -3,11 +3,13 @@ package com.betteraudio
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.betteraudio.data.ebook.ParagraphCache
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.di.ApplicationScope
 import com.betteraudio.util.AppLog
+import com.betteraudio.widget.render.WidgetBitmapCache
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
@@ -22,6 +24,7 @@ class VoyageApp : Application(), Configuration.Provider {
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var repository: AudiobookRepository
+    @Inject lateinit var paragraphCache: ParagraphCache
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
@@ -29,6 +32,17 @@ class VoyageApp : Application(), Configuration.Provider {
         super.onCreate()
         appScope.launch { cleanupPhantomSeries() }
         appScope.launch { settings.enableFileLogging.collect { AppLog.setFileLoggingEnabled(it) } }
+    }
+
+    /** Both are in-memory-only decode/parse caches (see their own docs) — safe to drop entirely
+     *  under memory pressure, since the next access just re-decodes/re-parses on demand. */
+    @Suppress("DEPRECATION") // TRIM_MEMORY_RUNNING_LOW still fires on API < 34; no replacement level covers it
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW) {
+            WidgetBitmapCache.clear()
+            paragraphCache.clear()
+        }
     }
 
     /**
