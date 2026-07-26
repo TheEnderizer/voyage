@@ -60,6 +60,10 @@ android {
     sourceSets {
         getByName("androidTest") {
             java.srcDirs("src/androidTest/java")
+            // MigrationTestHelper reads exported schema JSONs from test assets at
+            // assets/<db-qualified-name>/<version>.json — exactly the layout room.schemaLocation
+            // below already writes to, so just point the test APK's assets at it directly.
+            assets.srcDirs("$projectDir/schemas")
         }
     }
 }
