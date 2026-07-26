@@ -250,6 +250,15 @@ class SettingsStore @Inject constructor(
     // ACTION_SLEEP_TIMER_TOGGLE handler (onStartCommand can't suspend-read the Flow) so a widget
     // tap arms the SAME duration the player would, instead of a separate hardcoded fallback.
     @Volatile var currentSleepTimerMinutes          = DEFAULT_SLEEP_TIMER_MINUTES;              private set
+    // Read synchronously by MainActivity.onCreate so the first composed frame renders in the
+    // right theme and restores the right book without a runBlocking DataStore read.
+    @Volatile var currentAppTheme                   = "";                                       private set
+    @Volatile var currentThemeColorSource           = "WALLPAPER";                              private set
+    @Volatile var currentCustomThemeColor           = "default";                                private set
+    @Volatile var currentDarkMode                   = "AUTO";                                    private set
+    @Volatile var currentPureBlack                  = false;                                    private set
+    @Volatile var currentLastOpenBookId             = -1L;                                       private set
+    @Volatile var currentLastPlayedBookId           = -1L;                                       private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -281,6 +290,13 @@ class SettingsStore @Inject constructor(
         scope.launch { btAutoResumeEnabled.collect           { currentBtAutoResumeEnabled            = it } }
         scope.launch { btAutoResumeWindowMinutes.collect     { currentBtAutoResumeWindowMinutes      = it } }
         scope.launch { sleepTimerMinutes.collect             { currentSleepTimerMinutes              = it } }
+        scope.launch { appTheme.collect                      { currentAppTheme                       = it } }
+        scope.launch { themeColorSource.collect               { currentThemeColorSource              = it } }
+        scope.launch { customThemeColor.collect                { currentCustomThemeColor              = it } }
+        scope.launch { darkMode.collect                         { currentDarkMode                       = it } }
+        scope.launch { pureBlack.collect                        { currentPureBlack                      = it } }
+        scope.launch { lastOpenBookId.collect                   { currentLastOpenBookId                 = it } }
+        scope.launch { lastPlayedBookId.collect                 { currentLastPlayedBookId               = it } }
     }
 
     suspend fun setLibraryFolder(path: String) =

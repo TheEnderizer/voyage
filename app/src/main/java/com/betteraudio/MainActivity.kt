@@ -38,13 +38,12 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import androidx.navigation.NavType
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -80,16 +79,6 @@ import com.betteraudio.widget.WidgetIntents
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
-/** The theme-related settings read synchronously at cold start (see [MainActivity.onCreate]) —
- *  bundled into one type so all five can be fetched with a single `runBlocking`. */
-private data class InitialTheme(
-    val raw: String,
-    val colorSource: String,
-    val customColor: String,
-    val darkMode: String,
-    val pureBlack: Boolean
-)
-
 @UnstableApi
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -118,45 +107,30 @@ class MainActivity : ComponentActivity() {
         playerController.connect()
         requestInitialPermissions()
         // Captured before composition so the restore effect reads it before the route-tracking
-        // effect (which writes -1 for the initial "home" route) can overwrite it.
-        val initialBookId = runBlocking { settings.lastOpenBookId.first() }
+        // effect (which writes -1 for the initial "home" route) can overwrite it. Read from
+        // SettingsStore's pre-warmed snapshot rather than runBlocking the DataStore Flow.
+        val initialBookId = settings.currentLastOpenBookId
         // Theme read synchronously so the first frame renders in the right theme (no flash).
-        // "" = never chosen → the first-launch theme prompt is shown over the app. One runBlocking
-        // for all five reads instead of five separate ones.
-        val initialTheme = runBlocking {
-            InitialTheme(
-                raw = settings.appTheme.first(),
-                colorSource = settings.themeColorSource.first(),
-                customColor = settings.customThemeColor.first(),
-                darkMode = settings.darkMode.first(),
-                pureBlack = settings.pureBlack.first()
-            )
-        }
-        val initialThemeRaw = initialTheme.raw
-        val initialColorSource = initialTheme.colorSource
-        val initialCustomThemeColor = initialTheme.customColor
-        val initialDarkMode = initialTheme.darkMode
-        val initialPureBlack = initialTheme.pureBlack
+        // "" = never chosen → the first-launch theme prompt is shown over the app. These are
+        // already-warm snapshots (SettingsStore's init collects them as soon as the singleton is
+        // constructed), not a blocking DataStore read.
+        val initialThemeRaw = settings.currentAppTheme
+        val initialColorSource = settings.currentThemeColorSource
+        val initialCustomThemeColor = settings.currentCustomThemeColor
+        val initialDarkMode = settings.currentDarkMode
+        val initialPureBlack = settings.currentPureBlack
         // A widget tap opens the active player instead of just restoring the last screen.
         val openPlayerFromWidget = intent?.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false) == true
         val openWidgetEditorColdStart = intent?.getBooleanExtra(WidgetIntents.EXTRA_OPEN_WIDGET_GALLERY, false) == true
         // A pinned book shortcut carries the book's folderPath (stable across a rescan/reinstall,
-        // unlike a DB row id — see BookShortcuts) rather than a bookId directly.
+        // unlike a DB row id — see BookShortcuts) rather than a bookId directly. Its lookup is a
+        // Room query (no synchronous snapshot exists for it), so it's resolved inside the
+        // cold-start LaunchedEffect below instead of blocking onCreate on it.
         val shortcutBookPath = intent?.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)
-        val shortcutBookId = shortcutBookPath?.let { path -> runBlocking { repository.getBookByFolder(path) }?.id }
-        if (shortcutBookPath != null && shortcutBookId == null) {
-            android.widget.Toast.makeText(
-                this, "This book couldn't be found — it may have moved or been removed.", android.widget.Toast.LENGTH_LONG
-            ).show()
-        }
-        val coldStartBookId = when {
-            shortcutBookId != null -> shortcutBookId
-            openPlayerFromWidget -> (runBlocking { settings.lastPlayedBookId.first() }.takeIf { it != -1L } ?: initialBookId)
-            else -> initialBookId
-        }
         // The last book that actually played — used to restore the collapsed mini bar even when the
         // player was collapsed at close (LAST_OPEN_BOOK_ID is -1 then, so it alone can't restore it).
-        val lastPlayedBookId = runBlocking { settings.lastPlayedBookId.first() }
+        // Same snapshot read once and reused for both the widget cold-start branch and this.
+        val lastPlayedBookId = settings.currentLastPlayedBookId
         setContent {
             val playbackState by playerController.playbackState.collectAsStateWithLifecycle()
             // When nothing is actively loaded, keep the app themed by the last-opened book's cover
@@ -291,6 +265,19 @@ class MainActivity : ComponentActivity() {
                 // If nothing was left EXPANDED but a book was last played, restore the collapsed mini
                 // bar so it shows that book (fixes the mini bar being empty after a cold launch).
                 LaunchedEffect(Unit) {
+                    val shortcutBookId = shortcutBookPath?.let { path -> repository.getBookByFolder(path)?.id }
+                    if (shortcutBookPath != null && shortcutBookId == null) {
+                        android.widget.Toast.makeText(
+                            this@MainActivity,
+                            "This book couldn't be found — it may have moved or been removed.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    val coldStartBookId = when {
+                        shortcutBookId != null -> shortcutBookId
+                        openPlayerFromWidget -> lastPlayedBookId.takeIf { it != -1L } ?: initialBookId
+                        else -> initialBookId
+                    }
                     when {
                         coldStartBookId != -1L -> {
                             // A widget tap should land on Home with the player shown (not
@@ -576,31 +563,38 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false)) {
-            val id = playerController.playbackState.value.bookId.takeIf { it != -1L }
-                ?: runBlocking { settings.lastPlayedBookId.first() }
-            if (id != -1L) playerNavRequest = id
+            val activeId = playerController.playbackState.value.bookId.takeIf { it != -1L }
+            if (activeId != null) {
+                playerNavRequest = activeId
+            } else {
+                settings.currentLastPlayedBookId.takeIf { it != -1L }?.let { playerNavRequest = it }
+            }
         }
         if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_WIDGET_GALLERY, false)) {
             widgetEditorNavRequest = true
         }
         intent.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)?.let { path ->
-            val id = runBlocking { repository.getBookByFolder(path) }?.id
-            if (id != null) {
-                playerNavRequest = id
-            } else {
-                android.widget.Toast.makeText(
-                    this, "This book couldn't be found — it may have moved or been removed.", android.widget.Toast.LENGTH_LONG
-                ).show()
+            lifecycleScope.launch {
+                val id = repository.getBookByFolder(path)?.id
+                if (id != null) {
+                    playerNavRequest = id
+                } else {
+                    android.widget.Toast.makeText(
+                        this@MainActivity, "This book couldn't be found — it may have moved or been removed.", android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             }
         }
     }
 
     override fun onStop() {
         super.onStop()
-        runBlocking {
-            playerController.saveCurrentProgressNow()
-            settings.setAppStoppedAt(System.currentTimeMillis())
-        }
+        // The position write that used to happen here (playerController.saveCurrentProgressNow())
+        // is redundant now that the service itself flushes on pause/stop/file-transition/
+        // onTaskRemoved (see PlaybackService's G2-3 fix) — it was the only thing forcing this onto
+        // the exit animation frame, which is what made pressing home stutter. appStoppedAt is
+        // unrelated (AudioCascade's auto-rewind-after-away-time) and doesn't need to block either.
+        lifecycleScope.launch { settings.setAppStoppedAt(System.currentTimeMillis()) }
     }
 
     override fun onDestroy() {
