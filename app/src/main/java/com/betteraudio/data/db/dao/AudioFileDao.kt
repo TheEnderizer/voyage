@@ -10,6 +10,11 @@ interface AudioFileDao {
     @Query("SELECT * FROM audio_files WHERE bookId = :bookId ORDER BY trackNumber ASC, fileName ASC")
     suspend fun getFilesForBookOnce(bookId: Long): List<AudioFile>
 
+    /** Every audio file row, for the scanner's disk reconciliation — one query instead of
+     *  one [getFilesForBookOnce] call per book, grouped by bookId in memory by the caller. */
+    @Query("SELECT * FROM audio_files")
+    suspend fun getAllFilesOnce(): List<AudioFile>
+
     @Query("SELECT * FROM audio_files WHERE id = :id")
     suspend fun getFileById(id: Long): AudioFile?
 

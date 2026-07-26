@@ -123,6 +123,9 @@ class AudiobookRepository @Inject constructor(
     suspend fun insertAudioFiles(files: List<AudioFile>) = audioFileDao.insertAll(files)
     suspend fun clearAudioFiles(bookId: Long) = audioFileDao.deleteFilesForBook(bookId)
     suspend fun getAudioFilesOnce(bookId: Long): List<AudioFile> = audioFileDao.getFilesForBookOnce(bookId)
+    /** Every audio file in the DB, for the scanner's disk reconciliation (batched — one query
+     *  for the whole library instead of one per book). */
+    suspend fun getAllAudioFilesOnce(): List<AudioFile> = audioFileDao.getAllFilesOnce()
     suspend fun saveProgress(progress: PlaybackProgress) = progressDao.upsert(progress)
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
     /** Every book, including hidden/ignored ones — for the scanner's disk reconciliation. */
