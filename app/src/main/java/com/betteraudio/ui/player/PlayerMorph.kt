@@ -135,18 +135,20 @@ fun Modifier.morphFrom(
  * and expand/fade in over the second half of the opening gesture, sliding up from a downward
  * offset into their natural position as they fade — as if they too were hidden at their spot
  * near the mini bar, rather than just popping in place. [offset] is the on-screen downward
- * distance (px) at progress 0; pass 0f (the default) to keep the old in-place reveal.
+ * distance at progress 0; pass 0.dp (the default) to keep the old in-place reveal.
  */
-fun Modifier.expandReveal(progress: State<Float>, offset: Float = EXPAND_REVEAL_OFFSET_PX): Modifier = graphicsLayer {
+fun Modifier.expandReveal(progress: State<Float>, offset: Dp = EXPAND_REVEAL_OFFSET): Modifier = graphicsLayer {
     val p = progress.value
     alpha = ((p - 0.35f) / 0.65f).coerceIn(0f, 1f)
     val s = 0.8f + 0.2f * p.coerceIn(0f, 1f)
     scaleX = s
     scaleY = s
-    translationY = offset * (1f - p.coerceIn(0f, 1f))
+    translationY = offset.toPx() * (1f - p.coerceIn(0f, 1f))
 }
 
-/** Default downward offset (px) [expandReveal] elements start from — roughly 14dp at a typical
- *  density; kept as a plain px constant since [expandReveal] isn't itself @Composable and can't
- *  read [androidx.compose.ui.platform.LocalDensity]. */
-private const val EXPAND_REVEAL_OFFSET_PX = 40f
+/** Default downward offset [expandReveal] elements start from. Previously a raw 40f px constant
+ *  (this dp value, ~14dp, at a "typical" density) — AN-10 in the Gate AN plan: the reveal travelled
+ *  a different on-screen distance per device density. Fixed in Dp here and converted with
+ *  [Dp.toPx] inside [expandReveal]'s own graphicsLayer block (GraphicsLayerScope extends Density),
+ *  so [expandReveal] still doesn't need to be @Composable to read LocalDensity. */
+private val EXPAND_REVEAL_OFFSET = 14.dp
