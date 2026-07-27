@@ -8,20 +8,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.util.lerp
@@ -147,9 +144,11 @@ fun Modifier.expandingContainer(
  * [parentBounds] is the available-space rect (root coords) the cover would naturally occupy at
  * progress 1 — must come from a STABLE ancestor measurement (one that doesn't change size as this
  * modifier's own size animates), so the natural end position is known without a layout feedback
- * loop. Deliberately trades this composable's per-frame-recomposition-freedom (unlike morphFrom's
- * pure graphicsLayer approach) for correctness: only this one small leaf composable recomposes
- * while the sheet is expanding/collapsing, which is a low, bounded cost.
+ * loop. Every per-frame value (`progress`/`parentBounds`/`source`) is read inside [layout] (size +
+ * position) or [graphicsLayer] (the clip radius) — both are deferred, measure/draw-phase reads,
+ * so per-frame remeasure and redraw are the only per-frame cost; nothing here recomposes (an
+ * earlier version read these directly in the function body, which is composition-time and
+ * invalidated the entire calling Scaffold every frame — see AN-3 in the Gate AN plan).
  */
 @Composable
 fun Modifier.coverCropMorph(
@@ -159,51 +158,58 @@ fun Modifier.coverCropMorph(
     sourceRadius: Dp,
     destRadius: Dp,
 ): Modifier {
-    val density = LocalDensity.current
-    val p = progress.value.coerceIn(0f, 1f)
-    val parent = parentBounds.value
-
-    // `parentBounds` is populated by the cover Box's onGloballyPositioned callback, which fires
-    // during LAYOUT — one phase after this composable function's own body (COMPOSITION) reads
-    // `parentBounds.value` for the very first frame the Box exists. That first read is
-    // unavoidably the initial Rect.Zero, but curLeft/curTop below are computed as an OFFSET
-    // relative to `parent.left`/`parent.top` — with parent.left wrongly 0 (not the Box's real
-    // root position), the offset would place the cover at `src.left` pixels from whatever the
-    // Box's TRUE root position turns out to be, not at `src.left` in ROOT space — a visible
-    // one-frame misplacement (the reported "doesn't start at the same dimensions/position" bug)
-    // that then snaps to the correct spot once `parentBounds` catches up next frame. Render
-    // invisible for these few frames instead: the grid card's own cover is still showing under it
-    // (isMorphHidden's p > 0.02f threshold isn't reached this early in the spring), so nothing is
-    // visibly missing, and the very next real frame starts already glued to the right position.
-    if (parent.width <= 0f || parent.height <= 0f) {
-        return this@coverCropMorph
-            .size(0.dp)
-            .graphicsLayer { alpha = 0f }
-    }
-
-    val side = maxOf(minOf(parent.width, parent.height), 1f)
-    val destLeft = parent.left + (parent.width - side) / 2f
-    val destTop = parent.top + (parent.height - side) / 2f
-
-    val src = source.value.takeIf { it != Rect.Zero && it.width > 0f && it.height > 0f && p < 0.999f }
-    val curLeft: Float
-    val curTop: Float
-    val curW: Float
-    val curH: Float
-    if (src == null) {
-        curLeft = destLeft; curTop = destTop; curW = side; curH = side
-    } else {
-        curLeft = lerp(src.left, destLeft, p)
-        curTop = lerp(src.top, destTop, p)
-        curW = lerp(src.width, side, p)
-        curH = lerp(src.height, side, p)
-    }
-    val radius = lerpDp(sourceRadius, destRadius, p)
-
-    return with(density) {
-        this@coverCropMorph
-            .size(curW.toDp(), curH.toDp())
-            .offset { IntOffset((curLeft - parent.left).roundToInt(), (curTop - parent.top).roundToInt()) }
-            .clip(RoundedCornerShape(radius))
-    }
+    return this
+        .layout { measurable, _ ->
+            val parent = parentBounds.value
+            // `parentBounds` is populated by the cover Box's onGloballyPositioned callback, which
+            // fires during LAYOUT — one phase after this element's own first measurement, so the
+            // very first pass unavoidably sees the initial Rect.Zero. curLeft/curTop below are
+            // computed as an OFFSET relative to parent.left/parent.top — with parent.left wrongly
+            // 0 (not the Box's real root position), the offset would place the cover at src.left
+            // pixels from whatever the Box's TRUE root position turns out to be, not at src.left
+            // in ROOT space — a visible one-frame misplacement that then snaps to the correct spot
+            // once parentBounds catches up next frame. Measure zero-size for these few frames
+            // instead (graphicsLayer below also renders it invisible): the grid card's own cover is
+            // still showing under it this early in the spring, so nothing is visibly missing.
+            if (parent.width <= 0f || parent.height <= 0f) {
+                measurable.measure(Constraints.fixed(0, 0))
+                return@layout layout(0, 0) {}
+            }
+            val p = progress.value.coerceIn(0f, 1f)
+            val side = maxOf(minOf(parent.width, parent.height), 1f)
+            val destLeft = parent.left + (parent.width - side) / 2f
+            val destTop = parent.top + (parent.height - side) / 2f
+            val src = source.value.takeIf { it != Rect.Zero && it.width > 0f && it.height > 0f && p < 0.999f }
+            val curLeft: Float
+            val curTop: Float
+            val curW: Float
+            val curH: Float
+            if (src == null) {
+                curLeft = destLeft; curTop = destTop; curW = side; curH = side
+            } else {
+                curLeft = lerp(src.left, destLeft, p)
+                curTop = lerp(src.top, destTop, p)
+                curW = lerp(src.width, side, p)
+                curH = lerp(src.height, side, p)
+            }
+            val wPx = curW.roundToInt().coerceAtLeast(0)
+            val hPx = curH.roundToInt().coerceAtLeast(0)
+            val placeable = measurable.measure(Constraints.fixed(wPx, hPx))
+            layout(wPx, hPx) {
+                placeable.placeRelative(
+                    (curLeft - parent.left).roundToInt(),
+                    (curTop - parent.top).roundToInt()
+                )
+            }
+        }
+        .graphicsLayer {
+            val parent = parentBounds.value
+            if (parent.width <= 0f || parent.height <= 0f) {
+                alpha = 0f
+                return@graphicsLayer
+            }
+            val p = progress.value.coerceIn(0f, 1f)
+            shape = RoundedCornerShape(lerpDp(sourceRadius, destRadius, p))
+            clip = true
+        }
 }
