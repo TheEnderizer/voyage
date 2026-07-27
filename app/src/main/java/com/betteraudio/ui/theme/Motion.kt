@@ -7,7 +7,6 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -16,15 +15,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.composed
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.InspectorInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -47,25 +43,56 @@ object MotionTokens {
 /**
  * Scales the composable down on press and springs back with an overshoot on release.
  * Stacks cleanly with clickable/combinedClickable — does not consume pointer events.
+ *
+ * Modifier.Node-based (not `composed {}`) so the modifier chain stays comparable across
+ * recompositions — a `composed {}` factory makes the whole chain uncomparable, which prevents a
+ * composable receiving it as a parameter from skipping (see AN-7 in the Gate AN plan).
  */
-fun Modifier.pressScale(pressedScale: Float = 0.96f, enabled: Boolean = true): Modifier {
-    if (!enabled) return this
-    return composed {
-        var pressed by remember { mutableStateOf(false) }
-        val scale by animateFloatAsState(
-            targetValue = if (pressed) pressedScale else 1f,
-            animationSpec = MotionTokens.floatPress,
-            label = "pressScale"
-        )
-        graphicsLayer { scaleX = scale; scaleY = scale }
-            .pointerInput(Unit) {
+fun Modifier.pressScale(pressedScale: Float = 0.96f, enabled: Boolean = true): Modifier =
+    if (!enabled) this else this then PressScaleElement(pressedScale)
+
+private data class PressScaleElement(
+    private val pressedScale: Float
+) : androidx.compose.ui.node.ModifierNodeElement<PressScaleNode>() {
+    override fun create(): PressScaleNode = PressScaleNode(pressedScale)
+    override fun update(node: PressScaleNode) {
+        node.pressedScale = pressedScale
+    }
+    override fun InspectorInfo.inspectableProperties() {
+        name = "pressScale"
+        properties["pressedScale"] = pressedScale
+    }
+}
+
+private class PressScaleNode(
+    var pressedScale: Float
+) : androidx.compose.ui.node.DelegatingNode(), androidx.compose.ui.node.LayoutModifierNode {
+    private val scale = Animatable(1f)
+
+    init {
+        delegate(
+            androidx.compose.ui.input.pointer.SuspendingPointerInputModifierNode {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
-                    pressed = true
+                    coroutineScope.launch { scale.animateTo(pressedScale, MotionTokens.floatPress) }
                     waitForUpOrCancellation()
-                    pressed = false
+                    coroutineScope.launch { scale.animateTo(1f, MotionTokens.floatPress) }
                 }
             }
+        )
+    }
+
+    override fun androidx.compose.ui.layout.MeasureScope.measure(
+        measurable: androidx.compose.ui.layout.Measurable,
+        constraints: androidx.compose.ui.unit.Constraints
+    ): androidx.compose.ui.layout.MeasureResult {
+        val placeable = measurable.measure(constraints)
+        return layout(placeable.width, placeable.height) {
+            placeable.placeWithLayer(0, 0) {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
+        }
     }
 }
 
