@@ -226,15 +226,30 @@ fun PlayerSheet(
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val progressAnim = remember { Animatable(0f) }   // 0 = collapsed, 1 = expanded
+    // The single value every visual consumer below reads. progressAnim only drives ANIMATED
+    // transitions (settle, expand/collapse tokens, predictive-back seek) — a live drag writes
+    // this directly and synchronously instead, so N per-delta coroutines can never race an
+    // in-flight animateTo the way writing progressAnim.value from onDelta used to (AN-2).
+    val dragProgress = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    // True for the duration of a live drag on either the mini bar or the full container. Gates
+    // the mirror below so a stale/still-finishing animateTo (the interrupt case) can't stomp
+    // dragProgress while a drag is in control of it.
+    var isDragging by remember { mutableStateOf(false) }
     // Captured by the mini bar's onDragStarted (see below) — whether THIS drag gesture began
     // from a fully settled mini bar, which is the only case a firm downward fling may close the
     // book (see Feature 10 in the mini bar's draggable onDragStopped).
     var gestureStartedSettled by remember { mutableStateOf(true) }
 
-    // Mirror the drag/expand progress onto the controller so MainActivity-level chrome (the
-    // floating nav pill) can slide in lockstep with the sheet.
+    // Mirror progressAnim's animated value into dragProgress whenever an animation (not a live
+    // drag) is driving progress. Silent while isDragging — see above.
     LaunchedEffect(progressAnim) {
         androidx.compose.runtime.snapshotFlow { progressAnim.value }
+            .collect { if (!isDragging) dragProgress.floatValue = it }
+    }
+    // Mirror the live progress onto the controller so MainActivity-level chrome (the floating
+    // nav pill) slides in lockstep with the sheet, including mid-drag.
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { dragProgress.floatValue }
             .collect { controller.expandProgress.floatValue = it }
     }
 
@@ -273,12 +288,12 @@ fun PlayerSheet(
     }
 
     // derivedStateOf: recompose only when the threshold flips, not every animation frame.
-    val expanded by remember { derivedStateOf { progressAnim.value > 0.5f } }
+    val expanded by remember { derivedStateOf { dragProgress.floatValue > 0.5f } }
     LaunchedEffect(expanded) { controller.setExpanded(expanded) }
 
     // Shared-element morph plumbing: expansion progress + the mini bar's element bounds,
     // all as State so the full player reads them inside graphicsLayer lambdas only.
-    val progressState = remember { derivedStateOf { progressAnim.value } }
+    val progressState = remember { derivedStateOf { dragProgress.floatValue } }
     val miniCoverRect = remember { mutableStateOf(Rect.Zero) }
     val miniTitleRect = remember { mutableStateOf(Rect.Zero) }
     val miniControlsRect = remember { mutableStateOf(Rect.Zero) }
@@ -322,14 +337,16 @@ fun PlayerSheet(
         )
     }
 
-    fun settle(velocity: Float) {
-        val goExpand = velocity < -1000f || (velocity <= 1000f && progressAnim.value > 0.5f)
-        scope.launch {
-            progressAnim.animateTo(
-                if (goExpand) 1f else 0f,
-                spring(dampingRatio = 0.85f, stiffness = 380f)
-            )
-        }
+    // Ends a drag gesture: hands the live value off to progressAnim with a single snapTo (not a
+    // per-delta one, so it can't race — this also cancels any stale animateTo left over from an
+    // interrupted settle/token animation) then lets the normal spring settle it open or closed.
+    suspend fun settle(velocity: Float) {
+        progressAnim.snapTo(dragProgress.floatValue)
+        val goExpand = velocity < -1000f || (velocity <= 1000f && dragProgress.floatValue > 0.5f)
+        progressAnim.animateTo(
+            if (goExpand) 1f else 0f,
+            spring(dampingRatio = 0.85f, stiffness = 380f)
+        )
     }
 
     Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height; widthPx = it.width }) {
@@ -387,30 +404,33 @@ fun PlayerSheet(
                     // the sheet starts opening, so no separate fade is needed. Immersive keeps the
                     // original crossfade look (no growing container there).
                     alpha = if (isMaterialYou) 1f
-                            else (1f - progressAnim.value * IMMERSIVE_MINI_BAR_FADE_RATE).coerceIn(0f, 1f)
+                            else (1f - dragProgress.floatValue * IMMERSIVE_MINI_BAR_FADE_RATE).coerceIn(0f, 1f)
                 }
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
-                        scope.launch {
-                            progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
-                        }
+                        // Synchronous, no coroutine — see dragProgress's declaration (AN-2).
+                        dragProgress.floatValue = (dragProgress.floatValue - delta / travelPx).coerceIn(0f, 1f)
                     },
                     // Only a flick that BEGAN from a genuinely settled mini bar is eligible to
                     // close the book — otherwise a downward flick caught mid-expansion (tap to
                     // expand, then immediately flick down before the open animation finishes)
                     // would also satisfy "progress < 0.15f" at release and wrongly close it
                     // instead of just returning to the mini bar.
-                    onDragStarted = { gestureStartedSettled = progressAnim.value < 0.001f },
+                    onDragStarted = {
+                        isDragging = true
+                        gestureStartedSettled = dragProgress.floatValue < 0.001f
+                    },
                     // A firm downward fling starting from the settled mini bar closes the book
                     // (stops playback and dismisses the mini bar); otherwise settle open/closed
                     // as usual — which, for an in-flight expansion flicked back down, means
                     // returning to the mini bar rather than closing.
                     onDragStopped = { velocity ->
-                        if (velocity > 1800f && progressAnim.value < 0.15f && gestureStartedSettled) {
+                        isDragging = false
+                        if (velocity > 1800f && dragProgress.floatValue < 0.15f && gestureStartedSettled) {
                             playerController.stop()
                             controller.clear()
-                        } else settle(velocity)
+                        } else scope.launch { settle(velocity) }
                     }
                 )
         )
@@ -433,7 +453,7 @@ fun PlayerSheet(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer {
-                        translationY = if (progressAnim.value <= 0.001f) heightPx.toFloat() else 0f
+                        translationY = if (dragProgress.floatValue <= 0.001f) heightPx.toFloat() else 0f
                     }
                     // draggable on the container — activates only after the touch-slop
                     // threshold, so buttons/menus inside still receive their own taps.
@@ -441,11 +461,14 @@ fun PlayerSheet(
                         enabled = expanded,
                         orientation = Orientation.Vertical,
                         state = rememberDraggableState { delta ->
-                            scope.launch {
-                                progressAnim.snapTo((progressAnim.value - delta / travelPx).coerceIn(0f, 1f))
-                            }
+                            // Synchronous, no coroutine — see dragProgress's declaration (AN-2).
+                            dragProgress.floatValue = (dragProgress.floatValue - delta / travelPx).coerceIn(0f, 1f)
                         },
-                        onDragStopped = { velocity -> settle(velocity) }
+                        onDragStarted = { isDragging = true },
+                        onDragStopped = { velocity ->
+                            isDragging = false
+                            scope.launch { settle(velocity) }
+                        }
                     )
             ) {
                 // Material You: the full player's background grows out of the mini bar's pill
@@ -469,7 +492,7 @@ fun PlayerSheet(
                             .drawBehind {
                                 drawRect(
                                     androidx.compose.ui.graphics.lerp(
-                                        barColor, bgColor, progressAnim.value.coerceIn(0f, 1f)
+                                        barColor, bgColor, dragProgress.floatValue.coerceIn(0f, 1f)
                                     )
                                 )
                             }
