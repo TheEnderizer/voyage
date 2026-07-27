@@ -45,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -462,11 +463,13 @@ fun PlayerSheet(
                                 sourceRadius = MINI_BAR_RADIUS,
                                 destRadius = 0.dp
                             )
-                            .background(
-                                androidx.compose.ui.graphics.lerp(
-                                    barColor, bgColor, progressAnim.value.coerceIn(0f, 1f)
+                            .drawBehind {
+                                drawRect(
+                                    androidx.compose.ui.graphics.lerp(
+                                        barColor, bgColor, progressAnim.value.coerceIn(0f, 1f)
+                                    )
                                 )
-                            )
+                            }
                     )
                 }
                 CompositionLocalProvider(LocalPlayerExpand provides transition) {
