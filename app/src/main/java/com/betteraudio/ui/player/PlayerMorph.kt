@@ -74,6 +74,16 @@ val LocalPlayerExpand = compositionLocalOf {
  * by the current layer scale before being handed to the shape (which is specified in the layer's
  * own pre-scale local space) so the visible rounding matches [sourceRadius] at progress 0 and
  * [destRadius] at progress 1 regardless of how much the layer is scaled down in between.
+ *
+ * AN-9 (Gate AN): `own` is written from [androidx.compose.ui.layout.onGloballyPositioned] — a
+ * layout-phase callback writing composition state, the standard Compose feedback-loop hazard.
+ * Currently benign at all 14 call sites (both themes' player/bookinfo/series screens): `own` is
+ * only ever read back inside the [androidx.compose.ui.graphics.graphicsLayer] lambda below, and a
+ * graphicsLayer-only transform doesn't trigger a new layout pass, so there's no loop. That's a
+ * property of today's call sites, not a guarantee of the API — a future caller that reads `own`
+ * anywhere layout-affecting (a `Modifier.layout {}`, a `size()` derived from it, etc.) would
+ * reintroduce the hazard. Prefer [androidx.compose.ui.layout.onPlaced] for any new read of this
+ * kind.
  */
 @Composable
 fun Modifier.morphFrom(
