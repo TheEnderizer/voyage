@@ -112,6 +112,16 @@ fun Modifier.expandingContainer(
         // still round, unlike the collapsed-to-square look this replaces.
         val radiusXPx = (onScreenRadius / sx.coerceAtLeast(0.001f)).toPx()
         val radiusYPx = (onScreenRadius / sy.coerceAtLeast(0.001f)).toPx()
+        // AN-5 (Gate AN): this anonymous Shape is rebuilt every frame, but hoisting it to a data
+        // class for value equality was evaluated and buys nothing — radiusXPx/radiusYPx derive
+        // from sx/sy above, which change every frame by construction while the gesture is active,
+        // so a value-equality cache would still miss every frame. The real per-frame cost is that
+        // radiusXPx != radiusYPx for most of the gesture, so this RoundRect is never isSimple and
+        // Compose can't use a hardware render-node outline — it falls back to a Path-based clip on
+        // a full-screen layer regardless of how this Shape is constructed. Left as measured/
+        // documented rather than "fixed": the alternative (accepting circular corners so the
+        // outline stays isSimple) is a visual trade a maintainer should choose deliberately, not a
+        // silent behavior change.
         shape = object : Shape {
             override fun createOutline(
                 size: androidx.compose.ui.geometry.Size,
