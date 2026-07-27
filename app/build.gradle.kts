@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,15 @@ plugins {
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
 }
+
+// Release signing lives in local.properties (gitignored) so the keystore path/passwords never
+// hit version control. Falls back to null (unsigned release build) if the keys aren't set, so a
+// fresh checkout without the keystore still configures everything else.
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+val releaseStoreFile = localProperties.getProperty("VOYAGE_RELEASE_STORE_FILE")
 
 android {
     namespace = "com.betteraudio"
@@ -23,6 +34,17 @@ android {
         ndk { abiFilters += listOf("arm64-v8a") }
     }
 
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = rootProject.file(releaseStoreFile)
+                storePassword = localProperties.getProperty("VOYAGE_RELEASE_STORE_PASSWORD")
+                keyAlias = localProperties.getProperty("VOYAGE_RELEASE_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("VOYAGE_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -30,6 +52,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (releaseStoreFile != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             // Room's MigrationTestHelper runs as an instrumented (androidTest) test, and the

@@ -9,6 +9,9 @@ gradle-app.setting
 # Local config
 local.properties
 
+# Release signing key - never commit
+keystore/
+
 # IDE
 .idea/
 *.iml
