@@ -752,11 +752,12 @@ private fun BookGridCard(
             }
     ) {
         val context = LocalContext.current
+        val coverModel = remember(book.coverArtPath, book.id) { style.bookCoverModel(context, book) }
         AsyncImage(
             // Material shares a cache key with the Book Info cover (ui/material/player/PlayerScreen.kt)
             // so the grid → Book Info morph reuses this exact decoded bitmap — no reload/re-decode,
             // only a redraw at the new (animated) size. See HomeStyle.bookCoverModel.
-            model = style.bookCoverModel(context, book),
+            model = coverModel,
             contentDescription = book.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()

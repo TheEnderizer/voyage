@@ -244,8 +244,20 @@ fun PlayerContent(
             // underneath it; it dissolves into the backdrop at the end of the gesture. The mini
             // bar hides its own cover as soon as the drag starts, so this is the one the eye
             // follows.
+            val coverCacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
+            val context = LocalContext.current
+            // Shares Home's grid-card cache key (see HomeStyle.bookCoverModel) so this cover
+            // reuses the already-decoded bitmap instead of redecoding once the morph lands.
+            val coverImageModel = remember(coverPath, coverCacheKey) {
+                coverPath?.let {
+                    coil3.request.ImageRequest.Builder(context)
+                        .data(File(it))
+                        .memoryCacheKey(coverCacheKey)
+                        .build()
+                }
+            }
             AsyncImage(
-                model = coverPath?.let { File(it) },
+                model = coverImageModel,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier

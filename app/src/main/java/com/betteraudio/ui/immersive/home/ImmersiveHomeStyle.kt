@@ -38,5 +38,10 @@ object ImmersiveHomeStyle : HomeStyle {
     @Composable override fun scrimText(muted: Boolean): Color = ImmersiveStyle.scrimText(muted)
 
     override fun bookCoverModel(context: Context, book: HomeGridBook): Any? =
-        book.coverArtPath?.let { File(it) }
+        book.coverArtPath?.let {
+            coil3.request.ImageRequest.Builder(context)
+                .data(File(it))
+                .memoryCacheKey("cover-${book.id}")
+                .build()
+        }
 }

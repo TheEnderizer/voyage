@@ -331,11 +331,14 @@ fun PlayerContent(
                     contentAlignment = Alignment.TopStart
                 ) {
                     val cacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
-                    val imageModel = coverPath?.let {
-                        coil3.request.ImageRequest.Builder(LocalContext.current)
-                            .data(File(it))
-                            .memoryCacheKey(cacheKey)
-                            .build()
+                    val context = LocalContext.current
+                    val imageModel = remember(coverPath, cacheKey) {
+                        coverPath?.let {
+                            coil3.request.ImageRequest.Builder(context)
+                                .data(File(it))
+                                .memoryCacheKey(cacheKey)
+                                .build()
+                        }
                     }
                     if (expand.sourceIsGridCard) {
                         // Grid card → Book Info: aspect-aware crop morph (see MaterialMotion.kt)
