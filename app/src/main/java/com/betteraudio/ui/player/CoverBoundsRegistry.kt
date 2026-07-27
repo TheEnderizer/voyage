@@ -41,6 +41,20 @@ class CoverBoundsRegistry {
     fun boundsState(bookId: Long): State<Rect> = rectState(bookId)
     fun radiusFor(bookId: Long): Dp = radii[bookId] ?: 0.dp
 
+    /** Called when a grid card leaves composition (scrolls off-screen in a LazyVerticalGrid) so a
+     *  stale off-screen rect can't be matched by [coverPathUnder] or morphed from forever. Resets
+     *  the existing MutableState's VALUE to [Rect.Zero] rather than removing the map entry —
+     *  PlayerSheet and both Book Info screens capture this book's MutableState via `remember` for
+     *  as long as its transition is relevant, so replacing the instance here would silently freeze
+     *  those readers on a dead object the moment the card scrolls back into view and re-publishes
+     *  under a fresh one. `radii`/`coverPaths` hold plain values nothing captures a reference to,
+     *  so those two are safe to actually remove. */
+    fun forget(bookId: Long) {
+        rects[bookId]?.value = Rect.Zero
+        radii.remove(bookId)
+        coverPaths.remove(bookId)
+    }
+
     /** Cover path of whichever published (currently on-screen) book's rect contains [point], or
      *  null if none does — the Immersive "Dynamic pills" feature samples whatever's actually
      *  scrolled underneath a pill right now instead of a fixed backdrop. Deferred read: iterates
@@ -89,6 +103,13 @@ class CoverBoundsRegistry {
 
     fun seriesBoundsState(seriesId: Long): State<Rect> = seriesRectState(seriesId)
     fun seriesRadiusFor(seriesId: Long): Dp = seriesRadii[seriesId] ?: 0.dp
+
+    /** Series counterpart of [forget] — same reset-in-place, same reason (SeriesDetailScreen in
+     *  both themes captures the MutableState via `remember`). */
+    fun forgetSeries(seriesId: Long) {
+        seriesRects[seriesId]?.value = Rect.Zero
+        seriesRadii.remove(seriesId)
+    }
 
     /** Called by the Series info screen: [seriesId] is the grid-sourced series currently morphing
      *  (-1L when closed / not a grid-card open). */

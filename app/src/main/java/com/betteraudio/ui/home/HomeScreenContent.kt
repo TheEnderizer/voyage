@@ -723,6 +723,12 @@ private fun BookGridCard(
     // on-screen bounds even when nothing is playing (no mini bar to morph from otherwise).
     val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
     val cardRadius = MaterialTheme.shapes.large
+    // Reset (not remove) this book's published rect the moment the card leaves composition
+    // (scrolls off in the grid) — see CoverBoundsRegistry.forget for why it's a reset, not a
+    // removal.
+    DisposableEffect(book.id) {
+        onDispose { coverBoundsRegistry.forget(book.id) }
+    }
 
     Box(
         modifier
@@ -899,6 +905,10 @@ private fun CollectionGridCard(
     )
     val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
     val cardRadius = MaterialTheme.shapes.large
+    // Same reset-on-dispose as BookGridCard — see CoverBoundsRegistry.forgetSeries.
+    DisposableEffect(seriesId) {
+        onDispose { if (seriesId != null) coverBoundsRegistry.forgetSeries(seriesId) }
+    }
 
     Box(
         modifier
