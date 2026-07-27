@@ -72,6 +72,7 @@ import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
 /** Mini bar's Pill shape radius at its actual 64dp height (RoundedCornerShape(percent = 50) on a
@@ -241,8 +242,10 @@ fun PlayerSheet(
     // progress via controller.seek(...), track it exactly (snapTo, not animateTo) so the sheet
     // shrinks in lockstep with the finger. Cancel/commit clear seekProgress and hand off to the
     // normal expand/collapse token animations (see PlayerSheetController.cancelSeek/commitSeek).
-    LaunchedEffect(controller.seekProgress) {
-        controller.seekProgress?.let { progressAnim.snapTo(it) }
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { controller.seekProgress }
+            .filterNotNull()
+            .collect { progressAnim.snapTo(it) }
     }
 
     var heightPx by remember { mutableStateOf(0) }
