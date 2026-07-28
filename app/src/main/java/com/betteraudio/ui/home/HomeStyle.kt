@@ -37,6 +37,6 @@ interface HomeStyle {
      *  their full player's cover (see MaterialHomeStyle/ImmersiveHomeStyle), so the grid → full
      *  player morph (when opened directly with nothing already playing) reuses the decoded bitmap
      *  instead of redecoding — see coverCropMorph in MaterialMotion.kt. Book Info's own cover
-     *  (BookInfoScreen.kt) does NOT share this key. */
+     *  (BookInfoScreen.kt) shares this same key too, so grid → Book Info also reuses it. */
     fun bookCoverModel(context: Context, book: HomeGridBook): Any?
 }

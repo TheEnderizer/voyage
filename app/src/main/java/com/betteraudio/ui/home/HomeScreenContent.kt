@@ -767,8 +767,8 @@ private fun BookGridCard(
             // PlayerScreen.kt, only when opened directly from the grid with nothing already
             // playing) so that morph reuses this exact decoded bitmap — no reload/re-decode, only
             // a redraw at the new (animated) size. See HomeStyle.bookCoverModel. Book Info's own
-            // cover (BookInfoScreen.kt) does NOT share this key — it loads a plain File with no
-            // memoryCacheKey, so its grid → Book Info morph redecodes independently.
+            // cover (BookInfoScreen.kt) shares this same "cover-<id>" key too, so its grid →
+            // Book Info morph also reuses the decoded bitmap instead of redecoding.
             model = coverModel,
             contentDescription = book.title,
             contentScale = ContentScale.Crop,
