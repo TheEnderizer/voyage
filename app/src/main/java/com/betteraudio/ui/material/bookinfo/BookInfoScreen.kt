@@ -36,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -107,6 +108,15 @@ fun BookInfoScreen(
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val coverPath = book?.coverArtPath
+        val context = LocalContext.current
+        val coverModel = remember(coverPath, book?.id) {
+            coverPath?.let {
+                coil3.request.ImageRequest.Builder(context)
+                    .data(File(it))
+                    .memoryCacheKey(book?.id?.let { id -> "cover-$id" })
+                    .build()
+            }
+        }
 
         Column(
             Modifier
@@ -154,7 +164,7 @@ fun BookInfoScreen(
                 contentAlignment = Alignment.TopCenter
             ) {
                 AsyncImage(
-                    model = coverPath?.let { File(it) },
+                    model = coverModel,
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

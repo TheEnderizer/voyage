@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,6 +111,15 @@ fun BookInfoScreen(
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val coverPath = book?.coverArtPath
+        val context = LocalContext.current
+        val coverModel = remember(coverPath, book?.id) {
+            coverPath?.let {
+                coil3.request.ImageRequest.Builder(context)
+                    .data(File(it))
+                    .memoryCacheKey(book?.id?.let { id -> "cover-$id" })
+                    .build()
+            }
+        }
         Box(Modifier.fillMaxSize().clipToBounds()) {
             ReflectedProgressiveBlurCover(
                 coverPath = coverPath,
@@ -124,7 +134,7 @@ fun BookInfoScreen(
             )
         }
         AsyncImage(
-            model = coverPath?.let { File(it) },
+            model = coverModel,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
