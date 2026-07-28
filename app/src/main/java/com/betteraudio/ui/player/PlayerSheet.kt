@@ -3,7 +3,6 @@ package com.betteraudio.ui.player
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -278,13 +277,16 @@ fun PlayerSheet(
     val ownSizePx = remember { derivedStateOf { androidx.compose.ui.geometry.Size(widthPx.toFloat(), heightPx.toFloat()) } }
 
     // React to expand/collapse intents (token-based so they survive composition timing).
+    // AN-11 (Gate AN): previously hardcoded sheet-specific springs (0.85/380, 0.9/400) that
+    // diverged from every other spatial animation in the app for no recorded reason — unified
+    // with the shared token.
     LaunchedEffect(controller.expandToken) {
         if (controller.expandToken > 0)
-            progressAnim.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 380f))
+            progressAnim.animateTo(1f, com.betteraudio.ui.theme.MotionTokens.floatSpatial)
     }
     LaunchedEffect(controller.collapseToken) {
         if (controller.collapseToken > 0)
-            progressAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+            progressAnim.animateTo(0f, com.betteraudio.ui.theme.MotionTokens.floatSpatial)
     }
 
     // derivedStateOf: recompose only when the threshold flips, not every animation frame.
@@ -345,7 +347,7 @@ fun PlayerSheet(
         val goExpand = velocity < -1000f || (velocity <= 1000f && dragProgress.floatValue > 0.5f)
         progressAnim.animateTo(
             if (goExpand) 1f else 0f,
-            spring(dampingRatio = 0.85f, stiffness = 380f)
+            com.betteraudio.ui.theme.MotionTokens.floatSpatial
         )
     }
 
