@@ -33,7 +33,10 @@ interface HomeStyle {
     @Composable fun emptyIconBackground(): Color
     @Composable fun scrimText(muted: Boolean = false): Color
 
-    /** Coil model for a grid card's cover art — Material shares a cache key with the Book Info
-     *  cover so the grid → Book Info morph reuses the decoded bitmap; Immersive loads plain. */
+    /** Coil model for a grid card's cover art. Both themes share a "cover-<id>" cache key with
+     *  their full player's cover (see MaterialHomeStyle/ImmersiveHomeStyle), so the grid → full
+     *  player morph (when opened directly with nothing already playing) reuses the decoded bitmap
+     *  instead of redecoding — see coverCropMorph in MaterialMotion.kt. Book Info's own cover
+     *  (BookInfoScreen.kt) does NOT share this key. */
     fun bookCoverModel(context: Context, book: HomeGridBook): Any?
 }

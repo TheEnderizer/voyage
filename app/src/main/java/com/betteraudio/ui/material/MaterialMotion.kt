@@ -138,7 +138,11 @@ fun Modifier.expandingContainer(
     }
 }
 
-// ── Grid card → Book Info: true crop morph ────────────────────────────────────
+// ── Grid card → full player (opened directly, no live mini bar): true crop morph ──────────────
+// AN-12 (Gate AN): this section and coverCropMorph's call site (PlayerScreen.kt) used to say
+// "Book Info" here. Book Info is a separate overlay with its own morphFrom-based cover (see
+// BookInfoScreen.kt) — it never calls coverCropMorph. That stale label previously misled AN-3's
+// own verify step into reproducing via Book Info, a path that never touches this code.
 
 /**
  * Morphs a cover image from a library grid card's exact on-screen crop (any aspect ratio, e.g.

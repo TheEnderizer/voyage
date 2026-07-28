@@ -341,9 +341,12 @@ fun PlayerContent(
                         }
                     }
                     if (expand.sourceIsGridCard) {
-                        // Grid card → Book Info: aspect-aware crop morph (see MaterialMotion.kt)
-                        // so the same crop window that the grid card shows continuously resizes
-                        // into the natural square crop — no reload, no aspect "pop".
+                        // Grid card → this full player, opened directly with no live mini bar
+                        // (e.g. Book Info's Resume button, or a fresh unplayed book): aspect-aware
+                        // crop morph (see MaterialMotion.kt) so the same crop window the grid card
+                        // shows continuously resizes into the natural square crop — no reload, no
+                        // aspect "pop". Not Book Info's own cover — that's a separate morphFrom-
+                        // based morph in BookInfoScreen.kt.
                         AsyncImage(
                             model = imageModel,
                             contentDescription = null,

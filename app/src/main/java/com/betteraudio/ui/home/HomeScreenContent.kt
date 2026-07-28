@@ -719,8 +719,10 @@ private fun BookGridCard(
         tween(150), label = "border"
     )
 
-    // Published so a cover-morph transition (grid → Book Info) can start from this exact card's
-    // on-screen bounds even when nothing is playing (no mini bar to morph from otherwise).
+    // Published so a cover-morph transition can start from this exact card's on-screen bounds:
+    // Book Info's own open/close morph (BookInfoScreen.kt, via morphFrom) always reads this, and
+    // the full player reads it too when opened directly with nothing already playing (no mini bar
+    // to morph from otherwise) — see coverCropMorph in MaterialMotion.kt for that second case.
     val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
     val cardRadius = MaterialTheme.shapes.large
     // Reset (not remove) this book's published rect the moment the card leaves composition
@@ -751,18 +753,22 @@ private fun BookGridCard(
             .background(style.cardBackgroundColor())
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .onGloballyPositioned {
-                // style.cardCornerRadius is the progress-0 radius the Book Info cover morph starts
-                // from (see coverCropMorph in MaterialMotion.kt) — independent of `cardRadius`
-                // above (the actual clip shape, identical across both themes).
+                // style.cardCornerRadius is the progress-0 radius both consumers' cover morphs
+                // start from (Book Info's morphFrom and the full player's coverCropMorph, see
+                // MaterialMotion.kt) — independent of `cardRadius` above (the actual clip shape,
+                // identical across both themes).
                 coverBoundsRegistry.publish(book.id, it.boundsInRoot(), style.cardCornerRadius, book.coverArtPath)
             }
     ) {
         val context = LocalContext.current
         val coverModel = remember(book.coverArtPath, book.id) { style.bookCoverModel(context, book) }
         AsyncImage(
-            // Material shares a cache key with the Book Info cover (ui/material/player/PlayerScreen.kt)
-            // so the grid → Book Info morph reuses this exact decoded bitmap — no reload/re-decode,
-            // only a redraw at the new (animated) size. See HomeStyle.bookCoverModel.
+            // Material shares a cache key with the full player's cover (ui/material/player/
+            // PlayerScreen.kt, only when opened directly from the grid with nothing already
+            // playing) so that morph reuses this exact decoded bitmap — no reload/re-decode, only
+            // a redraw at the new (animated) size. See HomeStyle.bookCoverModel. Book Info's own
+            // cover (BookInfoScreen.kt) does NOT share this key — it loads a plain File with no
+            // memoryCacheKey, so its grid → Book Info morph redecodes independently.
             model = coverModel,
             contentDescription = book.title,
             contentScale = ContentScale.Crop,

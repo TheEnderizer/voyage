@@ -25,8 +25,10 @@ import androidx.compose.ui.util.lerp
  * [progress] is the sheet expansion (0 = mini bar, 1 = full player). [miniCover]/[miniTitle]/
  * [miniControls] are the bounds a morphing element travels FROM, in root coordinates — normally
  * the mini bar's, but [PlayerSheet] repoints [miniCover] at a library grid card's bounds (via
- * [CoverBoundsRegistry]) when there's no live mini bar (e.g. opening Book Info with nothing
- * playing), so the grid → Book Info transition still morphs from the tapped card.
+ * [CoverBoundsRegistry]) when there's no live mini bar (e.g. opening the full player directly from
+ * Book Info's Resume button, or a fresh unplayed book), so the grid → full player transition still
+ * morphs from the tapped card. This is separate from Book Info's own grid → Book Info morph (its
+ * own [morphFrom] usage in BookInfoScreen.kt).
  * [coverSourceRadius] is that source's corner radius, for [morphFrom]'s clip-radius animation.
  * All values are [State] so readers can defer reads into graphicsLayer/draw lambdas and avoid
  * per-frame recomposition.
