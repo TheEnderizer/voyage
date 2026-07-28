@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
@@ -34,7 +35,10 @@ import java.io.File
 @Composable
 fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: Modifier = Modifier) {
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val baked = bakedPath?.takeIf { File(it).exists() }
+        // AN-13 (Gate AN): remember'd so this File.exists() stat only runs when bakedPath itself
+        // changes (roughly once per book), not on every recomposition — matches the same pattern
+        // at ReflectedProgressiveBlurCover.kt.
+        val baked = remember(bakedPath) { bakedPath?.takeIf { File(it).exists() } }
         // Nothing to draw a cover from (fresh install / nothing ever played, or pre-API-31 with
         // no bake): a soft theme-tinted wash instead of a flat wall of `background`, so the
         // Immersive look still has some depth before the first book plays. It sits under the
