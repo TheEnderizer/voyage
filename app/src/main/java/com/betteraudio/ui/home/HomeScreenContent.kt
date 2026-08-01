@@ -48,7 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -752,11 +752,15 @@ private fun BookGridCard(
             )
             .background(style.cardBackgroundColor())
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .onGloballyPositioned {
+            .onPlaced {
                 // style.cardCornerRadius is the progress-0 radius both consumers' cover morphs
                 // start from (Book Info's morphFrom and the full player's coverCropMorph, see
                 // MaterialMotion.kt) — independent of `cardRadius` above (the actual clip shape,
-                // identical across both themes).
+                // identical across both themes). onPlaced (not onGloballyPositioned): this write
+                // is only ever read back from deferred graphicsLayer/draw-phase consumers (see
+                // AN-9 in ui/player/PlayerMorph.kt), so the placement-phase callback is the
+                // correct, hardened choice per that doc's own recommendation — same bounds data,
+                // same phase in the pipeline.
                 coverBoundsRegistry.publish(book.id, it.boundsInRoot(), style.cardCornerRadius, book.coverArtPath)
             }
     ) {
@@ -932,7 +936,7 @@ private fun CollectionGridCard(
             )
             .background(style.cardBackgroundColor())
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .onGloballyPositioned {
+            .onPlaced {
                 if (seriesId != null) coverBoundsRegistry.publishSeries(seriesId, it.boundsInRoot(), style.cardCornerRadius)
             }
     ) {

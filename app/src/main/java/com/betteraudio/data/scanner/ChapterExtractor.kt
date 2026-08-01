@@ -32,30 +32,40 @@ object ChapterExtractor {
         }
     }
 
+    // Generous upper bound on a single chapter's start time, purely to detect box padding
+    // misread as a further entry (a stray/garbage 64-bit value decodes to an enormous ms figure
+    // far beyond this) — not a real per-file duration limit.
+    private const val MAX_PLAUSIBLE_CHAPTER_MS = 7L * 24 * 60 * 60 * 1000
+
     /**
      * Nero `chpl` full-box layout:
      *   u8 version, u24 flags, [u32 reserved if version != 0], u8 chapterCount,
      *   then per chapter: u64 startTime (100-ns units), u8 titleLen, titleLen bytes (UTF-8).
      *
-     * Note the count is a **u8**, so a book with more than 255 chapters yields a truncated list
-     * whose last entry does not reach the end of the audio. Callers that derive spans from these
-     * markers must not assume they cover the whole file.
+     * The declared count is a **u8**, so a book with more than 255 chapters would report a
+     * truncated count — this reads entries until [Mp4Box.end] instead of trusting it, treating
+     * [declaredCount] as a lower-bound size hint only. Some writers pad the box after the last
+     * real entry; each candidate entry's start time is sanity-checked (`0..MAX_PLAUSIBLE_CHAPTER_MS`)
+     * before being accepted, so padding bytes decoded as a bogus giant timestamp stop the loop
+     * instead of being synthesized into a garbage chapter.
      */
     private fun parseChpl(raf: RandomAccessFile, box: Mp4Box): List<RawChapter> {
         raf.seek(box.contentStart)
         val version = raf.readUnsignedByte()
         raf.skipBytes(3) // flags
         if (version != 0) raf.skipBytes(4) // reserved
-        val count = raf.readUnsignedByte()
-        val result = ArrayList<RawChapter>(count)
-        repeat(count) {
-            if (raf.filePointer + 9 > box.end) return@repeat
+        val declaredCount = raf.readUnsignedByte()
+        val result = ArrayList<RawChapter>(declaredCount.coerceAtLeast(1))
+        while (raf.filePointer + 9 <= box.end) {
             val start100ns = raf.readLong()
             val titleLen = raf.readUnsignedByte()
+            if (raf.filePointer + titleLen > box.end) break  // malformed/padded tail — stop cleanly
             val titleBytes = ByteArray(titleLen)
             raf.readFully(titleBytes)
+            val startMs = start100ns / 10_000L
+            if (startMs < 0 || startMs > MAX_PLAUSIBLE_CHAPTER_MS) break
             val title = String(titleBytes, Charsets.UTF_8).trim()
-            result.add(RawChapter(title.ifBlank { "Chapter ${it + 1}" }, start100ns / 10_000L))
+            result.add(RawChapter(title.ifBlank { "Chapter ${result.size + 1}" }, startMs))
         }
         return result.sortedBy { it.startMs }
     }

@@ -3,7 +3,7 @@ package com.betteraudio.ui.material.settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -38,6 +38,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.material.MaterialStyle
+import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import com.betteraudio.ui.settings.SettingsSection
 import com.betteraudio.ui.settings.SettingsViewModel
@@ -137,6 +138,7 @@ fun SettingsScreen(
         )
     }
 
+    val motion = LocalVoyageMotion.current
     val sectionBackProgress = rememberPredictiveBackProgress(
         enabled = currentSection != SettingsSection.Root
     ) {
@@ -180,7 +182,11 @@ fun SettingsScreen(
         AnimatedContent(
             targetState = currentSection,
             transitionSpec = {
-                fadeIn(tween(160)) togetherWith fadeOut(tween(160))
+                // SizeTransform(clip = false): the two sections being crossfaded rarely share a
+                // height, and clipping the shorter one to the taller one's bounds (the default)
+                // shows as a visible hard edge mid-fade.
+                fadeIn(motion.effectsFast) togetherWith fadeOut(motion.effectsFast) using
+                    SizeTransform(clip = false)
             },
             label = "settings_section",
             modifier = Modifier

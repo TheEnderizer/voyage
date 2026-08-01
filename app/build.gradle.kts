@@ -26,8 +26,8 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 56
-        versionName = "1.9.7b"
+        versionCode = 57
+        versionName = "1.9.8b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
         // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.
@@ -137,6 +137,10 @@ dependencies {
     // Theme engine (Material You color generation + custom-palette export/import)
     implementation(libs.material.kolor)
     implementation(libs.kotlinx.serialization.json)
+
+    // Shape morphing (Material You container-transform rebuild) — material3 1.4.0 does NOT
+    // depend on this; MaterialShapes/Morph aren't available otherwise (see ui/material/motion).
+    implementation(libs.androidx.graphics.shapes)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

@@ -28,13 +28,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -81,16 +81,19 @@ fun LockOverlay(
                     detectTapGestures(
                         onPress = {
                             holdJob?.cancel()
+                            // Frame-synced (not a fixed delay(16) against wall-clock time) — ties
+                            // the hold-progress tick to the actual render cadence instead of
+                            // assuming 60 Hz.
                             holdJob = scope.launch {
-                                val start = System.currentTimeMillis()
+                                val startNanos = withFrameNanos { it }
                                 while (isActive) {
-                                    val elapsed = System.currentTimeMillis() - start
-                                    holdProgress = (elapsed / UNLOCK_HOLD_MS.toFloat()).coerceIn(0f, 1f)
+                                    val nowNanos = withFrameNanos { it }
+                                    val elapsedMs = (nowNanos - startNanos) / 1_000_000L
+                                    holdProgress = (elapsedMs / UNLOCK_HOLD_MS.toFloat()).coerceIn(0f, 1f)
                                     if (holdProgress >= 1f) {
                                         onUnlock()
                                         return@launch
                                     }
-                                    delay(16)
                                 }
                             }
                             tryAwaitRelease()

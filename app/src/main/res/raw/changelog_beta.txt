@@ -5,6 +5,21 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.8b] - 2026-08-01
+
+### Fixed
+- The player's next/previous buttons now move by chapter instead of by file — including on single-file audiobooks with embedded chapters, where they previously didn't appear at all.
+- Opening the player from the home-screen widget now shows the correct chapter name, number, and chapter progress immediately, instead of only after pressing play.
+- Chapters past the 255th in a single audio file are no longer silently dropped.
+- Listening history recorded while playing a series member book now records the correct chapter instead of a whole-series index.
+- The widget's chapter title and chapter progress fields now track the actual chapter instead of standing in for the whole file.
+
+### Added
+- Progress bar widget elements can now track chapter progress instead of book progress.
+
+### Changed
+- Reworked several Material You animations (the mini player growing into the full player, screen transitions, the home grid) to remove stutter and unnecessary redraws.
+
 ## [1.9.7b] - 2026-07-20
 
 ### Changed

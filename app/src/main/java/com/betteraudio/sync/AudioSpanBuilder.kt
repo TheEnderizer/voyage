@@ -2,44 +2,31 @@ package com.betteraudio.sync
 
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Chapter
+import com.betteraudio.playback.ChapterTimeline
 
 /**
  * Flattens a book's Chapter rows (or, if none exist, one span per audio file) onto the book-wide
- * timeline — the same cumulative-file-offset math `PlayerViewModel` uses for
- * `ChapterRow.Item.absStartMs`/`durationMs`. Shared here so the ebook reader's "Listen from here"
- * and the player's "Read from here" build an identical audio-side timeline for [PositionBridge].
+ * timeline. A thin adapter over [ChapterTimeline] — the shared boundary math also behind the
+ * player's chapter nav/pill/scrubber — so the ebook reader's "Listen from here" and the player's
+ * "Read from here" build an identical audio-side timeline for [PositionBridge].
+ *
+ * Deliberately uses [com.betteraudio.playback.ChapterMark.rawDurationMs], NOT the derived
+ * [com.betteraudio.playback.ChapterMark.durationMs]: [AudioChapterSpan.endMs] feeds
+ * [PositionBridge]/[ChapterMatcher]'s ebook-sync mapping, and switching to derived spans would
+ * change that mapping for every book with gappy/truncated chapter markers — a separate,
+ * independently-testable migration, not a side effect of this refactor. The one intentional
+ * behaviour change versus the old inline implementation: an orphan chapter (whose `fileId` isn't
+ * among the book's files) is now dropped instead of silently anchored at book position 0.
  */
 object AudioSpanBuilder {
 
-    fun build(files: List<AudioFile>, chapters: List<Chapter>): List<AudioChapterSpan> {
-        val sortedFiles = files.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        val cumulative = cumulativeStarts(sortedFiles.map { it.id to it.durationMs })
-
-        return if (chapters.isNotEmpty()) {
-            chapters.sortedBy { it.orderIndex }.mapIndexed { i, c ->
-                AudioChapterSpan(
-                    index = i,
-                    title = c.title,
-                    absStartMs = (cumulative[c.fileId] ?: 0L) + c.startInFileMs,
-                    durationMs = c.durationMs
-                )
-            }
-        } else {
-            sortedFiles.mapIndexed { i, f ->
-                AudioChapterSpan(
-                    index = i,
-                    title = f.chapterTitle ?: f.fileName,
-                    absStartMs = cumulative[f.id] ?: 0L,
-                    durationMs = f.durationMs
-                )
-            }
+    fun build(files: List<AudioFile>, chapters: List<Chapter>): List<AudioChapterSpan> =
+        ChapterTimeline.build(files, chapters).marks.map { m ->
+            AudioChapterSpan(
+                index = m.index,
+                title = m.title,
+                absStartMs = m.startMs,
+                durationMs = m.rawDurationMs,
+            )
         }
-    }
-
-    private fun cumulativeStarts(idDur: List<Pair<Long, Long>>): Map<Long, Long> {
-        val map = HashMap<Long, Long>(idDur.size)
-        var t = 0L
-        idDur.forEach { (id, dur) -> map[id] = t; t += dur }
-        return map
-    }
 }

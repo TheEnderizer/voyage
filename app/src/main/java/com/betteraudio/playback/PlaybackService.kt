@@ -149,6 +149,31 @@ class PlaybackService : MediaSessionService() {
     @Volatile private var eocMetaSeriesCoverPath: String? = null
     @Volatile private var eocMetaBookDurationMs: Long = 0L
 
+    // The chapter/file-boundary timeline for whichever book is currently loaded — see
+    // playback/ChapterTimeline.kt. The service needs its own copy (rather than relying on a
+    // controller pushing one) because it can start playback entirely on its own with no app
+    // process/UI attached at all (loadLastPlayedAndPlay, a cold widget tap). @Volatile + whole-
+    // object replacement, same discipline as eocMeta* above.
+    @Volatile private var chapterTimeline: ChapterTimeline = ChapterTimeline.EMPTY
+    @Volatile private var chapterTimelineLoadInFlightFor: Long = -1L
+
+    /** Loads (or reloads) the chapter timeline for [bookId] unless it's already current, guarding
+     *  against two concurrent callers duplicating the same DB fetch. No completion callback: every
+     *  reader here (pushWidgetState/pushWidgetStateForSleepTick) just falls back to file-scoped
+     *  data while a load is in flight, degrading gracefully rather than blocking on it. */
+    private fun ensureChapterTimeline(bookId: Long) {
+        if (bookId == -1L) return
+        if (chapterTimeline.bookId == bookId) return
+        if (chapterTimelineLoadInFlightFor == bookId) return
+        chapterTimelineLoadInFlightFor = bookId
+        serviceScope.launch(Dispatchers.IO) {
+            val files = repository.getAudioFilesOnce(bookId)
+            val chapters = repository.getChaptersForBookOnce(bookId)
+            chapterTimeline = ChapterTimeline.build(files, chapters, bookId)
+            if (chapterTimelineLoadInFlightFor == bookId) chapterTimelineLoadInFlightFor = -1L
+        }
+    }
+
     // ── Headset multi-press mapping ──────────────────────────────────────────────
     private val headsetGestureMapper: HeadsetGestureMapper by lazy {
         HeadsetGestureMapper(serviceScope, settings) { action -> performHeadsetAction(action) }
@@ -325,6 +350,10 @@ class PlaybackService : MediaSessionService() {
                         val posMs = exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
                         serviceScope.launch(Dispatchers.IO) { repository.updatePosition(bookId, fileId, posMs) }
                     }
+                    // Covers every playlist-load path (PlayerController.playBook, SeriesPlayer,
+                    // loadLastPlayedAndPlay) — Media3 fires this transition with
+                    // MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED whenever setMediaItems lands.
+                    if (bookId != -1L) ensureChapterTimeline(bookId)
                 }
                 pushWidgetState()
             }
@@ -807,6 +836,10 @@ class PlaybackService : MediaSessionService() {
             applyEq(audio.eqBandsJson)
             applySkipSilence(audio.skipSilence)
             repository.touchLastPlayed(bookId)
+            // Belt-and-braces: onMediaItemTransition's own hook already covers this once Media3
+            // fires the transition, but kick the load off here too so it's in flight the moment
+            // the queue exists rather than waiting on that callback.
+            ensureChapterTimeline(bookId)
             pushWidgetState()
         }
     }
@@ -853,6 +886,29 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
+    private data class ChapterFieldsForWidget(val title: String, val positionMs: Long, val durationMs: Long)
+
+    /**
+     * Resolves the widget's per-chapter fields from [chapterTimeline] when it's loaded for
+     * [bookId]; falls back to file-scoped values (the pre-fix behaviour — file title/position/
+     * duration standing in for the chapter's) while a load is still in flight or the book has no
+     * chapter data at all, so nothing regresses in that window.
+     *
+     * Deliberately does NOT use [bookPositionMsFor] here: that sums ExoPlayer *Timeline* window
+     * durations, which read as `C.TIME_UNSET` for not-yet-prepared items (see its own doc) — wrong
+     * input for a chapter lookup near a file boundary. [ChapterTimeline.startOfFileMs] is
+     * Room-derived and always safe to add the current item's own (always-valid) position to.
+     */
+    private fun chapterFieldsForWidget(player: Player, bookId: Long, fallbackTitle: String): ChapterFieldsForWidget {
+        val timeline = chapterTimeline
+        val mediaId = player.currentMediaItem?.mediaId?.toLongOrNull()
+        val fallback = ChapterFieldsForWidget(fallbackTitle, player.currentPosition, player.duration.coerceAtLeast(0L))
+        if (timeline.bookId != bookId || timeline.isEmpty || mediaId == null) return fallback
+        val absBookPos = timeline.startOfFileMs(mediaId) + player.currentPosition
+        val mark = timeline.chapterAt(absBookPos) ?: return fallback
+        return ChapterFieldsForWidget(mark.title, absBookPos - mark.startMs, mark.durationMs)
+    }
+
     /** Builds a WidgetSnapshot from live player state and hands it to WidgetUpdater, which
      *  persists it (so a cold-started widget always has real data) and renders every placed
      *  widget directly — no exported broadcast, so this can't be throttled or spoofed. */
@@ -862,15 +918,14 @@ class PlaybackService : MediaSessionService() {
         val isPlaying = player.isPlaying
         val title = meta?.albumTitle?.toString() ?: ""
         val author = meta?.artist?.toString() ?: ""
-        val chapterTitle = meta?.title?.toString() ?: ""
+        val fileTitle = meta?.title?.toString() ?: ""
         val speed = player.playbackParameters.speed
         val boostDbVal = boostMb / 100
         val sleepEnd = sleepTimerEngine.sleepEndAtElapsedMsForWidget
         val sleepRemaining = sleepTimerEngine.remainingMsForWidget
         val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
         val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
-        val chapterPositionMs = player.currentPosition
-        val chapterDurationMs = player.duration.coerceAtLeast(0L)
+        val chapterFields = chapterFieldsForWidget(player, bookId, fileTitle)
 
         serviceScope.launch(Dispatchers.IO) {
             var seriesName = ""
@@ -892,7 +947,7 @@ class PlaybackService : MediaSessionService() {
                     bookId = bookId,
                     title = title,
                     author = author,
-                    chapterTitle = chapterTitle,
+                    chapterTitle = chapterFields.title,
                     seriesName = seriesName,
                     isPlaying = isPlaying,
                     speed = speed,
@@ -901,8 +956,8 @@ class PlaybackService : MediaSessionService() {
                     seriesCoverPath = seriesCoverPath,
                     positionMs = positionMs,
                     bookDurationMs = bookDurationMs,
-                    chapterPositionMs = chapterPositionMs,
-                    chapterDurationMs = chapterDurationMs,
+                    chapterPositionMs = chapterFields.positionMs,
+                    chapterDurationMs = chapterFields.durationMs,
                     sleepEndAtElapsedMs = sleepEnd,
                     sleepRemainingMs = sleepRemaining,
                     writtenAtElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),
@@ -923,14 +978,13 @@ class PlaybackService : MediaSessionService() {
         val isPlaying = player.isPlaying
         val title = meta?.albumTitle?.toString() ?: ""
         val author = meta?.artist?.toString() ?: ""
-        val chapterTitle = meta?.title?.toString() ?: ""
+        val fileTitle = meta?.title?.toString() ?: ""
         val speed = player.playbackParameters.speed
         val boostDbVal = boostMb / 100
         val sleepRemaining = sleepTimerEngine.remainingMsForWidget
         val bookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
         val positionMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
-        val chapterPositionMs = player.currentPosition
-        val chapterDurationMs = player.duration.coerceAtLeast(0L)
+        val chapterFields = chapterFieldsForWidget(player, bookId, fileTitle)
 
         serviceScope.launch(Dispatchers.IO) {
             if (bookId != eocMetaBookId) {
@@ -959,7 +1013,7 @@ class PlaybackService : MediaSessionService() {
                     bookId = bookId,
                     title = title,
                     author = author,
-                    chapterTitle = chapterTitle,
+                    chapterTitle = chapterFields.title,
                     seriesName = eocMetaSeriesName,
                     isPlaying = isPlaying,
                     speed = speed,
@@ -968,8 +1022,8 @@ class PlaybackService : MediaSessionService() {
                     seriesCoverPath = eocMetaSeriesCoverPath,
                     positionMs = positionMs,
                     bookDurationMs = eocMetaBookDurationMs,
-                    chapterPositionMs = chapterPositionMs,
-                    chapterDurationMs = chapterDurationMs,
+                    chapterPositionMs = chapterFields.positionMs,
+                    chapterDurationMs = chapterFields.durationMs,
                     sleepEndAtElapsedMs = 0L,
                     sleepRemainingMs = sleepRemaining,
                     writtenAtElapsedRealtimeMs = android.os.SystemClock.elapsedRealtime(),

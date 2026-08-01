@@ -24,6 +24,7 @@ import com.betteraudio.widget.model.IconStyle
 import com.betteraudio.widget.model.ImageFit
 import com.betteraudio.widget.model.ImageStyle
 import com.betteraudio.widget.model.ProgressShape
+import com.betteraudio.widget.model.ProgressSource
 import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
 import com.betteraudio.widget.model.TextStyle
@@ -258,6 +259,14 @@ object WidgetPainter {
     private fun bookProgressFraction(s: WidgetSnapshot): Float =
         if (s.bookDurationMs <= 0L) 0f else (s.positionMs.toFloat() / s.bookDurationMs).coerceIn(0f, 1f)
 
+    private fun chapterProgressFraction(s: WidgetSnapshot): Float =
+        if (s.chapterDurationMs <= 0L) 0f else (s.chapterPositionMs.toFloat() / s.chapterDurationMs).coerceIn(0f, 1f)
+
+    private fun progressFraction(style: ShapeStyle, s: WidgetSnapshot): Float = when (style.progressSource) {
+        ProgressSource.CHAPTER -> chapterProgressFraction(s)
+        ProgressSource.BOOK -> bookProgressFraction(s)
+    }
+
     private fun formatSpeed(speed: Float): String {
         val rounded = Math.round(speed * 100) / 100f
         val text = if (rounded == rounded.toInt().toFloat()) {
@@ -349,7 +358,7 @@ object WidgetPainter {
                 canvas.drawPath(path, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.fillColor.toInt() })
             }
             ElementType.PROGRESS_BAR -> {
-                val fraction = bookProgressFraction(snapshot)
+                val fraction = progressFraction(style, snapshot)
                 if (style.progressShape == ProgressShape.LINE) {
                     val trackPath = ShapePaths.pill(rect)
                     canvas.drawPath(trackPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = style.trackColor.toInt() })

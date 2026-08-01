@@ -13,7 +13,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
@@ -77,15 +77,17 @@ val LocalPlayerExpand = compositionLocalOf {
  * own pre-scale local space) so the visible rounding matches [sourceRadius] at progress 0 and
  * [destRadius] at progress 1 regardless of how much the layer is scaled down in between.
  *
- * AN-9 (Gate AN): `own` is written from [androidx.compose.ui.layout.onGloballyPositioned] — a
- * layout-phase callback writing composition state, the standard Compose feedback-loop hazard.
- * Currently benign at all 14 call sites (both themes' player/bookinfo/series screens): `own` is
- * only ever read back inside the [androidx.compose.ui.graphics.graphicsLayer] lambda below, and a
- * graphicsLayer-only transform doesn't trigger a new layout pass, so there's no loop. That's a
- * property of today's call sites, not a guarantee of the API — a future caller that reads `own`
- * anywhere layout-affecting (a `Modifier.layout {}`, a `size()` derived from it, etc.) would
- * reintroduce the hazard. Prefer [androidx.compose.ui.layout.onPlaced] for any new read of this
- * kind.
+ * AN-9 (Gate AN): `own` is written from [androidx.compose.ui.layout.onPlaced] — a layout-phase
+ * callback writing composition state, the standard Compose feedback-loop hazard. Benign at all
+ * current call sites (both themes' player/bookinfo/series screens): `own` is only ever read back
+ * inside the [androidx.compose.ui.graphics.graphicsLayer] lambda below, and a graphicsLayer-only
+ * transform doesn't trigger a new layout pass, so there's no loop. That's a property of today's
+ * call sites, not a guarantee of the API — a future caller that reads `own` anywhere
+ * layout-affecting (a `Modifier.layout {}`, a `size()` derived from it, etc.) would reintroduce
+ * the hazard. [onPlaced] (rather than the previously-used [androidx.compose.ui.layout.onGloballyPositioned])
+ * is deliberate: it's the placement-phase callback this KDoc already recommended for any new read
+ * of this kind, and it fires at the same point in the pipeline with the same bounds data, so this
+ * is a hardening, not a behaviour change.
  */
 @Composable
 fun Modifier.morphFrom(
@@ -99,7 +101,7 @@ fun Modifier.morphFrom(
 ): Modifier {
     var own by remember { mutableStateOf(Rect.Zero) }
     return this
-        .onGloballyPositioned { own = it.boundsInRoot() }
+        .onPlaced { own = it.boundsInRoot() }
         .graphicsLayer {
             val p = progress.value
             alpha = if (fadeIn) (p / 0.5f).coerceIn(0f, 1f) else 1f

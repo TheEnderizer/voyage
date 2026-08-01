@@ -106,9 +106,12 @@ class PlayerController @Inject constructor(
     /** Emits the new book id when a series auto-advances, so the open player can re-target to it. */
     val seriesAdvanced = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 1)
 
-    // Cumulative start offsets per file index, computed when a book is loaded
-    private var cumulativeStartsMs: List<Long> = emptyList()
-    private var bookTotalDurationMs: Long = 0L
+    // The single shared chapter/file-boundary timeline for the loaded book — see
+    // playback/ChapterTimeline.kt. @Volatile + whole-object replacement (not the old
+    // main-thread-only discipline): recordSkipButtonTap/recordAutoCheckpoint below already read
+    // this off Dispatchers.IO (scope's default dispatcher), and buildAndPlay/loadTimeline write
+    // it from IO too.
+    @Volatile private var chapterTimeline: ChapterTimeline = ChapterTimeline.EMPTY
 
     // ── Corrupt-file skip recovery ────────────────────────────────────────────
     // Escalating skip schedule: 1s steps to 10s, then 5s steps to 30s. Attempt N skips
@@ -178,8 +181,6 @@ class PlayerController @Inject constructor(
     private var sessionAccumulatedMs = 0L   // actual play time, pauses excluded
     private var sessionSegmentStartMs = 0L  // wall-clock when current segment started; 0 = not playing
     private var pauseTimerJob: Job? = null
-    // (absStartMs, index, name) per chapter for the loaded book.
-    private var chapterBoundaries: List<Triple<Long, Int, String>> = emptyList()
 
     private val controllerListener = object : MediaController.Listener {
         override fun onCustomCommand(
@@ -205,10 +206,94 @@ class PlayerController @Inject constructor(
             try {
                 controller = future.get()
                 controller?.addListener(playerListener)
+                adoptLiveSession()
             } catch (e: Exception) {
                 Log.e("PlayerController", "Failed to connect to MediaSession", e)
             }
-        }, { it.run() })
+        }, androidx.core.content.ContextCompat.getMainExecutor(context))
+        // Main executor above is mandatory, not cosmetic: adoptLiveSession() reads MediaController
+        // properties, which are main-thread-only. The previous `{ it.run() }` ran this callback on
+        // whatever thread completed the future.
+    }
+
+    // Book id + full timeline currently being (re)loaded, so a book change in flight isn't
+    // fetched twice by two different callers racing each other (syncState's self-heal below and
+    // adoptLiveSession can both want the same load at connect time).
+    @Volatile private var timelineLoadInFlightFor: Long = -1L
+
+    private data class LoadedBookData(
+        val timeline: ChapterTimeline,
+        val fileInfo: Map<String, Pair<String, Long>>,
+    )
+
+    private suspend fun loadBookData(bookId: Long): LoadedBookData {
+        val files = repository.getAudioFilesOnce(bookId)
+        val chapters = repository.getChaptersForBookOnce(bookId)
+        return LoadedBookData(
+            timeline = ChapterTimeline.build(files, chapters, bookId),
+            fileInfo = files.associate { it.id.toString() to (it.filePath to it.durationMs) },
+        )
+    }
+
+    /**
+     * Loads (or reloads) the full chapter timeline for [bookId] unless it's already current,
+     * guarding against two concurrent callers duplicating the same DB fetch. [onLoaded] (optional)
+     * is invoked on Main exactly once — either once this specific call's load lands, or
+     * immediately if the timeline was already current when called. If another call for the same
+     * [bookId] is already in flight, this one defers to it silently (no [onLoaded] of its own) —
+     * callers that need the completion signal must be the one that starts the load, which is why
+     * [adoptLiveSession] calls this BEFORE its own [PlayerController.playerListener.triggerSync]
+     * (whose [syncState] would otherwise race it for ownership of the in-flight load).
+     */
+    private fun ensureTimelineFor(bookId: Long, onLoaded: (() -> Unit)? = null) {
+        if (bookId == -1L) return
+        if (chapterTimeline.bookId == bookId) { onLoaded?.invoke(); return }
+        if (timelineLoadInFlightFor == bookId) return
+        timelineLoadInFlightFor = bookId
+        scope.launch {
+            val data = loadBookData(bookId)
+            val applied = currentBookId == bookId
+            if (applied) {
+                chapterTimeline = data.timeline
+                fileInfoByItemId = data.fileInfo
+            }
+            if (timelineLoadInFlightFor == bookId) timelineLoadInFlightFor = -1L
+            if (applied) withContext(Dispatchers.Main) { onLoaded?.invoke() }
+        }
+    }
+
+    /**
+     * Seeds local state from whatever the service is already doing at the moment a
+     * [MediaController] connects — the service can already be playing a book (cold widget tap,
+     * a Bluetooth resume) before this app process even existed, and until this runs,
+     * [_playbackState]/[_positionState] sit at their defaults ([PlaybackState.bookId] == -1L).
+     * That's why the chapter pill/scrubber and the listening-history session used to only appear
+     * after the user pressed play. Runs on Main (guaranteed by [connect]'s executor).
+     */
+    private fun adoptLiveSession() {
+        val ctrl = controller ?: return
+        if (ctrl.mediaItemCount == 0) return  // nothing ever played — the Room-backed UI fallback covers this
+        val liveBookId = ctrl.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+        if (liveBookId != -1L) currentBookId = liveBookId
+        val bid = currentBookId
+        if (bid == -1L) { playerListener.triggerSync(); return }
+        // Start the load (and own its completion callback) BEFORE the immediate triggerSync()
+        // below — triggerSync() runs syncState() synchronously, which would otherwise also call
+        // ensureTimelineFor(bid) and, if it went first, "win" ownership of the in-flight load,
+        // leaving this call's onLoaded never invoked.
+        ensureTimelineFor(bid) {
+            // Only NOW — chapterTimeline/bookTotalDurationMs are real — so a session opened here
+            // gets a correct start-chapter/-position instead of (-1, "", pos) from an empty
+            // timeline, and the scrubber gets a real bookTotalDurationMs from the first tick.
+            playerListener.triggerSync()
+            if (ctrl.isPlaying) {
+                startPositionTicker()
+                openHistorySession()
+            }
+        }
+        // bookId/isPlaying/title/speed land on this very first frame, before the DB round-trip
+        // ensureTimelineFor just kicked off completes.
+        playerListener.triggerSync()
     }
 
     fun disconnect() {
@@ -224,25 +309,24 @@ class PlayerController @Inject constructor(
         return if (st.bookTotalDurationMs > 0) st.bookPositionMs else st.currentPositionMs
     }
 
-    /** index, name, position-within-chapter for a book-level position. */
-    private fun chapterAt(bookPos: Long): Triple<Int, String, Long> {
-        val b = chapterBoundaries.lastOrNull { it.first <= bookPos } ?: return Triple(-1, "", bookPos)
-        return Triple(b.second, b.third, bookPos - b.first)
+    /** index, name, position-within-chapter for a book-level position — the shape the
+     *  history/checkpoint call sites below already expect. Falls back to (-1, "", pos) when the
+     *  timeline has nothing loaded yet (mirrors the old chapterAt's behaviour on an empty list). */
+    private fun chapterInfoAt(bookPos: Long): Triple<Int, String, Long> {
+        val mark = chapterTimeline.chapterAt(bookPos) ?: return Triple(-1, "", bookPos)
+        return Triple(mark.index, mark.title, bookPos - mark.startMs)
     }
 
-    private fun loadChapterBoundaries(bookId: Long, files: List<AudioFile>) {
+    /** Loads the full chapter timeline (embedded/per-file chapter rows) for [bookId] and upgrades
+     *  [chapterTimeline] in place once ready. [buildAndPlay] has already assigned a synchronous
+     *  file-granularity timeline before this is called, so nothing reads a null/empty timeline in
+     *  the meantime — this only makes the chapter-level detail available a moment later. Guarded
+     *  against a stale result landing after the user has already switched to a different book. */
+    private fun loadTimeline(bookId: Long, files: List<AudioFile>) {
         scope.launch {
-            val chapters = repository.getChaptersForBookOnce(bookId).sortedBy { it.orderIndex }
-            val cum = HashMap<Long, Long>(files.size)
-            var t = 0L
-            files.forEach { f -> cum[f.id] = t; t += f.durationMs }
-            val boundaries = chapters
-                .mapIndexed { i, c -> Triple((cum[c.fileId] ?: 0L) + c.startInFileMs, i, c.title) }
-                .sortedBy { it.first }
-            // Assign on Main so this field genuinely honours the class-level invariant (all
-            // session state touched only on the main thread) instead of being written from the
-            // IO dispatcher this whole coroutine otherwise runs on.
-            withContext(Dispatchers.Main) { chapterBoundaries = boundaries }
+            val chapters = repository.getChaptersForBookOnce(bookId)
+            val full = ChapterTimeline.build(files, chapters, bookId)
+            if (currentBookId == bookId) chapterTimeline = full
         }
     }
 
@@ -251,7 +335,7 @@ class PlayerController @Inject constructor(
             ?: currentBookId.takeIf { it != -1L } ?: return
         if (sessionOpen) closeHistorySession()   // flush previous session (different book)
         val pos = bookPosFromState()
-        val (ci, cn, pic) = chapterAt(pos)
+        val (ci, cn, pic) = chapterInfoAt(pos)
         sessionOpen = true
         sessionBookId = bid
         sessionStartMs = System.currentTimeMillis()
@@ -277,7 +361,7 @@ class PlayerController @Inject constructor(
         val listened = sessionAccumulatedMs
         if (bid == -1L || listened < MIN_SESSION_MS) return
         val pos = bookPosFromState()
-        val (ci, cn, pic) = chapterAt(pos)
+        val (ci, cn, pic) = chapterInfoAt(pos)
         val endMs = System.currentTimeMillis()
         val session = ListeningSession(
             bookId = bid,
@@ -355,7 +439,6 @@ class PlayerController @Inject constructor(
         currentBookId = book.id
         currentSeriesId = seriesId
         currentSeriesBookIds = seriesBookIds
-        loadChapterBoundaries(book.id, files)
         buildAndPlay(
             items = files.map { file ->
                 buildMediaItem(
@@ -371,6 +454,10 @@ class PlayerController @Inject constructor(
             startPosition = startPositionMs,
             speed = speed
         )
+        // Upgrades chapterTimeline (already seeded file-granularity by buildAndPlay above) with
+        // the real chapter rows once loaded — safe for an immediate bookSeekTo right after this
+        // call (see SeriesPlayer's chapter-pick) because that seek only needs file boundaries.
+        loadTimeline(book.id, files)
     }
 
     private fun buildMediaItem(
@@ -408,11 +495,10 @@ class PlayerController @Inject constructor(
         startPosition: Long,
         speed: Float
     ) {
-        val cumulative = mutableListOf<Long>()
-        var runningTotal = 0L
-        allFiles.forEach { f -> cumulative.add(runningTotal); runningTotal += f.durationMs }
-        cumulativeStartsMs = cumulative
-        bookTotalDurationMs = runningTotal
+        // Synchronous, file-granularity timeline so an immediate bookSeekTo (e.g. SeriesPlayer's
+        // chapter-pick right after playBook, see playBook below) never races the async chapter
+        // load in loadTimeline — that upgrades this in place once the real chapter rows arrive.
+        chapterTimeline = ChapterTimeline.ofFiles(allFiles, currentBookId)
         recoveryAttempts.clear()
         fileInfoByItemId = allFiles.associate { it.id.toString() to (it.filePath to it.durationMs) }
 
@@ -507,7 +593,7 @@ class PlayerController @Inject constructor(
             skipButtonCoalesceFromMs = -1L
             val bid = _playbackState.value.bookId.takeIf { it != -1L } ?: currentBookId
             if (bid == -1L) return@launch
-            val (ci, cn, _) = chapterAt(toMs)
+            val (ci, cn, _) = chapterInfoAt(toMs)
             repository.insertSkipEventPruned(
                 SkipEvent(
                     bookId = bid, fromPositionMs = coalescedFrom, toPositionMs = toMs,
@@ -527,7 +613,7 @@ class PlayerController @Inject constructor(
         val bid = _playbackState.value.bookId.takeIf { it != -1L } ?: currentBookId
         if (bid == -1L) return
         val pos = _positionState.value.bookPositionMs
-        val (ci, cn, _) = chapterAt(pos)
+        val (ci, cn, _) = chapterInfoAt(pos)
         scope.launch {
             repository.insertSkipEventPruned(
                 SkipEvent(bookId = bid, fromPositionMs = pos, toPositionMs = pos, chapterIndex = ci, chapterName = cn, source = "auto"),
@@ -554,15 +640,22 @@ class PlayerController @Inject constructor(
 
     val currentPositionMs: Long get() = controller?.currentPosition ?: 0L
 
-    /** Seek to an absolute book-level position (spans multiple files). */
+    /** Seek to an absolute book-level position (spans multiple files). Resolves via
+     *  [chapterTimeline]/[ChapterTimeline.locate] and seeks by matching `mediaId` against the
+     *  live queue first (so a queue built in a different file order can't mis-seek), falling
+     *  back to the resolved file index, then to a plain positional seek if no timeline is loaded
+     *  at all. */
     fun bookSeekTo(bookPositionMs: Long) {
         val ctrl = controller ?: return
-        val starts = cumulativeStartsMs
-        if (starts.isEmpty()) { ctrl.seekTo(bookPositionMs); return }
-        // Find the last file whose cumulative start <= bookPositionMs
-        var fileIndex = starts.indexOfLast { it <= bookPositionMs }.coerceAtLeast(0)
-        val offsetInFile = bookPositionMs - starts[fileIndex]
-        ctrl.seekTo(fileIndex, offsetInFile)
+        val locus = chapterTimeline.locate(bookPositionMs)
+        if (locus == null) { ctrl.seekTo(bookPositionMs); return }
+        val targetMediaId = locus.fileId.toString()
+        var idx = -1
+        for (i in 0 until ctrl.mediaItemCount) {
+            if (ctrl.getMediaItemAt(i).mediaId == targetMediaId) { idx = i; break }
+        }
+        if (idx < 0) idx = locus.fileIndex
+        ctrl.seekTo(idx, locus.offsetInFileMs)
     }
 
     /** Start a fixed-duration sleep timer; pauses playback after [durationMs]. Pass 0 to cancel.
@@ -808,9 +901,24 @@ class PlayerController @Inject constructor(
         private fun syncState() {
             val ctrl = controller ?: return
             val meta = ctrl.currentMediaItem?.mediaMetadata
+            // Derive the book from the live session rather than trusting currentBookId alone —
+            // this is what makes PlayerController self-healing for any service-initiated book
+            // change (cold widget resume via PlaybackService.loadLastPlayedAndPlay, a future
+            // service-side series advance): Media3 fires onMediaItemTransition with
+            // MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED when the service's own setMediaItems
+            // lands, so a connected controller picks it up automatically without a bespoke push.
+            val itemBookId = meta?.extras?.getLong("bookId", -1L) ?: -1L
+            val effectiveBookId = if (itemBookId != -1L) itemBookId else currentBookId
+            if (effectiveBookId != -1L) {
+                if (effectiveBookId != currentBookId) currentBookId = effectiveBookId
+                ensureTimelineFor(effectiveBookId)
+            }
             val fileIndex = ctrl.currentMediaItemIndex
             val filePositionMs = ctrl.currentPosition
-            val cumulativeStart = cumulativeStartsMs.getOrElse(fileIndex) { 0L }
+            val fileId = ctrl.currentMediaItem?.mediaId?.toLongOrNull()
+            val timeline = chapterTimeline
+            val cumulativeStart = fileId?.let { timeline.startOfFileMs(it) }
+                ?: timeline.fileStartsMs.getOrElse(fileIndex) { 0L }
             val bookPos = cumulativeStart + filePositionMs
             // Sleep-timer fields are NOT recomputed here — PlaybackService is sole authority and
             // pushes updates directly into sleepTimerRemainingMs/sleepTimerIsEndOfChapter (see
@@ -819,7 +927,7 @@ class PlayerController @Inject constructor(
                 currentPositionMs = filePositionMs,
                 durationMs = ctrl.duration.takeIf { it > 0 } ?: 0L,
                 bookPositionMs = bookPos,
-                bookTotalDurationMs = bookTotalDurationMs,
+                bookTotalDurationMs = timeline.bookTotalMs,
                 sleepTimerRemainingMs = sleepTimerRemainingMs,
                 sleepTimerEndOfChapter = sleepTimerIsEndOfChapter
             )
@@ -829,7 +937,7 @@ class PlayerController @Inject constructor(
             // (theme, nav) quiet while playing instead of recomposing twice a second.
             val newPlaybackState = PlaybackState(
                 isPlaying = ctrl.isPlaying,
-                bookId = currentBookId,
+                bookId = effectiveBookId,
                 bookTitle = meta?.albumTitle?.toString() ?: "",
                 author = meta?.artist?.toString() ?: "",
                 coverArtUri = meta?.artworkUri?.toString(),

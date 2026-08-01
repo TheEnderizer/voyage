@@ -4,24 +4,19 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Book
@@ -35,12 +30,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -52,6 +50,7 @@ import com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING
 import com.betteraudio.ui.components.NAV_PILL_HEIGHT
 import com.betteraudio.ui.home.HomeSection
 import com.betteraudio.ui.home.HomeViewMode
+import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 
@@ -87,29 +86,34 @@ fun FloatingNavPill(
             .widthIn(max = 420.dp)
             .height(NAV_PILL_HEIGHT)
     ) {
+        val motion = LocalVoyageMotion.current
         // Slot geometry for the sliding indicator, measured per stateful tab.
         val slotX = remember { mutableStateMapOf<HomeSection, Dp>() }
         val slotW = remember { mutableStateMapOf<HomeSection, Dp>() }
-        val indicatorX by animateDpAsState(
-            slotX[section] ?: 0.dp, spring(dampingRatio = 0.8f, stiffness = 380f), label = "pillX"
-        )
-        val indicatorW by animateDpAsState(
-            slotW[section] ?: 0.dp, spring(dampingRatio = 0.8f, stiffness = 380f), label = "pillW"
-        )
+        // Kept as State<Dp> (not `by`-delegated) so the drawBehind below can read them deferred,
+        // at draw time — the old offset(x=)/.width(w=) both remeasured every frame AND, because
+        // `by` resolves to a plain Dp read in the composable body, recomposed this whole
+        // composable every frame the indicator animated. scaleX/scaleY here would also distort
+        // the pill's rounded corners, so this draws the indicator directly instead of scaling a Box.
+        val indicatorX = animateDpAsState(slotX[section] ?: 0.dp, motion.spatialDefaultOf(), label = "pillX")
+        val indicatorW = animateDpAsState(slotW[section] ?: 0.dp, motion.spatialDefaultOf(), label = "pillW")
+        val indicatorColor = MaterialTheme.colorScheme.secondaryContainer
 
         Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-            if (indicatorW > 0.dp) {
-                Box(
-                    Modifier
-                        .offset(x = indicatorX)
-                        .width(indicatorW)
-                        .fillMaxHeight()
-                        .background(
-                            MaterialTheme.colorScheme.secondaryContainer,
-                            RoundedCornerShape(24.dp)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        val w = indicatorW.value.toPx()
+                        if (w <= 0f) return@drawBehind
+                        drawRoundRect(
+                            color = indicatorColor,
+                            topLeft = Offset(indicatorX.value.toPx(), 0f),
+                            size = Size(w, size.height),
+                            cornerRadius = CornerRadius(24.dp.toPx())
                         )
-                )
-            }
+                    }
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PillSlot(
                     icon = Icons.Default.Headphones,
@@ -180,7 +184,10 @@ private fun PillSlot(
     content: (@Composable () -> Unit)? = null,
 ) {
     val density = LocalDensity.current
-    val scale by animateFloatAsState(if (selected) 1.12f else 1f, label = "slotScale")
+    val motion = LocalVoyageMotion.current
+    // State<Float> (not `by`-delegated) — read only inside the graphicsLayer below, deferred to
+    // draw time, so a selection change doesn't recompose this composable every animation frame.
+    val scale = animateFloatAsState(if (selected) 1.12f else 1f, motion.spatialFast, label = "slotScale")
     Box(
         Modifier
             .then(
@@ -206,7 +213,7 @@ private fun PillSlot(
             Icon(
                 icon,
                 contentDescription = cd,
-                modifier = Modifier.size(24.dp).graphicsLayer { scaleX = scale; scaleY = scale },
+                modifier = Modifier.size(24.dp).graphicsLayer { scaleX = scale.value; scaleY = scale.value },
                 tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
                        else MaterialTheme.colorScheme.onSurfaceVariant
             )

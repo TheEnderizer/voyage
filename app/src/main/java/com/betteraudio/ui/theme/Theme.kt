@@ -152,41 +152,63 @@ fun VoyageTheme(
         AppTheme.MATERIAL_YOU -> {
             val useSystemWallpaper = colorSource == ThemeColorSource.WALLPAPER &&
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            // Each branch's final ColorScheme build is individually `remember`-ed on its real
+            // inputs (C3-1): dynamicDarkColorScheme/dynamicLightColorScheme (a real Android
+            // system-resource read) and materialKolorDynamicColorScheme/exactPaletteColorScheme
+            // (a ~40-role HCT computation) were previously re-invoked on every recomposition of
+            // VoyageTheme for ANY reason, not just when the seed/darkTheme genuinely changed. Note
+            // this does NOT eliminate the per-frame ColorScheme allocation in animateColorScheme
+            // below during an actual colour transition (material3's LocalColorScheme is a
+            // staticCompositionLocalOf, so recomposing on every frame of a genuine animated colour
+            // change is how Compose Material3 propagates it) — that needs on-device profiling to
+            // resolve safely without risking the cover-follows-theme animation itself; this fixes
+            // the unconditional, unrelated-recompose cost, which is real and safe to remove blind.
             val base = when {
                 useSystemWallpaper ->
-                    if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                    remember(darkTheme) {
+                        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                    }
                 colorSource == ThemeColorSource.WALLPAPER -> {
                     // <API-31 fallback: no system dynamic colour available, use the brand seed.
                     val style = remember(DefaultThemeColor) { paletteStyleFor(DefaultThemeColor) }
-                    materialKolorDynamicColorScheme(DefaultThemeColor, darkTheme, style = style)
+                    remember(darkTheme, style) {
+                        materialKolorDynamicColorScheme(DefaultThemeColor, darkTheme, style = style)
+                    }
                 }
                 colorSource == ThemeColorSource.COVER -> {
                     val seed = rememberCoverSeedColor(coverArtPath) ?: DefaultThemeColor
                     val style = remember(seed) { paletteStyleFor(seed) }
-                    materialKolorDynamicColorScheme(seed, darkTheme, style = style)
+                    remember(seed, darkTheme, style) {
+                        materialKolorDynamicColorScheme(seed, darkTheme, style = style)
+                    }
                 }
                 else -> { // CUSTOM
                     val seedPalette = remember(customThemeColor) {
                         ThemeSeedPaletteCodec.decodeFromPreference(customThemeColor)
                     }
                     when {
-                        seedPalette != null -> exactPaletteColorScheme(seedPalette, darkTheme)
+                        seedPalette != null ->
+                            remember(seedPalette, darkTheme) { exactPaletteColorScheme(seedPalette, darkTheme) }
                         customThemeColor.startsWith("#") -> {
                             val seed = remember(customThemeColor) {
                                 runCatching { Color(android.graphics.Color.parseColor(customThemeColor)) }
                                     .getOrDefault(DefaultThemeColor)
                             }
                             val style = remember(seed) { paletteStyleFor(seed) }
-                            materialKolorDynamicColorScheme(seed, darkTheme, style = style)
+                            remember(seed, darkTheme, style) {
+                                materialKolorDynamicColorScheme(seed, darkTheme, style = style)
+                            }
                         }
                         else -> { // "default" or an unrecognized value — fall back to the brand seed
                             val style = remember(DefaultThemeColor) { paletteStyleFor(DefaultThemeColor) }
-                            materialKolorDynamicColorScheme(DefaultThemeColor, darkTheme, style = style)
+                            remember(darkTheme, style) {
+                                materialKolorDynamicColorScheme(DefaultThemeColor, darkTheme, style = style)
+                            }
                         }
                     }
                 }
             }
-            if (darkTheme && pureBlack) base.pureBlack(true) else base
+            remember(base, darkTheme, pureBlack) { if (darkTheme && pureBlack) base.pureBlack(true) else base }
         }
     }
 

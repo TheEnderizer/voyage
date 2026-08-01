@@ -1,7 +1,6 @@
 package com.betteraudio.ui.material.bookinfo
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,6 +44,7 @@ import com.betteraudio.ui.bookinfo.BookInfoViewModel
 import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
+import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
@@ -72,13 +72,14 @@ fun BookInfoScreen(
     var showBookOptions by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
+    val motion = LocalVoyageMotion.current
 
     // Cover morph from/to the tapped grid card — same treatment as the Series page's grid → info
     // morph, using the book (not series) maps of CoverBoundsRegistry.
     val coverBoundsRegistry = LocalCoverBoundsRegistry.current
     val coverOpenAnim = remember { Animatable(0f) }
     val coverOpenProgress = remember { derivedStateOf { coverOpenAnim.value } }
-    LaunchedEffect(Unit) { coverOpenAnim.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 380f)) }
+    LaunchedEffect(Unit) { coverOpenAnim.animateTo(1f, motion.spatialDefault) }
     LaunchedEffect(viewModel.bookId) {
         coverBoundsRegistry.setActiveMorph(viewModel.bookId, coverOpenProgress)
     }
@@ -88,7 +89,7 @@ fun BookInfoScreen(
 
     val closeBackProgress = rememberPredictiveBackProgress(enabled = true) {
         scope.launch {
-            coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+            coverOpenAnim.animateTo(0f, motion.spatialDefault)
             onBack()
         }
     }
@@ -96,11 +97,11 @@ fun BookInfoScreen(
         coverOpenAnim.snapTo(1f - closeBackProgress.value)
     }
     fun closeWithMorph() = scope.launch {
-        coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+        coverOpenAnim.animateTo(0f, motion.spatialDefault)
         onBack()
     }
     fun resumeWithMorph() = scope.launch {
-        coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+        coverOpenAnim.animateTo(0f, motion.spatialDefault)
         onResume(viewModel.bookId)
     }
 

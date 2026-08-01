@@ -16,6 +16,7 @@ import com.betteraudio.ui.widget.WidgetEditorViewModel
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.ProgressShape
+import com.betteraudio.widget.model.ProgressSource
 import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
 
@@ -50,6 +51,16 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
                 }
             }
         } else {
+            Text("Tracks")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ProgressSource.entries.forEach { source ->
+                    FilterChip(
+                        selected = style.progressSource == source,
+                        onClick = { viewModel.updateShape { it.copy(progressSource = source) } },
+                        label = { Text(labelForProgressSource(source)) }
+                    )
+                }
+            }
             Text("Shape")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ProgressShape.entries.forEach { shape ->
@@ -95,4 +106,9 @@ private fun labelForProgressShape(shape: ProgressShape): String = when (shape) {
     ProgressShape.RING -> "Circle"
     ProgressShape.SQUARE -> "Square"
     ProgressShape.ROUNDED_SQUARE -> "Rounded"
+}
+
+private fun labelForProgressSource(source: ProgressSource): String = when (source) {
+    ProgressSource.BOOK -> "Book"
+    ProgressSource.CHAPTER -> "Chapter"
 }

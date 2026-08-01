@@ -93,8 +93,13 @@ class MainActivity : ComponentActivity() {
 
     private val updateGateViewModel: UpdateGateViewModel by viewModels()
 
-    // Set when a widget tap (warm start) asks to open the active player; observed in setContent.
+    // Set when a widget tap (warm start) or a launcher book shortcut asks to open the player;
+    // observed in setContent. playerNavRequestAutoPlay distinguishes the two: a widget's "open
+    // player" tap must never start audio the user didn't ask for (it just wants the player
+    // screen up), while a book shortcut is a deliberate "continue this book" action and should
+    // play, matching openBookDirect's behaviour for a normal library tap.
     private var playerNavRequest by mutableStateOf<Long?>(null)
+    private var playerNavRequestAutoPlay by mutableStateOf(true)
 
     // Set when the custom-widget configure activity's "Create new" asks to open the widget editor.
     private var widgetEditorNavRequest by mutableStateOf(false)
@@ -270,7 +275,7 @@ class MainActivity : ComponentActivity() {
                         if (currentRoute != "home") {
                             navController.popBackStack("home", inclusive = false)
                         }
-                        sheetController.open(bookId = id)
+                        sheetController.open(bookId = id, startPlaying = playerNavRequestAutoPlay)
                         playerNavRequest = null
                     }
                 }
@@ -532,6 +537,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false)) {
+            // "Open player" only ever means show the player screen — never start audio the user
+            // didn't explicitly ask for (a warm process with nothing loaded must not auto-play).
+            playerNavRequestAutoPlay = false
             val activeId = playerController.playbackState.value.bookId.takeIf { it != -1L }
             if (activeId != null) {
                 playerNavRequest = activeId
@@ -546,6 +554,9 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch {
                 val id = repository.getBookByFolder(path)?.id
                 if (id != null) {
+                    // A launcher shortcut is a deliberate "continue this book" tap, same as
+                    // openBookDirect for a normal library tap — plays, unlike a widget open-tap.
+                    playerNavRequestAutoPlay = true
                     playerNavRequest = id
                 } else {
                     android.widget.Toast.makeText(

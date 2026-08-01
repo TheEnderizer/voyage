@@ -19,6 +19,7 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.data.synopsis.SynopsisResult
 import com.betteraudio.data.synopsis.SynopsisService
+import com.betteraudio.playback.ChapterTimeline
 import com.betteraudio.playback.JumpRestore
 import com.betteraudio.playback.JumpRestoreStore
 import com.betteraudio.playback.PlaybackState
@@ -388,18 +389,12 @@ class PlayerViewModel @Inject constructor(
 
     private fun buildBookChapters(chapters: List<Chapter>, bwp: BookWithProgress?): ChapterUiState {
         val bId = bwp?.book?.id ?: bookId
-        val files = bwp?.audioFiles
-            ?.sortedWith(compareBy({ it.trackNumber }, { it.fileName })) ?: emptyList()
-        val cum = cumulativeStarts(files.map { it.id to it.durationMs })
-        val rows = if (chapters.isNotEmpty()) {
-            chapters.map { c ->
-                ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id, bId)
-            }
-        } else {
-            files.map { f ->
-                ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id, bId)
-            }
-        }
+        val files = bwp?.audioFiles ?: emptyList()
+        // ChapterTimeline.build sorts files itself, derives endMs from the next mark (immune to
+        // a truncated chpl atom's bogus last-chapter duration), and drops orphan-fileId rows
+        // instead of silently anchoring them at position 0.
+        val timeline = ChapterTimeline.build(files, chapters, bId)
+        val rows = timeline.marks.map { m -> ChapterRow.Item(m.title, m.startMs, m.durationMs, m.key, bId) }
         return ChapterUiState(rows)
     }
 
@@ -411,19 +406,65 @@ class PlayerViewModel @Inject constructor(
         for (b in books) {
             rows.add(ChapterRow.BookHeader(b.displayTitle))
             val files = filesPerBook[b.id] ?: emptyList()
-            val cum = cumulativeStarts(files.map { it.id to it.durationMs })   // within this book
             val chs = repository.getChaptersForBookOnce(b.id)
-            if (chs.isNotEmpty()) {
-                chs.forEach { c ->
-                    rows.add(ChapterRow.Item(c.title, (cum[c.fileId] ?: 0L) + c.startInFileMs, c.durationMs, c.id, b.id))
-                }
-            } else {
-                files.forEach { f ->
-                    rows.add(ChapterRow.Item(f.chapterTitle ?: f.fileName, cum[f.id] ?: 0L, f.durationMs, f.id, b.id))
-                }
+            val timeline = ChapterTimeline.build(files, chs, b.id)
+            timeline.marks.forEach { m ->
+                rows.add(ChapterRow.Item(m.title, m.startMs, m.durationMs, m.key, b.id))
             }
         }
         return ChapterUiState(rows)
+    }
+
+    // The screen's own book's chapter/file timeline — the single source behind the chapter pill,
+    // the chapter-relative scrubber, and next/previous-chapter button state. Deliberately keyed
+    // on THIS screen's book (bookId), not whichever book happens to be playing: PlayerScreen
+    // already has a separate serviceHasBook check for "is the service actually on this book", and
+    // mixing the two here would make the chapter list come from one book while the position came
+    // from another. DB-backed, so it's populated before anything plays (see Part B).
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val chapterTimeline: StateFlow<ChapterTimeline> =
+        if (bookId == -1L) MutableStateFlow(ChapterTimeline.EMPTY)
+        else combine(repository.getChaptersForBook(bookId), bookWithProgress) { chs, bwp ->
+            ChapterTimeline.build(bwp?.audioFiles ?: emptyList(), chs, bookId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChapterTimeline.EMPTY)
+
+    data class ChapterNavState(
+        val count: Int = 0,
+        val hasPrev: Boolean = false,
+        val hasNext: Boolean = false,
+        val currentIndex: Int = -1,
+    )
+
+    /** Recomputes on every position tick, but data-class equality on the resulting StateFlow
+     *  value suppresses re-emission except at an actual chapter boundary (same trick
+     *  [PlayerController]'s own syncState uses for [PlaybackState]). */
+    val chapterNav: StateFlow<ChapterNavState> =
+        combine(chapterTimeline, positionState) { tl, pos ->
+            if (tl.isEmpty) return@combine ChapterNavState()
+            val bookPos = if (pos.bookTotalDurationMs > 0) pos.bookPositionMs else pos.currentPositionMs
+            val mark = tl.chapterAt(bookPos)
+            val idx = mark?.index ?: -1
+            val hasPrev = idx > 0 || (mark != null && bookPos - mark.startMs > ChapterTimeline.PREV_RESTART_MS)
+            ChapterNavState(
+                count = tl.marks.size,
+                hasPrev = hasPrev,
+                hasNext = tl.nextStartMs(bookPos) != null,
+                currentIndex = idx,
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChapterNavState())
+
+    /** Jump to the next/previous chapter of THIS screen's book, routed through [seekToChapter] so
+     *  it gets the same position-stack push + confirmed-jump history a chapter-list tap gets. */
+    fun nextChapter() {
+        val pos = positionState.value.let { if (it.bookTotalDurationMs > 0) it.bookPositionMs else it.currentPositionMs }
+        val target = chapterTimeline.value.nextStartMs(pos) ?: return
+        seekToChapter(target)
+    }
+
+    fun prevChapter() {
+        val pos = positionState.value.let { if (it.bookTotalDurationMs > 0) it.bookPositionMs else it.currentPositionMs }
+        val target = chapterTimeline.value.prevStartMs(pos) ?: return
+        seekToChapter(target)
     }
 
     /**
@@ -443,24 +484,16 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Arms the sleep timer to fire at the end of the chapter currently playing, resolved from
-     * the same [chapters] rows the chapter list already shows — the "current" chapter is the
-     * last one whose start is at or before the live book position. No-op if chapters aren't
-     * loaded yet or nothing is playing.
+     * [chapterTimeline] (this screen's book). Only meaningful when this screen's book is the one
+     * actually playing — a mismatch (e.g. a series auto-advanced past this screen) leaves it a
+     * no-op rather than arming a timer against a chapter position from the wrong book.
      */
     fun setSleepTimerEndOfCurrentChapter() {
+        val playingBookId = playbackState.value.bookId
+        if (playingBookId != -1L && playingBookId != bookId) return
         val bookPos = positionState.value.bookPositionMs
-        val items = chapters.value.rows.filterIsInstance<ChapterRow.Item>()
-            .filter { it.bookId == -1L || it.bookId == playbackState.value.bookId }
-        val current = items.lastOrNull { it.absStartMs <= bookPos } ?: return
-        val target = current.absStartMs + current.durationMs
+        val target = chapterTimeline.value.chapterAt(bookPos)?.endMs ?: return
         playerController.setSleepTimerEndOfChapter(target)
-    }
-
-    private fun cumulativeStarts(idDur: List<Pair<Long, Long>>): Map<Long, Long> {
-        val map = HashMap<Long, Long>(idDur.size)
-        var t = 0L
-        idDur.forEach { (id, dur) -> map[id] = t; t += dur }
-        return map
     }
 
     init {
@@ -575,7 +608,14 @@ class PlayerViewModel @Inject constructor(
     private fun recordSkip(fromMs: Long, toMs: Long) {
         val targetBookId = playbackState.value.bookId.takeIf { it != -1L } ?: bookId
         if (targetBookId == -1L) return
+        // In a series, chapters.value.rows spans every member book, each with absStartMs relative
+        // to its OWN book — without this filter (unlike setSleepTimerEndOfCurrentChapter, which
+        // always applied it), an unfiltered lastOrNull{} here could match another book's row and
+        // record the wrong chapter index/name for this skip. Note: NOT viewModel's own
+        // (book-scoped) chapterTimeline — targetBookId is whichever book the skip actually
+        // happened in, which in a series can differ from the screen's own bookId.
         val items = chapters.value.rows.filterIsInstance<ChapterRow.Item>()
+            .filter { it.bookId == -1L || it.bookId == targetBookId }
         val active = items.lastOrNull { it.absStartMs <= toMs }
         val idx = active?.let { items.indexOf(it) } ?: -1
         AppLog.i("History", "skip recorded book=$targetBookId ${fromMs}ms→${toMs}ms ch=$idx")

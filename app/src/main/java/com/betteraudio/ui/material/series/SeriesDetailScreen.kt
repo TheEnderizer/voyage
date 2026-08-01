@@ -1,7 +1,6 @@
 package com.betteraudio.ui.material.series
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -39,6 +38,7 @@ import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.SeriesOptions
+import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.series.SeriesDetailViewModel
 import com.betteraudio.ui.theme.Pill
@@ -74,11 +74,26 @@ fun SeriesDetailScreen(
     LaunchedEffect(Unit) { viewModel.openPlayer.collect { onOpenPlayer(it) } }
 
     val scope = rememberCoroutineScope()
-    // 0 = info page, 1 = books panel fully up.
+    val motion = LocalVoyageMotion.current
+    // 0 = info page, 1 = books panel fully up. panelAnim only drives ANIMATED transitions
+    // (settle, predictive-back cancel) — a live drag writes dragProgress directly and
+    // synchronously instead, mirroring PlayerSheet's AN-2 fix: N per-delta coroutines writing
+    // panelAnim.snapTo() directly could otherwise race an in-flight animateTo.
     val panelAnim = remember { Animatable(0f) }
-    val panelOpen = panelAnim.value > 0.5f
+    val dragProgress = remember { mutableFloatStateOf(0f) }
+    // True for the duration of a live drag — gates the mirror below so a still-finishing
+    // animateTo (the interrupt case) can't stomp dragProgress while a drag is in control of it.
+    var isDragging by remember { mutableStateOf(false) }
+    LaunchedEffect(panelAnim) {
+        snapshotFlow { panelAnim.value }.collect { if (!isDragging) dragProgress.floatValue = it }
+    }
+    // derivedStateOf: recompose only when the threshold flips, not every animation/drag frame —
+    // the composition-phase `val panelOpen = panelAnim.value > 0.5f` this replaces recomposed
+    // this whole screen on every frame of the panel spring and every drag delta.
+    val panelOpen by remember { derivedStateOf { dragProgress.floatValue > 0.5f } }
     fun settlePanel(open: Boolean) = scope.launch {
-        panelAnim.animateTo(if (open) 1f else 0f, spring(dampingRatio = 0.85f, stiffness = 380f))
+        panelAnim.snapTo(dragProgress.floatValue)
+        panelAnim.animateTo(if (open) 1f else 0f, motion.spatialDefault)
     }
     // Predictive back drives the panel closed in lockstep with the gesture (not just a commit-only
     // BackHandler) — mirrors PlayerSheet's seek pattern for the mini↔full player.
@@ -92,7 +107,7 @@ fun SeriesDetailScreen(
     val coverBoundsRegistry = com.betteraudio.ui.player.LocalCoverBoundsRegistry.current
     val coverOpenAnim = remember { Animatable(0f) }
     val coverOpenProgress = remember { derivedStateOf { coverOpenAnim.value } }
-    LaunchedEffect(Unit) { coverOpenAnim.animateTo(1f, spring(dampingRatio = 0.85f, stiffness = 380f)) }
+    LaunchedEffect(Unit) { coverOpenAnim.animateTo(1f, motion.spatialDefault) }
     LaunchedEffect(viewModel.seriesId) {
         coverBoundsRegistry.setActiveSeriesMorph(viewModel.seriesId, coverOpenProgress)
     }
@@ -104,7 +119,7 @@ fun SeriesDetailScreen(
     // grid card before actually popping, so close matches open's "glued to the card" quality.
     val closeBackProgress = rememberPredictiveBackProgress(enabled = !panelOpen) {
         scope.launch {
-            coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+            coverOpenAnim.animateTo(0f, motion.spatialDefault)
             onBack()
         }
     }
@@ -112,7 +127,7 @@ fun SeriesDetailScreen(
         if (!panelOpen) coverOpenAnim.snapTo(1f - closeBackProgress.value)
     }
     fun closeWithMorph() = scope.launch {
-        coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+        coverOpenAnim.animateTo(0f, motion.spatialDefault)
         onBack()
     }
 
@@ -122,11 +137,13 @@ fun SeriesDetailScreen(
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val panelHeightPx = constraints.maxHeight * 0.84f
 
-        fun dragBy(delta: Float) = scope.launch {
-            panelAnim.snapTo((panelAnim.value - delta / panelHeightPx).coerceIn(0f, 1f))
+        fun dragBy(delta: Float) {
+            // Synchronous, no coroutine — see dragProgress's declaration above (AN-2).
+            dragProgress.floatValue = (dragProgress.floatValue - delta / panelHeightPx).coerceIn(0f, 1f)
         }
         fun dragStopped(velocity: Float) {
-            val open = velocity < -900f || (velocity <= 900f && panelAnim.value > 0.4f)
+            isDragging = false
+            val open = velocity < -900f || (velocity <= 900f && dragProgress.floatValue > 0.4f)
             settlePanel(open)
         }
 
@@ -143,6 +160,7 @@ fun SeriesDetailScreen(
                 .draggable(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { dragBy(it) },
+                    onDragStarted = { isDragging = true },
                     onDragStopped = { dragStopped(it) }
                 )
         ) {
@@ -252,7 +270,7 @@ fun SeriesDetailScreen(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(0.84f)
-                .graphicsLayer { translationY = panelHeightPx * (1f - panelAnim.value) }
+                .graphicsLayer { translationY = panelHeightPx * (1f - dragProgress.floatValue) }
         ) {
             Column(Modifier.fillMaxSize()) {
                 // Header — drag down here to close.

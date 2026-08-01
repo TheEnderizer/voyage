@@ -99,6 +99,10 @@ enum class ShapeKind { RECT, PILL, CIRCLE, SQUIRCLE }
  *  the perimeter of a ring/square/rounded-square outline. */
 enum class ProgressShape { LINE, RING, SQUARE, ROUNDED_SQUARE }
 
+/** What a [ElementType.PROGRESS_BAR] element's fraction tracks: the whole book, or just the
+ *  current chapter (resets to 0 at each chapter boundary). */
+enum class ProgressSource { BOOK, CHAPTER }
+
 @Serializable
 data class IconStyle(
     val glyphColor: Long = 0xFFFFFFFF,
@@ -144,6 +148,9 @@ data class ShapeStyle(
     val progressShape: ProgressShape = ProgressShape.LINE,
     /** Stroke width in design units, used by RING/SQUARE/ROUNDED_SQUARE progress shapes. */
     val strokeWidth: Float = 24f,
+    /** Only meaningful on a PROGRESS_BAR element. Defaulting to BOOK keeps every design saved
+     *  before this field existed rendering exactly as before (opaque JSON field, no migration). */
+    val progressSource: ProgressSource = ProgressSource.BOOK,
 )
 
 /**

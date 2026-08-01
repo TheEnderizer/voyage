@@ -25,7 +25,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.betteraudio.playback.ChapterMark
 import com.betteraudio.ui.components.FrostedOverlay
+
+/**
+ * Row index in [rows] matching [cur] — the same active chapter the pill/scrubber show, computed
+ * by [com.betteraudio.playback.ChapterTimeline] — for [effectiveBookId] (the screen's own book,
+ * NOT necessarily the playing book; see [PlayerViewModel.chapterTimeline]'s doc). Matches on
+ * (bookId, absStartMs) rather than any per-mark id: [ChapterMark.key] is `Chapter.id` for embedded
+ * chapters and `AudioFile.id` for per-file ones, and those id spaces can collide inside one
+ * series' interleaved chapter list, so an id match alone isn't safe here.
+ */
+fun activeChapterRowIndex(rows: List<ChapterRow>, effectiveBookId: Long, cur: ChapterMark?): Int {
+    if (cur == null) return -1
+    return rows.indexOfFirst {
+        it is ChapterRow.Item && it.bookId == effectiveBookId && it.absStartMs == cur.startMs
+    }
+}
 
 /**
  * Chapter list, rendered as an in-player frosted overlay (not a system bottom sheet) so it
@@ -37,8 +53,7 @@ import com.betteraudio.ui.components.FrostedOverlay
 fun ChapterOverlay(
     visible: Boolean,
     rows: List<ChapterRow>,
-    currentPositionMs: Long,
-    currentBookId: Long,
+    activeRowIndex: Int,
     onSelect: (ChapterRow.Item) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -46,13 +61,8 @@ fun ChapterOverlay(
     val onScrimMuted = Color.White.copy(alpha = 0.6f)
     val accent = MaterialTheme.colorScheme.primary
 
-    // Active chapter = last Item of the CURRENTLY-PLAYING book whose start <= current position
-    // (positions are within each book, so only the current book's rows are candidates).
-    val activeIndex = rows.indexOfLast {
-        it is ChapterRow.Item &&
-            (it.bookId == -1L || it.bookId == currentBookId) &&
-            it.absStartMs <= currentPositionMs + 250
-    }.let { if (it < 0) rows.indexOfFirst { r -> r is ChapterRow.Item } else it }
+    val activeIndex = if (activeRowIndex >= 0) activeRowIndex
+        else rows.indexOfFirst { it is ChapterRow.Item }
 
     val listState = rememberLazyListState()
     LaunchedEffect(visible, activeIndex) {

@@ -13,8 +13,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
@@ -57,86 +55,12 @@ fun AnimatedContentTransitionScope<NavBackStackEntry>.materialPopExit(): ExitTra
     scaleOut(targetScale = 0.90f, animationSpec = spring(MotionTokens.spatialDamping, MotionTokens.spatialStiffness))
 
 // ── Mini player → full player: container growth ───────────────────────────────
-
-/**
- * Grows this element from [source]'s bounds/radius (progress 0) to its own natural full-size
- * layout (progress 1) — independent X/Y scale (unlike [com.betteraudio.ui.player.morphFrom],
- * which is uniform and made for images). Used for the full player's plain-color background, which
- * has no aspect-ratio/content-scale concerns, so a wide-short pill can freely grow into a
- * full-screen rect without any "distortion" the way a stretched photo would show.
- *
- * [ownSizePx] is this element's TRUE (un-parked) size in px, tracked explicitly by the caller
- * (e.g. from the outer sheet's own `onSizeChanged`) rather than measured here via
- * `onGloballyPositioned` — this element lives inside an ancestor that's itself translated
- * off-screen while collapsed (see PlayerSheet's parking `graphicsLayer`), and `boundsInRoot()`
- * on a descendant of a transformed-but-not-yet-recomposed ancestor was not reliably reporting the
- * un-parked size/position, which made this background render as an opaque box sitting on top of
- * (and hiding) the mini bar even while fully collapsed. [source] is assumed to already be in the
- * same root coordinate space this element would occupy if it weren't parked (i.e. root (0,0) to
- * (ownSizePx.width, ownSizePx.height)).
- */
-@Composable
-fun Modifier.expandingContainer(
-    source: State<Rect>,
-    ownSizePx: State<androidx.compose.ui.geometry.Size>,
-    progress: State<Float>,
-    sourceRadius: Dp,
-    destRadius: Dp = 0.dp,
-): Modifier {
-    return this.graphicsLayer {
-        val p = progress.value
-        val src = source.value
-        val own = ownSizePx.value
-        if (p >= 1f || src == Rect.Zero || own.width <= 0f || own.height <= 0f) {
-            scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f
-            shape = RoundedCornerShape(destRadius)
-            clip = true
-            return@graphicsLayer
-        }
-        transformOrigin = TransformOrigin(0f, 0f)
-        val sx = lerp(src.width / own.width, 1f, p)
-        val sy = lerp(src.height / own.height, 1f, p)
-        scaleX = sx
-        scaleY = sy
-        // Own natural (unparked) position is always root (0,0) — this element fills the
-        // full-player container, which itself starts at the app's root origin.
-        translationX = src.left * (1f - p)
-        translationY = src.top * (1f - p)
-        val onScreenRadius = lerpDp(sourceRadius, destRadius, p.coerceIn(0f, 1f))
-        // The mini bar is nearly full-width but very short, so sx and sy diverge hugely (sx stays
-        // near 1, sy starts near 0) — a SINGLE divisor (e.g. max(sx,sy)) underscales one axis,
-        // making that axis's on-screen radius collapse toward 0 almost immediately (corners look
-        // "square" from the start instead of smoothly shrinking). Compensating each axis with its
-        // OWN scale factor keeps the on-screen radius equal to onScreenRadius on BOTH axes
-        // throughout, at the cost of an elliptical (not circular) corner while sx != sy — visually
-        // still round, unlike the collapsed-to-square look this replaces.
-        val radiusXPx = (onScreenRadius / sx.coerceAtLeast(0.001f)).toPx()
-        val radiusYPx = (onScreenRadius / sy.coerceAtLeast(0.001f)).toPx()
-        // AN-5 (Gate AN): this anonymous Shape is rebuilt every frame, but hoisting it to a data
-        // class for value equality was evaluated and buys nothing — radiusXPx/radiusYPx derive
-        // from sx/sy above, which change every frame by construction while the gesture is active,
-        // so a value-equality cache would still miss every frame. The real per-frame cost is that
-        // radiusXPx != radiusYPx for most of the gesture, so this RoundRect is never isSimple and
-        // Compose can't use a hardware render-node outline — it falls back to a Path-based clip on
-        // a full-screen layer regardless of how this Shape is constructed. Left as measured/
-        // documented rather than "fixed": the alternative (accepting circular corners so the
-        // outline stays isSimple) is a visual trade a maintainer should choose deliberately, not a
-        // silent behavior change.
-        shape = object : Shape {
-            override fun createOutline(
-                size: androidx.compose.ui.geometry.Size,
-                layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-                density: androidx.compose.ui.unit.Density
-            ): androidx.compose.ui.graphics.Outline = androidx.compose.ui.graphics.Outline.Rounded(
-                androidx.compose.ui.geometry.RoundRect(
-                    rect = androidx.compose.ui.geometry.Rect(androidx.compose.ui.geometry.Offset.Zero, size),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(radiusXPx, radiusYPx)
-                )
-            )
-        }
-        clip = true
-    }
-}
+// Moved to ui/material/motion/ContainerMorph.kt (Modifier.morphingContainer) — a real Morph
+// between two RoundedPolygons, drawn directly instead of scaled/clipped, replacing this
+// function's clip-based approach (which was never isSimple for most of the gesture, forcing a
+// Path-based clip on a full-screen layer the whole animation — see the removed KDoc's AN-5 note,
+// preserved here for context). Its only call site was PlayerSheet.kt's Material You growing
+// background.
 
 // ── Grid card → full player (opened directly, no live mini bar): true crop morph ──────────────
 // AN-12 (Gate AN): this section and coverCropMorph's call site (PlayerScreen.kt) used to say

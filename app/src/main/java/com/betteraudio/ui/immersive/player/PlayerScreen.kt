@@ -45,6 +45,7 @@ import com.betteraudio.ui.player.ChapterRow
 import com.betteraudio.ui.player.LocalPlayerExpand
 import com.betteraudio.ui.player.LockOverlay
 import com.betteraudio.ui.player.PlayerViewModel
+import com.betteraudio.ui.player.activeChapterRowIndex
 import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
 import com.betteraudio.ui.player.expandReveal
@@ -77,6 +78,8 @@ fun PlayerContent(
     }
     val position          by positionFlow.collectAsStateWithLifecycle()
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
+    val chapterTimeline   by viewModel.chapterTimeline.collectAsStateWithLifecycle()
+    val chapterNav        by viewModel.chapterNav.collectAsStateWithLifecycle()
     val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
     val jumpRestore       by viewModel.jumpRestore.collectAsStateWithLifecycle()
@@ -188,20 +191,18 @@ fun PlayerContent(
                 ?.sortedWith(compareBy({ it.trackNumber }, { it.fileName })) ?: emptyList()
             val filesBeforeSaved = sortedFiles
                 .takeWhile { it.id != p?.currentFileId }.sumOf { it.durationMs }
-            bookTotal = bwp?.book?.totalDurationMs ?: 0L
+            // Prefer chapterTimeline's own file-duration sum over the (possibly stale) Book row,
+            // so the last chapter's endMs and this whole-book total always agree.
+            bookTotal = chapterTimeline.bookTotalMs.takeIf { it > 0 } ?: (bwp?.book?.totalDurationMs ?: 0L)
             bookPos = if (p != null && bookTotal > 0)
                 (filesBeforeSaved + p.positionMs).coerceAtMost(bookTotal)
             else 0L
         }
 
-        // For the chapter-context line, only the current book's chapters matter (series lists
-        // carry every book's chapters, each with positions relative to its own book). Memoized:
-        // rebuilding this list on every position tick was O(all chapters in the series).
-        val items = remember(chapters, state.bookId) {
-            chapters.rows.filterIsInstance<ChapterRow.Item>()
-                .filter { it.bookId == -1L || it.bookId == state.bookId }
-        }
-        val cur = currentChapter(items, bookPos, bookTotal)
+        // chapterTimeline is DB-backed and scoped to THIS screen's book (viewModel.bookId), not
+        // whichever book the service happens to have loaded — so this renders correctly even
+        // before the service confirms state.bookId (cold widget open, before first play).
+        val cur = chapterTimeline.chapterAt(bookPos)
 
         val trackColor = Color.White.copy(alpha = 0.24f)
         val sliderColors = SliderDefaults.colors(
@@ -368,7 +369,7 @@ fun PlayerContent(
                 Column(Modifier.fillMaxWidth()) {
 
                 // ── Bottom control cluster ──────────────────────────────
-                if (!isLocked && chapters.hasChapters && cur != null) {
+                if (!isLocked && chapterTimeline.hasMultiple && cur != null) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -479,7 +480,7 @@ fun PlayerContent(
                 } else {
                 // ── Scrubber (reveals as the sheet opens) ───────────────
                 Column(Modifier.fillMaxWidth().expandReveal(expandProgress)) {
-                if (chapters.hasChapters && cur != null) {
+                if (chapterTimeline.hasMultiple && cur != null) {
                     val chDur = (cur.endMs - cur.startMs).coerceAtLeast(1L)
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
@@ -546,14 +547,14 @@ fun PlayerContent(
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (state.totalFiles > 1) {
-                        val enabled = state.currentFileIndex > 0
+                    if (chapterNav.count > 1) {
+                        val enabled = serviceHasBook && chapterNav.hasPrev
                         IconButton(
-                            onClick = { viewModel.playerController.prevFile() },
+                            onClick = { viewModel.prevChapter() },
                             enabled = enabled,
                             modifier = Modifier.expandReveal(expandProgress)
                         ) {
-                            Icon(Icons.Default.SkipPrevious, "Previous part", Modifier.size(26.dp),
+                            Icon(Icons.Default.SkipPrevious, "Previous chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
                     }
@@ -580,14 +581,14 @@ fun PlayerContent(
                         SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim,
                             onLongPress = { skipEditForward = true }) { viewModel.skipForward() }
                     }
-                    if (state.totalFiles > 1) {
-                        val enabled = state.currentFileIndex < state.totalFiles - 1
+                    if (chapterNav.count > 1) {
+                        val enabled = serviceHasBook && chapterNav.hasNext
                         IconButton(
-                            onClick = { viewModel.playerController.nextFile() },
+                            onClick = { viewModel.nextChapter() },
                             enabled = enabled,
                             modifier = Modifier.expandReveal(expandProgress)
                         ) {
-                            Icon(Icons.Default.SkipNext, "Next part", Modifier.size(26.dp),
+                            Icon(Icons.Default.SkipNext, "Next chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
                     }
@@ -715,8 +716,9 @@ fun PlayerContent(
         ChapterOverlay(
             visible = showChapters && chapters.rows.isNotEmpty(),
             rows = chapters.rows,
-            currentPositionMs = if (position.bookTotalDurationMs > 0) position.bookPositionMs else position.currentPositionMs,
-            currentBookId = state.bookId,
+            activeRowIndex = remember(chapters, viewModel.bookId, cur) {
+                activeChapterRowIndex(chapters.rows, viewModel.bookId, cur)
+            },
             onSelect = { viewModel.onChapterSelected(it) },
             onDismiss = { showChapters = false }
         )
@@ -826,18 +828,6 @@ fun PlayerContent(
             onDismiss = { showHistory = false }
         )
     }
-}
-
-private data class ChapterBounds(val title: String, val startMs: Long, val endMs: Long, val index: Int)
-
-/** The chapter containing [posMs] = the last chapter whose start is at or before it. */
-private fun currentChapter(items: List<ChapterRow.Item>, posMs: Long, totalMs: Long): ChapterBounds? {
-    if (items.isEmpty()) return null
-    var idx = items.indexOfLast { it.absStartMs <= posMs + 250 }
-    if (idx < 0) idx = 0
-    val item = items[idx]
-    val end = items.getOrNull(idx + 1)?.absStartMs ?: totalMs.coerceAtLeast(item.absStartMs)
-    return ChapterBounds(item.title, item.absStartMs, end, idx)
 }
 
 /** Slim whole-book progress, tappable to reveal a full book scrubber. Styled for the dark scrim.

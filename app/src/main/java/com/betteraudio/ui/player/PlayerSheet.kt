@@ -65,7 +65,7 @@ import androidx.navigation.navArgument
 import coil3.compose.AsyncImage
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.immersive.IMMERSIVE_MINI_BAR_FADE_RATE
-import com.betteraudio.ui.material.expandingContainer
+import com.betteraudio.ui.material.motion.morphingContainer
 import com.betteraudio.ui.theme.AppTheme
 import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
@@ -351,6 +351,18 @@ fun PlayerSheet(
         )
     }
 
+    // The animated PART of the mini bar's bottom lift (on top of the fixed baseline padding
+    // applied at its call site below) — kept as State<Dp>, read only inside that graphicsLayer,
+    // per C3-5.
+    val miniBarLift = androidx.compose.animation.core.animateDpAsState(
+        if (liftForNavPill)
+            com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING +
+                com.betteraudio.ui.components.NAV_PILL_HEIGHT +
+                com.betteraudio.ui.components.NAV_PILL_GAP - 20.dp
+        else 0.dp,
+        label = "miniBarLift"
+    )
+
     Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height; widthPx = it.width }) {
         // ── Mini bar — docked at the bottom, drawn UNDER the full player so the morphing
         // cover/title/controls (which start exactly on top of their mini counterparts) read as
@@ -389,20 +401,18 @@ fun PlayerSheet(
             expandProgress = progressState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(
-                    bottom = bottomNavInset + androidx.compose.animation.core.animateDpAsState(
-                        // Float NAV_PILL_GAP above the pill on home; hug the bottom elsewhere.
-                        if (liftForNavPill)
-                            com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING +
-                                com.betteraudio.ui.components.NAV_PILL_HEIGHT +
-                                com.betteraudio.ui.components.NAV_PILL_GAP
-                        else 20.dp,
-                        label = "miniBarLift"
-                    ).value
-                )
+                // Fixed baseline padding (no animation → no per-frame remeasure); the animated
+                // part of the lift moves via graphicsLayer's translationY below instead of a
+                // second, animated padding value (C3-5: padding()-driven animation forces a
+                // layout pass every frame it's running; a layer translation doesn't).
+                .padding(bottom = bottomNavInset + 20.dp)
                 .graphicsLayer {
+                    // Float NAV_PILL_GAP above the pill on home; hug the bottom (the padding
+                    // above already accounts for) elsewhere. Deferred (draw-phase) read of
+                    // miniBarLift.value, same discipline as dragProgress/alpha below.
+                    translationY = -miniBarLift.value.toPx()
                     // Material You: the pill stays fully visible — it's physically occluded by
-                    // the full player's expandingContainer (same rect, grown from it) the moment
+                    // the full player's morphingContainer (same rect, grown from it) the moment
                     // the sheet starts opening, so no separate fade is needed. Immersive keeps the
                     // original crossfade look (no growing container there).
                     alpha = if (isMaterialYou) 1f
@@ -481,23 +491,27 @@ fun PlayerSheet(
                 if (isMaterialYou) {
                     val barColor = MaterialTheme.colorScheme.surfaceContainerHigh
                     val bgColor = MaterialTheme.colorScheme.background
+                    // Deferred (draw-phase) read of dragProgress, same discipline the old
+                    // drawBehind{} here already followed — only barColor/bgColor are captured at
+                    // composition time (unchanged from before this migration).
+                    val growingColor = remember(barColor, bgColor) {
+                        derivedStateOf {
+                            androidx.compose.ui.graphics.lerp(
+                                barColor, bgColor, dragProgress.floatValue.coerceIn(0f, 1f)
+                            )
+                        }
+                    }
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .expandingContainer(
+                            .morphingContainer(
                                 source = miniBarRect,
                                 ownSizePx = ownSizePx,
                                 progress = progressState,
                                 sourceRadius = MINI_BAR_RADIUS,
-                                destRadius = 0.dp
+                                destRadius = 0.dp,
+                                color = growingColor
                             )
-                            .drawBehind {
-                                drawRect(
-                                    androidx.compose.ui.graphics.lerp(
-                                        barColor, bgColor, dragProgress.floatValue.coerceIn(0f, 1f)
-                                    )
-                                )
-                            }
                     )
                 }
                 CompositionLocalProvider(LocalPlayerExpand provides transition) {
