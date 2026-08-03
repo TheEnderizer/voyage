@@ -26,8 +26,8 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 57
-        versionName = "1.9.8b"
+        versionCode = 58
+        versionName = "1.9.9b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
         // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.

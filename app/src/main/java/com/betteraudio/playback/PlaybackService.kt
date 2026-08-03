@@ -1144,8 +1144,22 @@ class PlaybackService : MediaSessionService() {
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>
         ): ListenableFuture<List<MediaItem>> {
+            // A MediaController sends items across the IPC boundary with
+            // MediaItem.toBundleIncludeLocalConfiguration(), so an explicitly-set uri DOES survive
+            // and must be honoured — only fall back to requestMetadata.mediaUri when the item has
+            // no uri of its own.
+            //
+            // This used to overwrite unconditionally. Harmless for the normal load path (both URIs
+            // are the same file), but it silently broke corrupt-file HEAD recovery:
+            // PlayerController.tryRecoverFromCorruptFile replaces the item with a
+            // SkipHeadDataSource.wrapUri()'d uri (`?voyageSkipBytes=N`) to hide the damaged head
+            // from the extractor, while requestMetadata.mediaUri still points at the original
+            // unskipped path. Overwriting it here fed the extractor byte 0 again on every retry,
+            // so all 14 escalating attempts (1s..30s) re-read the same corrupt head and the book
+            // ended at "Couldn't skip past the damaged section" instead of playing.
             val resolved = mediaItems.map { item ->
-                item.buildUpon().setUri(item.requestMetadata.mediaUri).build()
+                if (item.localConfiguration != null) item
+                else item.buildUpon().setUri(item.requestMetadata.mediaUri).build()
             }
             return Futures.immediateFuture(resolved)
         }

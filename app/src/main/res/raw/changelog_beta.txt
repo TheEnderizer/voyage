@@ -5,6 +5,11 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.9b] - 2026-08-01
+
+### Fixed
+- Audiobooks whose **first** seconds are corrupted now actually play. The recovery that skips past a damaged file start has been silently doing nothing since it was added — the playback service was discarding the skip and handing the decoder the same broken opening on every retry, so the book always ended on "Couldn't skip past the damaged section". Damage partway *through* a file was unaffected and always recovered correctly.
+
 ## [1.9.8b] - 2026-08-01
 
 ### Fixed

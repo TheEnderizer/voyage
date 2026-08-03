@@ -820,8 +820,17 @@ class PlayerController @Inject constructor(
             AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: head, hiding ${skipSeconds}s ($skipBytes of $fileLen bytes), resume at ${resumeMs}ms")
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 val c = controller ?: return@withContext
+                val skipUri = SkipHeadDataSource.wrapUri(Uri.fromFile(file), skipBytes)
+                // BOTH uri and requestMetadata.mediaUri must carry the skip marker.
+                // PlaybackService.onAddMediaItems resolves an item's uri from requestMetadata
+                // when the item has none, so leaving mediaUri pointing at the original unskipped
+                // path is how this recovery silently no-op'd: the service handed the extractor
+                // byte 0 again and every escalating retry re-read the same corrupt head.
                 val retryItem = item.buildUpon()
-                    .setUri(SkipHeadDataSource.wrapUri(Uri.fromFile(file), skipBytes))
+                    .setUri(skipUri)
+                    .setRequestMetadata(
+                        item.requestMetadata.buildUpon().setMediaUri(skipUri).build()
+                    )
                     .build()
                 c.replaceMediaItem(index, retryItem)
                 c.seekTo(index, resumeMs)
