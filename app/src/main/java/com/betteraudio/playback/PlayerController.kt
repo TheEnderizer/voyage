@@ -86,6 +86,10 @@ class PlayerController @Inject constructor(
         private const val SESSION_HISTORY_KEEP = 200
         private const val SKIP_BUTTON_COALESCE_MS = 2_000L
         private const val AUTO_CHECKPOINT_INTERVAL_MS = 10 * 60_000L
+        // How close to the end of a file a corrupt-file skip may land. Inside this margin the
+        // skip is treated as unrecoverable rather than seeking to (effectively) the end, which
+        // would roll playback into the next file — see tryRecoverFromCorruptFile.
+        private const val RECOVERY_END_MARGIN_MS = 5_000L
     }
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -765,6 +769,21 @@ class PlayerController @Inject constructor(
      *
      * @return true if a retry was kicked off (caller should treat the error as handled).
      */
+    /**
+     * Abandons recovery for [itemId]: latches the attempt counter past the schedule so no further
+     * error re-enters the escalation, tells the user, and — crucially — **pauses**.
+     *
+     * Pausing is what stops a damaged file from cascading. Left playing, an unrecoverable item
+     * rolls into the next file, and once the last file is exhausted STATE_ENDED marks the book
+     * finished and (in a series) auto-advances to the next book, so one bad book could silently
+     * burn through several. Stopping on the broken file leaves the user where the problem is.
+     */
+    private fun giveUpOnCorruptFile(itemId: String) {
+        recoveryAttempts[itemId] = recoverySkipSeconds.size + 1
+        showUserMessage("Couldn't skip past the damaged section — this file can't be played. Try the next part manually.")
+        scope.launch(Dispatchers.Main) { controller?.pause() }
+    }
+
     private fun tryRecoverFromCorruptFile(error: androidx.media3.common.PlaybackException): Boolean {
         if (error.errorCode != androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) return false
         val ctrl = controller ?: return false
@@ -776,6 +795,9 @@ class PlayerController @Inject constructor(
             if (attempt == recoverySkipSeconds.size) {  // first error past the schedule → give up once
                 AppLog.e("Player", "corrupt-file recovery exhausted (30s) for item=$itemId")
                 showUserMessage("Couldn't skip past the damaged section (tried up to 30s). Try skipping manually — if that doesn't work, this file can't be played.")
+                // Pause for the same reason giveUpOnCorruptFile does: an exhausted file left
+                // playing rolls into the next part, and eventually the next book of a series.
+                scope.launch(Dispatchers.Main) { controller?.pause() }
             }
             return false
         }
@@ -785,14 +807,33 @@ class PlayerController @Inject constructor(
         val skipSeconds = recoverySkipSeconds[attempt]
         val index = ctrl.currentMediaItemIndex
         val positionMs = ctrl.currentPosition.coerceAtLeast(0L)
-        val prepared = ctrl.duration > 0L
+        val playerDurationMs = ctrl.duration.takeIf { it > 0L } ?: 0L
+        val scannedDurationMs = fileInfoByItemId[itemId]?.second?.takeIf { it > 0L } ?: 0L
+        // A damaged header routinely makes ExoPlayer's own duration estimate wildly short (seconds
+        // for a multi-hour file). Trusting it would send us down the mid-file path with a limit so
+        // small that even a +1s skip "overshoots", so cross-check it against the scanned duration
+        // and fall through to the byte-level head skip — which needs no seek map at all — whenever
+        // it looks untrustworthy.
+        val durationIsTrustworthy = playerDurationMs > 0L &&
+            (scannedDurationMs <= 0L || playerDurationMs >= scannedDurationMs / 2)
 
-        if (prepared) {
+        if (durationIsTrustworthy) {
             // Mid-file damage: step past it and resume.
-            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: mid-file, seeking +${skipSeconds}s from ${positionMs}ms")
+            val targetMs = positionMs + skipSeconds * 1_000L
+            // The seek MUST stay inside this item. seekTo(index, pos) past the item's duration
+            // lands at its end and, with playback active, immediately rolls into the NEXT file.
+            // With every part of a book damaged that cascades through the whole book and then, via
+            // STATE_ENDED, into the next book of a series — marking each one finished on the way.
+            // Skipping forward can't help beyond the end of the audio anyway, so stop instead.
+            if (targetMs >= playerDurationMs - RECOVERY_END_MARGIN_MS) {
+                AppLog.e("Player", "corrupt-file recovery item=$itemId: +${skipSeconds}s would pass the end (${targetMs}ms of ${playerDurationMs}ms) — giving up rather than rolling into the next file")
+                giveUpOnCorruptFile(itemId)
+                return true
+            }
+            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: mid-file, seeking +${skipSeconds}s from ${positionMs}ms (limit ${playerDurationMs}ms)")
             scope.launch(Dispatchers.Main) {
                 val c = controller ?: return@launch
-                c.seekTo(index, positionMs + skipSeconds * 1_000L)
+                c.seekTo(index, targetMs)
                 c.prepare()
                 c.play()
             }
@@ -811,8 +852,7 @@ class PlayerController @Inject constructor(
             val bytesPerSec = if (durationMs > 1_000L) audioBytes * 1_000 / durationMs else 32_000L
             val skipBytes = id3Bytes + skipSeconds * bytesPerSec
             if (skipBytes >= fileLen) {
-                recoveryAttempts[itemId] = recoverySkipSeconds.size + 1  // latch as failed
-                showUserMessage("Couldn't skip past the damaged section. Try skipping manually — if that doesn't work, this file can't be played.")
+                giveUpOnCorruptFile(itemId)
                 return@launch
             }
             // Keep the position the user was starting from, shifted into the skipped timeline.

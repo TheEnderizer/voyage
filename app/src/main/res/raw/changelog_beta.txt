@@ -5,6 +5,13 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.10b] - 2026-08-03
+
+### Fixed
+- A damaged file no longer skips to the next part of the book. The recovery that steps past a corrupted section wasn't checking whether its skip landed beyond the end of the file — when it did, playback rolled straight into the next part instead. With every part of a book damaged this cascaded through the whole book and then, on reaching the end, marked it finished and auto-advanced into the next book of the series.
+- A file whose damage genuinely can't be skipped now stops on that file instead of playing on, so you're left where the problem actually is.
+- Recovery no longer trusts a damaged file's reported length. A corrupted header often makes a multi-hour file report a few seconds, which made every skip look like it ran past the end; the length is now cross-checked against the scanned duration and falls back to the byte-level skip when it looks wrong.
+
 ## [1.9.9b] - 2026-08-01
 
 ### Fixed
