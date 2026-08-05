@@ -137,6 +137,10 @@ class AudiobookRepository @Inject constructor(
     suspend fun updateBookLocation(bookId: Long, folderPath: String, coverArtPath: String?) =
         bookDao.updateLocation(bookId, folderPath, coverArtPath)
     suspend fun updateAudioFilePath(fileId: Long, path: String) = audioFileDao.updatePath(fileId, path)
+
+    /** Caches an [com.betteraudio.playback.Mp3DamageScanner] result so a file is scanned once, not once per play. */
+    suspend fun updateAudioFileDamageRanges(fileId: Long, ranges: String) =
+        audioFileDao.updateDamageRanges(fileId, ranges)
     /** Refresh a book's file-derived stats after files were dropped in reconciliation. */
     suspend fun updateBookFileStats(bookId: Long, totalDurationMs: Long, fileCount: Int) =
         bookDao.updateDuration(bookId, totalDurationMs, fileCount)

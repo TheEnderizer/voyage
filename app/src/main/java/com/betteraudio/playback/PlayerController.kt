@@ -130,6 +130,8 @@ class PlayerController @Inject constructor(
     // filePath + scanned duration per media id, captured at load so recovery can estimate a
     // bytes-per-second rate without an async DB round-trip mid-error-handling.
     private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
+    /** Media id whose damage scan is running, so repeated errors can't launch a second full read. */
+    @Volatile private var damageScanInFlightFor: String? = null
 
     // Sleep timer — PlaybackService is sole authority (see its class doc); this only mirrors the
     // last known state for the UI, updated optimistically on every local call AND authoritatively
@@ -470,13 +472,19 @@ class PlayerController @Inject constructor(
         albumTitle: String,
         artist: String,
         artworkPath: String?
-    ) = MediaItem.Builder()
-        .setMediaId(file.id.toString())
+    ): MediaItem {
         // Uri.fromFile percent-encodes; hand-building "file://$path" breaks on '%' or '#' in a name.
-        .setUri(Uri.fromFile(java.io.File(file.filePath)))
+        val base = Uri.fromFile(java.io.File(file.filePath))
+        // A file already scanned as damaged plays with its bad ranges hidden from the very first
+        // attempt, so it never has to fail-then-recover again (see tryRecoverFromCorruptFile).
+        val gaps = Mp3DamageScanner.decode(file.damageRangesJson)
+        val uri = if (gaps.isEmpty()) base else GapSkippingDataSource.wrapUri(base, gaps)
+        return MediaItem.Builder()
+        .setMediaId(file.id.toString())
+        .setUri(uri)
         .setRequestMetadata(
             MediaItem.RequestMetadata.Builder()
-                .setMediaUri(Uri.fromFile(java.io.File(file.filePath)))
+                .setMediaUri(uri)
                 .build()
         )
         .setMediaMetadata(
@@ -491,6 +499,7 @@ class PlayerController @Inject constructor(
                 .build()
         )
         .build()
+    }
 
     private fun buildAndPlay(
         items: List<MediaItem>,
@@ -801,6 +810,59 @@ class PlayerController @Inject constructor(
             }
             return false
         }
+        // Strategy 1 — the real fix for a download-damaged file: find every damaged byte range and
+        // hide them all from the extractor. ExoPlayer's Mp3Extractor abandons a file after
+        // searching 128 KB for a valid frame, and these gaps run to several hundred KB EACH, with
+        // several per file; Android's own MediaExtractor was measured stopping at the same damage.
+        // So no demuxer choice and no amount of seeking past "the" gap works — only removing the
+        // gaps from what gets read. Runs once per file, then cached in the DB.
+        val damagedPath = fileInfoByItemId[itemId]?.first
+        val alreadySkipping = item.localConfiguration?.uri?.let { GapSkippingDataSource.isMarked(it) } == true
+        if (damagedPath != null && !alreadySkipping && damageScanInFlightFor != itemId) {
+            damageScanInFlightFor = itemId
+            // A different STRATEGY, not a further skip — don't consume a step of the escalating
+            // schedule, or a later genuine mid-file fault gets a shortened budget.
+            recoveryAttempts[itemId] = attempt
+            val resumeMs = ctrl.currentPosition.coerceAtLeast(0L)
+            val scanIndex = ctrl.currentMediaItemIndex
+            val fileId = itemId.toLongOrNull()
+            showUserMessage("This file is damaged — scanning it so playback can skip the damage. This can take a moment…")
+            scope.launch {
+                val gaps = Mp3DamageScanner.scan(damagedPath)
+                if (fileId != null) {
+                    // "" records a clean scan, so a file whose failure was something else entirely
+                    // is never rescanned on every subsequent error.
+                    runCatching { repository.updateAudioFileDamageRanges(fileId, Mp3DamageScanner.encode(gaps)) }
+                }
+                damageScanInFlightFor = null
+                if (gaps.isEmpty()) {
+                    AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
+                    showUserMessage("Couldn't find a recoverable pattern in this file.")
+                    return@launch
+                }
+                val totalMs = gaps.sumOf { it.size } * 1000L / 32_000L
+                AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${totalMs / 1000}s lost)")
+                showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${totalMs / 1000}s of audio is unplayable.")
+                withContext(Dispatchers.Main) {
+                    val c = controller ?: return@withContext
+                    val cur = c.currentMediaItem ?: return@withContext
+                    val base = cur.localConfiguration?.uri ?: return@withContext
+                    val fixed = GapSkippingDataSource.wrapUri(base, gaps)
+                    val retryItem = cur.buildUpon()
+                        .setUri(fixed)
+                        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(fixed).build())
+                        .build()
+                    c.replaceMediaItem(scanIndex, retryItem)
+                    // Hiding earlier gaps shifts everything after them earlier, so the old position
+                    // now points further into the book than it did. Close enough to resume from.
+                    c.seekTo(scanIndex, resumeMs)
+                    c.prepare()
+                    c.play()
+                }
+            }
+            return true
+        }
+
         if (attempt == 0) {
             showUserMessage("This audio file is corrupted — attempting to skip past the damaged section…")
         }

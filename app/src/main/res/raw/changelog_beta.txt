@@ -5,6 +5,14 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.11b] - 2026-08-05
+
+### Added
+- **Damaged audiobooks now play.** A book with corrupted sections — the usual result of an incomplete download — used to stop dead a fraction of a second in and refuse to go further. The app now finds every damaged stretch in the file and plays straight through them, skipping only the ruined audio itself. The first time a damaged file is opened there is a short pause while it's examined (a few seconds to about a minute, depending on file size and phone); the result is remembered, so every later play starts immediately.
+  - Nothing on disk is changed and nothing is re-encoded — your files are untouched and audio quality is unaffected.
+  - Damaged audio is genuinely unrecoverable, so those seconds are skipped rather than restored. You'll hear a small jump at each one, and the app tells you roughly how much was affected.
+  - Technical note: the underlying player gives up after searching 128 KB for the next valid audio frame, and damaged downloads routinely leave several 300 KB stretches of garbage per file — which is why these books previously failed outright no matter how far you skipped.
+
 ## [1.9.10b] - 2026-08-03
 
 ### Fixed

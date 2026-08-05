@@ -295,14 +295,21 @@ class PlaybackService : MediaSessionService() {
                     .build()
         }
 
-        // Data source that understands SkipHeadDataSource.wrapUri()-marked URIs, letting the
-        // controller retry a corrupt-headed file with its damaged leading bytes hidden.
-        val skipHeadFactory = DataSource.Factory {
-            SkipHeadDataSource(DefaultDataSource.Factory(this).createDataSource())
+        // Damaged-file chain. Both wrappers are inert unless the URI carries their marker, so a
+        // healthy file takes exactly the path it always did:
+        //  - GapSkippingDataSource hides the byte ranges Mp3DamageScanner found ANYWHERE in the
+        //    file, so the extractor never sees a run of garbage it can't resync past (ExoPlayer
+        //    gives up after 128 KB; the gaps in a download-damaged audiobook are far bigger).
+        //  - SkipHeadDataSource is the older, head-only special case, kept for the corrupt-header
+        //    retry that fires before a full scan has run.
+        val damageTolerantFactory = DataSource.Factory {
+            GapSkippingDataSource(
+                SkipHeadDataSource(DefaultDataSource.Factory(this).createDataSource())
+            )
         }
 
         val player = ExoPlayer.Builder(this, renderersFactory)
-            .setMediaSourceFactory(LargeFileMediaSourceFactory(skipHeadFactory))
+            .setMediaSourceFactory(LargeFileMediaSourceFactory(damageTolerantFactory))
             .setAudioAttributes(audioAttributes, /* handleAudioFocus= */ true)
             .setHandleAudioBecomingNoisy(true)
             .build()

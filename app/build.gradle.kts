@@ -26,8 +26,8 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 59
-        versionName = "1.9.10b"
+        versionCode = 60
+        versionName = "1.9.11b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
         // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.
@@ -80,6 +80,22 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests {
+            // android.util.Log (reached via AppLog) throws "not mocked" by default, which would
+            // make any JVM test of otherwise-pure playback logic fail on a logging call alone.
+            isReturnDefaultValues = true
+            all {
+                // Lets a test be pointed at a real file on disk (see RealDamagedFileScanTest);
+                // without forwarding, -D lands on Gradle's JVM and never reaches the test JVM.
+                it.systemProperty(
+                    "voyage.damagedFile",
+                    System.getProperty("voyage.damagedFile") ?: ""
+                )
+            }
+        }
     }
 
     sourceSets {

@@ -33,4 +33,8 @@ interface AudioFileDao {
     // Repoint a file to a new on-disk location (used by the library restructure move).
     @Query("UPDATE audio_files SET filePath = :path WHERE id = :id")
     suspend fun updatePath(id: Long, path: String)
+
+    /** Caches the result of a damage scan. Empty string = scanned and clean; see [AudioFile.damageRangesJson]. */
+    @Query("UPDATE audio_files SET damageRangesJson = :ranges WHERE id = :id")
+    suspend fun updateDamageRanges(id: Long, ranges: String)
 }

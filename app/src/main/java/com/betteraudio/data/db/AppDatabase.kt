@@ -70,7 +70,7 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             progress without ever loading a book's file list.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 20,
+    version = 21,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -457,6 +457,16 @@ abstract class AppDatabase : RoomDatabase() {
                         )
                     }
                 }
+            }
+        }
+
+        val MIGRATION_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 20 → 21 (audio_files.damageRangesJson)")
+                // Nullable with no default: NULL distinguishes "never scanned" from "scanned and
+                // clean" (empty string), which is what stops a healthy file being rescanned on
+                // every failure and a damaged one being rescanned on every play.
+                db.execSQL("ALTER TABLE audio_files ADD COLUMN damageRangesJson TEXT")
             }
         }
     }

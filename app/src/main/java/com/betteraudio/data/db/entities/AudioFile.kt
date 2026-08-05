@@ -26,5 +26,14 @@ data class AudioFile(
     val title: String? = null,
     val durationMs: Long = 0,
     val fileSizeBytes: Long = 0,
-    val chapterTitle: String? = null
+    val chapterTitle: String? = null,
+    /**
+     * Damaged byte ranges found by [com.betteraudio.playback.Mp3DamageScanner], as
+     * `"start-end,start-end,…"`. Null = never scanned; empty = scanned and clean.
+     *
+     * Populated on demand, only after a file actually fails to play (scanning is a full sequential
+     * read, far too costly for a library scan). Cached here so a damaged file is scanned once ever
+     * rather than once per play — see PlayerController's corrupt-file recovery.
+     */
+    val damageRangesJson: String? = null
 )
