@@ -5,6 +5,10 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.12b] - 2026-08-05
+
+Rebuild of 1.9.11b with no functional changes — same code, fresh build, so it installs as an update over an existing 1.9.11b. See 1.9.11b below for what actually changed.
+
 ## [1.9.11b] - 2026-08-05
 
 ### Added
