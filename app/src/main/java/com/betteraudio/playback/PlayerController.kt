@@ -132,6 +132,8 @@ class PlayerController @Inject constructor(
     private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
     /** Media id whose damage scan is running, so repeated errors can't launch a second full read. */
     @Volatile private var damageScanInFlightFor: String? = null
+    /** Media ids already scanned (or claimed for scanning) this load, so no file is read twice. */
+    private val damageHandled = ConcurrentHashMap.newKeySet<String>()
 
     // Sleep timer — PlaybackService is sole authority (see its class doc); this only mirrors the
     // last known state for the UI, updated optimistically on every local call AND authoritatively
@@ -513,6 +515,9 @@ class PlayerController @Inject constructor(
         // load in loadTimeline — that upgrades this in place once the real chapter rows arrive.
         chapterTimeline = ChapterTimeline.ofFiles(allFiles, currentBookId)
         recoveryAttempts.clear()
+        // New book: nothing scanned for it yet. (Files already carrying a cached damage map are
+        // marked up-front in buildMediaItem, so they never reach the scan path at all.)
+        damageHandled.clear()
         fileInfoByItemId = allFiles.associate { it.id.toString() to (it.filePath to it.durationMs) }
 
         val ctrl = controller ?: return
@@ -793,6 +798,54 @@ class PlayerController @Inject constructor(
         scope.launch(Dispatchers.Main) { controller?.pause() }
     }
 
+    /**
+     * Scans one file, caches the result, and rewrites the matching queue entry so the extractor
+     * stops seeing the damage. Safe for an item that isn't the one currently playing —
+     * `replaceMediaItem` on another index doesn't disturb playback.
+     */
+    private suspend fun scanAndPatchQueue(mediaId: String, path: String): List<Mp3DamageScanner.Gap> {
+        val gaps = Mp3DamageScanner.scan(path)
+        mediaId.toLongOrNull()?.let { fileId ->
+            // "" records a clean scan, so a file that failed for some other reason is never
+            // rescanned on every subsequent error.
+            runCatching { repository.updateAudioFileDamageRanges(fileId, Mp3DamageScanner.encode(gaps)) }
+        }
+        if (gaps.isEmpty()) return gaps
+        withContext(Dispatchers.Main) {
+            val c = controller ?: return@withContext
+            for (i in 0 until c.mediaItemCount) {
+                val queued = c.getMediaItemAt(i)
+                if (queued.mediaId != mediaId) continue
+                val base = queued.localConfiguration?.uri ?: return@withContext
+                if (GapSkippingDataSource.isMarked(base)) return@withContext
+                val fixed = GapSkippingDataSource.wrapUri(base, gaps)
+                c.replaceMediaItem(
+                    i,
+                    queued.buildUpon()
+                        .setUri(fixed)
+                        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(fixed).build())
+                        .build()
+                )
+                return@withContext
+            }
+        }
+        return gaps
+    }
+
+    /**
+     * Quietly scans and patches every other file of the loaded book, so moving to another part
+     * doesn't repeat the same failure and wait. Runs after the file that actually failed has
+     * resumed, so the user is already listening while this works.
+     */
+    private suspend fun scanRemainingFilesOfBook(exceptItemId: String) {
+        val remaining = fileInfoByItemId.entries
+            .filter { it.key != exceptItemId && damageHandled.add(it.key) }
+        for ((mediaId, info) in remaining) {
+            runCatching { scanAndPatchQueue(mediaId, info.first) }
+                .onFailure { AppLog.e("Damage", "background scan failed for ${info.first}", it) }
+        }
+    }
+
     private fun tryRecoverFromCorruptFile(error: androidx.media3.common.PlaybackException): Boolean {
         if (error.errorCode != androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) return false
         val ctrl = controller ?: return false
@@ -818,49 +871,52 @@ class PlayerController @Inject constructor(
         // gaps from what gets read. Runs once per file, then cached in the DB.
         val damagedPath = fileInfoByItemId[itemId]?.first
         val alreadySkipping = item.localConfiguration?.uri?.let { GapSkippingDataSource.isMarked(it) } == true
-        if (damagedPath != null && !alreadySkipping && damageScanInFlightFor != itemId) {
-            damageScanInFlightFor = itemId
-            // A different STRATEGY, not a further skip — don't consume a step of the escalating
-            // schedule, or a later genuine mid-file fault gets a shortened budget.
-            recoveryAttempts[itemId] = attempt
-            val resumeMs = ctrl.currentPosition.coerceAtLeast(0L)
-            val scanIndex = ctrl.currentMediaItemIndex
-            val fileId = itemId.toLongOrNull()
-            showUserMessage("This file is damaged — scanning it so playback can skip the damage. This can take a moment…")
-            scope.launch {
-                val gaps = Mp3DamageScanner.scan(damagedPath)
-                if (fileId != null) {
-                    // "" records a clean scan, so a file whose failure was something else entirely
-                    // is never rescanned on every subsequent error.
-                    runCatching { repository.updateAudioFileDamageRanges(fileId, Mp3DamageScanner.encode(gaps)) }
+        if (damagedPath != null && !alreadySkipping) {
+            // Never let a second strategy run while a scan is in flight — for THIS item or a
+            // sibling. Falling through to the escalating time-skip schedule below is actively
+            // harmful here: its seeks can land past the end of a damaged file and roll playback
+            // into the next one, which is exactly what "it skipped to the next part" looked like.
+            if (damageScanInFlightFor != null) return true
+
+            if (damageHandled.add(itemId)) {
+                damageScanInFlightFor = itemId
+                // A different STRATEGY, not a further skip — don't consume a step of the escalating
+                // schedule, or a later genuine mid-file fault gets a shortened budget.
+                recoveryAttempts[itemId] = attempt
+                val resumeMs = ctrl.currentPosition.coerceAtLeast(0L)
+                val scanIndex = ctrl.currentMediaItemIndex
+                showUserMessage("This file is damaged — scanning it so playback can skip the damage. This can take a moment…")
+                scope.launch {
+                    try {
+                        val gaps = scanAndPatchQueue(itemId, damagedPath)
+                        if (gaps.isEmpty()) {
+                            AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
+                            showUserMessage("Couldn't find a recoverable pattern in this file.")
+                            return@launch
+                        }
+                        val lostSec = gaps.sumOf { it.size } / 32_000L
+                        AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${lostSec}s lost)")
+                        showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
+                        withContext(Dispatchers.Main) {
+                            val c = controller ?: return@withContext
+                            // Hiding earlier gaps shifts later audio earlier, so the old position now
+                            // points slightly further into the book. Close enough to resume from.
+                            c.seekTo(scanIndex, resumeMs)
+                            c.prepare()
+                            c.play()
+                        }
+                    } finally {
+                        damageScanInFlightFor = null
+                    }
+                    // Damage from a bad download almost never affects only one part, and a file is
+                    // only patched once scanned — so without this, stepping to the previous or next
+                    // part hits the identical failure all over again. Fix the whole book now, in the
+                    // background, while the user listens to the part that just recovered.
+                    scanRemainingFilesOfBook(exceptItemId = itemId)
                 }
-                damageScanInFlightFor = null
-                if (gaps.isEmpty()) {
-                    AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
-                    showUserMessage("Couldn't find a recoverable pattern in this file.")
-                    return@launch
-                }
-                val totalMs = gaps.sumOf { it.size } * 1000L / 32_000L
-                AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${totalMs / 1000}s lost)")
-                showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${totalMs / 1000}s of audio is unplayable.")
-                withContext(Dispatchers.Main) {
-                    val c = controller ?: return@withContext
-                    val cur = c.currentMediaItem ?: return@withContext
-                    val base = cur.localConfiguration?.uri ?: return@withContext
-                    val fixed = GapSkippingDataSource.wrapUri(base, gaps)
-                    val retryItem = cur.buildUpon()
-                        .setUri(fixed)
-                        .setRequestMetadata(MediaItem.RequestMetadata.Builder().setMediaUri(fixed).build())
-                        .build()
-                    c.replaceMediaItem(scanIndex, retryItem)
-                    // Hiding earlier gaps shifts everything after them earlier, so the old position
-                    // now points further into the book than it did. Close enough to resume from.
-                    c.seekTo(scanIndex, resumeMs)
-                    c.prepare()
-                    c.play()
-                }
+                return true
             }
-            return true
+            // Scanned once already and still failing — fall through to the legacy skip schedule.
         }
 
         if (attempt == 0) {
