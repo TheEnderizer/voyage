@@ -190,13 +190,13 @@ class SyncAligner @Inject constructor(
             setProgress(bookId) { AlignProgress(false, totalSteps, totalSteps, accepted.size) }
             AppLog.i("Aligner", "book=$bookId anchors=${accepted.size} across ${spans.size} chapters")
 
-            // Mirror the result to "mapping.json" in the book's own folder (best-effort) — so it
-            // travels with a backup/restructure/device move and can be re-imported without another
-            // on-device alignment run. Skipped for synthetic multi-book ("::") folders, same as the
-            // epub auto-attach — there's no single real directory to write into.
-            val folder = File(book.folderPath)
-            if (accepted.isNotEmpty() && folder.isDirectory) {
-                com.betteraudio.data.sync.MappingFileIO.write(folder, book.chapterMapJson, accepted)
+            // Mirror the result into the book's own data/ folder (best-effort) — so it travels
+            // with a backup/restructure/device move and can be re-imported without another
+            // on-device alignment run. A cluster ("::"-keyed) book gets its own <slug>.mapping.json
+            // inside the shared data/ dir, same as its book.json; only a containing directory that
+            // doesn't exist at all skips the write.
+            if (accepted.isNotEmpty() && com.betteraudio.data.diskstore.BookDataPaths.containingDir(book.folderPath).isDirectory) {
+                com.betteraudio.data.sync.MappingFileIO.write(book.folderPath, book.chapterMapJson, accepted)
             }
         } finally {
             runCatching { model.close() }

@@ -124,7 +124,9 @@ fun BookHistoryOverlay(
                             Spacer(Modifier.height(8.dp))
                             SectionHeader("Skips", accent)
                         }
-                        items(jumps, key = { "k${it.id}" }) { SkipRow(it, onScrim, onScrimMuted, accent) }
+                        items(jumps, key = { "k${it.id}" }) {
+                            SkipRow(it, onScrim, onScrimMuted, accent) { onResumeSession(it.toPositionMs) }
+                        }
                     }
                 }
             }
@@ -205,12 +207,15 @@ private fun RecentPositionRow(k: SkipEvent, onScrim: Color, muted: Color, accent
 }
 
 @Composable
-private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
+private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color, onJump: () -> Unit) {
     val isText = k.kind == "TEXT"
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            // Audio skips are tappable to go back to where the skip landed, same as a Recent
+            // position. A text-side jump has no audio position to seek to, so it stays inert.
+            .then(if (isText) Modifier else Modifier.clickable(onClick = onJump))
             .padding(vertical = 8.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -232,6 +237,10 @@ private fun SkipRow(k: SkipEvent, onScrim: Color, muted: Color, accent: Color) {
             }
             Text(sub, style = MaterialTheme.typography.labelSmall, color = muted,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (!isText) {
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Default.PlayArrow, "Jump here", Modifier.size(20.dp), tint = accent)
         }
     }
 }

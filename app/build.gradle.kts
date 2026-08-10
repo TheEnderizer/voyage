@@ -26,8 +26,8 @@ android {
         applicationId = "com.betteraudio"
         minSdk = 26
         targetSdk = 36
-        versionCode = 62
-        versionName = "1.9.13b"
+        versionCode = 64
+        versionName = "1.9.15b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
         // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.
@@ -179,6 +179,11 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // The android.jar org.json stub throws "not mocked" (or, with isReturnDefaultValues, silently
+    // returns nulls) in plain JVM unit tests — this is the real reference implementation, shadowing
+    // the stub on the unit-test classpath so BookDataCodec/LibraryDataCodec/SettingsDataCodec tests
+    // exercise actual JSON parsing instead of no-ops.
+    testImplementation(libs.org.json)
 
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)

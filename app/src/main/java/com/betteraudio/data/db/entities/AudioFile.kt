@@ -37,3 +37,13 @@ data class AudioFile(
      */
     val damageRangesJson: String? = null
 )
+
+/**
+ * The file's size in bytes, falling back to a `stat` when the column is unset.
+ *
+ * [AudioFile.fileSizeBytes] has only been populated since the scanner started recording it, so rows
+ * imported by an older build still read 0. Callers that use the size to *judge* something — see
+ * `Mp3DamageScanner.decodeUsable` — must not read that 0 as "empty file", so resolve it here.
+ */
+fun AudioFile.sizeOnDisk(): Long =
+    if (fileSizeBytes > 0L) fileSizeBytes else java.io.File(filePath).length()

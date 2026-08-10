@@ -71,8 +71,47 @@ class SettingsViewModel @Inject constructor(
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
     private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
-    private val backupManager: com.betteraudio.data.backup.BackupManager
+    private val backupManager: com.betteraudio.data.backup.BackupManager,
+    private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
+    private val diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration
 ) : ViewModel() {
+
+    // ── Disk mirror (reinstall-proof library data) ────────────────────────────
+    val diskMirrorHealthy: StateFlow<Boolean> =
+        diskMirror.healthy.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val diskMirrorLastError: StateFlow<String?> =
+        diskMirror.lastError.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+    val diskExportState: StateFlow<com.betteraudio.data.diskstore.ExportState> =
+        diskExportMigration.state.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000), com.betteraudio.data.diskstore.ExportState()
+        )
+
+    /** Manual "Re-export library data" — the recovery path for a volume that was unmounted/
+     *  unwritable for a while and missed some flushes; ignores the once-per-version guard. */
+    fun reExportDiskData() {
+        viewModelScope.launch {
+            try { diskExportMigration.runNow() } catch (e: Exception) {
+                AppLog.e("Settings", "manual disk re-export failed", e)
+                _operationError.value = "Couldn't re-export library data: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
+
+    /** "Forget disk data for this library" — deletes every book's on-disk doc/cover/mapping file
+     *  and .voyage/library.json (never the audio itself), then re-exports a clean mirror from
+     *  whatever's actually in Room right now. The escape hatch for a corrupt/stale doc, now that a
+     *  rescan restores from disk instead of wiping on reset. */
+    fun forgetDiskData() {
+        viewModelScope.launch {
+            try {
+                diskExportMigration.forgetAllDiskData()
+                diskExportMigration.runNow()
+            } catch (e: Exception) {
+                AppLog.e("Settings", "forget disk data failed", e)
+                _operationError.value = "Couldn't forget library data: ${e.message ?: "unknown error"}"
+            }
+        }
+    }
 
     // ── Listen↔read sync speech model ─────────────────────────────────────────
     val voskModelState: StateFlow<com.betteraudio.data.transcribe.ModelState> =

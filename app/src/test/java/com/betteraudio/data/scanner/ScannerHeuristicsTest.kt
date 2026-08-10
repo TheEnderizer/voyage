@@ -39,6 +39,20 @@ class ScannerHeuristicsTest {
     }
 
     @Test
+    fun `isHiddenDirName matches dot-prefixed names only`() {
+        assertTrue(ScannerHeuristics.isHiddenDirName(".voyage"))
+        assertTrue(ScannerHeuristics.isHiddenDirName(".thumbnails"))
+        assertFalse(ScannerHeuristics.isHiddenDirName("data"))
+        assertFalse(ScannerHeuristics.isHiddenDirName("Disc 1"))
+        assertFalse(ScannerHeuristics.isHiddenDirName(""))
+    }
+
+    @Test
+    fun `DATA_DIR_NAME is the exact reserved per-book data folder name`() {
+        assertEquals("data", ScannerHeuristics.DATA_DIR_NAME)
+    }
+
+    @Test
     fun `clusterBySimilarName keeps a plain sequential chapter list as one book`() {
         val files = listOf(
             f("01 - Chapter One.mp3"),

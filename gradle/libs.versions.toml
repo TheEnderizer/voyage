@@ -23,6 +23,7 @@ materialKolor = "4.0.5"
 graphicsShapes = "1.1.0"
 kotlinxSerialization = "1.11.0"
 junit = "4.13.2"
+orgJson = "20250107"
 documentfile = "1.0.1"
 androidxTestRunner = "1.6.2"
 androidxTestExtJunit = "1.2.1"
@@ -64,6 +65,7 @@ material-kolor = { group = "com.materialkolor", name = "material-kolor", version
 androidx-graphics-shapes = { group = "androidx.graphics", name = "graphics-shapes", version.ref = "graphicsShapes" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+org-json = { group = "org.json", name = "json", version.ref = "orgJson" }
 androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }

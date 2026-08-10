@@ -90,6 +90,11 @@ class GapSkippingDataSource(private val upstream: DataSource) : DataSource {
             else minOf(dataSpec.length, m.logicalSize - logicalPos)
 
         openedUri = dataSpec.uri.buildUpon().clearQuery().build()
+        AppLog.i(
+            "Damage",
+            "gap-skip open ${path.substringAfterLast('/')}: ${m.gaps.size} gap(s), " +
+                "physical=${m.physicalSize} logical=${m.logicalSize} from=$logicalPos serving=$bytesRemaining"
+        )
         return bytesRemaining
     }
 

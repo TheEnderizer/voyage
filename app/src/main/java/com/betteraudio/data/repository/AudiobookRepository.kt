@@ -10,6 +10,7 @@ import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
 import com.betteraudio.data.covers.CoverEffectBaker
+import com.betteraudio.data.diskstore.DiskMirror
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.AuthorMeta
@@ -42,7 +43,8 @@ class AudiobookRepository @Inject constructor(
     private val listeningHistoryDao: ListeningHistoryDao,
     private val authorMetaDao: com.betteraudio.data.db.dao.AuthorMetaDao,
     private val syncAnchorDao: com.betteraudio.data.db.dao.SyncAnchorDao,
-    private val coverEffectBaker: CoverEffectBaker
+    private val coverEffectBaker: CoverEffectBaker,
+    private val diskMirror: DiskMirror
 ) {
 
     // ── Author view (lightweight per-author cover) ───────────────────────────
@@ -55,42 +57,54 @@ class AudiobookRepository @Inject constructor(
         authorMetaDao.upsert(
             (existing ?: AuthorMeta(name = name)).copy(coverArtPath = path)
         )
+        diskMirror.flushLibrary()
     }
     suspend fun getAllAuthorMetaOnce(): List<AuthorMeta> = authorMetaDao.getAllOnce()
-    suspend fun upsertAuthorMeta(meta: AuthorMeta) = authorMetaDao.upsert(meta)
+    suspend fun upsertAuthorMeta(meta: AuthorMeta) {
+        authorMetaDao.upsert(meta)
+        diskMirror.flushLibrary()
+    }
 
     /**
      * Wipe the entire library from the database — every book (which cascades to its files,
      * chapters, progress, bookmarks and listening history). The audio files on disk are left
      * untouched; the folder + import-structure settings are kept so the user can immediately
-     * rescan. Custom audio presets are preserved.
+     * rescan. Custom audio presets are preserved. Book-level disk data is deliberately left
+     * alone — under the disk-first model a rescan restores it, which is the point.
      */
     suspend fun resetLibrary() {
         bookDao.deleteAll()
+        diskMirror.flushLibrary()
     }
 
     // ── Listening history ────────────────────────────────────────────────────
     // Raw insert — used by BackupManager's restore, which must not prune away sessions it's in
     // the middle of restoring one at a time.
-    suspend fun insertListeningSession(session: ListeningSession): Long = listeningHistoryDao.insertSession(session)
+    suspend fun insertListeningSession(session: ListeningSession): Long =
+        listeningHistoryDao.insertSession(session).also { diskMirror.markDirty(session.bookId) }
     /** Insert then prune older sessions for that book beyond [keep]. Used by the live recorder
      *  (PlayerController.closeHistorySession) — the only place a session is appended one at a time
      *  outside of a bulk restore. */
     suspend fun insertListeningSessionPruned(session: ListeningSession, keep: Int) {
         listeningHistoryDao.insertSession(session)
         listeningHistoryDao.pruneSessionsForBook(session.bookId, keep)
+        diskMirror.markDirty(session.bookId)
     }
     fun getSessionsForBook(bookId: Long): Flow<List<ListeningSession>> = listeningHistoryDao.getSessionsForBook(bookId)
-    suspend fun insertSkipEvent(skip: SkipEvent): Long = listeningHistoryDao.insertSkip(skip)
+    suspend fun insertSkipEvent(skip: SkipEvent): Long =
+        listeningHistoryDao.insertSkip(skip).also { diskMirror.markDirty(skip.bookId) }
     /** Insert then prune older rows of the same [SkipEvent.source] for that book beyond [keep]. */
     suspend fun insertSkipEventPruned(skip: SkipEvent, keep: Int) {
         listeningHistoryDao.insertSkip(skip)
         listeningHistoryDao.pruneSkipsBySource(skip.bookId, skip.source, keep)
+        diskMirror.markDirty(skip.bookId)
     }
     fun getSkipsForBook(bookId: Long): Flow<List<SkipEvent>> = listeningHistoryDao.getSkipsForBook(bookId)
 
-    suspend fun setSkipSilenceEnabled(bookId: Long, enabled: Boolean) =
+    suspend fun setSkipSilenceEnabled(bookId: Long, enabled: Boolean) {
         bookDao.setSkipSilenceEnabled(bookId, enabled)
+        diskMirror.flushBook(bookId)
+    }
 
     fun getAllBooks(): Flow<List<Book>> = bookDao.getAllBooksSorted()
     fun getBookById(bookId: Long): Flow<Book?> = bookDao.getBookById(bookId)
@@ -125,25 +139,37 @@ class AudiobookRepository @Inject constructor(
         }
     suspend fun insertAudioFiles(files: List<AudioFile>) = audioFileDao.insertAll(files)
     suspend fun clearAudioFiles(bookId: Long) = audioFileDao.deleteFilesForBook(bookId)
+    suspend fun deleteAudioFilesByIds(ids: List<Long>) {
+        if (ids.isNotEmpty()) audioFileDao.deleteFilesByIds(ids)
+    }
     suspend fun getAudioFilesOnce(bookId: Long): List<AudioFile> = audioFileDao.getFilesForBookOnce(bookId)
     /** Every audio file in the DB, for the scanner's disk reconciliation (batched — one query
      *  for the whole library instead of one per book). */
     suspend fun getAllAudioFilesOnce(): List<AudioFile> = audioFileDao.getAllFilesOnce()
-    suspend fun saveProgress(progress: PlaybackProgress) = progressDao.upsert(progress)
+    suspend fun saveProgress(progress: PlaybackProgress) {
+        progressDao.upsert(progress)
+        diskMirror.markDirty(progress.bookId)
+    }
     suspend fun getBookByFolder(folderPath: String): Book? = bookDao.getBookByFolder(folderPath)
     /** Every book, including hidden/ignored ones — for the scanner's disk reconciliation. */
     suspend fun getAllBooksIncludingIgnoredOnce(): List<Book> = bookDao.getAllBooksOnce()
     /** Repoint a book + its files to a new on-disk location (library restructure move). */
-    suspend fun updateBookLocation(bookId: Long, folderPath: String, coverArtPath: String?) =
+    suspend fun updateBookLocation(bookId: Long, folderPath: String, coverArtPath: String?) {
         bookDao.updateLocation(bookId, folderPath, coverArtPath)
+        diskMirror.flushBook(bookId)
+    }
     suspend fun updateAudioFilePath(fileId: Long, path: String) = audioFileDao.updatePath(fileId, path)
 
     /** Caches an [com.betteraudio.playback.Mp3DamageScanner] result so a file is scanned once, not once per play. */
-    suspend fun updateAudioFileDamageRanges(fileId: Long, ranges: String) =
+    suspend fun updateAudioFileDamageRanges(fileId: Long, ranges: String) {
         audioFileDao.updateDamageRanges(fileId, ranges)
+        audioFileDao.getFileById(fileId)?.bookId?.let { diskMirror.flushBook(it) }
+    }
     /** Refresh a book's file-derived stats after files were dropped in reconciliation. */
-    suspend fun updateBookFileStats(bookId: Long, totalDurationMs: Long, fileCount: Int) =
+    suspend fun updateBookFileStats(bookId: Long, totalDurationMs: Long, fileCount: Int) {
         bookDao.updateDuration(bookId, totalDurationMs, fileCount)
+        diskMirror.flushBook(bookId)
+    }
     suspend fun updateCoverArt(bookId: Long, path: String) {
         bookDao.updateCoverArt(bookId, path)
         // The cover changed: invalidate the baked effect so it's re-rendered. The UI
@@ -155,6 +181,7 @@ class AudiobookRepository @Inject constructor(
             val nomedia = java.io.File(folder, ".nomedia")
             if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
         }
+        diskMirror.flushBook(bookId)
     }
 
     /** Bake the cover effect if a cover exists but no valid baked file is present yet. */
@@ -172,9 +199,14 @@ class AudiobookRepository @Inject constructor(
         val cover = book.coverArtPath ?: return
         bookDao.updateCoverFx(bookId, coverEffectBaker.bake(cover, bookId.toString()))
     }
-    suspend fun updateBookStatus(bookId: Long, status: BookStatus) = bookDao.updateStatus(bookId, status)
-    suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) =
+    suspend fun updateBookStatus(bookId: Long, status: BookStatus) {
+        bookDao.updateStatus(bookId, status)
+        diskMirror.flushBook(bookId)
+    }
+    suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) {
         bookDao.updateSeriesInfo(bookId, seriesName, seriesOrder)
+        diskMirror.flushBook(bookId)
+    }
 
     // Six read-then-write "upserts" (this one plus updateSpeed/updateBoostDb/updateEqBands/
     // updateLastPausedAt/touchLastPlayed below) each wrap their check-then-write in a single
@@ -214,6 +246,10 @@ class AudiobookRepository @Inject constructor(
             }
             bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
         }
+        // Deferred, not flushed: the disk mirror for playback position is intentionally written
+        // only on pause/stop/book-close/file-transition, not on every position tick — see
+        // DiskMirror's flush trigger sites in PlaybackService/PlayerController.
+        diskMirror.markDirty(bookId)
     }
 
     suspend fun updateSpeed(bookId: Long, speed: Float) {
@@ -225,6 +261,7 @@ class AudiobookRepository @Inject constructor(
                 progressDao.updateSpeed(bookId, speed)
             }
         }
+        diskMirror.markDirty(bookId)
     }
 
     suspend fun updateBoostDb(bookId: Long, boostDb: Int) {
@@ -236,6 +273,7 @@ class AudiobookRepository @Inject constructor(
                 progressDao.updateBoostDb(bookId, boostDb)
             }
         }
+        diskMirror.markDirty(bookId)
     }
 
     suspend fun updateEqBands(bookId: Long, json: String?) {
@@ -247,14 +285,23 @@ class AudiobookRepository @Inject constructor(
                 progressDao.updateEqBands(bookId, json)
             }
         }
+        diskMirror.markDirty(bookId)
     }
 
-    suspend fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) =
+    suspend fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) {
         bookDao.updateMetadata(bookId, titleOverride?.takeIf { it.isNotBlank() }, authorOverride?.takeIf { it.isNotBlank() })
+        diskMirror.flushBook(bookId)
+    }
 
-    suspend fun updateBookNarrator(bookId: Long, narrator: String?) = bookDao.updateNarrator(bookId, narrator)
+    suspend fun updateBookNarrator(bookId: Long, narrator: String?) {
+        bookDao.updateNarrator(bookId, narrator)
+        diskMirror.flushBook(bookId)
+    }
 
-    suspend fun setBookIgnored(bookId: Long, ignored: Boolean) = bookDao.setIgnored(bookId, ignored)
+    suspend fun setBookIgnored(bookId: Long, ignored: Boolean) {
+        bookDao.setIgnored(bookId, ignored)
+        diskMirror.flushBook(bookId)
+    }
 
     fun getAllIgnoredBooks(): Flow<List<Book>> = bookDao.getAllIgnoredBooks()
 
@@ -269,6 +316,13 @@ class AudiobookRepository @Inject constructor(
         // deleteFiles (it's a derived file, not part of the user's own audio folder), so nothing
         // else deletes it — a book removed from the app otherwise leaves it behind permanently.
         book?.coverFxPath?.let { deleteQuietly(it, "book $bookId coverFx") }
+        // In BOTH branches, not just !deleteFiles: when deleteFiles is true the folder.
+        // deleteRecursively() above already took data/ with it, so this is a no-op there, but it
+        // still needs to clear DiskMirror's dirty-set entry either way. When deleteFiles is
+        // false, this is load-bearing — without it, a book removed from the app but left on disk
+        // would come back on the next rescan with all its old progress and overrides, which is
+        // strictly worse than today's "the audio is still there so it comes back fresh".
+        book?.let { diskMirror.deleteBookData(it) }
     }
 
     /** All books by an effective author name (for deleting a whole author from the grid). */
@@ -276,12 +330,14 @@ class AudiobookRepository @Inject constructor(
         bookDao.getBooksByEffectiveAuthorOnce(name)
 
     /** Remove an author's cover-meta row (after its books are deleted), and the cover files it
-     *  owned — both live only in filesDir (authors have no folder of their own to keep them in). */
+     *  owned — `.voyage/covers/author_<slug>.jpg` (or legacy filesDir for a cover set before this
+     *  moved), plus its baked coverFx; an author has no folder of its own to keep either in. */
     suspend fun deleteAuthorMeta(name: String) {
         val meta = authorMetaDao.getByName(name)
         authorMetaDao.deleteByName(name)
         meta?.coverArtPath?.let { deleteQuietly(it, "author '$name' cover") }
         meta?.coverFxPath?.let { deleteQuietly(it, "author '$name' coverFx") }
+        diskMirror.flushLibrary()
     }
 
     companion object {
@@ -303,23 +359,37 @@ class AudiobookRepository @Inject constructor(
     suspend fun setEbook(bookId: Long, path: String?, spineCount: Int) {
         bookDao.setEbook(bookId, path, spineCount)   // also nulls chapterMapJson
         syncAnchorDao.deleteForBook(bookId)
+        diskMirror.flushBook(bookId)
     }
 
     // ── Sync anchors (paragraph-resolution alignment points) ──────────────────
     suspend fun getSyncAnchorsOnce(bookId: Long): List<SyncAnchor> =
         syncAnchorDao.getForBookOnce(bookId)
     fun syncAnchorCount(bookId: Long): Flow<Int> = syncAnchorDao.countForBook(bookId)
-    suspend fun insertSyncAnchors(anchors: List<SyncAnchor>) =
+    suspend fun insertSyncAnchors(anchors: List<SyncAnchor>) {
         syncAnchorDao.insertAll(anchors)
-    suspend fun deleteSyncAnchors(bookId: Long) = syncAnchorDao.deleteForBook(bookId)
+        anchors.map { it.bookId }.distinct().forEach { diskMirror.flushBook(it) }
+    }
+    suspend fun deleteSyncAnchors(bookId: Long) {
+        syncAnchorDao.deleteForBook(bookId)
+        diskMirror.flushBook(bookId)
+    }
 
-    suspend fun updateEbookSpineCount(bookId: Long, spineCount: Int) =
+    suspend fun updateEbookSpineCount(bookId: Long, spineCount: Int) {
         bookDao.updateEbookSpineCount(bookId, spineCount)
+        diskMirror.flushBook(bookId)
+    }
 
     /** Repoint a connected epub's path after a library-restructure move (keeps the chapter map). */
-    suspend fun updateEbookPath(bookId: Long, path: String) = bookDao.updateEbookPath(bookId, path)
+    suspend fun updateEbookPath(bookId: Long, path: String) {
+        bookDao.updateEbookPath(bookId, path)
+        diskMirror.flushBook(bookId)
+    }
 
-    suspend fun setChapterMap(bookId: Long, json: String?) = bookDao.setChapterMap(bookId, json)
+    suspend fun setChapterMap(bookId: Long, json: String?) {
+        bookDao.setChapterMap(bookId, json)
+        diskMirror.flushBook(bookId)
+    }
 
     /** Every book with a connected/standalone ebook (for reconciliation and the Ebooks view). */
     suspend fun getAllWithEbookOnce(): List<Book> = bookDao.getAllWithEbookOnce()
@@ -333,7 +403,7 @@ class AudiobookRepository @Inject constructor(
         spineCount: Int
     ): Long {
         val existing = bookDao.getBookByFolder(folderPath)
-        return if (existing != null) {
+        val id = if (existing != null) {
             bookDao.updateEbookSpineCount(existing.id, spineCount)
             existing.id
         } else {
@@ -345,6 +415,8 @@ class AudiobookRepository @Inject constructor(
                 )
             )
         }
+        diskMirror.flushBook(id)
+        return id
     }
 
     /** Persist the reader's scroll position and mark text as the freshest mode. Creates the
@@ -359,6 +431,7 @@ class AudiobookRepository @Inject constructor(
                 )
             )
         }
+        diskMirror.markDirty(bookId)
     }
 
     /** Mark audio as the freshest mode (called when starting/resuming playback from the reader or
@@ -367,6 +440,7 @@ class AudiobookRepository @Inject constructor(
         if (progressDao.setLastModeAudio(bookId) == 0) {
             progressDao.upsert(PlaybackProgress(bookId = bookId, lastMode = "AUDIO"))
         }
+        diskMirror.markDirty(bookId)
     }
 
     /** When a standalone ebook-only row is being merged into a newly-connected audiobook, carry
@@ -385,6 +459,8 @@ class AudiobookRepository @Inject constructor(
         }
         listeningHistoryDao.reassignSkipsToBook(fromBookId, toBookId)
         listeningHistoryDao.reassignSessionsToBook(fromBookId, toBookId)
+        diskMirror.flushBook(fromBookId)
+        diskMirror.flushBook(toBookId)
     }
 
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */
@@ -396,16 +472,25 @@ class AudiobookRepository @Inject constructor(
             }
             bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
         }
+        diskMirror.markDirty(bookId)
     }
 
     suspend fun markBookFinished(bookId: Long) {
         progressDao.markCompleted(bookId, System.currentTimeMillis())
         bookDao.updateStatus(bookId, BookStatus.FINISHED)
+        diskMirror.flushBook(bookId)
     }
 
-    suspend fun updateSynopsis(bookId: Long, synopsis: String) = bookDao.updateSynopsis(bookId, synopsis)
+    suspend fun updateSynopsis(bookId: Long, synopsis: String) {
+        bookDao.updateSynopsis(bookId, synopsis)
+        diskMirror.flushBook(bookId)
+    }
 
     suspend fun getBooksByIds(ids: List<Long>): List<Book> = bookDao.getBooksByIds(ids)
+
+    /** Not disk-mirror-hooked — this timestamp records that disk was just READ into the DB, not a
+     *  DB change that needs writing back out. See Book.dataAppliedAtMs. */
+    suspend fun markDataApplied(bookId: Long, ts: Long) = bookDao.updateDataAppliedAt(bookId, ts)
 
     /**
      * One-time cleanup of legacy auto-sliced "synthetic" chapters. Clearing all chapter rows
@@ -416,24 +501,46 @@ class AudiobookRepository @Inject constructor(
 
     // ── Bookmarks ────────────────────────────────────────────────────────────
     fun getBookmarksForBook(bookId: Long): Flow<List<Bookmark>> = bookmarkDao.getForBook(bookId)
-    suspend fun addBookmark(bookmark: Bookmark): Long = bookmarkDao.insert(bookmark)
-    suspend fun deleteBookmark(id: Long) = bookmarkDao.deleteById(id)
+    suspend fun addBookmark(bookmark: Bookmark): Long {
+        val id = bookmarkDao.insert(bookmark)
+        diskMirror.flushBook(bookmark.bookId)
+        return id
+    }
+    suspend fun deleteBookmark(id: Long) {
+        val bookId = bookmarkDao.getById(id)?.bookId
+        bookmarkDao.deleteById(id)
+        bookId?.let { diskMirror.flushBook(it) }
+    }
 
     // ── Audio presets ─────────────────────────────────────────────────────────
     fun getAllAudioPresets(): Flow<List<AudioPreset>> = audioPresetDao.getAll()
-    suspend fun insertAudioPreset(preset: AudioPreset): Long = audioPresetDao.insert(preset)
-    suspend fun updateAudioPreset(preset: AudioPreset) = audioPresetDao.update(preset)
-    suspend fun deleteAudioPreset(id: Long) = audioPresetDao.deleteById(id)
+    suspend fun insertAudioPreset(preset: AudioPreset): Long {
+        val id = audioPresetDao.insert(preset)
+        diskMirror.flushLibrary()
+        return id
+    }
+    suspend fun updateAudioPreset(preset: AudioPreset) {
+        audioPresetDao.update(preset)
+        diskMirror.flushLibrary()
+    }
+    suspend fun deleteAudioPreset(id: Long) {
+        audioPresetDao.deleteById(id)
+        diskMirror.flushLibrary()
+    }
     suspend fun setDefaultAudioPreset(id: Long) {
         db.withTransaction {
             audioPresetDao.clearDefault()
             audioPresetDao.setDefault(id)
         }
+        diskMirror.flushLibrary()
     }
     /** The global default preset (applied to every book unless the book overrides it), or null. */
     suspend fun getDefaultAudioPreset(): AudioPreset? = audioPresetDao.getDefault()
     /** Clear the global default flag without deleting any preset. */
-    suspend fun clearDefaultAudioPreset() = audioPresetDao.clearDefault()
+    suspend fun clearDefaultAudioPreset() {
+        audioPresetDao.clearDefault()
+        diskMirror.flushLibrary()
+    }
     suspend fun getProgressForBookOnce(bookId: Long): PlaybackProgress? =
         progressDao.getProgressForBookOnce(bookId)
 
@@ -445,6 +552,7 @@ class AudiobookRepository @Inject constructor(
                 progressDao.updateLastPausedAt(bookId, ts)
             }
         }
+        diskMirror.markDirty(bookId)
     }
 
     /** Re-bake the cover effect for every book that has a cover. [onProgress] is called after each

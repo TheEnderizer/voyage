@@ -74,13 +74,28 @@ class CoverBoundsRegistry {
         morphProgress.value = progress
     }
 
-    /** True while [bookId]'s grid card should hide its own cover image because the player's
-     *  morphing cover is currently traveling on top of it. Deferred read (only meant to be called
-     *  from inside a graphicsLayer/draw lambda) so checking this doesn't recompose the card. */
+    /** True while [bookId]'s grid card should hide its own cover IMAGE because the morphing cover
+     *  is currently traveling on top of it. Binary on purpose: at this point the traveling cover
+     *  sits exactly on the card (same rect, same crop, same bitmap), so swapping which of the two
+     *  is drawn is invisible — whereas fading would briefly show both. Deferred read (only meant
+     *  to be called from inside a graphicsLayer/draw lambda) so checking this doesn't recompose
+     *  the card. */
     fun isMorphHidden(bookId: Long): Boolean {
         if (morphBookId.value != bookId) return false
         val p = morphProgress.value?.value ?: return false
         return p > 0.02f
+    }
+
+    /** Opacity for [bookId]'s grid card CHROME — its title/author scrim, progress bar, border and
+     *  now-playing badge — while a morph is running. Unlike the cover image these have no
+     *  counterpart traveling on top of them, so snapping them off (and back on) was a visible
+     *  blink at both ends of the transition; they ramp out over the first quarter of the opening
+     *  instead, and ramp back in as the page shrinks onto the card. Deferred read, same as
+     *  [isMorphHidden]. */
+    fun morphChromeAlpha(bookId: Long): Float {
+        if (morphBookId.value != bookId) return 1f
+        val p = morphProgress.value?.value ?: return 1f
+        return 1f - (p / 0.25f).coerceIn(0f, 1f)
     }
 
     private fun rectState(bookId: Long) =

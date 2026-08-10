@@ -9,12 +9,21 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp as lerpDp
 import androidx.compose.ui.util.lerp
@@ -77,17 +86,20 @@ val LocalPlayerExpand = compositionLocalOf {
  * own pre-scale local space) so the visible rounding matches [sourceRadius] at progress 0 and
  * [destRadius] at progress 1 regardless of how much the layer is scaled down in between.
  *
- * AN-9 (Gate AN): `own` is written from [androidx.compose.ui.layout.onPlaced] — a layout-phase
- * callback writing composition state, the standard Compose feedback-loop hazard. Benign at all
- * current call sites (both themes' player/bookinfo/series screens): `own` is only ever read back
- * inside the [androidx.compose.ui.graphics.graphicsLayer] lambda below, and a graphicsLayer-only
- * transform doesn't trigger a new layout pass, so there's no loop. That's a property of today's
- * call sites, not a guarantee of the API — a future caller that reads `own` anywhere
- * layout-affecting (a `Modifier.layout {}`, a `size()` derived from it, etc.) would reintroduce
- * the hazard. [onPlaced] (rather than the previously-used [androidx.compose.ui.layout.onGloballyPositioned])
- * is deliberate: it's the placement-phase callback this KDoc already recommended for any new read
- * of this kind, and it fires at the same point in the pipeline with the same bounds data, so this
- * is a hardening, not a behaviour change.
+ * AN-9 (Gate AN): `own` is written from [androidx.compose.ui.layout.onGloballyPositioned] — a
+ * layout-phase callback writing composition state, the standard Compose feedback-loop hazard.
+ * Benign at all current call sites (both themes' player/bookinfo/series screens): `own` is only
+ * ever read back inside the [androidx.compose.ui.graphics.graphicsLayer] lambda below, and a
+ * graphicsLayer-only transform doesn't trigger a new layout pass, so there's no loop. That's a
+ * property of today's call sites, not a guarantee of the API — a future caller that reads `own`
+ * anywhere layout-affecting (a `Modifier.layout {}`, a `size()` derived from it, etc.) would
+ * reintroduce the hazard.
+ *
+ * Do NOT "harden" this to [androidx.compose.ui.layout.onPlaced]: that was tried and reverted. It
+ * fires DURING the placement pass, so `boundsInRoot()` resolves the size but walks an ancestor
+ * chain that hasn't been positioned yet and returns a rect pinned to the root origin — which for
+ * a morph source means every transition growing out of the top-left corner of the display. The
+ * two callbacks do not carry the same bounds data.
  */
 @Composable
 fun Modifier.morphFrom(
@@ -101,7 +113,7 @@ fun Modifier.morphFrom(
 ): Modifier {
     var own by remember { mutableStateOf(Rect.Zero) }
     return this
-        .onPlaced { own = it.boundsInRoot() }
+        .onGloballyPositioned { own = Rect(it.positionInRoot(), it.size.toSize()) }
         .graphicsLayer {
             val p = progress.value
             alpha = if (fadeIn) (p / 0.5f).coerceIn(0f, 1f) else 1f
@@ -132,6 +144,79 @@ fun Modifier.morphFrom(
                 translationY = (src.center.y - own.center.y) * (1f - p)
             }
         }
+}
+
+/**
+ * Grows the VISIBLE WINDOW of a whole screen out of [source] (root coords, the tapped grid card's
+ * cover) at progress 0 into this element's own full bounds at progress 1 — the other half of the
+ * cover morph: [morphFrom] carries the cover itself from the card to its new slot, this carries
+ * everything *around* it (background, header, info panel) so the page unfolds out of that same
+ * image instead of popping in behind a flying cover.
+ *
+ * Deliberately a CLIP, not a scale: the page is laid out at its final full-screen size the whole
+ * time and only the window into it interpolates, so nothing inside is ever drawn squashed or at a
+ * transient size (which would re-wrap text and re-measure the synopsis every frame). Combined with
+ * [expandReveal] on the individual elements — the window uncovers the page, the elements fade up
+ * inside it — this is the standard container-transform pairing.
+ *
+ * At progress 0 the window is *exactly* the card's rect and radius, and the cover morphing inside
+ * it is exactly the card's cover (same bounds, same 0.72 aspect crop, same Coil `memoryCacheKey`
+ * → the same decoded bitmap). So the first frame of the transition is pixel-identical to the grid
+ * the user just tapped, and the card underneath — hidden by [CoverBoundsRegistry.isMorphHidden]
+ * the moment progress leaves 0 — never shows through as a second copy of the cover.
+ *
+ * Both interpolations are per-edge linear from the same starting rect, which is what keeps the
+ * cover inside the window for the entire animation: for every edge, `lerp(card, coverSlot, p)` is
+ * bounded by `lerp(card, fullScreen, p)` as long as the cover's final slot is on-screen. [morphFrom]
+ * qualifies — its uniform scale reduces to the same per-edge lerp when source and destination share
+ * an aspect ratio, as the grid card and both themes' Book Info covers do.
+ *
+ * Reads (progress/source/own) are all deferred into the [graphicsLayer] block, per the same
+ * discipline as [morphFrom] — the clip re-evaluates per frame without recomposing anything.
+ */
+@Composable
+fun Modifier.containerReveal(
+    source: State<Rect>,
+    progress: State<Float>,
+    sourceRadius: Dp,
+    destRadius: Dp = 0.dp,
+): Modifier {
+    var own by remember { mutableStateOf(Rect.Zero) }
+    return this
+        .onGloballyPositioned { own = Rect(it.positionInRoot(), it.size.toSize()) }
+        .graphicsLayer {
+            val raw = progress.value
+            val src = source.value
+            if (raw >= 1f || src == Rect.Zero || size.width <= 0f || size.height <= 0f) {
+                clip = false
+                shape = RectangleShape
+                return@graphicsLayer
+            }
+            // Clamped low: the closing spring can undershoot below 0, which would extrapolate the
+            // window to *smaller* than the card (and, far enough past 0, inside out).
+            val p = raw.coerceAtLeast(0f)
+            // source is in ROOT coords; the clip shape is in this layer's own local space.
+            val srcLeft = src.left - own.left
+            val srcTop = src.top - own.top
+            val window = Rect(
+                left   = lerp(srcLeft, 0f, p),
+                top    = lerp(srcTop, 0f, p),
+                right  = lerp(srcLeft + src.width, size.width, p),
+                bottom = lerp(srcTop + src.height, size.height, p),
+            )
+            shape = RevealWindowShape(window, lerpDp(sourceRadius, destRadius, p).toPx())
+            clip = true
+        }
+}
+
+/** The interpolated window [containerReveal] clips to. A uniform-radius [RoundRect] is `isSimple`,
+ *  so Compose's outline resolver hands it to the RenderNode as a plain `setRoundRect` clip rather
+ *  than falling back to a per-frame Path clip on a full-screen layer — the exact cost the
+ *  [com.betteraudio.ui.material.motion.morphingContainer] KDoc documents the old `expandingContainer`
+ *  paying for its asymmetric radii. */
+private class RevealWindowShape(private val window: Rect, private val radiusPx: Float) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
+        Outline.Rounded(RoundRect(window, CornerRadius(radiusPx, radiusPx)))
 }
 
 /**

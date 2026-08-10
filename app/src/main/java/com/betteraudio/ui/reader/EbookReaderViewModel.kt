@@ -197,9 +197,7 @@ class EbookReaderViewModel @Inject constructor(
             }
         }
 
-        val mappingAvailable = hasAudio && File(book.folderPath).let { dir ->
-            dir.isDirectory && com.betteraudio.data.sync.MappingFileIO.mappingFile(dir).isFile
-        }
+        val mappingAvailable = hasAudio && com.betteraudio.data.sync.MappingFileIO.exists(book.folderPath)
 
         liveScrollFraction = initialFraction
 
@@ -477,19 +475,18 @@ class EbookReaderViewModel @Inject constructor(
 
     fun cancelSync() = syncAligner.cancel(bookId)
 
-    /** Manually (re)import "mapping.json" from the book's folder (see MappingFileIO) — e.g. after
-     *  the user drops in a mapping file obtained elsewhere, or to restore one after a rescan
-     *  missed it. Unlike the automatic scan-time import, this always replaces any existing
-     *  anchors, since the user explicitly asked for it. */
+    /** Manually (re)import the book's mapping data (see MappingFileIO) — e.g. after the user
+     *  drops in a mapping file obtained elsewhere, or to restore one after a rescan missed it.
+     *  Unlike the automatic scan-time import, this always replaces any existing anchors, since
+     *  the user explicitly asked for it. */
     fun importMappingFile() {
         val s = _state.value
         val book = s.book ?: return
         if (!s.hasAudio || book.ebookPath == null) return
         viewModelScope.launch {
-            val folder = File(book.folderPath)
-            val mapping = if (folder.isDirectory) com.betteraudio.data.sync.MappingFileIO.read(folder) else null
+            val mapping = com.betteraudio.data.sync.MappingFileIO.read(book.folderPath)
             if (mapping == null) {
-                _state.update { it.copy(mappingImportMessage = "No mapping.json found in this book's folder") }
+                _state.update { it.copy(mappingImportMessage = "No mapping data found for this book") }
                 return@launch
             }
             mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }

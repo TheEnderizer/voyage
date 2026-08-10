@@ -47,12 +47,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -100,6 +101,7 @@ fun HomeScreenContent(
     val scan by viewModel.scan.collectAsStateWithLifecycle()
     val savedFolder by viewModel.savedFolder.collectAsStateWithLifecycle()
     val structureChosen by viewModel.structureChosen.collectAsStateWithLifecycle()
+    val setupState by viewModel.setupState.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val homeViewMode by viewModel.homeViewMode.collectAsStateWithLifecycle()
     val homeSection by viewModel.homeSection.collectAsStateWithLifecycle()
@@ -132,17 +134,22 @@ fun HomeScreenContent(
         }
     }
 
-    // First launch: pick the library structure, then auto-open the folder picker. Both
+    // First launch (or post-reinstall): a blank library folder always opens the picker FIRST,
+    // regardless of setupState — picking a folder is what lets LibraryBootstrapper detect a
+    // .voyage/settings.json in the first place, so gating the picker itself on setupState would
+    // deadlock a reinstall (setupState can only ever leave NEEDS_FOLDER once a folder is picked).
+    // The import-structure dialog is the one gated: it only fires once bootstrap has resolved to
+    // FRESH — a RESTORED install's structure came from the file. UNKNOWN/RESTORING are excluded
+    // outright so nothing fires before bootstrap has actually run.
     // savedFolder and structureChosen are null until DataStore emits, so we only act once the
     // real values arrive — avoids a false trigger on the "" / not-yet-loaded defaults.
-    LaunchedEffect(savedFolder, structureChosen, showStructureDialog) {
+    LaunchedEffect(savedFolder, structureChosen, setupState, showStructureDialog) {
         val folder = savedFolder
         val chosen = structureChosen
-        if (folder != null && folder.isBlank() && chosen != null) {
-            when {
-                !chosen -> showStructureDialog = true
-                !showScanSheet && !showStructureDialog -> onScanClick()
-            }
+        if (folder == null || chosen == null) return@LaunchedEffect
+        when {
+            folder.isBlank() -> if (!showScanSheet && !showStructureDialog) onScanClick()
+            setupState == com.betteraudio.data.diskstore.SetupState.FRESH && !chosen -> showStructureDialog = true
         }
     }
 
@@ -734,13 +741,13 @@ private fun BookGridCard(
 
     Box(
         modifier
-            // Hides the ENTIRE card (image, border, now-playing badge, gradient/title/progress —
-            // everything) the instant the player's morphing cover (which starts exactly on top of
-            // this card, see coverCropMorph) takes over. Placed first so it affects every later
-            // modifier and all child content, not just the cover image — leaving the border/badge
-            // visible over a hidden image was a visible "stutter" (a floating ring/badge with
-            // nothing behind it) instead of one seamless traveling cover.
-            .graphicsLayer { alpha = if (coverBoundsRegistry.isMorphHidden(book.id)) 0f else 1f }
+            // Fades the card's CHROME (border, badge, and — through this layer — the title/author
+            // scrim and progress bar below) out as a morph starts and back in as it closes. The
+            // cover image itself is handled separately, on the AsyncImage below: it hard-swaps
+            // under the traveling cover, which is exactly on top of it, so that switch is
+            // invisible while a fade there would briefly show two copies. Fading the whole card as
+            // one used to snap everything off at once, which read as the cover blinking out.
+            .graphicsLayer { alpha = coverBoundsRegistry.morphChromeAlpha(book.id) }
             .fillMaxWidth()
             .aspectRatio(0.72f)
             .pressScale(enabled = !isSelectionMode)
@@ -752,16 +759,24 @@ private fun BookGridCard(
             )
             .background(style.cardBackgroundColor())
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .onPlaced {
+            .onGloballyPositioned {
                 // style.cardCornerRadius is the progress-0 radius both consumers' cover morphs
-                // start from (Book Info's morphFrom and the full player's coverCropMorph, see
-                // MaterialMotion.kt) — independent of `cardRadius` above (the actual clip shape,
-                // identical across both themes). onPlaced (not onGloballyPositioned): this write
-                // is only ever read back from deferred graphicsLayer/draw-phase consumers (see
-                // AN-9 in ui/player/PlayerMorph.kt), so the placement-phase callback is the
-                // correct, hardened choice per that doc's own recommendation — same bounds data,
-                // same phase in the pipeline.
-                coverBoundsRegistry.publish(book.id, it.boundsInRoot(), style.cardCornerRadius, book.coverArtPath)
+                // start from (Book Info's morphFrom/containerReveal and the full player's
+                // coverCropMorph, see MaterialMotion.kt) — independent of `cardRadius` above (the
+                // actual clip shape, identical across both themes).
+                //
+                // MUST be onGloballyPositioned, NOT onPlaced. onPlaced fires DURING the placement
+                // pass, while this card's own ancestors (the LazyVerticalGrid and everything above
+                // it) are still being placed — so `boundsInRoot()` there resolves the size
+                // correctly but walks an ancestor chain whose offsets aren't final yet and comes
+                // back positioned at the ROOT ORIGIN. It never fires again after the initial
+                // layout, so that (0, 0, cardW, cardH) rect is what stuck: every morph reading it
+                // grew out of the top-left corner of the display instead of the tapped card.
+                // onGloballyPositioned runs after the whole tree is placed, so the position is
+                // real. (The write is still only ever read back from deferred graphicsLayer/draw
+                // consumers, so AN-9's feedback-loop concern in ui/player/PlayerMorph.kt is
+                // unchanged — that was never a reason to prefer onPlaced for root-relative bounds.)
+                coverBoundsRegistry.publish(book.id, androidx.compose.ui.geometry.Rect(it.positionInRoot(), it.size.toSize()), style.cardCornerRadius, book.coverArtPath)
             }
     ) {
         val context = LocalContext.current
@@ -776,7 +791,9 @@ private fun BookGridCard(
             model = coverModel,
             contentDescription = book.title,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = if (coverBoundsRegistry.isMorphHidden(book.id)) 0f else 1f }
         )
 
         // Bottom gradient info
@@ -936,8 +953,9 @@ private fun CollectionGridCard(
             )
             .background(style.cardBackgroundColor())
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .onPlaced {
-                if (seriesId != null) coverBoundsRegistry.publishSeries(seriesId, it.boundsInRoot(), style.cardCornerRadius)
+            .onGloballyPositioned {
+                // onGloballyPositioned, not onPlaced — same reason as the book card above.
+                if (seriesId != null) coverBoundsRegistry.publishSeries(seriesId, androidx.compose.ui.geometry.Rect(it.positionInRoot(), it.size.toSize()), style.cardCornerRadius)
             }
     ) {
         AsyncImage(

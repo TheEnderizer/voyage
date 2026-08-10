@@ -1,6 +1,9 @@
 package com.betteraudio.data.files
 
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.data.diskstore.BookDataPaths
+import com.betteraudio.data.diskstore.DiskMirror
+import com.betteraudio.data.diskstore.VoyageLayout
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.scanner.ImportStructure
@@ -26,7 +29,8 @@ import javax.inject.Singleton
 class LibraryRestructurer @Inject constructor(
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
-    private val settings: SettingsStore
+    private val settings: SettingsStore,
+    private val diskMirror: DiskMirror
 ) {
     data class Move(val bookId: Long, val title: String, val from: File, val to: File)
     data class Result(val moved: Int, val skipped: Int, val failed: Int)
@@ -69,18 +73,26 @@ class LibraryRestructurer @Inject constructor(
                 Move(book.id, book.displayTitle, from, to)
             }
 
+        // Suppressed: a background flush (e.g. a pause-triggered write) landing in a book's
+        // data/ folder between moveOne's copy and its verify step would make verify see a
+        // mismatch and report a false FAILED, deleting the already-copied data. One flush after
+        // the whole batch also means each moved book's doc is written once at its new location,
+        // not once per intermediate DB repoint inside moveOne.
         var moved = 0; var skipped = 0; var failed = 0
-        moves.forEach { move ->
-            try {
-                when (moveOne(move)) {
-                    MoveOutcome.MOVED -> moved++
-                    MoveOutcome.SKIPPED -> skipped++
-                    MoveOutcome.FAILED -> failed++
+        diskMirror.suppressed {
+            moves.forEach { move ->
+                try {
+                    when (moveOne(move)) {
+                        MoveOutcome.MOVED -> moved++
+                        MoveOutcome.SKIPPED -> skipped++
+                        MoveOutcome.FAILED -> failed++
+                    }
+                } catch (e: Exception) {
+                    AppLog.e("Restructure", "targeted move failed for '${move.title}'", e); failed++
                 }
-            } catch (e: Exception) {
-                AppLog.e("Restructure", "targeted move failed for '${move.title}'", e); failed++
             }
         }
+        diskMirror.flushDirty()
         if (moved > 0) cleanupEmptyDirs(File(root))
         AppLog.i("Restructure", "targeted done moved=$moved skipped=$skipped failed=$failed")
         Result(moved, skipped, failed)
@@ -89,18 +101,21 @@ class LibraryRestructurer @Inject constructor(
     suspend fun run(onProgress: (done: Int, total: Int) -> Unit): Result = withContext(Dispatchers.IO) {
         val moves = plan()
         var moved = 0; var skipped = 0; var failed = 0
-        moves.forEachIndexed { index, move ->
-            try {
-                when (moveOne(move)) {
-                    MoveOutcome.MOVED -> moved++
-                    MoveOutcome.SKIPPED -> skipped++
-                    MoveOutcome.FAILED -> failed++
+        diskMirror.suppressed {
+            moves.forEachIndexed { index, move ->
+                try {
+                    when (moveOne(move)) {
+                        MoveOutcome.MOVED -> moved++
+                        MoveOutcome.SKIPPED -> skipped++
+                        MoveOutcome.FAILED -> failed++
+                    }
+                } catch (e: Exception) {
+                    AppLog.e("Restructure", "move failed for '${move.title}'", e); failed++
                 }
-            } catch (e: Exception) {
-                AppLog.e("Restructure", "move failed for '${move.title}'", e); failed++
+                onProgress(index + 1, moves.size)
             }
-            onProgress(index + 1, moves.size)
         }
+        diskMirror.flushDirty()
         if (moved > 0) {
             val root = settings.libraryFolder.first()
             if (root.isNotBlank()) cleanupEmptyDirs(File(root))
@@ -110,15 +125,36 @@ class LibraryRestructurer @Inject constructor(
     }
 
     /** Remove folders left empty by the moves (bottom-up), keeping the library root itself. A
-     *  folder holding only a leftover .nomedia is treated as empty. */
+     *  folder holding only a leftover .nomedia is treated as empty, and so is a "data" folder
+     *  holding no doc JSON (e.g. after deleteBook(deleteFiles=false) removed the doc but left the
+     *  folder + its .nomedia behind) — without this, an orphaned data/ dir (and the now-otherwise-
+     *  empty book folder around it) would never get swept by a later restructure. */
     private fun cleanupEmptyDirs(root: File) {
+        val voyageDir = VoyageLayout.rootDir(root.absolutePath)
         root.walkBottomUp().forEach { d ->
-            if (d.isDirectory && d.absolutePath != root.absolutePath) {
-                val meaningful = d.listFiles()?.filter { !(it.isFile && it.name == ".nomedia") } ?: emptyList()
-                if (meaningful.isEmpty()) runCatching { d.deleteRecursively() }
-            }
+            if (!d.isDirectory || d.absolutePath == root.absolutePath) return@forEach
+            // Never descend into .voyage/ — it is app-managed state, not a user audio folder, and
+            // its sub-dirs are legitimately empty until there's a series/author cover or a widget
+            // image to put in them. Without this guard walkBottomUp deletes covers/ and
+            // widgets/images/ whenever they're empty, and (on a library whose settings.json /
+            // library.json write hasn't landed yet) .voyage itself — which silently costs the
+            // reinstall setup-skip that this whole storage model exists to provide.
+            if (voyageDir != null && (d == voyageDir || d.startsWithDir(voyageDir))) return@forEach
+            val meaningful = d.listFiles()?.filter { child ->
+                !(child.isFile && child.name == ".nomedia") &&
+                    !(child.isDirectory && child.name == BookDataPaths.DATA_DIR_NAME && isEmptyDataDir(child))
+            } ?: emptyList()
+            if (meaningful.isEmpty()) runCatching { d.deleteRecursively() }
         }
     }
+
+    /** True when this file sits somewhere beneath [dir] — separator-aware, so a sibling named
+     *  ".voyage-backup" is not mistaken for a child of ".voyage". */
+    private fun File.startsWithDir(dir: File): Boolean =
+        absolutePath.startsWith(dir.absolutePath + File.separator)
+
+    private fun isEmptyDataDir(dataDir: File): Boolean =
+        dataDir.listFiles()?.none { it.isFile && it.name.endsWith(".json") } ?: true
 
     private enum class MoveOutcome { MOVED, SKIPPED, FAILED }
 

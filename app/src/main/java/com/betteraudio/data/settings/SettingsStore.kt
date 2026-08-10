@@ -11,9 +11,12 @@ import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -23,7 +26,8 @@ private val Context.dataStore by preferencesDataStore(name = "better_audio_setti
 
 @Singleton
 class SettingsStore @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val settingsFileStore: com.betteraudio.data.diskstore.SettingsFileStore
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -131,9 +135,20 @@ class SettingsStore @Inject constructor(
         // (see AppLog) — Logcat mirroring is unconditional, so nothing is lost live, only the
         // persisted copy is skipped unless the user opts in from Settings → Diagnostics.
         val ENABLE_FILE_LOGGING = booleanPreferencesKey("enable_file_logging")
+        // ── Disk-first storage redesign (data/diskstore/) ───────────────────────────────────────
+        // Versioned (not boolean) so a later schema addition can force a re-export by bumping
+        // DiskExportMigration.TARGET_VERSION. 0 = never run.
+        val DISK_EXPORT_VERSION = intPreferencesKey("disk_export_version")
+        // "" | "NEEDS_FOLDER" | "FRESH" | "RESTORED" — only ever the two terminal values
+        // (FRESH/RESTORED) are actually persisted; see LibraryBootstrapper.
+        val SETUP_STATE = stringPreferencesKey("setup_state")
+        // Mtime (ms) of .voyage/library.json the last time reconcileLibraryFromDisk applied it —
+        // lets a rescan skip re-parsing library.json when nothing has changed since.
+        val LIBRARY_JSON_APPLIED_AT = longPreferencesKey("library_json_applied_at")
     }
 
     companion object {
+        private const val MIRROR_DEBOUNCE_MS = 500L
         const val DEFAULT_SKIP_FORWARD_MS = 30_000L
         const val DEFAULT_SKIP_BACK_MS    = 15_000L
         const val DEFAULT_SPEED           = 1.0f
@@ -231,6 +246,9 @@ class SettingsStore @Inject constructor(
     val btAutoResumeEnabled: Flow<Boolean>     = prefsData.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }.distinctUntilChanged()
     val btAutoResumeWindowMinutes: Flow<Int>   = prefsData.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }.distinctUntilChanged()
     val enableFileLogging: Flow<Boolean>       = prefsData.map { it[Keys.ENABLE_FILE_LOGGING] ?: false }.distinctUntilChanged()
+    val diskExportVersion: Flow<Int>           = prefsData.map { it[Keys.DISK_EXPORT_VERSION] ?: 0 }.distinctUntilChanged()
+    val setupState: Flow<String>               = prefsData.map { it[Keys.SETUP_STATE] ?: "" }.distinctUntilChanged()
+    val libraryJsonAppliedAt: Flow<Long>       = prefsData.map { it[Keys.LIBRARY_JSON_APPLIED_AT] ?: 0L }.distinctUntilChanged()
 
     @Volatile var currentSkipForwardMs               = DEFAULT_SKIP_FORWARD_MS;               private set
     @Volatile var currentSkipBackMs                  = DEFAULT_SKIP_BACK_MS;                  private set
@@ -273,6 +291,11 @@ class SettingsStore @Inject constructor(
     @Volatile var currentPureBlack                  = false;                                    private set
     @Volatile var currentLastOpenBookId             = -1L;                                       private set
     @Volatile var currentLastPlayedBookId           = -1L;                                       private set
+    // Read synchronously by MainActivity.onCreate, before setContent, to decide whether the
+    // theme/import-structure onboarding dialogs may show. Defaults to "" (UNKNOWN in
+    // LibraryBootstrapper.SetupState), NOT "FRESH" — a dialog must never flash before this
+    // store's own async collector has actually landed a real value.
+    @Volatile var currentSetupState                 = "";                                        private set
 
     init {
         scope.launch { skipForwardMs.collect             { currentSkipForwardMs              = it } }
@@ -311,6 +334,33 @@ class SettingsStore @Inject constructor(
         scope.launch { pureBlack.collect                        { currentPureBlack                      = it } }
         scope.launch { lastOpenBookId.collect                   { currentLastOpenBookId                 = it } }
         scope.launch { lastPlayedBookId.collect                 { currentLastPlayedBookId               = it } }
+        scope.launch { setupState.collect                       { currentSetupState                     = it } }
+
+        // Disk-mirror: one collector on the raw (undedup'd) prefsData flow instead of a line in
+        // every one of the ~46 setters above — functionally identical ("every write eventually
+        // mirrors"), can't be forgotten when a future setting is added, and debounce naturally
+        // coalesces a burst of edits (e.g. several sliders dragged in a settings screen) into one
+        // file write. Deliberately not distinctUntilChanged()'d — self-healing: if the mirror ever
+        // drifted from DataStore for some other reason, the very next unrelated setting change
+        // still re-syncs everything, not just the one key that changed.
+        scope.launch { watchAndMirrorToDisk() }
+    }
+
+    @OptIn(FlowPreview::class)
+    private suspend fun watchAndMirrorToDisk() {
+        prefsData.debounce(MIRROR_DEBOUNCE_MS).collect { mirrorToDisk() }
+    }
+
+    private suspend fun mirrorToDisk() {
+        val libraryFolder = currentLibraryFolder
+        if (libraryFolder.isBlank()) return
+        val specs = com.betteraudio.data.diskstore.SettingsSpecs.coreSpecs() +
+            com.betteraudio.data.diskstore.SettingsSpecs.pathSpecs() +
+            if (backupIncludeApiKey.first()) listOf(com.betteraudio.data.diskstore.SettingsSpecs.apiKeySpec()) else emptyList()
+        val values = specs.mapNotNull { spec ->
+            spec.get(this@SettingsStore)?.let { com.betteraudio.data.diskstore.SettingsDocument.SettingValue(spec.name, spec.type, it) }
+        }
+        settingsFileStore.write(libraryFolder, values)
     }
 
     suspend fun setLibraryFolder(path: String) {
@@ -367,6 +417,12 @@ class SettingsStore @Inject constructor(
             val updated = (listOf(color) + current.filterNot { it == color }).take(12)
             prefs[Keys.WIDGET_CUSTOM_COLORS] = updated.joinToString(",")
         }
+    }
+    /** Replaces the whole custom-color list, distinct from [addWidgetCustomColor] which only ever
+     *  prepends one color. Used by the disk-settings mirror's restore path to apply a full CSV
+     *  list atomically rather than replaying N single-color inserts. */
+    suspend fun setWidgetCustomColorsCsv(csv: String) {
+        context.dataStore.edit { it[Keys.WIDGET_CUSTOM_COLORS] = csv }
     }
     suspend fun setAutoRewindSeconds(s: Int) {
         context.dataStore.edit { it[Keys.AUTO_REWIND_SECONDS] = s }
@@ -488,5 +544,20 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setEnableFileLogging(enabled: Boolean) {
         context.dataStore.edit { it[Keys.ENABLE_FILE_LOGGING] = enabled }
+    }
+    suspend fun setDiskExportVersion(version: Int) {
+        context.dataStore.edit { it[Keys.DISK_EXPORT_VERSION] = version }
+    }
+    /** Only ever called with a terminal value ("FRESH" | "RESTORED") — see LibraryBootstrapper;
+     *  transient states are held in memory there, never persisted. */
+    suspend fun setSetupState(state: String) {
+        // Eager, same reasoning as setWidgetHideWhenIdle: MainActivity reads currentSetupState
+        // synchronously right after the bootstrap flow resolves it, and can't wait on the async
+        // collector above to catch up.
+        currentSetupState = state
+        context.dataStore.edit { it[Keys.SETUP_STATE] = state }
+    }
+    suspend fun setLibraryJsonAppliedAt(ts: Long) {
+        context.dataStore.edit { it[Keys.LIBRARY_JSON_APPLIED_AT] = ts }
     }
 }

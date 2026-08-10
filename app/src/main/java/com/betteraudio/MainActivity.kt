@@ -90,6 +90,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var repository: AudiobookRepository
     @Inject lateinit var seriesRepository: com.betteraudio.data.repository.SeriesRepository
+    @Inject lateinit var diskMirror: com.betteraudio.data.diskstore.DiskMirror
+    @Inject @com.betteraudio.di.ApplicationScope lateinit var appScope: kotlinx.coroutines.CoroutineScope
 
     private val updateGateViewModel: UpdateGateViewModel by viewModels()
 
@@ -174,6 +176,10 @@ class MainActivity : ComponentActivity() {
             val coverPath = themeArt.coverPath
             val bakedCoverPath = themeArt.fxPath
             val appThemeRaw by settings.appTheme.collectAsStateWithLifecycle(initialThemeRaw)
+            // "" (UNKNOWN) by default — never FRESH — so the onboarding dialogs below can't flash
+            // before LibraryBootstrapper has actually resolved whether this is a restore.
+            val setupStateRaw by settings.setupState.collectAsStateWithLifecycle(settings.currentSetupState)
+            val setupState = com.betteraudio.data.diskstore.SetupState.from(setupStateRaw)
             val colorSourceRaw by settings.themeColorSource.collectAsStateWithLifecycle(initialColorSource)
             val customThemeColor by settings.customThemeColor.collectAsStateWithLifecycle(initialCustomThemeColor)
             val darkModeRaw by settings.darkMode.collectAsStateWithLifecycle(initialDarkMode)
@@ -496,8 +502,10 @@ class MainActivity : ComponentActivity() {
 
                 // First launch (or first run after this update): let the user pick the app
                 // theme. "" = never chosen; confirming (or dismissing) writes a value so the
-                // prompt never reappears.
-                if (appThemeRaw.isEmpty()) {
+                // prompt never reappears. Gated on setupState == FRESH so a restored install
+                // (its .voyage/settings.json already carried an app_theme) never shows this,
+                // and so it can't flash before bootstrap has resolved FRESH vs RESTORED.
+                if (appThemeRaw.isEmpty() && setupState == com.betteraudio.data.diskstore.SetupState.FRESH) {
                     com.betteraudio.ui.components.ThemePickerDialog(
                         initial = com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU,
                         onConfirm = { chosen ->
@@ -579,6 +587,11 @@ class MainActivity : ComponentActivity() {
         // backgrounding is one of the two moments (the other being a crash) worth not losing
         // buffered lines over. Non-blocking: posts to AppLog's own background executor.
         AppLog.flush()
+        // Defensive backstop for the disk mirror, not the primary trigger (PlaybackService already
+        // flushes on pause/stop/file-transition/onTaskRemoved). appScope, not lifecycleScope — this
+        // must survive the Activity being torn down, and per the comment above, must not be added
+        // back onto the exit-animation frame the G2-3 fix deliberately removed it from.
+        appScope.launch { diskMirror.flushDirty() }
     }
 
     override fun onDestroy() {

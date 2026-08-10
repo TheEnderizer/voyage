@@ -172,4 +172,10 @@ interface BookDao {
 
     @Query("SELECT * FROM books WHERE ebookPath = :path LIMIT 1")
     suspend fun getBookByEbookPath(path: String): Book?
+
+    /** Stamped after a scan-time MERGE apply from data/book.json — see RestoreOps/AudioFileScanner
+     *  and Book.dataAppliedAtMs's own doc comment for why this exists instead of comparing the
+     *  doc's mtime to lastPlayedMs. */
+    @Query("UPDATE books SET dataAppliedAtMs = :ts WHERE id = :id")
+    suspend fun updateDataAppliedAt(id: Long, ts: Long)
 }

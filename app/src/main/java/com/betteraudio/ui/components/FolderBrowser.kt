@@ -215,12 +215,23 @@ private fun FolderRow(dir: File, onClick: () -> Unit) {
     val audioCount = remember(dir) {
         dir.listFiles()?.count { it.isFile && it.extension.lowercase() in AUDIO_EXTS } ?: 0
     }
+    // Detects a previously-exported Voyage library (see the storage-redesign plan) so the picker
+    // can flag "this folder already has your data" before the user commits to it. .voyage itself
+    // stays invisible in the listing above (filtered by the leading-dot check), same as any other
+    // hidden folder — this is a probe, not a browsable entry.
+    val isVoyageLibrary = remember(dir) {
+        File(dir, ".voyage/settings.json").isFile
+    }
     ListItem(
         headlineContent = { Text(dir.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = {
-            if (audioCount > 0) Text("$audioCount audio file${if (audioCount > 1) "s" else ""}")
+            if (isVoyageLibrary) Text("Voyage library found here")
+            else if (audioCount > 0) Text("$audioCount audio file${if (audioCount > 1) "s" else ""}")
         },
         leadingContent = { Icon(Icons.Default.Folder, null) },
+        trailingContent = if (isVoyageLibrary) {
+            { Icon(Icons.Default.Check, "Voyage library", tint = MaterialTheme.colorScheme.primary) }
+        } else null,
         modifier = Modifier.clickable(onClick = onClick)
     )
 }

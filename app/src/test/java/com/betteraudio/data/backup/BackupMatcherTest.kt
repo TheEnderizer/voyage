@@ -76,6 +76,25 @@ class BackupMatcherTest {
     }
 
     @Test
+    fun `a cluster member's folderPath matches exactly and never falls through to the parent directory's own book`() {
+        // "<dir>::<stem>" is one member of an AUTO multi-book cluster sharing a physical folder
+        // with a genuine standalone book at "<dir>" itself — a relPath/title-author fallback must
+        // never confuse the two just because they live under the same directory.
+        val backup = identity(
+            folderPath = "/lib/LooseFolder::mistborn",
+            relPath = "LooseFolder::mistborn",
+            title = "Mistborn", author = "Sanderson"
+        )
+        val current = listOf(
+            BookCandidate(1L, identity(folderPath = "/lib/LooseFolder", relPath = "LooseFolder", title = "Elantris", author = "Sanderson")),
+            BookCandidate(2L, identity(folderPath = "/lib/LooseFolder::mistborn", relPath = "LooseFolder::mistborn", title = "Mistborn", author = "Sanderson")),
+            BookCandidate(3L, identity(folderPath = "/lib/LooseFolder::warbreaker", relPath = "LooseFolder::warbreaker", title = "Warbreaker", author = "Sanderson"))
+        )
+        val result = BackupMatcher.matchBooks(listOf(backup), current).single()
+        assertEquals(MatchResult.Matched(2L), result)
+    }
+
+    @Test
     fun `matchFile resolves exact basename`() {
         val candidates = listOf(
             FileCandidate(1L, "ch01.mp3", 60_000L),

@@ -68,9 +68,13 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             correlated sum over audio_files, same trackNumber/fileName order
 //             BookWithProgress.audioFiles uses) so the home grid (HomeGridBook) can compute
 //             progress without ever loading a book's file list.
+// Version 22: books.dataAppliedAtMs — the storage redesign's disk-mirror "applied at" marker.
+//             The obvious gate (disk doc's mtime vs. the book's own lastPlayedMs) doesn't
+//             actually gate anything, since the disk mirror is written AFTER every DB write —
+//             see AudioFileScanner.importBook and BookDataStore.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 21,
+    version = 22,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -467,6 +471,13 @@ abstract class AppDatabase : RoomDatabase() {
                 // clean" (empty string), which is what stops a healthy file being rescanned on
                 // every failure and a damaged one being rescanned on every play.
                 db.execSQL("ALTER TABLE audio_files ADD COLUMN damageRangesJson TEXT")
+            }
+        }
+
+        val MIGRATION_21_22 = object : Migration(21, 22) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i("DB", "migrating 21 → 22 (books.dataAppliedAtMs)")
+                db.execSQL("ALTER TABLE books ADD COLUMN dataAppliedAtMs INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

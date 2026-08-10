@@ -80,7 +80,7 @@ fun PlayerContent(
     val chapters          by viewModel.chapters.collectAsStateWithLifecycle()
     val chapterTimeline   by viewModel.chapterTimeline.collectAsStateWithLifecycle()
     val chapterNav        by viewModel.chapterNav.collectAsStateWithLifecycle()
-    val bookmarks         by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val bookmarks         by viewModel.bookmarkRows.collectAsStateWithLifecycle()
     val positionStack     by viewModel.positionStack.collectAsStateWithLifecycle()
     val jumpRestore       by viewModel.jumpRestore.collectAsStateWithLifecycle()
     val skipForwardMs     by viewModel.skipForwardMs.collectAsStateWithLifecycle()
@@ -497,7 +497,7 @@ fun PlayerContent(
                                 val target = cur.startMs + (f * chDur).toLong()
                                 viewModel.bookSeekTo(target)
                                 if (chapterScrubStartMs >= 0L)
-                                    viewModel.pushPositionIfLargeJump(chapterScrubStartMs, target)
+                                    viewModel.onScrubSeek(chapterScrubStartMs, target)
                             }
                             chapterScrubStartMs = -1L
                             chapterDragFrac = null
@@ -507,7 +507,11 @@ fun PlayerContent(
                     )
                     TimeRow(formatDuration(chDisplayPos), "-${formatDuration(chDur - chDisplayPos)}", onScrimMuted)
                     Spacer(Modifier.height(2.dp))
-                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor) { viewModel.bookSeekTo(it) }
+                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor) { target ->
+                        val before = bookPos
+                        viewModel.bookSeekTo(target)
+                        viewModel.onScrubSeek(before, target)
+                    }
                 } else {
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
@@ -524,7 +528,7 @@ fun PlayerContent(
                                 val target = (f * bookTotal).toLong()
                                 viewModel.bookSeekTo(target)
                                 if (bookScrubStartMs >= 0L)
-                                    viewModel.pushPositionIfLargeJump(bookScrubStartMs, target)
+                                    viewModel.onScrubSeek(bookScrubStartMs, target)
                             }
                             bookScrubStartMs = -1L
                             bookDragFrac = null

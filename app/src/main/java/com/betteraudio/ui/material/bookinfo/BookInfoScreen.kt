@@ -1,5 +1,6 @@
 package com.betteraudio.ui.material.bookinfo
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,9 +48,11 @@ import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
+import com.betteraudio.ui.player.containerReveal
+import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
-import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -87,14 +91,43 @@ fun BookInfoScreen(
     val coverSource = remember(viewModel.bookId) { coverBoundsRegistry.boundsState(viewModel.bookId) }
     val coverSourceRadius = coverBoundsRegistry.radiusFor(viewModel.bookId)
 
-    val closeBackProgress = rememberPredictiveBackProgress(enabled = true) {
-        scope.launch {
-            coverOpenAnim.animateTo(0f, motion.spatialDefault)
-            onBack()
+    // Predictive back drives the same morph backwards, all from ONE coroutine.
+    //
+    // It used to be a `rememberPredictiveBackProgress` whose value a `LaunchedEffect` mirrored into
+    // `coverOpenAnim.snapTo(...)`. That's two independent writers of one Animatable, and Animatable
+    // serializes mutations through a MutatorMutex — the last gesture frame's snapTo routinely
+    // landed *after* the commit handler had started its closing `animateTo` and cancelled it, which
+    // killed the `onBack()` sequenced behind it. The page collapsed onto the card but the overlay
+    // stayed mounted, eating touches: back appeared not to close the screen at all.
+    //
+    // Here the collect, the closing spring and `onBack()` are one sequence, so nothing can preempt
+    // them, and the spring starts from wherever the finger left off instead of restarting at 1.
+    PredictiveBackHandler(enabled = true) { events ->
+        var committed = false
+        try {
+            events.collect { event -> coverOpenAnim.snapTo(1f - event.progress) }
+            committed = true
+        } catch (_: CancellationException) {
+            // Gesture abandoned — fall through to the re-open below.
         }
-    }
-    LaunchedEffect(closeBackProgress.value) {
-        coverOpenAnim.snapTo(1f - closeBackProgress.value)
+        // Deliberately OUTSIDE the try/catch and non-suspending, so it still runs if this handler's
+        // own coroutine is being cancelled as the back dispatch tears down. Both branches hand off
+        // to the screen's scope, which outlives that dispatch.
+        if (committed) {
+            scope.launch {
+                // `finally`, not a plain sequence: if anything ever preempts this spring the
+                // overlay must STILL close. Leaving it mounted is the worst failure mode here — it
+                // is invisible at progress 0, so the app looks closed while the nav pill stays
+                // hidden and the grid card keeps its cover suppressed.
+                try {
+                    coverOpenAnim.animateTo(0f, motion.spatialDefault)
+                } finally {
+                    onBack()
+                }
+            }
+        } else {
+            scope.launch { coverOpenAnim.animateTo(1f, motion.spatialDefault) }
+        }
     }
     fun closeWithMorph() = scope.launch {
         coverOpenAnim.animateTo(0f, motion.spatialDefault)
@@ -107,7 +140,26 @@ fun BookInfoScreen(
 
     val onScrimMuted = MaterialTheme.colorScheme.onSurfaceVariant
 
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // The page itself unfolds out of the tapped card: `containerReveal` clips the whole screen to
+    // a window that starts as exactly that card's cover (same rect, same radius) and grows to
+    // full-bleed, so the background and every element appear to expand from the image rather than
+    // popping in behind a flying cover. The morphing cover below travels inside that window.
+    Box(
+        Modifier
+            .fillMaxSize()
+            .containerReveal(coverSource, coverOpenProgress, sourceRadius = coverSourceRadius)
+    ) {
+        // The page surface is a faded child rather than a background on the clipped root, so the
+        // sheet materialises around the cover as the window grows (and dissolves again as it
+        // shrinks back onto the card) instead of the cover riding on an already-solid panel.
+        // Deliberately NOT an alpha on the root: that would fade the morphing cover too, and the
+        // cover must stay fully visible end to end.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = ((coverOpenProgress.value - 0.05f) / 0.45f).coerceIn(0f, 1f) }
+                .background(MaterialTheme.colorScheme.background)
+        )
         val coverPath = book?.coverArtPath
         val context = LocalContext.current
         val coverModel = remember(coverPath, book?.id) {
@@ -127,7 +179,7 @@ fun BookInfoScreen(
                 .padding(horizontal = 20.dp)
         ) {
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(coverOpenProgress),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = true, onClick = { closeWithMorph() })
@@ -193,7 +245,8 @@ fun BookInfoScreen(
                 synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
                                    ?: book?.description?.takeIf { it.isNotBlank() }
                                    ?: if (synopsisGenerating) "Generating synopsis…" else null,
-                onResume         = { resumeWithMorph() }
+                onResume         = { resumeWithMorph() },
+                modifier         = Modifier.expandReveal(coverOpenProgress)
             )
             Spacer(Modifier.height(10.dp))
         }

@@ -64,6 +64,7 @@ class WidgetEditorViewModel @Inject constructor(
     private val widgetUpdater: WidgetUpdater,
     stateStore: WidgetStateStore,
     private val settings: SettingsStore,
+    private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
     @dagger.hilt.android.qualifiers.ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -132,6 +133,7 @@ class WidgetEditorViewModel @Inject constructor(
                     updatedAt = now,
                 )
             )
+            diskMirror.markLibraryDirty()
             _state.value = WidgetEditorState(
                 loading = false,
                 designId = id,
@@ -434,6 +436,7 @@ class WidgetEditorViewModel @Inject constructor(
             )
             widgetUpdater.requestRender()
             sweepOrphanWidgetImages(appContext, designDao)
+            diskMirror.markLibraryDirty()
             _state.update { it.copy(dirty = false, saved = true) }
             onSaved()
         }

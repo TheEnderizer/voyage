@@ -38,6 +38,24 @@ object Mp3DamageScanner {
     /** Safety valve: a file this broken is beyond patching up. */
     private const val MAX_GAPS = 512
 
+    /**
+     * Below this many logical bytes there is no point handing the stream to an extractor — it
+     * cannot even sniff a container, let alone decode audio. A map that leaves less than this is
+     * treated as no map at all; see [decodeUsable].
+     */
+    private const val MIN_PLAYABLE_BYTES = 64L * 1024
+
+    /**
+     * Everything in this file understands exactly one container: MPEG Layer III. Run it over an
+     * MP4/M4A/M4B, Ogg, FLAC or WAV and it finds no frames anywhere, reports the whole file as one
+     * giant gap, and [GapSkippingDataSource] then serves an empty stream — turning a perfectly good
+     * file into an unplayable one, permanently, because the result is cached.
+     *
+     * So callers gate on this. It is an allowlist on purpose: a denylist of known-MP4 extensions
+     * silently left `.ogg`/`.flac`/`.opus`/`.wav` exposed to the same bug.
+     */
+    fun isMp3Path(path: String): Boolean = path.substringAfterLast('.', "").lowercase() == "mp3"
+
     private val BITRATES_V1L3 = intArrayOf(0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,-1)
     private val BITRATES_V2L3 = intArrayOf(0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,-1)
     private val SR_V1 = intArrayOf(44100,48000,32000,-1)
@@ -109,6 +127,12 @@ object Mp3DamageScanner {
         if (size <= 0L) return emptyList()
 
         val gaps = ArrayList<Gap>()
+        // Guards against reporting a whole file as damaged. Genuine damage is bounded by audio on
+        // at least one side; a file with no decodable frame ANYWHERE is not a damaged MP3, it is
+        // some other container — and returning `Gap(0, size)` for it makes it permanently
+        // unplayable once cached. Exact rather than a "too much damage" ratio: real fixtures run
+        // 60-90% damaged, so any ratio rule would throw away files this feature exists to rescue.
+        var sawValidFrame = false
         try {
             RandomAccessFile(file, "r").use { raf ->
                 val tag = id3TagSizeBytes(file)
@@ -131,7 +155,7 @@ object Mp3DamageScanner {
                         rel = 0
                     }
                     val len = frameLengthAt(buf, rel, filled)
-                    if (len > 0) { pos += len; continue }
+                    if (len > 0) { sawValidFrame = true; pos += len; continue }
 
                     // Desync: hunt forward for a solid chain, refilling as needed.
                     val badStart = pos
@@ -178,6 +202,10 @@ object Mp3DamageScanner {
             AppLog.e("Damage", "scan failed for $path", e)
             return emptyList()
         }
+        if (!sawValidFrame) {
+            AppLog.w("Damage", "no MPEG frame anywhere in $path — not a damaged MP3, reporting clean")
+            return emptyList()
+        }
         val total = gaps.sumOf { it.size }
         AppLog.i("Damage", "scanned $path: ${gaps.size} gap(s), $total bytes damaged")
         return gaps
@@ -209,5 +237,34 @@ object Mp3DamageScanner {
             val b = part.substring(i + 1).toLongOrNull() ?: return@mapNotNull null
             if (b > a) Gap(a, b) else null
         }.sortedBy { it.start }
+    }
+
+    /**
+     * [decode], but only when what survives is actually worth playing.
+     *
+     * The read-site counterpart to the `sawValidFrame` guard in [scan]: that one stops a bad map
+     * being *written*, this one stops an already-written bad map being *applied*. Both are needed —
+     * installs that ran an earlier build already carry whole-file maps in `AudioFile
+     * .damageRangesJson`, and nothing in the app ever clears one (a rescan deliberately carries it
+     * over by path, and there is no UI for it). Filtering at the point of use heals those with no
+     * DB migration, which matters here because there is no `fallbackToDestructiveMigration` — a
+     * migration that got this wrong would be an unrecoverable launch crash for every user.
+     *
+     * Deliberately measured in *remaining logical bytes*, not "does the map cover the whole file":
+     * a total-loss MP3 map starts after the ID3 tag ([scan] skips it), so it reads `<tag>-<size>`
+     * and leaves the tag's worth of bytes behind — non-zero, and invisible to an `== 0` test.
+     *
+     * [physicalSize] of 0 means "unknown"; the map is then trusted rather than guessed at.
+     */
+    fun decodeUsable(s: String?, physicalSize: Long): List<Gap> {
+        val gaps = decode(s)
+        if (gaps.isEmpty() || physicalSize <= 0L) return gaps
+        val logical = GapMap(gaps, physicalSize).logicalSize
+        if (logical >= MIN_PLAYABLE_BYTES) return gaps
+        AppLog.w(
+            "Damage",
+            "ignoring damage map leaving only $logical of $physicalSize bytes — playing the file unmapped"
+        )
+        return emptyList()
     }
 }

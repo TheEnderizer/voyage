@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -79,6 +80,10 @@ fun FloatingNavPill(
         shape = Pill,
         modifier = modifier
             .graphicsLayer { translationY = expandProgress.value.coerceIn(0f, 1f) * hideTravelPx }
+            // Sit outside the padding/widthIn, so the drawn pill hugs the icon row instead of
+            // stretching to whatever width the parent hands down (on a 360dp screen that was a
+            // 328dp pill around 276dp of icons — a slot's worth of dead space on the right).
+            .wrapContentWidth(Alignment.CenterHorizontally)
             .padding(horizontal = 16.dp)
             .widthIn(max = 420.dp)
             .height(NAV_PILL_HEIGHT)

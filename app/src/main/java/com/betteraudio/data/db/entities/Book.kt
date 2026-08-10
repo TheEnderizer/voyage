@@ -49,7 +49,13 @@ data class Book(
     val ebookSpineCount: Int = 0,
     // Audio-chapter-index ↔ epub-spine-index alignment (JSON int array), or null = not yet
     // computed (auto-matched on next reader/sync use). Nulled whenever ebookPath changes.
-    val chapterMapJson: String? = null
+    val chapterMapJson: String? = null,
+    // Last time this book's on-disk data/book.json was successfully applied to this row (scan-
+    // time MERGE) — 0 = never. Distinguishes "the doc exists" from "the doc has been read since
+    // it last changed": BookDataStore.lastModified(folderKey) is always >= lastPlayedMs once the
+    // disk mirror is written on every pause, so that comparison alone can't gate a rescan's merge
+    // — see AudioFileScanner.importBook and the storage-redesign plan.
+    val dataAppliedAtMs: Long = 0L
 ) {
     val displayTitle: String get() = titleOverride ?: title
     val displayAuthor: String get() = authorOverride ?: author

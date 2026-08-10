@@ -7,6 +7,7 @@ import com.betteraudio.data.db.dao.SeriesDao
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
+import com.betteraudio.data.diskstore.DiskMirror
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
@@ -22,7 +23,8 @@ class SeriesRepository @Inject constructor(
     private val seriesDao: SeriesDao,
     private val bookDao: BookDao,
     private val audioFileDao: AudioFileDao,
-    private val coverEffectBaker: CoverEffectBaker
+    private val coverEffectBaker: CoverEffectBaker,
+    private val diskMirror: DiskMirror
 ) {
 
     /** bookId → its audio files, sorted for playback. Used to flatten a series into one timeline. */
@@ -43,9 +45,13 @@ class SeriesRepository @Inject constructor(
         val trimmed = name.trim()
         seriesDao.getByName(trimmed)?.let { return it.id }
         return seriesDao.insert(Series(name = trimmed, author = author?.takeIf { it.isNotBlank() }))
+            .also { diskMirror.flushLibrary() }
     }
 
-    suspend fun updateSeries(series: Series) = seriesDao.update(series)
+    suspend fun updateSeries(series: Series) {
+        seriesDao.update(series)
+        diskMirror.flushLibrary()
+    }
 
     suspend fun renameSeries(id: Long, name: String) {
         val s = seriesDao.getByIdOnce(id) ?: return
@@ -54,6 +60,7 @@ class SeriesRepository @Inject constructor(
         bookDao.getBooksInSeriesByIdOnce(id).forEach {
             bookDao.setSeriesMembership(it.id, id, name.trim(), it.seriesOrder)
         }
+        diskMirror.flushLibrary()
     }
 
     /**
@@ -64,29 +71,46 @@ class SeriesRepository @Inject constructor(
         val series = seriesDao.getByIdOnce(seriesId) ?: return
         val resolvedOrder = order ?: nextOrder(seriesId)
         bookDao.setSeriesMembership(bookId, seriesId, series.name, resolvedOrder)
+        diskMirror.flushLibrary()
+        diskMirror.flushBook(bookId)
     }
 
-    suspend fun setBookOrder(bookId: Long, order: Float) = bookDao.setSeriesOrder(bookId, order)
+    suspend fun setBookOrder(bookId: Long, order: Float) {
+        bookDao.setSeriesOrder(bookId, order)
+        diskMirror.flushLibrary()
+        diskMirror.flushBook(bookId)
+    }
 
     suspend fun removeBookFromSeries(bookId: Long) {
         bookDao.setSeriesMembership(bookId, null, null, null)
         seriesDao.deleteEmpty()
+        diskMirror.flushLibrary()
+        diskMirror.flushBook(bookId)
     }
 
     /** Detach all members, then delete the series row. */
     suspend fun deleteSeries(seriesId: Long) {
         val series = seriesDao.getByIdOnce(seriesId)
-        bookDao.getBooksInSeriesByIdOnce(seriesId).forEach {
+        val members = bookDao.getBooksInSeriesByIdOnce(seriesId)
+        members.forEach {
             bookDao.setSeriesMembership(it.id, null, null, null)
         }
         seriesDao.deleteById(seriesId)
-        // A series has no folder of its own — both its online cover and the baked composite live
-        // only in filesDir, so nothing else deletes them once the row is gone.
+        // A series has no folder of its own — its online cover lives in `.voyage/covers/` (or
+        // legacy filesDir for one set before that moved) and the baked composite in filesDir;
+        // nothing else deletes either once the row is gone.
         series?.coverArtPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId cover") }
         series?.coverFxPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId coverFx") }
+        diskMirror.flushLibrary()
+        members.forEach { diskMirror.flushBook(it.id) }
     }
 
-    suspend fun setSeriesCover(seriesId: Long, path: String?) = seriesDao.updateCover(seriesId, path)
+    suspend fun setSeriesCover(seriesId: Long, path: String?) {
+        seriesDao.updateCover(seriesId, path)
+        diskMirror.flushLibrary()
+    }
+    // Not mirrored: coverFxPath is a derived, re-bakeable composite (see ensureSeriesCoverFx) —
+    // persisting it would just double this series' footprint in .voyage/ for nothing reconstructible.
     suspend fun setSeriesCoverFx(seriesId: Long, path: String?) = seriesDao.updateCoverFx(seriesId, path)
 
     /** Bake the series backdrop effect if a cover exists but no valid baked file is present yet —

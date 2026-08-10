@@ -23,6 +23,7 @@ class WidgetGalleryViewModel @Inject constructor(
     private val designDao: WidgetDesignDao,
     private val bindingDao: WidgetBindingDao,
     private val widgetUpdater: WidgetUpdater,
+    private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -37,15 +38,18 @@ class WidgetGalleryViewModel @Inject constructor(
         designDao.deleteById(id)
         widgetUpdater.onDesignDeleted(id)
         sweepOrphanWidgetImages(context, designDao)
+        diskMirror.markLibraryDirty()
     }
 
     fun duplicateDesign(design: WidgetDesign) = viewModelScope.launch {
         val now = System.currentTimeMillis()
         designDao.upsert(design.copy(id = 0, name = "${design.name} copy", createdAt = now, updatedAt = now))
+        diskMirror.markLibraryDirty()
     }
 
     fun renameDesign(id: Long, name: String) = viewModelScope.launch {
         val design = designDao.getById(id) ?: return@launch
         designDao.upsert(design.copy(name = name.ifBlank { "Untitled widget" }, updatedAt = System.currentTimeMillis()))
+        diskMirror.markLibraryDirty()
     }
 }

@@ -12,11 +12,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Book
@@ -82,6 +82,12 @@ fun FloatingNavPill(
         shadowElevation = 10.dp,
         modifier = modifier
             .graphicsLayer { translationY = expandProgress.value.coerceIn(0f, 1f) * hideTravelPx }
+            // Sit outside the padding/widthIn, so the drawn pill hugs the icon row instead of
+            // stretching to whatever width the parent hands down (on a 360dp screen that was a
+            // 328dp pill around 276dp of icons — a slot's worth of dead space on the right).
+            // Everything below this line is measured before Surface paints its background, so
+            // this is what decides how wide the pill actually looks.
+            .wrapContentWidth(Alignment.CenterHorizontally)
             .padding(horizontal = 16.dp)
             .widthIn(max = 420.dp)
             .height(NAV_PILL_HEIGHT)
@@ -102,7 +108,12 @@ fun FloatingNavPill(
         Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
             Box(
                 Modifier
-                    .fillMaxSize()
+                    // matchParentSize, NOT fillMaxSize: fillMaxSize expands to the incoming MAX
+                    // width, which made this backing layer — and so the whole pill — stretch to
+                    // the full screen width with the icon row stranded at the left. matchParentSize
+                    // sizes to the parent without contributing to it, which is what a purely
+                    // decorative background layer wants, so the pill wraps its icons.
+                    .matchParentSize()
                     .drawBehind {
                         val w = indicatorW.value.toPx()
                         if (w <= 0f) return@drawBehind

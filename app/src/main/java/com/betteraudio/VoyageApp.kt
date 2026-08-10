@@ -25,12 +25,18 @@ class VoyageApp : Application(), Configuration.Provider {
     @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var repository: AudiobookRepository
     @Inject lateinit var paragraphCache: ParagraphCache
+    @Inject lateinit var diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     override fun onCreate() {
         AppLog.init(this)
         super.onCreate()
-        appScope.launch { cleanupPhantomSeries() }
+        appScope.launch {
+            cleanupPhantomSeries()
+            // After phantom-series cleanup, not concurrent with it — both read/write the series
+            // table and there's no reason to race them.
+            diskExportMigration.runIfNeeded()
+        }
         appScope.launch { settings.enableFileLogging.collect { AppLog.setFileLoggingEnabled(it) } }
     }
 

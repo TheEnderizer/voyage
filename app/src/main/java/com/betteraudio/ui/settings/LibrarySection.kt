@@ -301,6 +301,67 @@ internal fun LazyListScope.librarySection(
         }
     }
 
+    item {
+        val healthy by viewModel.diskMirrorHealthy.collectAsStateWithLifecycle()
+        val lastError by viewModel.diskMirrorLastError.collectAsStateWithLifecycle()
+        val exportState by viewModel.diskExportState.collectAsStateWithLifecycle()
+        var showForgetConfirm by remember { mutableStateOf(false) }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SectionHeader("Reinstall-proof library data")
+            Text(
+                "Every book's title, cover, progress and bookmarks — plus your presets, series and " +
+                    "settings — are mirrored into the audiobook folder itself, so they survive a " +
+                    "delete + reinstall. Just pick the same folder again and rescan.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SettingsCard(
+                icon = if (healthy) Icons.Default.CheckCircle else Icons.Default.Warning,
+                iconTint = if (healthy) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.error,
+                title = if (healthy) "Library data mirror healthy" else "Library data mirror unhealthy",
+                subtitle = when {
+                    exportState.running -> "Exporting… ${exportState.done}/${exportState.total}"
+                    !healthy && lastError != null -> lastError!!
+                    else -> "Tap to re-export now"
+                },
+                onClick = if (!exportState.running) ({ viewModel.reExportDiskData() }) else null,
+                trailing = {
+                    if (exportState.running) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+                }
+            )
+            SettingsCard(
+                icon = Icons.Default.DeleteSweep,
+                iconTint = MaterialTheme.colorScheme.error,
+                title = "Forget disk data for this library",
+                subtitle = "Delete the on-disk mirror only (audio files kept), then rebuild it fresh from the app",
+                onClick = if (!exportState.running) ({ showForgetConfirm = true }) else null
+            )
+        }
+        if (showForgetConfirm) {
+            AlertDialog(
+                onDismissRequest = { showForgetConfirm = false },
+                icon = { Icon(Icons.Default.DeleteSweep, null, tint = MaterialTheme.colorScheme.error) },
+                title = { Text("Forget disk data?") },
+                text = {
+                    Text(
+                        "This deletes every book's mirrored data file, cover copy and library.json — " +
+                        "not your audio files — then writes a fresh copy from what's currently in the " +
+                        "app. Use this if a mirrored file ever looks corrupted."
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = { viewModel.forgetDiskData(); showForgetConfirm = false },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Text("Forget & rebuild") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showForgetConfirm = false }) { Text("Cancel") }
+                }
+            )
+        }
+    }
+
     if (ignoredBooks.isNotEmpty()) {
         item { SectionHeader("Hidden Books") }
         item {

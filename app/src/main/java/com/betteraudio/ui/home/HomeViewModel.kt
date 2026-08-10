@@ -140,6 +140,10 @@ class HomeViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
+    private val libraryBootstrapper: com.betteraudio.data.diskstore.LibraryBootstrapper,
+    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
+    private val libraryDataStore: com.betteraudio.data.diskstore.LibraryDataStore,
+    private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     val playerController: PlayerController,
     @ApplicationScope private val appScope: CoroutineScope
 ) : ViewModel() {
@@ -218,26 +222,14 @@ class HomeViewModel @Inject constructor(
     fun setBookCoverFromUrl(bookId: Long, imageUrl: String) {
         viewModelScope.launch {
             val book = repository.getBookOnce(bookId)
-            val folder = book?.folderPath?.let { File(it) }
-            // Prefer storing the cover INSIDE the book's folder as "cover.png" — a stable, visible
-            // name (rather than a timestamped hidden file) so it persists with the audio, travels
-            // with a restructure move, AND is itself the top of the cover-resolution priority the
-            // scanner checks on every rescan (see AudioFileScanner). Fall back to internal storage
-            // for synthetic multi-book folders ("dir::stem", not a real directory).
-            val path = if (folder != null && folder.isDirectory) {
-                val target = File(folder, "cover.png")
-                if (coverSearchService.downloadTo(imageUrl, target)) {
-                    // Remove a previous app-written cover in the same folder to avoid clutter.
-                    book.coverArtPath?.let { old ->
-                        val f = File(old)
-                        if (f.parentFile == folder && f.name.startsWith(".cover") && f != target) runCatching { f.delete() }
-                    }
-                    target.absolutePath
-                } else null
-            } else {
-                coverSearchService.download(imageUrl, bookId)
+            val bytes = coverSearchService.downloadBytes(imageUrl)
+            val path = if (book != null && bytes != null) {
+                bookDataStore.writeCoverBytes(book.folderPath, "user", "jpg", bytes)
+            } else null
+            if (path != null) {
+                repository.updateCoverArt(bookId, path)
+                widgetUpdater.refreshCoverIfCurrent(bookId, path)
             }
-            if (path != null) repository.updateCoverArt(bookId, path)
             closeCoverSearch()
         }
     }
@@ -258,16 +250,18 @@ class HomeViewModel @Inject constructor(
     fun setCollectionCoverFromUrl(imageUrl: String) {
         val target = _coverSearchCollection.value ?: return
         viewModelScope.launch {
-            when (target) {
+            val bytes = coverSearchService.downloadBytes(imageUrl)
+            if (bytes != null) when (target) {
                 is CoverCollectionTarget.Series -> {
-                    val path = coverSearchService.download(imageUrl, "series${target.seriesId}")
+                    val series = seriesRepository.getSeriesOnce(target.seriesId)
+                    val path = series?.let { libraryDataStore.writeSeriesCoverBytes(it.name, "jpg", bytes) }
                     if (path != null) {
                         seriesRepository.setSeriesCover(target.seriesId, path)
                         seriesRepository.ensureSeriesCoverFx(target.seriesId)
                     }
                 }
                 is CoverCollectionTarget.Author -> {
-                    val path = coverSearchService.download(imageUrl, "author${target.name}")
+                    val path = libraryDataStore.writeAuthorCoverBytes(target.name, "jpg", bytes)
                     if (path != null) repository.setAuthorCover(target.name, path)
                 }
             }
@@ -602,6 +596,16 @@ class HomeViewModel @Inject constructor(
             .map { it.isNotBlank() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** UNKNOWN until LibraryBootstrapper resolves it (on/after startScan) — see SetupState's own
+     *  doc comment for what each value gates in the onboarding LaunchedEffect. */
+    val setupState: StateFlow<com.betteraudio.data.diskstore.SetupState> =
+        settings.setupState
+            .map { com.betteraudio.data.diskstore.SetupState.from(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.data.diskstore.SetupState.from(settings.currentSetupState)
+            )
+
     fun chooseImportStructure(structure: com.betteraudio.data.scanner.ImportStructure) {
         viewModelScope.launch { settings.setImportStructure(structure.name) }
     }
@@ -645,8 +649,23 @@ class HomeViewModel @Inject constructor(
             android.os.Environment.isExternalStorageManager()
 
     fun startScan(path: String) {
-        viewModelScope.launch { settings.setLibraryFolder(path) }
         viewModelScope.launch {
+            // Sequential, not two independent launches: bootstrap must set LIBRARY_FOLDER and
+            // resolve FRESH vs RESTORED (detecting/applying a .voyage/settings.json) BEFORE the
+            // scan runs, since the scan is what makes reconcileLibraryFromDisk's presets/authors/
+            // series restore actually able to match books that don't exist in the DB yet.
+            //
+            // Only for a genuinely new folder or an unresolved setup, though — startScan is also
+            // what pull-to-refresh calls on an already-configured, populated library (see
+            // HomeScreenContent's PullToRefreshBox), and re-running bootstrap there would re-apply
+            // a (possibly stale) settings.json snapshot over whatever the user has changed in-app
+            // since, and force-reapply library.json on every pull-to-refresh.
+            val setupState = com.betteraudio.data.diskstore.SetupState.from(settings.currentSetupState)
+            val setupUnresolved = setupState == com.betteraudio.data.diskstore.SetupState.UNKNOWN ||
+                setupState == com.betteraudio.data.diskstore.SetupState.NEEDS_FOLDER
+            if (path != settings.currentLibraryFolder || setupUnresolved) {
+                libraryBootstrapper.bootstrap(path)
+            }
             _scan.value = ScanResult(ScanStatus.Running)
             val f = File(path)
             Log.e(TAG, "ScanStart: path=$path exists=${f.exists()}")

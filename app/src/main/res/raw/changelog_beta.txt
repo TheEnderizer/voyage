@@ -5,6 +5,17 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.15b] - 2026-08-10
+
+### Fixed
+- Books in formats other than MP3 — M4A, M4B, and others — could stop playing entirely after the app examined them for damage. The damage repair added in 1.9.11b only understands MP3, so on any other format it found no audio it recognised and concluded the whole file was unreadable. That verdict was remembered, so the file never played again, and the background repair pass spread the same verdict to every other part of the book. Damage examination is now limited to the formats it can actually read, and a stored verdict that would leave nothing to play is ignored, so affected books play again with no action needed.
+- Resuming a long part from far into it could be mistaken for the part ending early, which is what triggered the false damage verdict above. A part is now only treated as ending early if it actually played before stopping.
+- A part that stops early in a format the app cannot repair now stops and says so, instead of letting the book mark itself finished and, in a series, carrying on into the next book.
+- Resuming from the home screen widget now applies the same damage repair the in-app player uses, so a repaired book no longer fails when started from the widget.
+
+### Added
+- Your library data — titles, covers, progress, bookmarks, listening history, settings and widget designs — is now mirrored into visible files alongside your audiobooks. Reinstall the app, point it at the same folder, and everything comes back without going through setup again.
+
 ## [1.9.13b] - 2026-08-05
 
 ### Fixed

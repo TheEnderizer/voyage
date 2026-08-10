@@ -30,6 +30,11 @@ interface AudioFileDao {
     @Query("DELETE FROM audio_files WHERE bookId = :bookId")
     suspend fun deleteFilesForBook(bookId: Long)
 
+    /** Removes specific rows, leaving every other file's `id` intact — see
+     *  [com.betteraudio.data.scanner.AudioFileScanner.dropMissingFiles] for why that matters. */
+    @Query("DELETE FROM audio_files WHERE id IN (:ids)")
+    suspend fun deleteFilesByIds(ids: List<Long>)
+
     // Repoint a file to a new on-disk location (used by the library restructure move).
     @Query("UPDATE audio_files SET filePath = :path WHERE id = :id")
     suspend fun updatePath(id: Long, path: String)

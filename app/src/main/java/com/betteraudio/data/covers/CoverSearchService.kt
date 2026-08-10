@@ -1,21 +1,16 @@
 package com.betteraudio.data.covers
 
-import android.content.Context
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.io.File
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CoverSearchService @Inject constructor(
-    @ApplicationContext private val context: Context
-) {
+class CoverSearchService @Inject constructor() {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -58,27 +53,10 @@ class CoverSearchService @Inject constructor(
         }
     }
 
-    suspend fun download(imageUrl: String, bookId: Long): String? = download(imageUrl, "book$bookId")
-
-    /** Download a cover directly to [target] on disk (e.g. inside the book's own folder). */
-    suspend fun downloadTo(imageUrl: String, target: File): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val request = Request.Builder().url(imageUrl)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
-                .build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext false
-                val bytes = response.body?.bytes() ?: return@withContext false
-                if (bytes.size < 100) return@withContext false
-                target.parentFile?.mkdirs()
-                target.writeBytes(bytes)
-                true
-            }
-        } catch (_: Exception) { false }
-    }
-
-    /** Download a cover to internal storage under an arbitrary [key] (e.g. "series12", "authorFooBar"). */
-    suspend fun download(imageUrl: String, key: String): String? = withContext(Dispatchers.IO) {
+    /** Downloads the image at [imageUrl] into memory — the caller decides where the bytes land
+     *  (BookDataStore/LibraryDataStore), since a book's canonical cover location depends on its
+     *  folderKey shape. Returns null on any failure or a suspiciously tiny (likely error-page) body. */
+    suspend fun downloadBytes(imageUrl: String): ByteArray? = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder().url(imageUrl)
                 .header("User-Agent", "Mozilla/5.0 (Linux; Android 13)")
@@ -87,11 +65,7 @@ class CoverSearchService @Inject constructor(
                 if (!response.isSuccessful) return@withContext null
                 val bytes = response.body?.bytes() ?: return@withContext null
                 if (bytes.size < 100) return@withContext null
-                val dir = File(context.filesDir, "covers").apply { mkdirs() }
-                val safeKey = key.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "cover" }
-                val file = File(dir, "${safeKey}_${System.currentTimeMillis()}.jpg")
-                file.writeBytes(bytes)
-                file.absolutePath
+                bytes
             }
         } catch (_: Exception) { null }
     }

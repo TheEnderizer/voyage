@@ -116,11 +116,13 @@ class EpubParser(private val epubFile: File) : Closeable {
     }
 
     /** Writes the cover image (if any) to [target]. Returns false when the epub has no cover. */
-    fun extractCover(target: File): Boolean {
-        val info = runCatching { parse() }.getOrNull() ?: return false
-        val href = info.meta.coverHref ?: return false
-        val bytes = readEntry(href) ?: return false
-        return runCatching { target.writeBytes(bytes); true }.getOrDefault(false)
+    /** Raw cover bytes, or null if the epub declares no cover / can't be read. The caller decides
+     *  where they land — a book's canonical cover location depends on its folderKey shape, so it's
+     *  BookDataStore that owns the actual write. */
+    fun extractCoverBytes(): ByteArray? {
+        val info = runCatching { parse() }.getOrNull() ?: return null
+        val href = info.meta.coverHref ?: return null
+        return readEntry(href)
     }
 
     override fun close() {

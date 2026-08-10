@@ -14,6 +14,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.betteraudio.data.db.entities.AudioFile
+import com.betteraudio.data.db.entities.sizeOnDisk
 import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.ListeningSession
@@ -22,9 +23,12 @@ import java.util.concurrent.ConcurrentHashMap
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,7 +73,8 @@ data class PositionState(
 class PlayerController @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settings: SettingsStore,
-    private val repository: AudiobookRepository
+    private val repository: AudiobookRepository,
+    private val diskMirror: com.betteraudio.data.diskstore.DiskMirror
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -90,6 +95,18 @@ class PlayerController @Inject constructor(
         // skip is treated as unrecoverable rather than seeking to (effectively) the end, which
         // would roll playback into the next file — see tryRecoverFromCorruptFile.
         private const val RECOVERY_END_MARGIN_MS = 5_000L
+        /**
+         * How far short of its known duration an item may end before it is treated as damaged
+         * rather than finished. Deliberately generous — a scanned duration can be a little
+         * optimistic, but damage cuts a file off by hours, not by a minute.
+         */
+        private const val TRUNCATION_SLACK_MS = 60_000L
+        /**
+         * How far an item must actually advance before an early end is believable. Small on
+         * purpose: genuine damage cuts a file off "a few hundred milliseconds in", so this only has
+         * to clear position jitter, not represent a meaningful amount of listening.
+         */
+        private const val MIN_TRUNCATION_PROGRESS_MS = 100L
     }
 
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -130,10 +147,37 @@ class PlayerController @Inject constructor(
     // filePath + scanned duration per media id, captured at load so recovery can estimate a
     // bytes-per-second rate without an async DB round-trip mid-error-handling.
     private var fileInfoByItemId: Map<String, Pair<String, Long>> = emptyMap()
-    /** Media id whose damage scan is running, so repeated errors can't launch a second full read. */
-    @Volatile private var damageScanInFlightFor: String? = null
-    /** Media ids already scanned (or claimed for scanning) this load, so no file is read twice. */
-    private val damageHandled = ConcurrentHashMap.newKeySet<String>()
+    /**
+     * One damage scan per file per book load, keyed by media id. Deliberately a [Deferred] rather
+     * than a "handled" flag: a second failure for a file whose scan is ALREADY running has to
+     * *wait for that scan*, not fall through to the escalating skip schedule below — that
+     * schedule's seeks can land past a damaged file's end and roll playback into the next part,
+     * which is exactly what "it skipped to the next one" looked like. A flag can only say
+     * "someone claimed this"; a Deferred can also be joined and can deliver the result.
+     */
+    private val damageScans = ConcurrentHashMap<String, Deferred<List<Mp3DamageScanner.Gap>>>()
+    /** Finished scan results by media id — an empty list means "scanned, genuinely clean". */
+    private val damageResults = ConcurrentHashMap<String, List<Mp3DamageScanner.Gap>>()
+    /** The background sweep repairing the rest of the book, so errors can't pile up duplicates. */
+    @Volatile private var damageSweepJob: Job? = null
+    /**
+     * Playable duration per media id for a repaired file, which is genuinely SHORTER than the
+     * AudioFile.durationMs the rest of the app works from — the damaged seconds don't exist any
+     * more. Without this, a chapter target in the last minute of a repaired part resolves to an
+     * offset past that part's real end, and a seek past an item's end rolls playback into the
+     * NEXT item: pressing "previous" and landing a part forward.
+     */
+    private val playableDurationMs = ConcurrentHashMap<String, Long>()
+    /** Media ids already given one early-end recovery this load, so a retry can't loop forever. */
+    private val truncationHandled = ConcurrentHashMap.newKeySet<String>()
+    /** The item and position seen on the last sync — at an auto-advance, where the OLD item died. */
+    @Volatile private var lastSeenItemId: String? = null
+    @Volatile private var lastSeenPositionMs = 0L
+    /**
+     * The lowest position each item has been observed at. An "early end" is only meaningful
+     * relative to where the item actually *started* — see [handlePossiblyTruncatedItem].
+     */
+    private val entryPositionMs = ConcurrentHashMap<String, Long>()
 
     // Sleep timer — PlaybackService is sole authority (see its class doc); this only mirrors the
     // last known state for the UI, updated optimistically on every local call AND authoritatively
@@ -335,6 +379,12 @@ class PlayerController @Inject constructor(
             val chapters = repository.getChaptersForBookOnce(bookId)
             val full = ChapterTimeline.build(files, chapters, bookId)
             if (currentBookId == bookId) chapterTimeline = full
+            // Files repaired in an earlier session come back with their damage map already cached,
+            // so no scan runs to record how much shorter they now play. Do it here (IO) instead.
+            for ((mediaId, info) in fileInfoByItemId) {
+                val gaps = damageResults[mediaId]?.takeIf { it.isNotEmpty() } ?: continue
+                runCatching { notePlayableDuration(mediaId, info.first, gaps) }
+            }
         }
     }
 
@@ -479,8 +529,14 @@ class PlayerController @Inject constructor(
         val base = Uri.fromFile(java.io.File(file.filePath))
         // A file already scanned as damaged plays with its bad ranges hidden from the very first
         // attempt, so it never has to fail-then-recover again (see tryRecoverFromCorruptFile).
-        val gaps = Mp3DamageScanner.decode(file.damageRangesJson)
+        // decodeUsable, not decode: a map that would leave nothing readable is discarded here
+        // rather than handed to the extractor as an empty stream.
+        val gaps = Mp3DamageScanner.decodeUsable(file.damageRangesJson, file.sizeOnDisk())
         val uri = if (gaps.isEmpty()) base else GapSkippingDataSource.wrapUri(base, gaps)
+        AppLog.i(
+            "Damage",
+            "item ${file.id} ${file.fileName}: cache=${if (file.damageRangesJson == null) "never scanned" else "${gaps.size} gap(s)"}"
+        )
         return MediaItem.Builder()
         .setMediaId(file.id.toString())
         .setUri(uri)
@@ -515,9 +571,25 @@ class PlayerController @Inject constructor(
         // load in loadTimeline — that upgrades this in place once the real chapter rows arrive.
         chapterTimeline = ChapterTimeline.ofFiles(allFiles, currentBookId)
         recoveryAttempts.clear()
-        // New book: nothing scanned for it yet. (Files already carrying a cached damage map are
-        // marked up-front in buildMediaItem, so they never reach the scan path at all.)
-        damageHandled.clear()
+        // New book: drop the previous book's scans, then seed from what's already in the DB. A
+        // file with a cached map is both marked up-front by buildMediaItem AND pre-resolved here,
+        // so neither the error path nor the background sweep ever re-reads it — without this, a
+        // three-part 2.5 GB book would be read end-to-end again on every single play.
+        damageSweepJob?.cancel()
+        damageScans.clear()
+        damageResults.clear()
+        playableDurationMs.clear()
+        truncationHandled.clear()
+        entryPositionMs.clear()
+        for (f in allFiles) {
+            val cached = f.damageRangesJson ?: continue
+            // Same filter as buildMediaItem, so what's seeded here matches what actually got
+            // applied to the queue — otherwise a discarded map would still count as "scanned
+            // damaged" and steer the recovery paths below.
+            val gaps = Mp3DamageScanner.decodeUsable(cached, f.sizeOnDisk())
+            damageResults[f.id.toString()] = gaps
+            damageScans[f.id.toString()] = CompletableDeferred(gaps)
+        }
         fileInfoByItemId = allFiles.associate { it.id.toString() to (it.filePath to it.durationMs) }
 
         val ctrl = controller ?: return
@@ -535,7 +607,14 @@ class PlayerController @Inject constructor(
      *  queue, then wipe the last-played/last-open markers so the mini bar disappears and nothing
      *  is restored on next launch. Called when the user swipes the mini bar down. */
     fun stop() {
-        saveCurrentProgress()
+        // Captured synchronously (matching saveCurrentProgress's own recipe) — currentBookId is
+        // reset to -1L a few lines below, and the disk-mirror flush this book-close triggers must
+        // see the position this call actually closed on, not whatever's left once the coroutine
+        // below gets scheduled.
+        val closingBookId = currentBookId.takeIf { it != -1L }
+        val ctrl = controller
+        val closingFileId = ctrl?.currentMediaItem?.mediaId?.toLongOrNull()
+        val closingPositionMs = ctrl?.currentPosition ?: 0L
         controller?.let {
             it.pause()
             it.clearMediaItems()
@@ -548,8 +627,15 @@ class PlayerController @Inject constructor(
         _playbackState.value = PlaybackState()
         _positionState.value = PositionState()
         scope.launch {
+            if (closingBookId != null && closingFileId != null && closingPositionMs > 0L) {
+                AppLog.i("Player", "saveCurrentProgress book=$closingBookId file=$closingFileId pos=${closingPositionMs}ms")
+                repository.updatePosition(closingBookId, closingFileId, closingPositionMs)
+            }
             settings.setLastPlayedBookId(-1L)
             settings.setLastOpenBookId(-1L)
+            // Book-close is one of the cadence's flush points — write the disk mirror now that the
+            // position write above has landed, rather than waiting for the next pause/onStop.
+            diskMirror.flushDirty()
         }
     }
 
@@ -573,6 +659,9 @@ class PlayerController @Inject constructor(
         _positionState.value = PositionState()
         settings.setLastPlayedBookId(-1L)
         settings.setLastOpenBookId(-1L)
+        // Awaited, not fire-and-forget: BackupManager.restore calls this specifically so the
+        // disk mirror (and the DB) are settled before it reads/writes progress for the same book.
+        diskMirror.flushDirty()
     }
 
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
@@ -673,7 +762,14 @@ class PlayerController @Inject constructor(
             if (ctrl.getMediaItemAt(i).mediaId == targetMediaId) { idx = i; break }
         }
         if (idx < 0) idx = locus.fileIndex
-        ctrl.seekTo(idx, locus.offsetInFileMs)
+        // A repaired file plays shorter than the timeline thinks (see playableDurationMs), and
+        // seekTo(index, pos) past an item's end lands at its end and immediately rolls into the
+        // NEXT item — so a "previous chapter" into a repaired part could jump a part forward.
+        val cap = playableDurationMs[targetMediaId]
+        val offset =
+            if (cap != null) locus.offsetInFileMs.coerceAtMost((cap - RECOVERY_END_MARGIN_MS).coerceAtLeast(0L))
+            else locus.offsetInFileMs
+        ctrl.seekTo(idx, offset)
     }
 
     /** Start a fixed-duration sleep timer; pauses playback after [durationMs]. Pass 0 to cancel.
@@ -744,6 +840,9 @@ class PlayerController @Inject constructor(
         scope.launch {
             AppLog.i("Player", "saveCurrentProgress book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
+            // The only caller left is the pause listener below — pause is one of the cadence's
+            // flush points, and this runs after the write above lands (same coroutine), not racing it.
+            diskMirror.flushDirty()
         }
     }
 
@@ -804,12 +903,16 @@ class PlayerController @Inject constructor(
      * `replaceMediaItem` on another index doesn't disturb playback.
      */
     private suspend fun scanAndPatchQueue(mediaId: String, path: String): List<Mp3DamageScanner.Gap> {
-        val gaps = Mp3DamageScanner.scan(path)
+        // The single choke point for scanning, so gating here covers the background sweep too —
+        // and skips a pointless multi-GB sequential read of a container the scanner can't parse.
+        val gaps = if (Mp3DamageScanner.isMp3Path(path)) Mp3DamageScanner.scan(path) else emptyList()
         mediaId.toLongOrNull()?.let { fileId ->
             // "" records a clean scan, so a file that failed for some other reason is never
             // rescanned on every subsequent error.
             runCatching { repository.updateAudioFileDamageRanges(fileId, Mp3DamageScanner.encode(gaps)) }
         }
+        damageResults[mediaId] = gaps
+        runCatching { notePlayableDuration(mediaId, path, gaps) }
         if (gaps.isEmpty()) return gaps
         withContext(Dispatchers.Main) {
             val c = controller ?: return@withContext
@@ -833,17 +936,120 @@ class PlayerController @Inject constructor(
     }
 
     /**
+     * The single entry point for scanning a file — every caller goes through here so a file is
+     * read at most once per book load, and so a caller arriving while a scan is already running
+     * joins it instead of starting a second 850 MB read (or, worse, giving up and falling through
+     * to a strategy that skips out of the file entirely).
+     */
+    private fun scanFile(mediaId: String, path: String): Deferred<List<Mp3DamageScanner.Gap>> =
+        damageScans.computeIfAbsent(mediaId) { scope.async { scanAndPatchQueue(mediaId, path) } }
+
+    /**
+     * Records how long a repaired file actually plays for. These are CBR (256 kbps), so the time
+     * lost is exactly proportional to the bytes hidden. Reads the file header, so IO only.
+     */
+    private fun notePlayableDuration(mediaId: String, path: String, gaps: List<Mp3DamageScanner.Gap>) {
+        if (gaps.isEmpty()) { playableDurationMs.remove(mediaId); return }
+        val originalMs = fileInfoByItemId[mediaId]?.second?.takeIf { it > 0L } ?: return
+        val file = java.io.File(path)
+        val audioBytes = (file.length() - Mp3DamageScanner.id3TagSizeBytes(file)).coerceAtLeast(1L)
+        val lostBytes = gaps.sumOf { it.size }.coerceIn(0L, audioBytes)
+        playableDurationMs[mediaId] = originalMs - originalMs * lostBytes / audioBytes
+    }
+
+    /**
      * Quietly scans and patches every other file of the loaded book, so moving to another part
      * doesn't repeat the same failure and wait. Runs after the file that actually failed has
-     * resumed, so the user is already listening while this works.
+     * resumed, so the user is already listening while this works. Sequential and routed through
+     * [scanFile], so a part the user jumps to mid-sweep is *waited on*, never scanned twice.
      */
     private suspend fun scanRemainingFilesOfBook(exceptItemId: String) {
-        val remaining = fileInfoByItemId.entries
-            .filter { it.key != exceptItemId && damageHandled.add(it.key) }
-        for ((mediaId, info) in remaining) {
-            runCatching { scanAndPatchQueue(mediaId, info.first) }
+        for ((mediaId, info) in fileInfoByItemId) {
+            if (mediaId == exceptItemId) continue
+            runCatching { scanFile(mediaId, info.first).await() }
                 .onFailure { AppLog.e("Damage", "background scan failed for ${info.first}", it) }
         }
+    }
+
+    /**
+     * Damage does not always fail loudly. Where the audio turns to garbage the extractor can simply
+     * report end-of-input, and Media3 then advances to the next item exactly as if the file had
+     * played to its end — no exception, so none of the recovery above ever runs. Symptoms: a part
+     * that "skips to the next one" the moment it starts, and a book marked finished from a few
+     * hundred milliseconds in. So treat any item that ends far short of its known duration as
+     * damaged and route it into the same scan-and-repair path as a hard error.
+     *
+     * Returns true when it took over — the caller must not then treat this as a normal end.
+     */
+    private fun handlePossiblyTruncatedItem(itemId: String?, reachedMs: Long): Boolean {
+        val id = itemId ?: return false
+        val path = fileInfoByItemId[id]?.first ?: return false
+        val expected = playableDurationMs[id] ?: fileInfoByItemId[id]?.second ?: return false
+        if (expected <= 0L) return false
+        // Generous slack: this must never misfire on a book whose scanned durations are merely a
+        // little optimistic. Damage cuts a file off by hours, not by a minute.
+        if (reachedMs >= expected - TRUNCATION_SLACK_MS) return false
+        // An item that "ended" at the position it STARTED at never played — it was seeked there and
+        // the event arrived before any audio came out. Resuming a book deep into a long part hits
+        // this every time: the item is sitting at, say, 16 h of a 21 h file, which is >60 s short of
+        // the end and so looks exactly like a truncation. That false positive is what set the whole
+        // damaged-file machinery off on healthy M4A files — it ran the MP3 scanner on an MP4, got a
+        // whole-file "damage" range, cached it, and swept the rest of the book doing the same.
+        // Requiring real forward progress is what separates "stopped early" from "hasn't started".
+        val progressed = reachedMs - (entryPositionMs[id] ?: 0L)
+        if (progressed < MIN_TRUNCATION_PROGRESS_MS) {
+            AppLog.i("Damage", "item=$id at ${reachedMs}ms has not played yet (entered at ${entryPositionMs[id]}ms) — not an early end")
+            return false
+        }
+        // Non-MP3 has no repair path — but this must still TAKE OVER rather than bail out, and the
+        // difference is the whole reason this function exists. Returning false here would let the
+        // early end be treated as a normal one: the book gets marked finished at whatever fraction
+        // it stopped at and, in a series, the next book auto-starts and does the same. Since M4B is
+        // the common audiobook container, a plain "not an MP3, ignore it" would restore exactly
+        // that cascade for most libraries. So: stop, say so, and stay on the file that failed.
+        if (!Mp3DamageScanner.isMp3Path(path)) {
+            AppLog.e("Damage", "item=$id ended at ${reachedMs}ms of ${expected}ms and is not an MP3 — no repair path, stopping")
+            showUserMessage("This file stopped early. It may be incomplete or in an unsupported format.")
+            scope.launch(Dispatchers.Main) { controller?.pause() }
+            return true
+        }
+        if (!truncationHandled.add(id)) {
+            AppLog.e("Damage", "item=$id ended early AGAIN (${reachedMs}ms of ${expected}ms) — no strategy left")
+            showUserMessage("This file stops early and can't be repaired any further.")
+            scope.launch(Dispatchers.Main) { controller?.pause() }
+            return true
+        }
+        AppLog.w("Damage", "item=$id ended at ${reachedMs}ms but should run ${expected}ms — treating as damage")
+        showUserMessage("This file stops early — checking it for damage…")
+        val resumeMs = reachedMs.coerceAtLeast(0L)
+        scope.launch {
+            // Pause FIRST: playback has already rolled into the next item, and left alone it would
+            // keep rolling through the rest of the book and (in a series) into the next book.
+            withContext(Dispatchers.Main) { controller?.pause() }
+            val gaps = runCatching { scanFile(id, path).await() }
+                .onFailure { AppLog.e("Damage", "early-end scan failed for $path", it) }
+                .getOrDefault(emptyList())
+            if (gaps.isEmpty()) {
+                AppLog.w("Damage", "no recoverable damage found in $path despite the early end")
+                showUserMessage("This file ends early, but no recoverable damage pattern was found.")
+                return@launch
+            }
+            val lostSec = gaps.sumOf { it.size } / 32_000L
+            AppLog.i("Damage", "repairing $path after early end: ${gaps.size} gap(s), ~${lostSec}s lost")
+            showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
+            withContext(Dispatchers.Main) {
+                val c = controller ?: return@withContext
+                val idx = (0 until c.mediaItemCount).firstOrNull { c.getMediaItemAt(it).mediaId == id }
+                    ?: return@withContext
+                c.seekTo(idx, resumeMs)
+                c.prepare()
+                c.play()
+            }
+            if (damageSweepJob?.isActive != true) {
+                damageSweepJob = scope.launch { scanRemainingFilesOfBook(exceptItemId = id) }
+            }
+        }
+        return true
     }
 
     private fun tryRecoverFromCorruptFile(error: androidx.media3.common.PlaybackException): Boolean {
@@ -869,17 +1075,20 @@ class PlayerController @Inject constructor(
         // several per file; Android's own MediaExtractor was measured stopping at the same damage.
         // So no demuxer choice and no amount of seeking past "the" gap works — only removing the
         // gaps from what gets read. Runs once per file, then cached in the DB.
-        val damagedPath = fileInfoByItemId[itemId]?.first
+        // MP3 only: the scanner understands no other container, and on an MP4/Ogg/FLAC it finds no
+        // frames at all and declares the entire file damaged — see Mp3DamageScanner.isMp3Path.
+        val damagedPath = fileInfoByItemId[itemId]?.first?.takeIf { Mp3DamageScanner.isMp3Path(it) }
         val alreadySkipping = item.localConfiguration?.uri?.let { GapSkippingDataSource.isMarked(it) } == true
         if (damagedPath != null && !alreadySkipping) {
-            // Never let a second strategy run while a scan is in flight — for THIS item or a
-            // sibling. Falling through to the escalating time-skip schedule below is actively
-            // harmful here: its seeks can land past the end of a damaged file and roll playback
-            // into the next one, which is exactly what "it skipped to the next part" looked like.
-            if (damageScanInFlightFor != null) return true
-
-            if (damageHandled.add(itemId)) {
-                damageScanInFlightFor = itemId
+            // The ONLY case that may fall through to the legacy schedule is a scan that has
+            // finished and found nothing — then the failure is something other than download
+            // damage. A scan that is merely *running* must not fall through: the schedule's seeks
+            // can land past a damaged file's end and roll playback into the next part, which is
+            // exactly what "it skipped to the next one" looked like. Previously this was a plain
+            // "claimed" flag, and the background sweep claimed every remaining part up-front — so
+            // stepping to a part the sweep had claimed but not yet reached fell straight through.
+            val scannedClean = damageResults[itemId]?.isEmpty() == true
+            if (!scannedClean) {
                 // A different STRATEGY, not a further skip — don't consume a step of the escalating
                 // schedule, or a later genuine mid-file fault gets a shortened budget.
                 recoveryAttempts[itemId] = attempt
@@ -887,36 +1096,39 @@ class PlayerController @Inject constructor(
                 val scanIndex = ctrl.currentMediaItemIndex
                 showUserMessage("This file is damaged — scanning it so playback can skip the damage. This can take a moment…")
                 scope.launch {
-                    try {
-                        val gaps = scanAndPatchQueue(itemId, damagedPath)
-                        if (gaps.isEmpty()) {
-                            AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
-                            showUserMessage("Couldn't find a recoverable pattern in this file.")
-                            return@launch
-                        }
-                        val lostSec = gaps.sumOf { it.size } / 32_000L
-                        AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${lostSec}s lost)")
-                        showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
-                        withContext(Dispatchers.Main) {
-                            val c = controller ?: return@withContext
-                            // Hiding earlier gaps shifts later audio earlier, so the old position now
-                            // points slightly further into the book. Close enough to resume from.
-                            c.seekTo(scanIndex, resumeMs)
-                            c.prepare()
-                            c.play()
-                        }
-                    } finally {
-                        damageScanInFlightFor = null
+                    val gaps = runCatching { scanFile(itemId, damagedPath).await() }
+                        .onFailure { AppLog.e("Damage", "scan failed for $damagedPath", it) }
+                        .getOrDefault(emptyList())
+                    if (gaps.isEmpty()) {
+                        AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
+                        showUserMessage("Couldn't find a recoverable pattern in this file.")
+                        return@launch
                     }
-                    // Damage from a bad download almost never affects only one part, and a file is
-                    // only patched once scanned — so without this, stepping to the previous or next
-                    // part hits the identical failure all over again. Fix the whole book now, in the
-                    // background, while the user listens to the part that just recovered.
-                    scanRemainingFilesOfBook(exceptItemId = itemId)
+                    val lostSec = gaps.sumOf { it.size } / 32_000L
+                    AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${lostSec}s lost)")
+                    showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
+                    withContext(Dispatchers.Main) {
+                        val c = controller ?: return@withContext
+                        // Don't yank playback back to this part if the user has since moved on —
+                        // a slow scan can easily outlive the user's patience with it.
+                        if (c.currentMediaItemIndex != scanIndex) return@withContext
+                        // Hiding earlier gaps shifts later audio earlier, so the old position now
+                        // points slightly further into the book. Close enough to resume from.
+                        c.seekTo(scanIndex, resumeMs)
+                        c.prepare()
+                        c.play()
+                    }
+                }
+                // Damage from a bad download almost never affects only one part, and a file is
+                // only patched once scanned — so without this, stepping to the previous or next
+                // part hits the identical failure all over again. Fix the whole book now, in the
+                // background, while the user listens to the part that just recovered.
+                if (damageSweepJob?.isActive != true) {
+                    damageSweepJob = scope.launch { scanRemainingFilesOfBook(exceptItemId = itemId) }
                 }
                 return true
             }
-            // Scanned once already and still failing — fall through to the legacy skip schedule.
+            // Scanned and genuinely clean — fall through to the legacy skip schedule.
         }
 
         if (attempt == 0) {
@@ -959,6 +1171,27 @@ class PlayerController @Inject constructor(
         }
 
         // Head damage: hide leading bytes so the extractor never sees the corrupt region.
+        //
+        // MP3 only, and the gate matters more than it looks. Hiding N leading bytes of an MP4
+        // removes `ftyp`/`moov` — the demuxer then has no container at all and can never resync, so
+        // all 14 escalating attempts burn for nothing. The byte arithmetic below is MP3-shaped too
+        // (it assumes an ID3 tag and CBR). Without this, gating the *scan* alone would have made
+        // things worse: a scan skipped for an MP4 records "clean", which sends it straight here.
+        val headSkipPath = fileInfoByItemId[itemId]?.first
+        if (headSkipPath != null && !Mp3DamageScanner.isMp3Path(headSkipPath)) {
+            AppLog.e("Player", "corrupt-file recovery item=$itemId: not an MP3 — no head-skip strategy applies")
+            giveUpOnCorruptFile(itemId)
+            return true
+        }
+        // Not available once a gap map is in play: this rebuilds the uri from the plain file, and
+        // stacking a byte-offset head skip under a gap map would shift every gap by skipBytes and
+        // splice the file at the wrong places. A gap-mapped file that still fails is out of
+        // strategies, so stop rather than corrupt it.
+        if (alreadySkipping) {
+            AppLog.e("Player", "corrupt-file recovery item=$itemId: still failing with a gap map applied — no strategy left")
+            giveUpOnCorruptFile(itemId)
+            return true
+        }
         val info = fileInfoByItemId[itemId] ?: return false
         val (filePath, durationMs) = info
         scope.launch {  // IO: reads the file header for the ID3 size
@@ -1040,7 +1273,14 @@ class PlayerController @Inject constructor(
                 }
             }
         }
-        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) { syncState() }
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // AUTO means the previous item reported that it ended. If it ended nowhere near its
+            // real duration, it didn't end — it broke. lastSeen* still describe the OLD item.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                handlePossiblyTruncatedItem(lastSeenItemId, lastSeenPositionMs)
+            }
+            syncState()
+        }
         override fun onPlaybackParametersChanged(params: androidx.media3.common.PlaybackParameters) { syncState() }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
@@ -1053,6 +1293,14 @@ class PlayerController @Inject constructor(
                 }
             }
             if (playbackState == Player.STATE_ENDED && currentBookId != -1L) {
+                // Never mark a book finished because its last part broke a few seconds in — that
+                // is how a damaged book quietly marked itself (and, in a series, its successors)
+                // complete at 66%.
+                val ctrl = controller
+                if (handlePossiblyTruncatedItem(ctrl?.currentMediaItem?.mediaId, ctrl?.currentPosition ?: 0L)) {
+                    syncState()
+                    return
+                }
                 val endedBook = currentBookId
                 scope.launch { repository.markBookFinished(endedBook) }
                 // Part of a series? Hand off so the next member book auto-starts.
@@ -1068,6 +1316,17 @@ class PlayerController @Inject constructor(
         private fun syncState() {
             val ctrl = controller ?: return
             val meta = ctrl.currentMediaItem?.mediaMetadata
+            // Remember where the current item has got to. At an auto-advance these still hold the
+            // item that just ended and how far it actually reached — the only way to tell a real
+            // end from a damaged file quietly reporting end-of-input (handlePossiblyTruncatedItem).
+            ctrl.currentMediaItem?.mediaId?.let {
+                lastSeenItemId = it
+                val pos = ctrl.currentPosition.coerceAtLeast(0L)
+                lastSeenPositionMs = pos
+                // Lowest-seen wins, so a backward seek re-lowers the bar an early end is judged
+                // against rather than leaving it stuck at the furthest point reached.
+                entryPositionMs.merge(it, pos, ::minOf)
+            }
             // Derive the book from the live session rather than trusting currentBookId alone —
             // this is what makes PlayerController self-healing for any service-initiated book
             // change (cold widget resume via PlaybackService.loadLastPlayedAndPlay, a future

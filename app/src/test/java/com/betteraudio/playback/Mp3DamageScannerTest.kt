@@ -1,6 +1,7 @@
 package com.betteraudio.playback
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -106,5 +107,79 @@ class Mp3DamageScannerTest {
     fun `cancellation stops the scan`() {
         val path = writeTemp(frames(20) + junk(300_000) + frames(20))
         assertEquals(emptyList<Mp3DamageScanner.Gap>(), Mp3DamageScanner.scan(path) { false })
+    }
+
+    // ── Not-an-MP3 guards ─────────────────────────────────────────────────────
+    // Regression cover for the bug where an 8-part M4A audiobook was permanently bricked: the
+    // scanner found no MPEG frames, reported `0-<fileSize>` for every part, and GapSkippingDataSource
+    // then served an empty stream. Nothing ever cleared the cached result.
+
+    /** A minimal MP4: an `ftyp` box, then a `mdat` box of non-frame bytes. */
+    private fun mp4Bytes(payload: Int): ByteArray {
+        fun box(size: Int, type: String) = byteArrayOf(
+            (size ushr 24).toByte(), (size ushr 16).toByte(), (size ushr 8).toByte(), size.toByte()
+        ) + type.toByteArray(Charsets.US_ASCII)
+        val ftyp = box(20, "ftyp") + "M4A ".toByteArray(Charsets.US_ASCII) + byteArrayOf(0, 0, 2, 0)
+        return ftyp + box(payload + 8, "mdat") + junk(payload)
+    }
+
+    @Test
+    fun `a file with no MPEG frame anywhere is reported clean, not wholly damaged`() {
+        val path = writeTemp(mp4Bytes(400_000))
+        assertEquals(emptyList<Mp3DamageScanner.Gap>(), Mp3DamageScanner.scan(path))
+    }
+
+    @Test
+    fun `isMp3Path allowlists mp3 and nothing else`() {
+        assertTrue(Mp3DamageScanner.isMp3Path("/a/b/Part 1.mp3"))
+        assertTrue(Mp3DamageScanner.isMp3Path("/a/b/UPPER.MP3"))
+        // Every one of these produced a whole-file "damage" range before the gate existed.
+        for (ext in listOf("m4a", "m4b", "mp4", "aac", "ogg", "flac", "opus", "wav")) {
+            assertFalse(ext, Mp3DamageScanner.isMp3Path("/a/b/Part 1.$ext"))
+        }
+        assertFalse(Mp3DamageScanner.isMp3Path("/a/b/noextension"))
+    }
+
+    @Test
+    fun `decodeUsable discards a map that would leave nothing to play`() {
+        val size = 970_174_700L
+        // Exactly the shape found in the user's book.json: byte 0 to EOF.
+        assertEquals(
+            emptyList<Mp3DamageScanner.Gap>(),
+            Mp3DamageScanner.decodeUsable("0-$size", size)
+        )
+    }
+
+    @Test
+    fun `decodeUsable discards a whole-file MP3 map that starts after the ID3 tag`() {
+        // The MP3 form of the same poison: scan() begins past the tag, so the range is
+        // `<tag>-<size>` and the surviving logical stream is the tag's size — non-zero, which is
+        // why the guard measures remaining bytes rather than testing for a full-file range.
+        val size = 500_000_000L
+        val tag = 2_048L
+        assertEquals(
+            emptyList<Mp3DamageScanner.Gap>(),
+            Mp3DamageScanner.decodeUsable("$tag-$size", size)
+        )
+    }
+
+    @Test
+    fun `decodeUsable keeps a real damage map`() {
+        // The measured real-world case: ~2.4 MB of damage in an 898 MB file.
+        val size = 898_000_000L
+        val encoded = (0 until 8).joinToString(",") { i ->
+            val start = 10_000_000L + i * 100_000_000L
+            "$start-${start + 300_000L}"
+        }
+        val gaps = Mp3DamageScanner.decodeUsable(encoded, size)
+        assertEquals(8, gaps.size)
+        assertEquals(2_400_000L, gaps.sumOf { it.size })
+    }
+
+    @Test
+    fun `decodeUsable trusts the map when the file size is unknown`() {
+        val gaps = Mp3DamageScanner.decodeUsable("100-400", 0L)
+        assertEquals(1, gaps.size)
+        assertEquals(300L, gaps[0].size)
     }
 }

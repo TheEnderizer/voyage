@@ -69,6 +69,63 @@ sealed class ChapterRow {
 // counts for the higher-frequency "auto"/"skip_button" sources it records.
 private const val JUMP_HISTORY_KEEP = 100
 
+// A scrubber drag this small is a nudge, not navigation — below it nothing is armed, so a tap
+// that lands where it started doesn't leave a Return pill behind. Anything larger does: the only
+// deliberately exempt seeks are the fixed-amount skip buttons, which never route through here.
+private const val SCRUB_RETURN_MIN_MS = 3_000L
+// Listening history's "Skips" list keeps its original, coarser meaning — only a genuinely long
+// drag is a navigation event worth remembering, even though far smaller ones now arm the pills.
+private const val SCRUB_HISTORY_MIN_MS = 5 * 60_000L
+
+/**
+ * A bookmark resolved against the book's *current* file/chapter timeline.
+ *
+ * The stored anchor is file-relative ([Bookmark.fileId] + [Bookmark.positionInFileMs]), so
+ * [absPositionMs] is re-derived here on every emission rather than trusting the absolute offset
+ * saved at creation time — that offset shifts for every bookmark after any file the user deletes,
+ * while the file-relative anchor keeps pointing at the same audio. [Bookmark.absolutePositionMs]
+ * is only the fallback for a bookmark whose own file is gone (and [fileMissing] flags that).
+ */
+data class BookmarkUi(
+    val bookmark: Bookmark,
+    val absPositionMs: Long,
+    val chapterName: String,
+    val positionInChapterMs: Long,
+    val fileMissing: Boolean,
+)
+
+/**
+ * Re-anchors [b] onto [tl]. Top-level and pure so the file-deleted case is unit-testable
+ * (`BookmarkResolveTest`) — the whole point of the feature is behaviour under a changed file set.
+ *
+ * When the bookmark's own file is gone there is nothing to anchor to: it falls back to the stored
+ * absolute offset, which after a deletion is only approximate, so no chapter is named — that
+ * offset can land past the end of the shortened book, where [ChapterTimeline.chapterAt] clamps to
+ * the last mark and would otherwise print a confident but wrong "Epilogue - 1:12:44".
+ */
+internal fun resolveBookmark(b: Bookmark, tl: ChapterTimeline): BookmarkUi {
+    val known = tl.fileIds.contains(b.fileId)
+    if (!known) {
+        return BookmarkUi(
+            bookmark = b,
+            absPositionMs = b.absolutePositionMs,
+            chapterName = "",
+            positionInChapterMs = b.absolutePositionMs,
+            // An empty timeline just means it hasn't loaded yet — don't call every bookmark orphaned.
+            fileMissing = tl.fileIds.isNotEmpty(),
+        )
+    }
+    val abs = tl.startOfFileMs(b.fileId) + b.positionInFileMs
+    val mark = tl.chapterAt(abs)
+    return BookmarkUi(
+        bookmark = b,
+        absPositionMs = abs,
+        chapterName = mark?.title.orEmpty(),
+        positionInChapterMs = (abs - (mark?.startMs ?: 0L)).coerceAtLeast(0L),
+        fileMissing = false,
+    )
+}
+
 data class ChapterUiState(val rows: List<ChapterRow> = emptyList()) {
     val chapterCount: Int get() = rows.count { it is ChapterRow.Item }
     val hasChapters: Boolean get() = chapterCount > 1
@@ -85,6 +142,8 @@ class PlayerViewModel @Inject constructor(
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     private val jumpRestoreStore: JumpRestoreStore,
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
+    private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
+    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
     val playerController: PlayerController
 ) : ViewModel() {
 
@@ -428,6 +487,16 @@ class PlayerViewModel @Inject constructor(
             ChapterTimeline.build(bwp?.audioFiles ?: emptyList(), chs, bookId)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChapterTimeline.EMPTY)
 
+    /** [bookmarks] re-anchored onto the live [chapterTimeline] — see [BookmarkUi]. Declared after
+     *  [chapterTimeline] because it reads it during initialisation. */
+    val bookmarkRows: StateFlow<List<BookmarkUi>> =
+        combine(bookmarks, chapterTimeline) { list, tl ->
+            // Re-sorted here, not left to the DAO's `ORDER BY absolutePositionMs`: that column is
+            // the frozen creation-time offset, which stops matching the resolved order as soon as
+            // a file is removed.
+            list.map { resolveBookmark(it, tl) }.sortedBy { it.absPositionMs }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     data class ChapterNavState(
         val count: Int = 0,
         val hasPrev: Boolean = false,
@@ -531,19 +600,60 @@ class PlayerViewModel @Inject constructor(
 
     // ── Bookmark actions ─────────────────────────────────────────────────────
 
+    /**
+     * True when the service actually holds THIS screen's book. [PlayerController] resolves every
+     * position and every `bookSeekTo` against whichever book it currently has loaded, so anything
+     * here that reads [positionState] or seeks must check this first — in a series the service can
+     * be a member book ahead of this screen, and on a cold open it holds nothing at all. Mirrors
+     * `serviceHasBook` in both PlayerScreens.
+     */
+    private fun serviceHasThisBook(): Boolean =
+        bookId != -1L && playbackState.value.bookId == bookId
+
+    /** Where this screen's book currently sits: the live position when the service holds it, else
+     *  its saved DB position re-derived through [chapterTimeline] — i.e. the same value the
+     *  scrubber is displaying in that case, rather than another book's playhead. */
+    private fun displayBookPositionMs(): Long {
+        if (serviceHasThisBook()) {
+            val pos = positionState.value
+            return if (pos.bookTotalDurationMs > 0) pos.bookPositionMs else pos.currentPositionMs
+        }
+        val p = bookWithProgress.value?.progress ?: return 0L
+        val fileId = p.currentFileId ?: return p.positionMs
+        return chapterTimeline.value.startOfFileMs(fileId) + p.positionMs
+    }
+
+    /**
+     * Saves the current spot as a **file-relative** anchor (which file, how far into it) — the
+     * absolute book offset is stored alongside only as a fallback for when that file goes missing.
+     * The file/offset pair comes from [chapterTimeline] rather than
+     * [PlaybackState.currentFileIndex], so it's derived from the same timeline everything else on
+     * this screen uses instead of a queue index that belongs to whichever book is playing.
+     */
     fun addBookmark(comment: String) {
-        val state = playbackState.value
-        val pos = positionState.value
         val bwp = bookWithProgress.value ?: return
-        val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        val currentFile = files.getOrNull(state.currentFileIndex) ?: return
-        val absPos = if (pos.bookTotalDurationMs > 0) pos.bookPositionMs else pos.currentPositionMs
+        // displayBookPositionMs (not positionState directly) so bookmarking a book the service
+        // isn't holding saves the spot this screen is actually showing, rather than another
+        // book's playhead reinterpreted against this book's timeline.
+        val absPos = displayBookPositionMs()
+        val locus = chapterTimeline.value.locate(absPos)
+        val fileId: Long
+        val inFileMs: Long
+        if (locus != null) {
+            fileId = locus.fileId
+            inFileMs = locus.offsetInFileMs
+        } else {
+            // No timeline yet (nothing scanned) — fall back to the playing queue index.
+            val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
+            fileId = files.getOrNull(playbackState.value.currentFileIndex)?.id ?: return
+            inFileMs = positionState.value.currentPositionMs
+        }
         viewModelScope.launch {
             repository.addBookmark(
                 Bookmark(
                     bookId = bookId,
-                    fileId = currentFile.id,
-                    positionInFileMs = pos.currentPositionMs,
+                    fileId = fileId,
+                    positionInFileMs = inFileMs,
                     absolutePositionMs = absPos,
                     comment = comment.trim()
                 )
@@ -551,14 +661,18 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** Seeks to the bookmark's file-relative anchor re-resolved against the current timeline, so a
+     *  book that has since lost a file still lands on the right audio. See [BookmarkUi]. */
     fun jumpToBookmark(bookmark: Bookmark) {
-        val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
-            positionState.value.bookPositionMs
-        else
-            positionState.value.currentPositionMs
-        pushPosition(currentAbsPos)
-        recordSkip(currentAbsPos, bookmark.absolutePositionMs)
-        playerController.bookSeekTo(bookmark.absolutePositionMs)
+        val currentAbsPos = displayBookPositionMs()
+        val target = resolveBookmark(bookmark, chapterTimeline.value).absPositionMs
+        viewModelScope.launch {
+            // Same ordering constraint as resumeFromHistory: load this book before seeking into it.
+            if (!serviceHasThisBook()) startPlayback()
+            pushPosition(currentAbsPos)
+            recordSkip(currentAbsPos, target)
+            playerController.bookSeekTo(target)
+        }
     }
 
     /**
@@ -571,12 +685,17 @@ class PlayerViewModel @Inject constructor(
             positionState.value.bookPositionMs
         else
             positionState.value.currentPositionMs
-        // Start playback if this book isn't loaded yet, then seek.
-        if (playbackState.value.bookId != bookId) play()
-        pushPosition(currentAbsPos)
-        recordSkip(currentAbsPos, endBookPositionMs)
-        playerController.bookSeekTo(endBookPositionMs)
-        if (!playbackState.value.isPlaying) playerController.togglePlayPause()
+        viewModelScope.launch {
+            // Load this book FIRST if it isn't the one playing, and await it: bookSeekTo resolves
+            // against whichever book the controller currently holds, so seeking before the load
+            // completes either no-ops or lands in the previously-playing book. History is normally
+            // opened before pressing play, so that is the common path, not the edge case.
+            if (playbackState.value.bookId != bookId) startPlayback()
+            pushPosition(currentAbsPos)
+            recordSkip(currentAbsPos, endBookPositionMs)
+            playerController.bookSeekTo(endBookPositionMs)
+            if (!playbackState.value.isPlaying) playerController.togglePlayPause()
+        }
     }
 
     /**
@@ -666,11 +785,23 @@ class PlayerViewModel @Inject constructor(
         playerController.bookSeekTo(absMs)
     }
 
-    fun pushPositionIfLargeJump(beforeMs: Long, afterMs: Long) {
-        if (kotlin.math.abs(afterMs - beforeMs) > 5 * 60_000L) {
-            pushPosition(beforeMs)
-            recordSkip(beforeMs, afterMs)
-        }
+    /**
+     * A manual scrubber seek finished. Every real move arms the Return/Confirm pills so the user
+     * can always get back to where they were — only the fixed-amount skip buttons are exempt
+     * (they never call this; see [PlayerController.skipForward]/[skipBack], which log their own
+     * `"skip_button"` history entries instead). Listening history's Skips list still only records
+     * the long drags, so it keeps meaning "real navigation" rather than filling with small scrubs.
+     */
+    fun onScrubSeek(beforeMs: Long, afterMs: Long) {
+        // The sliders stay draggable while the service holds a different book (or nothing), where
+        // the seek itself is a no-op. Arming the pills there would strand a "Return …" chip for a
+        // jump that never happened, and with nothing playing the 10-minute auto-commit can never
+        // fire to clear it — leaving Confirm as the only way out.
+        if (!serviceHasThisBook()) return
+        val delta = kotlin.math.abs(afterMs - beforeMs)
+        if (delta < SCRUB_RETURN_MIN_MS) return
+        pushPosition(beforeMs)
+        if (delta > SCRUB_HISTORY_MIN_MS) recordSkip(beforeMs, afterMs)
     }
 
     fun deleteBookmark(id: Long) {
@@ -680,10 +811,15 @@ class PlayerViewModel @Inject constructor(
     // ── Playback actions ─────────────────────────────────────────────────────
 
     fun play() {
-        viewModelScope.launch {
-            val bwp = bookWithProgress.value ?: return@launch
+        viewModelScope.launch { startPlayback() }
+    }
+
+    /** The body of [play], as a suspend function so callers that must seek *after* the book is
+     *  actually loaded (see [resumeFromHistory]) can await it instead of racing the coroutine. */
+    private suspend fun startPlayback() {
+            val bwp = bookWithProgress.value ?: return
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-            if (files.isEmpty()) return@launch
+            if (files.isEmpty()) return
             val progress = bwp.progress
             // If reading is the freshest activity (lastMode == TEXT) and an epub is connected,
             // resume audio from the equivalent converted position instead of the stale audio spot
@@ -725,7 +861,6 @@ class PlayerViewModel @Inject constructor(
             repository.touchLastPlayed(bwp.book.id)
             settings.setLastPlayedBookId(bwp.book.id)
             settings.setThemeBookId(bwp.book.id)
-        }
     }
 
     fun togglePlayPause() = playerController.togglePlayPause()
@@ -855,16 +990,13 @@ class PlayerViewModel @Inject constructor(
     fun updateCoverArt(context: Context, uri: Uri) {
         viewModelScope.launch {
             try {
-                val dir = File(context.filesDir, "covers").also { it.mkdirs() }
-                val dest = File(dir, "$bookId.jpg")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    dest.outputStream().use { input.copyTo(it) }
-                }
-                repository.updateCoverArt(bookId, dest.absolutePath)
-                // The persisted widget snapshot still points at the same file:// path (book cover
-                // art is always written to a per-book fixed path), so a plain re-render is enough
-                // to force a redraw with the new bytes — no need to wait for the next play/pause event.
-                widgetUpdater.requestRender()
+                val book = repository.getBookOnce(bookId)
+                    ?: throw IllegalStateException("book $bookId not found")
+                val dest = context.contentResolver.openInputStream(uri)?.use { input ->
+                    bookDataStore.writeCoverStream(book.folderPath, "user", "jpg", input)
+                } ?: throw IllegalStateException("couldn't open picked image")
+                repository.updateCoverArt(bookId, dest)
+                widgetUpdater.refreshCoverIfCurrent(bookId, dest)
             } catch (e: Exception) {
                 AppLog.e("Player", "updateCoverArt failed for book $bookId", e)
                 android.widget.Toast.makeText(
@@ -886,6 +1018,8 @@ class PlayerViewModel @Inject constructor(
         // NonCancellable: this runs from onDispose where viewModelScope may be cancelled imminently.
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
             repository.updatePosition(bookId, currentFile.id, positionMs)
+            // Player sheet dismissed is a flush point — same cadence as pause/stop/book-close.
+            diskMirror.flushBook(bookId)
         }
     }
 }

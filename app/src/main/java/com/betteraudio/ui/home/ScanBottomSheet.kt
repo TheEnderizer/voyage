@@ -26,13 +26,18 @@ fun ScanBottomSheet(
     scan: ScanResult
 ) {
     val defaultPath = remember(startPath) {
-        startPath.takeIf { it.isNotBlank() && File(it).isDirectory }
-            ?: listOf("/sdcard/Audiobooks", "/sdcard/AudioBooks", "/storage/emulated/0/Audiobooks")
-                .firstOrNull { File(it).isDirectory }
+        val candidates = listOfNotNull(startPath.takeIf { it.isNotBlank() && File(it).isDirectory }) +
+            listOf("/sdcard/Audiobooks", "/sdcard/AudioBooks", "/storage/emulated/0/Audiobooks")
+                .filter { File(it).isDirectory }
+        // Prefer whichever candidate already has a Voyage library — the common case a folder
+        // picker like this exists for is a reinstall landing right back on the same folder name.
+        candidates.firstOrNull { File(it, ".voyage/settings.json").isFile }
+            ?: candidates.firstOrNull()
             ?: "/storage/emulated/0"
     }
     var path by remember { mutableStateOf(defaultPath) }
     var showBrowser by remember { mutableStateOf(false) }
+    val isVoyageLibrary by remember { derivedStateOf { File(path, ".voyage/settings.json").isFile } }
 
     if (showBrowser) {
         FolderBrowser(
@@ -53,8 +58,12 @@ fun ScanBottomSheet(
             Text("Scan Audiobooks", style = MaterialTheme.typography.titleLarge)
 
             Text(
-                "Pick the folder where your audiobooks live. Sub-folders and series are " +
-                "detected automatically.",
+                if (isVoyageLibrary)
+                    "This folder already has your Voyage library data — titles, progress, " +
+                        "bookmarks and settings will be restored automatically."
+                else
+                    "Pick the folder where your audiobooks live. Sub-folders and series are " +
+                        "detected automatically.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -110,7 +119,7 @@ fun ScanBottomSheet(
                     Spacer(Modifier.width(8.dp))
                     Text("Scanning…")
                 } else {
-                    Text("Scan Library")
+                    Text(if (isVoyageLibrary) "Restore & Scan" else "Scan Library")
                 }
             }
 

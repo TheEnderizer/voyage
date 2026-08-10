@@ -150,6 +150,23 @@ class WidgetUpdater @Inject constructor(
         triggerRenderAll()
     }
 
+    /** Called after a book's cover file changes on disk (gallery pick, online search, embedded
+     *  extraction). Unlike a design/setting change, [requestRender] alone is not enough here: the
+     *  persisted snapshot's own [WidgetSnapshot.bookCoverPath] can now point at a path that no
+     *  longer gets updated (a new cover write targets a different file than the old one did), so a
+     *  plain re-render would keep reading stale bytes from the abandoned path forever. Only pushes
+     *  a corrected snapshot when [bookId] is actually the widget's current book; otherwise this is
+     *  a no-op — a re-render will pick up the new path naturally next time that book plays. */
+    fun refreshCoverIfCurrent(bookId: Long, coverPath: String) {
+        scope.launch {
+            readyJob.await()
+            val cur = stateStore.current
+            if (cur.bookId == bookId && cur.bookCoverPath != coverPath) {
+                push(cur.copy(bookCoverPath = coverPath))
+            }
+        }
+    }
+
     /** Flips the last known snapshot to paused/idle — called from PlaybackService.onDestroy(),
      *  BEFORE it cancels its own serviceScope, so the widget never keeps showing "playing" after
      *  the service (and its player) are gone. Runs on this class's own scope, not the caller's, so

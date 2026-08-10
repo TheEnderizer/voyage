@@ -1,5 +1,6 @@
 package com.betteraudio.ui.immersive.bookinfo
 
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -53,9 +54,11 @@ import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.immersive.ImmersiveStyle
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
+import com.betteraudio.ui.player.containerReveal
+import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
-import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 /**
@@ -89,14 +92,27 @@ fun BookInfoScreen(
     val coverSource = remember(viewModel.bookId) { coverBoundsRegistry.boundsState(viewModel.bookId) }
     val coverSourceRadius = coverBoundsRegistry.radiusFor(viewModel.bookId)
 
-    val closeBackProgress = rememberPredictiveBackProgress(enabled = true) {
-        scope.launch {
-            coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
-            onBack()
+    // One coroutine owns the whole back gesture — see the Material You variant for why splitting
+    // the collect and the commit across two writers of `coverOpenAnim` stopped back from closing
+    // the page at all.
+    PredictiveBackHandler(enabled = true) { events ->
+        var committed = false
+        try {
+            events.collect { event -> coverOpenAnim.snapTo(1f - event.progress) }
+            committed = true
+        } catch (_: CancellationException) {
         }
-    }
-    LaunchedEffect(closeBackProgress.value) {
-        coverOpenAnim.snapTo(1f - closeBackProgress.value)
+        if (committed) {
+            scope.launch {
+                try {
+                    coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
+                } finally {
+                    onBack()
+                }
+            }
+        } else {
+            scope.launch { coverOpenAnim.animateTo(1f, spring(dampingRatio = 0.9f, stiffness = 400f)) }
+        }
     }
     fun closeWithMorph() = scope.launch {
         coverOpenAnim.animateTo(0f, spring(dampingRatio = 0.9f, stiffness = 400f))
@@ -109,7 +125,24 @@ fun BookInfoScreen(
 
     val onScrimMuted = ImmersiveStyle.scrimText(muted = true)
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+    // Same unfold-out-of-the-card treatment as the Material You variant (see its comment): the
+    // whole page is clipped to a window that starts as exactly the tapped card's cover and grows
+    // to full-bleed, so the black backdrop, the blurred cover and the info panel all expand out of
+    // the image instead of appearing behind it.
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .containerReveal(coverSource, coverOpenProgress, sourceRadius = coverSourceRadius)
+    ) {
+        // Faded child, not a background on the clipped root — see the Material You variant: an
+        // alpha on the root would take the morphing cover with it, and the cover has to stay
+        // fully visible for the whole transition.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = ((coverOpenProgress.value - 0.05f) / 0.45f).coerceIn(0f, 1f) }
+                .background(Color.Black)
+        )
         val coverPath = book?.coverArtPath
         val context = LocalContext.current
         val coverModel = remember(coverPath, book?.id) {
@@ -150,8 +183,14 @@ fun BookInfoScreen(
                     alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
                 }
         )
+        // Ramped in rather than drawn at full strength from the first frame: at progress 0 the
+        // reveal window sits exactly over the grid card, and this gradient is a full-SCREEN one —
+        // a card low on the page would fall in its ~0.86-alpha band and the cover would visibly
+        // darken the instant it was tapped, breaking the "same image, still there" handoff.
         Box(
-            Modifier.fillMaxSize().background(
+            Modifier.fillMaxSize().graphicsLayer {
+                alpha = ((coverOpenProgress.value - 0.15f) / 0.45f).coerceIn(0f, 1f)
+            }.background(
                 Brush.verticalGradient(
                     0f    to Color.Black.copy(alpha = 0.15f),
                     0.38f to Color.Black.copy(alpha = 0.04f),
@@ -170,7 +209,7 @@ fun BookInfoScreen(
                 .padding(horizontal = 20.dp)
         ) {
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(coverOpenProgress),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ScrimButton(Icons.Default.KeyboardArrowDown, "Back", onClick = { closeWithMorph() })
@@ -212,7 +251,8 @@ fun BookInfoScreen(
                 synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
                                    ?: book?.description?.takeIf { it.isNotBlank() }
                                    ?: if (synopsisGenerating) "Generating synopsis…" else null,
-                onResume         = { resumeWithMorph() }
+                onResume         = { resumeWithMorph() },
+                modifier         = Modifier.expandReveal(coverOpenProgress)
             )
             Spacer(Modifier.height(10.dp))
         }

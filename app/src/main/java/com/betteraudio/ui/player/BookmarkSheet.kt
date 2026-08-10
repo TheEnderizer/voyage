@@ -19,7 +19,7 @@ import com.betteraudio.data.db.entities.Bookmark
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookmarkSheet(
-    bookmarks: List<Bookmark>,
+    bookmarks: List<BookmarkUi>,
     currentPositionMs: Long,
     totalDurationMs: Long,
     onJump: (Bookmark) -> Unit,
@@ -83,12 +83,12 @@ fun BookmarkSheet(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(bookmarks, key = { it.id }) { bookmark ->
+                    items(bookmarks, key = { it.bookmark.id }) { item ->
                         BookmarkRow(
-                            bookmark = bookmark,
+                            item = item,
                             totalDurationMs = totalDurationMs,
-                            onJump = { onJump(bookmark); onDismiss() },
-                            onDelete = { onDelete(bookmark.id) }
+                            onJump = { onJump(item.bookmark); onDismiss() },
+                            onDelete = { onDelete(item.bookmark.id) }
                         )
                     }
                     item { Spacer(Modifier.height(8.dp)) }
@@ -100,11 +100,12 @@ fun BookmarkSheet(
 
 @Composable
 private fun BookmarkRow(
-    bookmark: Bookmark,
+    item: BookmarkUi,
     totalDurationMs: Long,
     onJump: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val bookmark = item.bookmark
     Surface(
         shape = MaterialTheme.shapes.large,
         // Slightly translucent so the row blends with the (frosted, in Immersive) sheet fill
@@ -117,16 +118,29 @@ private fun BookmarkRow(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                // Chapter-relative label, not a book offset: the bookmark is anchored to its own
+                // file, so this keeps naming the same spot even after other files are deleted.
                 Text(
-                    formatBookmarkTime(bookmark.absolutePositionMs),
+                    if (item.chapterName.isNotBlank())
+                        "${item.chapterName} - ${formatBookmarkTime(item.positionInChapterMs)}"
+                    else
+                        formatBookmarkTime(item.absPositionMs),
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (totalDurationMs > 0) {
-                    val pct = (bookmark.absolutePositionMs * 100f / totalDurationMs).toInt()
+                if (item.fileMissing) {
                     Text(
-                        "$pct% through book",
+                        "File missing — approximate position",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else if (totalDurationMs > 0) {
+                    val pct = (item.absPositionMs * 100f / totalDurationMs).toInt()
+                    Text(
+                        "${formatBookmarkTime(item.absPositionMs)} · $pct% through book",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

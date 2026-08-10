@@ -35,6 +35,7 @@ import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.betteraudio.data.db.entities.Bookmark
+import com.betteraudio.data.db.entities.sizeOnDisk
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -57,6 +58,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @UnstableApi
@@ -68,6 +70,7 @@ class PlaybackService : MediaSessionService() {
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var widgetUpdater: WidgetUpdater
     @Inject lateinit var jumpRestoreStore: JumpRestoreStore
+    @Inject lateinit var diskMirror: com.betteraudio.data.diskstore.DiskMirror
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
     private var mediaSession: MediaSession? = null
@@ -336,7 +339,7 @@ class PlaybackService : MediaSessionService() {
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (isPlaying) { startPositionSaver(); sleepTimerEngine.maybeAutoArmScheduled() }
-                else { stopPositionSaver(); saveCurrentPosition() }
+                else { stopPositionSaver(); saveCurrentPositionAndFlush() }
                 pushWidgetState()
             }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -355,7 +358,13 @@ class PlaybackService : MediaSessionService() {
                     val fileId = item.mediaId.toLongOrNull()
                     if (bookId != -1L && fileId != null) {
                         val posMs = exoPlayer?.currentPosition?.coerceAtLeast(0L) ?: 0L
-                        serviceScope.launch(Dispatchers.IO) { repository.updatePosition(bookId, fileId, posMs) }
+                        // Mirrors to disk too, not just the DB: a file transition is a real
+                        // durability point for a listener who never pauses (overnight/driving) —
+                        // without this, disk stays stuck on the file the session started on.
+                        serviceScope.launch(Dispatchers.IO) {
+                            repository.updatePosition(bookId, fileId, posMs)
+                            diskMirror.flushBook(bookId)
+                        }
                     }
                     // Covers every playlist-load path (PlayerController.playBook, SeriesPlayer,
                     // loadLastPlayedAndPlay) — Media3 fires this transition with
@@ -551,6 +560,26 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /** Like [saveCurrentPosition], but also flushes the disk mirror once the DB write lands —
+     *  used at the cadence's actual flush points (pause, book-close), not the 30s continuous-
+     *  playback tick, which deliberately only marks the book dirty (see startPositionSaver). The
+     *  position must be read here, synchronously on the caller's thread (main — exoPlayer is not
+     *  thread-safe), not inside the launched coroutine, which runs on Dispatchers.IO. */
+    private fun saveCurrentPositionAndFlush() {
+        val player = exoPlayer ?: return
+        val positionMs = player.currentPosition
+        if (positionMs <= 0L) return
+        val item = player.currentMediaItem ?: return
+        val fileId = item.mediaId.toLongOrNull() ?: return
+        val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+        appScope.launch(Dispatchers.IO) {
+            AppLog.i("Player", "saveCurrentPosition(flush) book=$bookId file=$fileId pos=${positionMs}ms")
+            repository.updatePosition(bookId, fileId, positionMs)
+            diskMirror.flushDirty()
+        }
+    }
+
     /** Persists a speed change made from the widget — without this, a widget speed-up/down is
      *  silently reverted the next time this book loads (only [com.betteraudio.ui.player.PlayerViewModel.setSpeed]
      *  used to persist it). */
@@ -710,7 +739,7 @@ class PlaybackService : MediaSessionService() {
 
     /** Stops playback and saves position, mirroring the mini-bar fling-to-close gesture. */
     private fun closeBook() {
-        saveCurrentPosition()
+        saveCurrentPositionAndFlush()
         exoPlayer?.stop()
         exoPlayer?.clearMediaItems()
         pushWidgetState()
@@ -812,13 +841,19 @@ class PlaybackService : MediaSessionService() {
                 " → startIdx=$startIndex startPos=${startPos}ms")
 
             val items = files.map { file ->
+                // Uri.fromFile percent-encodes; "file://$path" breaks on '%' or '#' in a name.
+                val base = Uri.fromFile(java.io.File(file.filePath))
+                // Apply any cached damage map, exactly as PlayerController.buildMediaItem does.
+                // This path used to build plain file URIs, which meant a damaged file resumed from
+                // the widget re-hit the failure the in-app player had already repaired around.
+                val gaps = Mp3DamageScanner.decodeUsable(file.damageRangesJson, file.sizeOnDisk())
+                val uri = if (gaps.isEmpty()) base else GapSkippingDataSource.wrapUri(base, gaps)
                 MediaItem.Builder()
                     .setMediaId(file.id.toString())
-                    // Uri.fromFile percent-encodes; "file://$path" breaks on '%' or '#' in a name.
-                    .setUri(Uri.fromFile(java.io.File(file.filePath)))
+                    .setUri(uri)
                     .setRequestMetadata(
                         MediaItem.RequestMetadata.Builder()
-                            .setMediaUri(Uri.fromFile(java.io.File(file.filePath)))
+                            .setMediaUri(uri)
                             .build()
                     )
                     .setMediaMetadata(
@@ -862,7 +897,12 @@ class PlaybackService : MediaSessionService() {
             val bookId = item?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
             val fileId = item?.mediaId?.toLongOrNull()
             if (bookId != -1L && fileId != null) {
-                runBlocking { repository.updatePosition(bookId, fileId, posMs) }
+                runBlocking {
+                    repository.updatePosition(bookId, fileId, posMs)
+                    // Bounded: the process can be killed right after this callback returns, but a
+                    // slow/unmounted SD card must never hang the app-swipe-away path indefinitely.
+                    withTimeoutOrNull(1_500) { diskMirror.flushDirty() }
+                }
             }
         }
         super.onTaskRemoved(rootIntent)
@@ -871,7 +911,21 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         widgetUpdater.pushPaused()
         stopPositionSaver()
-        saveCurrentPosition()
+        // Read synchronously here (main thread — exoPlayer is not thread-safe), not inside the
+        // launch below, which runs on Dispatchers.IO. Not runBlocking: onDestroy must not stall
+        // service teardown waiting on disk IO. appScope (not serviceScope, cancelled a few lines
+        // below) is what keeps this coroutine alive long enough to finish — same reasoning as
+        // saveCurrentPosition's own doc comment.
+        val destroyPositionMs = exoPlayer?.currentPosition ?: 0L
+        val destroyItem = exoPlayer?.currentMediaItem
+        val destroyFileId = destroyItem?.mediaId?.toLongOrNull()
+        val destroyBookId = destroyItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+        appScope.launch(Dispatchers.IO) {
+            if (destroyPositionMs > 0L && destroyBookId != -1L && destroyFileId != null) {
+                repository.updatePosition(destroyBookId, destroyFileId, destroyPositionMs)
+            }
+            diskMirror.flushDirty()
+        }
         sleepTimerEngine.stop()
         headsetGestureMapper.cancel()
         btAutoResumeWatcher.unregister()

@@ -25,9 +25,19 @@ private val VOLUME_IN_NAME_REGEX = Regex(
  */
 object ScannerHeuristics {
 
+    // Name of Voyage's own per-book data folder (cover, book.json, mapping.json). A directory
+    // with this exact name is excluded from scanning unless it genuinely holds audio — a user
+    // whose own rip happens to live in a folder literally called "data" must not be silently
+    // dropped from the library. See isHiddenDirName / AudioFileScanner.isScannableDir.
+    const val DATA_DIR_NAME = "data"
+
     // A sub-folder name that labels a disc/part of one book rather than a separate book,
     // e.g. "Mistborn 1 - The Final Empire (1 of 3)" or "Disc 2".
     fun looksLikePartFolder(dir: File): Boolean = DISC_FOLDER_REGEX.containsMatchIn(dir.name)
+
+    /** Dot-prefixed directory names (".voyage", ".nomedia" is a file not a dir, etc.) are
+     *  always excluded from scanning — hidden by convention on every platform this app targets. */
+    fun isHiddenDirName(name: String): Boolean = name.startsWith(".")
 
     fun extractTrackNumber(name: String): Int =
         Regex("^(\\d+)").find(name.trim())?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE

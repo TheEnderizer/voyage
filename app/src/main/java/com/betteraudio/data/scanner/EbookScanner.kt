@@ -22,7 +22,8 @@ import javax.inject.Singleton
 @Singleton
 class EbookScanner @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val repository: AudiobookRepository
+    private val repository: AudiobookRepository,
+    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore
 ) {
 
     /** Recursively scans [rootPath] for `.epub` files not already attached/standalone elsewhere,
@@ -127,15 +128,13 @@ class EbookScanner @Inject constructor(
             coverArtPath = null, ebookPath = path, spineCount = info.spine.size
         )
 
-        // Extract a cover next to the epub, hidden from the gallery — only when this is a
-        // brand-new row (existing rows keep whatever cover the user has set/searched for).
+        // Extract a cover into this row's data/ folder — only when this is a brand-new row
+        // (existing rows keep whatever cover the user has set/searched for).
         if (existingByPath == null) {
-            val coverFile = File(epubFile.parentFile, ".cover_${epubFile.nameWithoutExtension}.epub.jpg")
-            val wrote = runCatching { EpubParser(epubFile).use { it.extractCover(coverFile) } }.getOrDefault(false)
-            if (wrote) {
-                val nomedia = File(epubFile.parentFile, ".nomedia")
-                if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
-                repository.updateCoverArt(bookId, coverFile.absolutePath)
+            val bytes = runCatching { EpubParser(epubFile).use { it.extractCoverBytes() } }.getOrNull()
+            if (bytes != null) {
+                val coverPath = bookDataStore.writeCoverBytes(folderPath, "embedded", "jpg", bytes)
+                if (coverPath != null) repository.updateCoverArt(bookId, coverPath)
             }
         }
         return true

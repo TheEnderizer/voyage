@@ -11,6 +11,9 @@ interface BookmarkDao {
     @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY absolutePositionMs ASC")
     fun getForBook(bookId: Long): Flow<List<Bookmark>>
 
+    @Query("SELECT * FROM bookmarks WHERE id = :id")
+    suspend fun getById(id: Long): Bookmark?
+
     @Insert
     suspend fun insert(bookmark: Bookmark): Long
 
