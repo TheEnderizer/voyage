@@ -87,6 +87,8 @@ class PlaybackService : MediaSessionService() {
     private var boostMb = 0      // millibels; 100 mb = 1 dB
     private var eqBandsJson: String? = null  // null = flat / bypass
     private var skipSilenceEnabled = false
+    // Whether ensureStartedService() has converted this from a bound-only to a started service.
+    private var selfStarted = false
 
     // Saves the current playback position to the DB every 5 s while playing. Runs on
     // serviceScope (Main dispatcher) so ExoPlayer's currentPosition is safe to read.
@@ -202,6 +204,8 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_BOOST_DOWN        = "com.betteraudio.action.WIDGET_BOOST_DOWN"
         const val ACTION_QUICK_BOOKMARK    = "com.betteraudio.action.WIDGET_QUICK_BOOKMARK"
         const val ACTION_CLOSE_BOOK        = "com.betteraudio.action.WIDGET_CLOSE_BOOK"
+        /** Self-start marker — see [ensureStartedService]. Not a widget action, does nothing. */
+        const val ACTION_KEEP_ALIVE        = "com.betteraudio.action.KEEP_ALIVE"
         const val ACTION_SLEEP_TIMER_TOGGLE = "com.betteraudio.action.WIDGET_SLEEP_TIMER_TOGGLE"
         const val EXTRA_SLEEP_DURATION_MS  = "extra_sleep_duration_ms"
 
@@ -361,6 +365,10 @@ class PlaybackService : MediaSessionService() {
                 // repository.updatePosition directly rather than saveCurrentPosition(), which
                 // skips a positionMs <= 0 read — exactly the position a fresh transition starts at.
                 mediaItem?.let { item ->
+                    // A book is loaded, so from here on this service has to outlive the Activity.
+                    // Same hook, same reasoning as ensureChapterTimeline below: PLAYLIST_CHANGED
+                    // lands here for every load path there is.
+                    ensureStartedService()
                     val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
                     val fileId = item.mediaId.toLongOrNull()
                     if (bookId != -1L && fileId != null) {
@@ -378,6 +386,9 @@ class PlaybackService : MediaSessionService() {
                     // MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED whenever setMediaItems lands.
                     if (bookId != -1L) ensureChapterTimeline(bookId)
                 }
+                // Read the real queue rather than trusting a null mediaItem: this is the one
+                // signal that unambiguously means "book closed" (mini-bar fling, widget close).
+                if (exoPlayer?.mediaItemCount == 0) releaseStartedService()
                 pushWidgetState()
             }
             override fun onPositionDiscontinuity(
@@ -632,10 +643,67 @@ class PlaybackService : MediaSessionService() {
         positionSaverJob = null
     }
 
+    /**
+     * Converts this service from bound-only to *started*, so that it outlives the Activity being
+     * destroyed when the user swipes the app away from recents.
+     *
+     * [onTaskRemoved] declining to stop the service is not on its own enough. Media3 calls
+     * `startForegroundService` itself only once playback actually *begins* — so a book that is
+     * loaded but has never played (restored paused at launch, say, or paused before it was ever
+     * started) leaves this service held open by nothing but PlayerController's MediaController
+     * binding. `MainActivity.onDestroy` releases that binding on the swipe, and a bound-only
+     * service dies with its last client no matter what onTaskRemoved decided. Starting it here,
+     * the moment a book is loaded, closes that hole.
+     *
+     * Plain `startService`, not `startForegroundService`: the latter obliges us to post a
+     * foreground notification within ~5 s or be killed with
+     * `ForegroundServiceDidNotStartInTimeException`, and a merely-loaded, not-yet-playing book
+     * has no notification to post. Media3 still does its own foreground promotion when playback
+     * starts; this only supplies the "started" status, which is the part that survives an unbind.
+     *
+     * Background-start restrictions (API 26+) can refuse this if a book loads while the app is
+     * already backgrounded — a series auto-advance, for instance. That case needs no rescue:
+     * playback is ongoing there, so Media3 has started the service itself. Hence `runCatching`
+     * and a log line rather than a crash on a path that is already covered.
+     */
+    private fun ensureStartedService() {
+        if (selfStarted) return
+        val result = runCatching {
+            startService(Intent(this, PlaybackService::class.java).setAction(ACTION_KEEP_ALIVE))
+        }
+        selfStarted = result.isSuccess
+        if (result.isSuccess) AppLog.i(LogCat.PLAYBACK, "Service self-started — will survive an app swipe")
+        else AppLog.w(LogCat.PLAYBACK, "Service self-start refused (${result.exceptionOrNull()?.javaClass?.simpleName}) — relying on Media3's own foreground start")
+    }
+
+    /**
+     * Undoes [ensureStartedService] once the queue is empty (book closed from the mini-bar fling
+     * or the widget's close button). `stopSelf()` on a service that is still bound does not
+     * destroy it — it only drops the "started" status, restoring exactly the pre-fix lifecycle
+     * where the service goes away with its last client. Without this, closing a book would park
+     * an empty service in memory indefinitely, which is a real regression rather than the point
+     * of the change.
+     */
+    private fun releaseStartedService() {
+        if (!selfStarted) return
+        selfStarted = false
+        runCatching { stopSelf() }
+        AppLog.i(LogCat.PLAYBACK, "Queue empty — service no longer self-started")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val player = mediaSession?.player
-        intent?.action?.let { if (it.startsWith("com.betteraudio")) AppLog.i(LogCat.WIDGET, "action=$it loaded=${player?.mediaItemCount ?: 0}") }
+        intent?.action?.let {
+            // KEEP_ALIVE is ours, not the widget's — logging it under WIDGET would read as a
+            // phantom button press once per book load.
+            if (it.startsWith("com.betteraudio") && it != ACTION_KEEP_ALIVE) {
+                AppLog.i(LogCat.WIDGET, "action=$it loaded=${player?.mediaItemCount ?: 0}")
+            }
+        }
         when (intent?.action) {
+            // Deliberately nothing. The delivery itself is the point: it is what makes this a
+            // started service. See ensureStartedService.
+            ACTION_KEEP_ALIVE -> Unit
             ACTION_TOGGLE_PLAY_PAUSE -> player?.let {
                 // Cold widget tap: nothing loaded yet → load the last-played book and start,
                 // entirely inside the service. No Activity needs to open.

@@ -5,6 +5,11 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.19b] - 2026-08-13
+
+### Fixed
+- Closing the app from recents could still stop the player in one case 1.9.18b missed: a book that was open but had not been played yet in that session — reopening the app to a paused book and closing it again, for instance. The player is now held open from the moment a book loads rather than from the moment it first plays, so closing the app leaves it alone in every case. Closing the book itself, from the mini bar or the widget, releases it as before.
+
 ## [1.9.18b] - 2026-08-13
 
 ### Changed
