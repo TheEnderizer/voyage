@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.WidgetStateStore
 import com.betteraudio.widget.WidgetUpdater
 import com.betteraudio.widget.model.BackgroundLayerStyle
@@ -421,7 +423,10 @@ class WidgetEditorViewModel @Inject constructor(
     fun save(onSaved: () -> Unit = {}) {
         viewModelScope.launch {
             val s = _state.value
-            if (s.designId == -1L) return@launch
+            if (s.designId == -1L) {
+                AppLog.w(LogCat.WIDGET, "WidgetEditorViewModel.save: no designId set, ignoring")
+                return@launch
+            }
             val now = System.currentTimeMillis()
             val existing = designDao.getById(s.designId)
             designDao.upsert(
@@ -434,6 +439,7 @@ class WidgetEditorViewModel @Inject constructor(
                     updatedAt = now,
                 )
             )
+            AppLog.i(LogCat.WIDGET, "design '${s.name}' (id=${s.designId}) saved, ${s.doc.elements.size} element(s) — requesting render of every placed widget bound to it")
             widgetUpdater.requestRender()
             sweepOrphanWidgetImages(appContext, designDao)
             diskMirror.markLibraryDirty()

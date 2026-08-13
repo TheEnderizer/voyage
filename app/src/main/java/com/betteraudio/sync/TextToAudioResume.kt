@@ -7,6 +7,8 @@ import com.betteraudio.data.ebook.EpubParser
 import com.betteraudio.data.ebook.ParagraphExtractor
 import com.betteraudio.data.ebook.SpineParagraphs
 import com.betteraudio.data.repository.AudiobookRepository
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -31,7 +33,10 @@ object TextToAudioResume {
         repository: AudiobookRepository
     ): Long? {
         if (progress?.lastMode != "TEXT") return null
-        val epubPath = book.ebookPath ?: return null
+        val epubPath = book.ebookPath ?: run {
+            AppLog.d(LogCat.SYNC) { "TextToAudioResume book=${book.id}: lastMode=TEXT but no ebook connected — falling back to audio-only resume" }
+            return null
+        }
         val spineIndex = progress.textSpineIndex ?: return null
         val fraction = progress.textFraction ?: return null
         if (files.isEmpty()) return null
@@ -44,7 +49,10 @@ object TextToAudioResume {
             runCatching {
                 EpubParser(File(epubPath)).use { parser ->
                     val info = parser.parse()
-                    if (info.encrypted || spineIndex !in info.spine.indices) return@use null
+                    if (info.encrypted || spineIndex !in info.spine.indices) {
+                        AppLog.w(LogCat.SYNC, "TextToAudioResume book=${book.id}: epub encrypted=${info.encrypted} or spineIndex=$spineIndex out of range (${info.spine.size} spine item(s))")
+                        return@use null
+                    }
 
                     val paraCache = HashMap<Int, SpineParagraphs?>()
                     fun paragraphsFor(idx: Int): SpineParagraphs? =
@@ -61,6 +69,7 @@ object TextToAudioResume {
                     val map = ChapterMap.fromJson(book.chapterMapJson) ?: ChapterMatcher.autoMatch(spans, info.spine)
 
                     if (paras == null || paras.totalChars == 0) {
+                        AppLog.d(LogCat.SYNC) { "TextToAudioResume book=${book.id}: spine=$spineIndex has no paragraph data — using chapter-map-proportional fallback" }
                         return@use PositionBridge.textToAudio(TextLocator(spineIndex, fraction), spans, map)
                     }
                     val charOffset = paras.charOffsetForFraction(fraction)
@@ -68,11 +77,17 @@ object TextToAudioResume {
                     if (anchors.size >= 2) {
                         PositionBridge.charToAudioAnchored(spineIndex, charOffset, anchors) { idx ->
                             paragraphsFor(idx)?.totalChars ?: 0
-                        }?.let { return@use it }
+                        }?.let {
+                            AppLog.d(LogCat.SYNC) { "TextToAudioResume book=${book.id}: resolved via ${anchors.size} anchor(s) -> ${it}ms" }
+                            return@use it
+                        }
                     }
-                    PositionBridge.charToAudio(spineIndex, charOffset, paras.totalChars, spans, map, anchors)
+                    val audioMs = PositionBridge.charToAudio(spineIndex, charOffset, paras.totalChars, spans, map, anchors)
+                    AppLog.d(LogCat.SYNC) { "TextToAudioResume book=${book.id}: resolved via chapter map (no/insufficient anchors) -> ${audioMs}ms" }
+                    audioMs
                 }
-            }.getOrNull()
+            }.onFailure { AppLog.w(LogCat.SYNC, "TextToAudioResume book=${book.id}: failed, falling back to audio-only resume: ${it.message}") }
+                .getOrNull()
         }
     }
 }

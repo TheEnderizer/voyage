@@ -9,6 +9,7 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -98,7 +99,7 @@ class DiskExportMigration @Inject constructor(
         VoyageLayout.libraryFile(libraryFolder)?.let { runCatching { it.delete() } }
         settings.setDiskExportVersion(0)
         settings.setLibraryJsonAppliedAt(0L)
-        AppLog.i("DiskExport", "forgot all disk data for $libraryFolder")
+        AppLog.i(LogCat.DISK, "forgot all disk data for $libraryFolder")
     }
 
     private suspend fun runExport(libraryFolder: String) {
@@ -106,11 +107,11 @@ class DiskExportMigration @Inject constructor(
         VoyageLayout.rootDir(libraryFolder)?.let { it.mkdirs(); ensureNoMedia(it) }
 
         runCatching { writeSettingsSnapshot(libraryFolder) }
-            .onFailure { AppLog.e("DiskExport", "settings.json write failed", it) }
+            .onFailure { AppLog.e(LogCat.DISK, "settings.json write failed", it) }
         runCatching { migrateSeriesCovers(root) }
-            .onFailure { AppLog.e("DiskExport", "series cover migration failed", it) }
+            .onFailure { AppLog.e(LogCat.DISK, "series cover migration failed", it) }
         runCatching { migrateAuthorCovers(root) }
-            .onFailure { AppLog.e("DiskExport", "author cover migration failed", it) }
+            .onFailure { AppLog.e(LogCat.DISK, "author cover migration failed", it) }
         diskMirror.flushLibrary()
 
         val books = repository.getAllBooksIncludingIgnoredOnce()
@@ -119,7 +120,7 @@ class DiskExportMigration @Inject constructor(
         books.forEachIndexed { index, book ->
             currentCoroutineContext().ensureActive()
             runCatching { migrateBookCover(book, root) }
-                .onFailure { AppLog.e("DiskExport", "cover migration failed for book=${book.id}", it) }
+                .onFailure { AppLog.e(LogCat.DISK, "cover migration failed for book=${book.id}", it) }
             val ok = runCatching { bookDataStore.write(book.id) }.getOrElse { false }
             if (!ok) failed++
             _state.value = ExportState(running = true, done = index + 1, total = books.size, failed = failed)
@@ -128,9 +129,9 @@ class DiskExportMigration @Inject constructor(
 
         if (failed == 0) {
             settings.setDiskExportVersion(TARGET_VERSION)
-            AppLog.i("DiskExport", "export complete: ${books.size} book(s)")
+            AppLog.i(LogCat.DISK, "export complete: ${books.size} book(s)")
         } else {
-            AppLog.w("DiskExport", "export finished with $failed failure(s) of ${books.size} — version flag NOT set, will retry")
+            AppLog.w(LogCat.DISK, "export finished with $failed failure(s) of ${books.size} — version flag NOT set, will retry")
         }
     }
 

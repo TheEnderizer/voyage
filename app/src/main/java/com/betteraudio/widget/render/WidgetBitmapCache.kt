@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.File
 
 /** Decodes source images (book/series covers, custom element images) downsampled to roughly the
@@ -37,7 +38,7 @@ object WidgetBitmapCache {
             val sample = sampleSizeFor(bounds.outWidth, bounds.outHeight, bucketedW, bucketedH)
             BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
         } catch (e: Exception) {
-            AppLog.e("Widget", "failed to decode $path", e)
+            AppLog.e(LogCat.WIDGET, "failed to decode $path", e)
             null
         } ?: return null
 

@@ -134,7 +134,18 @@ class SettingsStore @Inject constructor(
         // Off by default: persisting every log line costs a stat+open/write/close otherwise
         // (see AppLog) — Logcat mirroring is unconditional, so nothing is lost live, only the
         // persisted copy is skipped unless the user opts in from Settings → Diagnostics.
+        // Kept as a real boolean forever (never a tri-state) so a settings.json written by an
+        // older build can still apply it without a type mismatch — see LOG_LEVEL below and
+        // SettingsSpecs' exclusion list. Its meaning is simply "LOG_LEVEL != OFF"; setLogLevel
+        // keeps both keys in one atomic write so they can never disagree.
         val ENABLE_FILE_LOGGING = booleanPreferencesKey("enable_file_logging")
+        // "OFF" | "ON" | "VERBOSE". Deliberately NOT mirrored to .voyage/settings.json (see
+        // SettingsSpecs) — a diagnostic toggle shouldn't silently re-enable itself on a reinstall
+        // the user expected to be clean. Also cached synchronously in LogPrefsCache so AppLog.init()
+        // can read it before DataStore's Flow machinery is up (see VoyageApp.onCreate).
+        val LOG_LEVEL = stringPreferencesKey("log_level")
+        // On-disk budget for the log directory, in MB (0.5–20 range enforced by the setter).
+        val LOG_BUDGET_MB = floatPreferencesKey("log_budget_mb")
         // ── Disk-first storage redesign (data/diskstore/) ───────────────────────────────────────
         // Versioned (not boolean) so a later schema addition can force a re-export by bumping
         // DiskExportMigration.TARGET_VERSION. 0 = never run.
@@ -172,6 +183,13 @@ class SettingsStore @Inject constructor(
         const val DEFAULT_HEADSET_DOUBLE_PRESS_ACTION = "skip_forward"
         const val DEFAULT_HEADSET_TRIPLE_PRESS_ACTION = "skip_back"
         const val DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES = 15
+        const val DEFAULT_LOG_LEVEL = "OFF"
+        const val DEFAULT_LOG_BUDGET_MB = 2f
+        const val MIN_LOG_BUDGET_MB = 0.5f
+        const val MAX_LOG_BUDGET_MB = 20f
+        /** Change on ordinary playback (every book open/close, every app background) rather than
+         *  on a deliberate settings edit — see [watchAndLogChanges]. */
+        val HIGH_FREQUENCY_SETTING_KEYS = setOf("last_open_book_id", "last_played_book_id", "theme_book_id", "app_stopped_at")
     }
 
     // Single shared reference to the underlying DataStore flow — every setting below derives from
@@ -245,7 +263,10 @@ class SettingsStore @Inject constructor(
     val headsetTriplePressAction: Flow<String> = prefsData.map { it[Keys.HEADSET_TRIPLE_PRESS_ACTION] ?: DEFAULT_HEADSET_TRIPLE_PRESS_ACTION }.distinctUntilChanged()
     val btAutoResumeEnabled: Flow<Boolean>     = prefsData.map { it[Keys.BT_AUTO_RESUME_ENABLED] ?: false }.distinctUntilChanged()
     val btAutoResumeWindowMinutes: Flow<Int>   = prefsData.map { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] ?: DEFAULT_BT_AUTO_RESUME_WINDOW_MINUTES }.distinctUntilChanged()
-    val enableFileLogging: Flow<Boolean>       = prefsData.map { it[Keys.ENABLE_FILE_LOGGING] ?: false }.distinctUntilChanged()
+    /** "OFF" | "ON" | "VERBOSE" — see [setLogLevel]. Collected once in VoyageApp.onCreate to push
+     *  the level into AppLog and backfill [com.betteraudio.util.log.LogPrefsCache]. */
+    val logLevel: Flow<String>                 = prefsData.map { it[Keys.LOG_LEVEL] ?: DEFAULT_LOG_LEVEL }.distinctUntilChanged()
+    val logBudgetMb: Flow<Float>                = prefsData.map { it[Keys.LOG_BUDGET_MB] ?: DEFAULT_LOG_BUDGET_MB }.distinctUntilChanged()
     val diskExportVersion: Flow<Int>           = prefsData.map { it[Keys.DISK_EXPORT_VERSION] ?: 0 }.distinctUntilChanged()
     val setupState: Flow<String>               = prefsData.map { it[Keys.SETUP_STATE] ?: "" }.distinctUntilChanged()
     val libraryJsonAppliedAt: Flow<Long>       = prefsData.map { it[Keys.LIBRARY_JSON_APPLIED_AT] ?: 0L }.distinctUntilChanged()
@@ -344,6 +365,39 @@ class SettingsStore @Inject constructor(
         // drifted from DataStore for some other reason, the very next unrelated setting change
         // still re-syncs everything, not just the one key that changed.
         scope.launch { watchAndMirrorToDisk() }
+        // Same "one collector, not a line in every setter" reasoning, for logging instead of
+        // mirroring — see watchAndLogChanges.
+        scope.launch { watchAndLogChanges() }
+    }
+
+    /** Logs every setting change as "key: old -> new" by diffing consecutive raw [prefsData]
+     *  snapshots — chosen over a line in each setter because most setters have no old value
+     *  available anyway (they just call `dataStore.edit {}` directly), and the handful that do
+     *  keep it in an async-updated `@Volatile current*` that can be stale relative to the write
+     *  being logged (see the class doc above `prefsData`). `gemini_api_key` is never logged, not
+     *  even redacted, since a raw key could appear on either side of the arrow. A few keys that
+     *  legitimately change on ordinary playback (book open/close, app background) are demoted to
+     *  DEBUG so routine use doesn't fill the ON-level log with them. */
+    private suspend fun watchAndLogChanges() {
+        var previous: androidx.datastore.preferences.core.Preferences? = null
+        prefsData.collect { current ->
+            val prev = previous
+            previous = current
+            if (prev == null) return@collect // first emission is the initial load, not a change
+            val prevMap = prev.asMap()
+            val currentMap = current.asMap()
+            for (key in prevMap.keys + currentMap.keys) {
+                if (key.name == Keys.GEMINI_API_KEY.name) continue
+                val oldValue = prevMap[key]
+                val newValue = currentMap[key]
+                if (oldValue == newValue) continue
+                if (key.name in HIGH_FREQUENCY_SETTING_KEYS) {
+                    com.betteraudio.util.AppLog.d(com.betteraudio.util.log.LogCat.SETTINGS) { "${key.name}: $oldValue -> $newValue" }
+                } else {
+                    com.betteraudio.util.AppLog.i(com.betteraudio.util.log.LogCat.SETTINGS, "${key.name}: $oldValue -> $newValue")
+                }
+            }
+        }
     }
 
     @OptIn(FlowPreview::class)
@@ -542,8 +596,26 @@ class SettingsStore @Inject constructor(
     suspend fun setBtAutoResumeWindowMinutes(minutes: Int) {
         context.dataStore.edit { it[Keys.BT_AUTO_RESUME_WINDOW_MINUTES] = minutes.coerceIn(1, 120) }
     }
-    suspend fun setEnableFileLogging(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.ENABLE_FILE_LOGGING] = enabled }
+    /** [level] must be "OFF" | "ON" | "VERBOSE". Writes LOG_LEVEL and the legacy ENABLE_FILE_LOGGING
+     *  boolean (meaning "level != OFF") in one atomic edit — two separate writes would leave a
+     *  window where the two keys disagree, which the debounced disk-mirror/delta-logging collector
+     *  on [prefsData] could observe and record. Also eagerly refreshes
+     *  [com.betteraudio.util.log.LogPrefsCache] so a level change takes effect for AppLog
+     *  immediately rather than waiting on the async collector in VoyageApp — that collector still
+     *  writes the same cache on every emission, which is what makes it self-healing for an install
+     *  that already had a level set before this cache existed. */
+    suspend fun setLogLevel(level: String) {
+        require(level == "OFF" || level == "ON" || level == "VERBOSE") { "invalid log level: $level" }
+        context.dataStore.edit {
+            it[Keys.LOG_LEVEL] = level
+            it[Keys.ENABLE_FILE_LOGGING] = (level != "OFF")
+        }
+        com.betteraudio.util.log.LogPrefsCache.write(context, level)
+    }
+    suspend fun setLogBudgetMb(mb: Float) {
+        val clamped = mb.coerceIn(MIN_LOG_BUDGET_MB, MAX_LOG_BUDGET_MB)
+        context.dataStore.edit { it[Keys.LOG_BUDGET_MB] = clamped }
+        com.betteraudio.util.log.LogPrefsCache.writeBudgetMb(context, clamped)
     }
     suspend fun setDiskExportVersion(version: Int) {
         context.dataStore.edit { it[Keys.DISK_EXPORT_VERSION] = version }

@@ -11,6 +11,8 @@ import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -110,6 +112,10 @@ class RestoreOps @Inject constructor(
         val sessionsInserted = applySessions(bookId, doc.sessions)
         val skipEventsInserted = applySkipEvents(bookId, doc.skipEvents)
 
+        AppLog.d(LogCat.DISK) {
+            "applyBookDocument book=$bookId mode=$mode bookmarks=+$bookmarksInserted sessions=+$sessionsInserted " +
+                "skipEvents=+$skipEventsInserted progressKeptLocal=$progressKeptLocal"
+        }
         return BookApplyCounts(bookmarksInserted, sessionsInserted, skipEventsInserted, progressKeptLocal)
     }
 

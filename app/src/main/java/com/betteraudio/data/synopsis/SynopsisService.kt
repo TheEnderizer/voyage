@@ -1,6 +1,8 @@
 package com.betteraudio.data.synopsis
 
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -58,20 +60,28 @@ class SynopsisService @Inject constructor(
                     ))
                     .toString()
 
+                val host = "generativelanguage.googleapis.com"
                 val request = Request.Builder()
-                    .url("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent")
+                    .url("https://$host/v1beta/models/gemini-2.5-flash:generateContent")
                     .header("Content-Type", "application/json")
                     // Google's recommended way to pass the key — keeps it out of the URL, so it
                     // can never end up in an exception message, a proxy log, or browser history.
+                    // Never logged below either, for the same reason.
                     .header("x-goog-api-key", apiKey)
                     .post(body.toRequestBody("application/json".toMediaType()))
                     .build()
 
+                val startMs = System.currentTimeMillis()
                 val response = client.newCall(request).execute()
                 val responseBody = response.body?.string()
-                    ?: return@withContext SynopsisResult.Error("Empty response from Gemini")
+                val durationMs = System.currentTimeMillis() - startMs
+                if (responseBody == null) {
+                    AppLog.w(LogCat.NET, "synopsis request to $host: empty body, status=${response.code} ${durationMs}ms")
+                    return@withContext SynopsisResult.Error("Empty response from Gemini")
+                }
 
                 if (!response.isSuccessful) {
+                    AppLog.w(LogCat.NET, "synopsis request to $host: status=${response.code} bytes=${responseBody.length} ${durationMs}ms")
                     return@withContext SynopsisResult.Error(categorizeHttpError(response.code))
                 }
 
@@ -84,10 +94,13 @@ class SynopsisService @Inject constructor(
                     .getString("text")
                     .trim()
 
+                AppLog.i(LogCat.NET, "synopsis request to $host: status=${response.code} bytes=${responseBody.length} ${durationMs}ms")
                 SynopsisResult.Success(text)
             } catch (e: IOException) {
+                AppLog.w(LogCat.NET, "synopsis request failed: no network connection (${e.message})")
                 SynopsisResult.Error("No network connection")
             } catch (e: Exception) {
+                AppLog.e(LogCat.NET, "synopsis request failed unexpectedly", e)
                 SynopsisResult.Error("Unexpected error generating synopsis")
             }
         }

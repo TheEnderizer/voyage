@@ -72,6 +72,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,31 +88,70 @@ import com.betteraudio.ui.theme.AppTheme
 import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
-import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogEngine
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 // ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
 
+private val LOG_LEVELS = listOf("OFF" to "Off", "ON" to "On", "VERBOSE" to "Verbose")
+
 internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: SettingsViewModel) {
     item {
-        val enableFileLogging by viewModel.enableFileLogging.collectAsStateWithLifecycle()
-        CardContainer {
-            Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Save log to file", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Off by default. Turn on before reproducing a bug so the log below has something in it.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        val logLevel by viewModel.logLevel.collectAsStateWithLifecycle()
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionHeader("Logging")
+            Text(
+                "Off keeps only crashes and errors (with a short trail leading up to them). " +
+                    "On records the normal flow of what the app does. Verbose adds fine-grained " +
+                    "detail — turn it on right before reproducing a bug.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                LOG_LEVELS.forEachIndexed { index, (value, display) ->
+                    SegmentedButton(
+                        selected = logLevel == value,
+                        onClick = { viewModel.setLogLevel(value) },
+                        shape = SegmentedButtonDefaults.itemShape(index, LOG_LEVELS.size)
+                    ) { Text(display) }
                 }
-                Switch(checked = enableFileLogging, onCheckedChange = { viewModel.setEnableFileLogging(it) })
+            }
+        }
+    }
+    item {
+        val persistedBudget by viewModel.logBudgetMb.collectAsStateWithLifecycle()
+        val liveInput by viewModel.logBudgetInput.collectAsStateWithLifecycle()
+        val stats by viewModel.logStats.collectAsStateWithLifecycle()
+        var text by remember(persistedBudget) { mutableStateOf(formatMb(persistedBudget)) }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionHeader("Log size limit")
+            OutlinedTextField(
+                value = text,
+                onValueChange = { new ->
+                    text = new
+                    new.toFloatOrNull()?.let { viewModel.setLogBudgetInput(it) }
+                },
+                modifier = Modifier.fillMaxWidth(0.5f),
+                singleLine = true,
+                suffix = { Text("MB") },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                supportingText = { Text("Recommended: 2 · max 20") },
+                trailingIcon = if (liveInput != null) {
+                    { TextButton(onClick = {
+                        val mb = text.toFloatOrNull() ?: return@TextButton
+                        viewModel.commitLogBudgetMb(mb)
+                    }) { Text("Set") } }
+                } else null
+            )
+            stats?.let {
+                Text(
+                    "${formatBytes(it.bytesOnDisk)} on disk / ${formatMb(persistedBudget)} MB · " +
+                        "~${it.approxLines} lines · covers ${formatDuration(it.coverageMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -151,7 +191,13 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
         }
     }
     item {
-        var logText by remember { mutableStateOf(AppLog.recentText()) }
+        val logText by viewModel.logText.collectAsStateWithLifecycle()
+        val logLoading by viewModel.logLoading.collectAsStateWithLifecycle()
+        var rawMode by remember { mutableStateOf(false) }
+        val scope = rememberCoroutineScope()
+
+        LaunchedEffect(rawMode) { viewModel.refreshLog(redactPaths = !rawMode) }
+
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SectionHeader("Diagnostics log")
             Text(
@@ -159,56 +205,78 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = rawMode, onCheckedChange = { rawMode = it })
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text("Include full folder/file names", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "Off by default. The raw log helps diagnose scan/playback issues but " +
+                            "reveals your library's folder names — off to be safe.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Row(
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FilledTonalButton(shape = Pill, onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("Voyage log", AppLog.recentText()))
+                    cm.setPrimaryClip(ClipData.newPlainText("Voyage log", logText))
                 }) {
                     Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Copy")
                 }
-                FilledTonalButton(shape = Pill, onClick = { shareLog(context) }) {
+                FilledTonalButton(shape = Pill, onClick = {
+                    scope.launch { shareLogBundle(context, viewModel, redactPaths = !rawMode) }
+                }) {
                     Icon(Icons.Default.Share, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Share")
                 }
-                FilledTonalButton(shape = Pill, onClick = {
-                    AppLog.clear(); logText = ""
-                }) {
+                FilledTonalButton(shape = Pill, onClick = { viewModel.clearLog() }) {
                     Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Clear")
                 }
-                IconButton(onClick = { logText = AppLog.recentText() }) {
+                IconButton(onClick = { viewModel.refreshLog(redactPaths = !rawMode) }) {
                     Icon(Icons.Default.Refresh, "Refresh")
                 }
             }
             CardContainer {
-                Text(
-                    logText.ifBlank { "(empty)" },
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace, fontSize = 11.sp
-                    ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .heightIn(max = 460.dp)
-                        .padding(12.dp)
-                        .verticalScroll(rememberScrollState())
-                )
+                Box(Modifier.heightIn(max = 460.dp)) {
+                    if (logLoading) {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(24.dp))
+                        }
+                    } else {
+                        Text(
+                            logText.ifBlank { "(empty)" },
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace, fontSize = 11.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .padding(12.dp)
+                                .verticalScroll(rememberScrollState())
+                        )
+                    }
+                }
             }
         }
     }
 }
 
-private fun shareLog(context: Context) {
-    val source = AppLog.logFile() ?: return
-    val dir = source.parentFile ?: return
-    val shareFile = File(dir, "voyage-log.txt")
-    try { shareFile.writeText(AppLog.recentText()) } catch (_: Throwable) { return }
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", shareFile)
+/** Builds the (by default redacted) share bundle off the main thread, then launches the system
+ *  share sheet. Writes to a FIXED filename in backup_share/ (mirroring BackupManager's own
+ *  fixed-name export) so repeated shares self-overwrite instead of accumulating. */
+private suspend fun shareLogBundle(context: Context, viewModel: SettingsViewModel, redactPaths: Boolean) {
+    val dir = File(context.filesDir, "backup_share").apply { mkdirs() }
+    val bundle = File(dir, "voyage-logs.zip")
+    viewModel.buildLogShareBundle(bundle, redactPaths)
+    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", bundle)
     val send = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
+        type = "application/zip"
         putExtra(Intent.EXTRA_STREAM, uri)
         putExtra(Intent.EXTRA_SUBJECT, "Voyage diagnostics log")
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -218,3 +286,23 @@ private fun shareLog(context: Context) {
     )
 }
 
+private fun formatMb(mb: Float): String =
+    if (mb == mb.toLong().toFloat()) mb.toLong().toString() else String.format("%.1f", mb)
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    bytes >= 1024 -> String.format("%.0f KB", bytes / 1024.0)
+    else -> "$bytes B"
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalMinutes = ms / 60_000
+    val days = totalMinutes / (24 * 60)
+    val hours = (totalMinutes % (24 * 60)) / 60
+    val minutes = totalMinutes % 60
+    return when {
+        days > 0 -> "${days}d ${hours}h"
+        hours > 0 -> "${hours}h ${minutes}m"
+        else -> "${minutes}m"
+    }
+}

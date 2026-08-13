@@ -7,6 +7,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.EOFException
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -91,7 +92,7 @@ class GapSkippingDataSource(private val upstream: DataSource) : DataSource {
 
         openedUri = dataSpec.uri.buildUpon().clearQuery().build()
         AppLog.i(
-            "Damage",
+            LogCat.PLAYBACK,
             "gap-skip open ${path.substringAfterLast('/')}: ${m.gaps.size} gap(s), " +
                 "physical=${m.physicalSize} logical=${m.logicalSize} from=$logicalPos serving=$bytesRemaining"
         )
@@ -137,7 +138,7 @@ class GapSkippingDataSource(private val upstream: DataSource) : DataSource {
         try {
             raf?.close()
         } catch (e: Throwable) {
-            AppLog.e("Damage", "closing gap-skipping source failed", e)
+            AppLog.e(LogCat.PLAYBACK, "closing gap-skipping source failed", e)
         } finally {
             raf = null
             openedUri = null

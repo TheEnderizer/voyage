@@ -2,6 +2,8 @@ package com.betteraudio.data.ebook
 
 import android.net.Uri
 import android.util.Xml
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.io.Closeable
@@ -34,7 +36,11 @@ class EpubParser(private val epubFile: File) : Closeable {
 
         val opfPath = readOpfPath()
         opfDir = opfPath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
-        val opfBytes = readZipEntry(opfPath) ?: return EpubInfo(EpubMeta(null, null, null), emptyList(), encrypted)
+        val opfBytes = readZipEntry(opfPath)
+        if (opfBytes == null) {
+            AppLog.w(LogCat.EBOOK, "EpubParser: could not read OPF at '$opfPath' in ${epubFile.name} — returning empty EpubInfo")
+            return EpubInfo(EpubMeta(null, null, null), emptyList(), encrypted)
+        }
 
         val manifest = LinkedHashMap<String, ManifestItem>() // id -> item
         val spineIds = mutableListOf<String>()
@@ -134,13 +140,18 @@ class EpubParser(private val epubFile: File) : Closeable {
     private data class ManifestItem(val href: String, val mediaType: String, val properties: String)
 
     private fun readOpfPath(): String {
-        val bytes = readZipEntry("META-INF/container.xml") ?: return ""
+        val bytes = readZipEntry("META-INF/container.xml")
+        if (bytes == null) {
+            AppLog.w(LogCat.EBOOK, "EpubParser: ${epubFile.name} has no META-INF/container.xml — not a valid epub?")
+            return ""
+        }
         var path = ""
         parseXml(bytes) { parser ->
             if (parser.name == "rootfile") {
                 parser.getAttributeValue(null, "full-path")?.let { path = it }
             }
         }
+        if (path.isEmpty()) AppLog.w(LogCat.EBOOK, "EpubParser: ${epubFile.name}'s container.xml has no rootfile full-path")
         return path
     }
 

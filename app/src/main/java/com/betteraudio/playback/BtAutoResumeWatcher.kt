@@ -6,6 +6,8 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 
 /**
  * Watches for a Bluetooth/wired audio device connecting and invokes [onDeviceConnected] so
@@ -23,11 +25,19 @@ class BtAutoResumeWatcher(
 
     fun register() {
         if (audioDeviceCallback != null) return
-        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
+            AppLog.w(LogCat.PLAYBACK, "BtAutoResumeWatcher.register: no AudioManager, watcher not installed")
+            return
+        }
         val callback = object : AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
-                if (!isEnabled()) return
-                if (addedDevices.any { isAudioSinkDevice(it) }) onDeviceConnected()
+                val sinks = addedDevices.filter { isAudioSinkDevice(it) }
+                if (sinks.isEmpty()) return // not an audio sink (e.g. a paired device doing phonebook sync) — expected, not logged
+                if (!isEnabled()) {
+                    AppLog.d(LogCat.PLAYBACK) { "BtAutoResumeWatcher: audio sink connected (${sinks.map { it.type }}) but auto-resume is disabled" }
+                    return
+                }
+                onDeviceConnected()
             }
         }
         am.registerAudioDeviceCallback(callback, Handler(context.mainLooper))

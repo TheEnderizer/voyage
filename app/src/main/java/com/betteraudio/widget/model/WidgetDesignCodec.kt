@@ -1,6 +1,7 @@
 package com.betteraudio.widget.model
 
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -35,7 +36,7 @@ object WidgetDesignCodec {
                 json.decodeFromString<WidgetDesignDoc>(text)
             }
         } catch (e: Exception) {
-            AppLog.e("Widget", "failed to decode design document, falling back to empty", e)
+            AppLog.e(LogCat.WIDGET, "failed to decode design document, falling back to empty", e)
             WidgetDesignDoc()
         }
     }

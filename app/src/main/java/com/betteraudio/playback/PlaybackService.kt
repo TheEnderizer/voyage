@@ -41,6 +41,7 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.di.ApplicationScope
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.WidgetUpdater
 import com.betteraudio.widget.model.WidgetSnapshot
 import com.google.common.util.concurrent.Futures
@@ -242,7 +243,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        AppLog.i("Service", "onCreate — building player (skipSilence min=${settings.currentSkipSilenceMinMs}ms keep=${settings.currentSkipSilencePaddingMs}ms thr=${settings.currentSkipSilenceThreshold})")
+        AppLog.i(LogCat.PLAYBACK, "onCreate — building player (skipSilence min=${settings.currentSkipSilenceMinMs}ms keep=${settings.currentSkipSilencePaddingMs}ms thr=${settings.currentSkipSilenceThreshold})")
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_SPEECH)
@@ -326,7 +327,7 @@ class PlaybackService : MediaSessionService() {
         } catch (_: Exception) { AudioManager.ERROR }
         if (sid != AudioManager.ERROR && sid != C.AUDIO_SESSION_ID_UNSET) {
             try { player.setAudioSessionId(sid) } catch (e: Exception) {
-                Log.e("PlaybackService", "setAudioSessionId failed", e)
+                AppLog.e(LogCat.PLAYBACK, "setAudioSessionId failed", e)
             }
             attachLoudnessEnhancer(sid)
             attachEqualizer(sid)
@@ -449,7 +450,7 @@ class PlaybackService : MediaSessionService() {
                 enabled = boostMb > 0
             }.also { attachedSessionId = audioSessionId }
         } catch (e: Exception) {
-            Log.e("PlaybackService", "LoudnessEnhancer attach failed for session $audioSessionId", e)
+            AppLog.e(LogCat.PLAYBACK, "LoudnessEnhancer attach failed for session $audioSessionId", e)
             attachedSessionId = C.AUDIO_SESSION_ID_UNSET
             null
         }
@@ -464,7 +465,7 @@ class PlaybackService : MediaSessionService() {
                 applyEqBands(this, eqBandsJson)
             }.also { attachedEqSessionId = audioSessionId }
         } catch (e: Exception) {
-            Log.e("PlaybackService", "Equalizer attach failed for session $audioSessionId", e)
+            AppLog.e(LogCat.PLAYBACK, "Equalizer attach failed for session $audioSessionId", e)
             attachedEqSessionId = C.AUDIO_SESSION_ID_UNSET
             null
         }
@@ -492,7 +493,7 @@ class PlaybackService : MediaSessionService() {
             }
             eq.enabled = true
         } catch (e: Exception) {
-            Log.e("PlaybackService", "applyEqBands failed", e)
+            AppLog.e(LogCat.PLAYBACK, "applyEqBands failed", e)
         }
     }
 
@@ -505,7 +506,7 @@ class PlaybackService : MediaSessionService() {
         val proc = silenceProcessor ?: return
         if (skipSilenceEnabled == enabled) return
         skipSilenceEnabled = enabled
-        AppLog.i("Service", "applySkipSilence=$enabled")
+        AppLog.i(LogCat.PLAYBACK, "applySkipSilence=$enabled")
         proc.setEnabled(enabled)
         nudgeAudioPipeline()
     }
@@ -538,7 +539,7 @@ class PlaybackService : MediaSessionService() {
                 it.setTargetGain(boostMb)
                 it.enabled = boostMb > 0
             } catch (e: Exception) {
-                Log.e("PlaybackService", "applyBoost($boostMb) failed", e)
+                AppLog.e(LogCat.PLAYBACK, "applyBoost($boostMb) failed", e)
             }
         }
     }
@@ -555,7 +556,7 @@ class PlaybackService : MediaSessionService() {
         // twenty lines later, and coroutine dispatch is async — a save launched on serviceScope
         // can lose the race and never run. Mirrors widgetUpdater.pushPaused()'s own durable scope.
         appScope.launch(Dispatchers.IO) {
-            AppLog.i("Player", "saveCurrentPosition book=$bookId file=$fileId pos=${positionMs}ms")
+            AppLog.i(LogCat.PLAYBACK, "saveCurrentPosition book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
         }
     }
@@ -574,7 +575,7 @@ class PlaybackService : MediaSessionService() {
         val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
         if (bookId == -1L) return
         appScope.launch(Dispatchers.IO) {
-            AppLog.i("Player", "saveCurrentPosition(flush) book=$bookId file=$fileId pos=${positionMs}ms")
+            AppLog.i(LogCat.PLAYBACK, "saveCurrentPosition(flush) book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
             diskMirror.flushDirty()
         }
@@ -612,7 +613,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val player = mediaSession?.player
-        intent?.action?.let { if (it.startsWith("com.betteraudio")) AppLog.i("Widget", "action=$it loaded=${player?.mediaItemCount ?: 0}") }
+        intent?.action?.let { if (it.startsWith("com.betteraudio")) AppLog.i(LogCat.WIDGET, "action=$it loaded=${player?.mediaItemCount ?: 0}") }
         when (intent?.action) {
             ACTION_TOGGLE_PLAY_PAUSE -> player?.let {
                 // Cold widget tap: nothing loaded yet → load the last-played book and start,
@@ -709,7 +710,7 @@ class PlaybackService : MediaSessionService() {
             val windowMs = settings.currentBtAutoResumeWindowMinutes * 60_000L
             val elapsed = System.currentTimeMillis() - progress.lastPausedAt
             if (elapsed in 0..windowMs) {
-                AppLog.i("Player", "BT/headphone connected — auto-resuming book=$bookId (paused ${elapsed / 1000}s ago)")
+                AppLog.i(LogCat.PLAYBACK, "BT/headphone connected — auto-resuming book=$bookId (paused ${elapsed / 1000}s ago)")
                 player.play()
             }
         }
@@ -786,7 +787,7 @@ class PlaybackService : MediaSessionService() {
         val newBookPosMs = bookPositionMsFor(newPosition.mediaItemIndex, newPosition.positionMs)
         if (JumpClassifier.classify(reason, oldBookPosMs, newBookPosMs) == JumpDecision.FLAG) {
             AppLog.i(
-                "History",
+                LogCat.PLAYBACK,
                 "Unexpected jump: $oldBookPosMs -> $newBookPosMs reason=INTERNAL deltaMs=${newBookPosMs - oldBookPosMs}; offering restore"
             )
             jumpRestoreStore.set(JumpRestore(oldBookPosMs, bookId, System.currentTimeMillis()))
@@ -836,7 +837,7 @@ class PlaybackService : MediaSessionService() {
             // widget tap shouldn't behave differently just because no Activity is open yet.
             val rewind = AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
             val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
-            AppLog.i("Player", "widget loadLastPlayedAndPlay book=$bookId" +
+            AppLog.i(LogCat.PLAYBACK, "widget loadLastPlayedAndPlay book=$bookId" +
                 " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                 " → startIdx=$startIndex startPos=${startPos}ms")
 
@@ -909,6 +910,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        AppLog.i(LogCat.PLAYBACK, "onDestroy — book=${exoPlayer?.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L} pos=${exoPlayer?.currentPosition ?: -1L}ms")
         widgetUpdater.pushPaused()
         stopPositionSaver()
         // Read synchronously here (main thread — exoPlayer is not thread-safe), not inside the
@@ -1143,6 +1145,7 @@ class PlaybackService : MediaSessionService() {
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
             }
+            AppLog.w(LogCat.PLAYBACK, "onCustomCommand: unrecognized action '${customCommand.customAction}' from ${controller.packageName}")
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
 

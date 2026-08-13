@@ -3,6 +3,7 @@ package com.betteraudio.widget
 import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.model.BackgroundLayerStyle
 import com.betteraudio.widget.model.BgSource
 import com.betteraudio.widget.model.CANVAS_UNITS
@@ -51,7 +52,7 @@ object DefaultWidgetDesigns {
                 )
             }
         } catch (e: Exception) {
-            AppLog.e("Widget", "seeding default designs failed", e)
+            AppLog.e(LogCat.WIDGET, "seeding default designs failed", e)
         }
     }
 

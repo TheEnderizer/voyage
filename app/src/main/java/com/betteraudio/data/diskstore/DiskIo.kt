@@ -1,6 +1,7 @@
 package com.betteraudio.data.diskstore
 
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.File
 
 /**
@@ -15,12 +16,21 @@ internal fun writeTextAtomic(target: File, text: String): Boolean = runCatching 
     val tmp = File(target.parentFile, "${target.name}.tmp")
     tmp.writeText(text)
     if (!tmp.renameTo(target)) {
+        // Non-atomic fallback — some FAT-formatted SD cards don't guarantee atomic rename. Worth
+        // seeing (not every write): it means a reader could in principle observe a partial file
+        // on this specific volume, which the whole tmp+rename dance exists to prevent.
+        AppLog.d(LogCat.DISK) { "writeTextAtomic: rename failed for ${target.absolutePath}, falling back to a direct (non-atomic) write" }
         target.writeText(text)
         runCatching { tmp.delete() }
     }
     true
 }.getOrElse {
-    AppLog.w("DiskStore", "write failed for ${target.absolutePath}: ${it.message}")
+    // ENOSPC surfaces here as a plain IOException from writeText/mkdirs — message-only detection
+    // (no dedicated exception type on this path), but including it is still strictly more
+    // information than the old bare "write failed" line, since freeSpace makes ENOSPC vs. a
+    // permission/volume-unmount failure distinguishable at a glance without re-running anything.
+    val free = runCatching { target.parentFile?.usableSpace }.getOrNull()
+    AppLog.w(LogCat.DISK, "write failed for ${target.absolutePath} (free space on volume: ${free ?: "?"} bytes): ${it.message}")
     false
 }
 

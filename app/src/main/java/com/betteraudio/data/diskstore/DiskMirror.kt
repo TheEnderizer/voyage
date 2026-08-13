@@ -4,6 +4,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.di.ApplicationScope
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -137,16 +138,21 @@ class DiskMirror @Inject constructor(
         // Snapshot before writing — a write can itself mark the same book dirty again (e.g. a
         // concurrent edit), and that should survive to the NEXT flush, not be dropped here.
         val books = dirtyBooks.toList()
+        if (books.isEmpty() && !libraryDirty.get()) return@withLock // nothing to do — don't log a no-op batch
+        var booksOk = 0
         for (id in books) {
             val ok = runCatching { bookDataStore.write(id) }.getOrElse { false }
             recordResult(ok, "book $id")
-            if (ok) dirtyBooks.remove(id)
+            if (ok) { dirtyBooks.remove(id); booksOk++ }
         }
+        var libraryFlushed = false
         if (libraryDirty.compareAndSet(true, false)) {
             val ok = writeLibraryAndWidgets()
             recordResult(ok, "library")
             if (!ok) libraryDirty.set(true)
+            libraryFlushed = ok
         }
+        AppLog.d(LogCat.DISK) { "flushDirty: books=$booksOk/${books.size} library=$libraryFlushed" }
     } }
 
     fun flushDirtyAsync() {
@@ -165,11 +171,13 @@ class DiskMirror @Inject constructor(
      *  apply (scan-time import, backup restore) produces one write per book instead of one per
      *  field it happens to touch. */
     suspend fun <T> suppressed(block: suspend () -> T): T {
-        suppressDepth.incrementAndGet()
+        val depth = suppressDepth.incrementAndGet()
+        if (depth == 1) AppLog.d(LogCat.DISK) { "suppressed: entering bulk-apply mode" }
         try {
             return block()
         } finally {
-            suppressDepth.decrementAndGet()
+            val remaining = suppressDepth.decrementAndGet()
+            if (remaining == 0) AppLog.d(LogCat.DISK) { "suppressed: exiting bulk-apply mode (dirtyBooks=${dirtyBooks.size} libraryDirty=${libraryDirty.get()})" }
         }
     }
 
@@ -180,7 +188,7 @@ class DiskMirror @Inject constructor(
         } else {
             _healthy.value = false
             _lastError.value = "Failed to write $what"
-            AppLog.w("DiskMirror", "flush failed: $what")
+            AppLog.w(LogCat.DISK, "flush failed: $what")
         }
     }
 }

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import com.betteraudio.BuildConfig
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -68,7 +69,7 @@ class UpdateChecker @Inject constructor(
                 ?: return@withContext UpdateCheckResult.Failed("Release has no downloadable APK")
             UpdateCheckResult.Available(ReleaseInfo(remoteVersion, best.optString("body", ""), apkUrl))
         } catch (e: Exception) {
-            AppLog.e("Update", "checkForUpdate failed", e)
+            AppLog.e(LogCat.NET, "checkForUpdate failed", e)
             UpdateCheckResult.Failed(e.message ?: "Network error")
         }
     }
@@ -83,11 +84,19 @@ class UpdateChecker @Inject constructor(
 
     suspend fun downloadApk(url: String, onProgress: suspend (Int) -> Unit): File? =
         withContext(Dispatchers.IO) {
+            val startMs = System.currentTimeMillis()
             try {
                 val request = Request.Builder().url(url).build()
                 val response = client.newCall(request).execute()
-                if (!response.isSuccessful) return@withContext null
-                val body = response.body ?: return@withContext null
+                if (!response.isSuccessful) {
+                    AppLog.w(LogCat.NET, "downloadApk: status=${response.code} for $url")
+                    return@withContext null
+                }
+                val body = response.body
+                if (body == null) {
+                    AppLog.w(LogCat.NET, "downloadApk: status=${response.code} had no body")
+                    return@withContext null
+                }
                 val total = body.contentLength()
                 // Always write to a fresh file so a stale/partial prior download can never be
                 // reinstalled. Delete any leftover from a previous attempt first. Internal
@@ -112,6 +121,7 @@ class UpdateChecker @Inject constructor(
                 // Reject truncated downloads (e.g. an HTML error page or a dropped connection):
                 // installing a partial APK would silently fail and leave the old version in place.
                 if (total > 0 && downloaded != total) {
+                    AppLog.w(LogCat.NET, "downloadApk: truncated — got $downloaded of $total byte(s)")
                     file.delete()
                     return@withContext null
                 }
@@ -120,6 +130,7 @@ class UpdateChecker @Inject constructor(
                 val header = ByteArray(2)
                 file.inputStream().use { it.read(header) }
                 if (header[0] != 'P'.code.toByte() || header[1] != 'K'.code.toByte()) {
+                    AppLog.w(LogCat.NET, "downloadApk: downloaded $downloaded byte(s) but it isn't a ZIP (bad header) — not an APK")
                     file.delete()
                     return@withContext null
                 }
@@ -127,12 +138,16 @@ class UpdateChecker @Inject constructor(
                 // certificate — the last line of defence against a swapped/tampered APK, on
                 // top of internal-cacheDir storage above.
                 if (!isSignedBySameCert(file)) {
-                    AppLog.e("Update", "downloaded APK signature does not match the running app — refusing to install")
+                    AppLog.e(LogCat.NET, "downloaded APK signature does not match the running app — refusing to install")
                     file.delete()
                     return@withContext null
                 }
+                AppLog.i(LogCat.NET, "downloadApk: $downloaded bytes in ${System.currentTimeMillis() - startMs}ms, verified")
                 file
-            } catch (_: Exception) { null }
+            } catch (e: Exception) {
+                AppLog.w(LogCat.NET, "downloadApk failed: ${e.message}")
+                null
+            }
         }
 
     private fun signatureFlags(): Int =
@@ -154,7 +169,7 @@ class UpdateChecker @Inject constructor(
         val apkSigners = apkInfo?.let { signersOf(it) } ?: emptySet()
         ownSigners.isNotEmpty() && ownSigners == apkSigners
     } catch (e: Exception) {
-        AppLog.e("Update", "signature check failed", e)
+        AppLog.e(LogCat.NET, "signature check failed", e)
         false
     }
 

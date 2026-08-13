@@ -1,6 +1,8 @@
 package com.betteraudio.playback
 
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -40,6 +42,7 @@ class HeadsetGestureMapper(
                 2 -> settings.currentHeadsetDoublePressAction
                 else -> settings.currentHeadsetTriplePressAction
             }
+            AppLog.i(LogCat.PLAYBACK, "headset press count=$count -> action=$action")
             onAction(action)
         }
     }

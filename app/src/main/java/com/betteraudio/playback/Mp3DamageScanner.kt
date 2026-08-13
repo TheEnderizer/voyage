@@ -1,6 +1,7 @@
 package com.betteraudio.playback
 
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -188,7 +189,7 @@ object Mp3DamageScanner {
                     }
                     if (resync - badStart >= MIN_REPORTABLE_GAP) gaps.add(Gap(badStart, resync))
                     if (gaps.size >= MAX_GAPS) {
-                        AppLog.w("Damage", "scan of $path hit the $MAX_GAPS-gap cap; giving up")
+                        AppLog.w(LogCat.PLAYBACK, "scan of $path hit the $MAX_GAPS-gap cap; giving up")
                         return emptyList()
                     }
                     pos = resync
@@ -199,15 +200,15 @@ object Mp3DamageScanner {
                 }
             }
         } catch (e: Throwable) {
-            AppLog.e("Damage", "scan failed for $path", e)
+            AppLog.e(LogCat.PLAYBACK, "scan failed for $path", e)
             return emptyList()
         }
         if (!sawValidFrame) {
-            AppLog.w("Damage", "no MPEG frame anywhere in $path — not a damaged MP3, reporting clean")
+            AppLog.w(LogCat.PLAYBACK, "no MPEG frame anywhere in $path — not a damaged MP3, reporting clean")
             return emptyList()
         }
         val total = gaps.sumOf { it.size }
-        AppLog.i("Damage", "scanned $path: ${gaps.size} gap(s), $total bytes damaged")
+        AppLog.i(LogCat.PLAYBACK, "scanned $path: ${gaps.size} gap(s), $total bytes damaged")
         return gaps
     }
 
@@ -262,7 +263,7 @@ object Mp3DamageScanner {
         val logical = GapMap(gaps, physicalSize).logicalSize
         if (logical >= MIN_PLAYABLE_BYTES) return gaps
         AppLog.w(
-            "Damage",
+            LogCat.PLAYBACK,
             "ignoring damage map leaving only $logical of $physicalSize bytes — playing the file unmapped"
         )
         return emptyList()

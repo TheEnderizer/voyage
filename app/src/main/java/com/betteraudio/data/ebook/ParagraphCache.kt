@@ -1,6 +1,8 @@
 package com.betteraudio.data.ebook
 
 import android.util.LruCache
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,7 +31,11 @@ class ParagraphCache @Inject constructor() {
     fun get(bookId: Long, spineIndex: Int, readEntry: () -> ByteArray?): SpineParagraphs? {
         val k = key(bookId, spineIndex)
         cache.get(k)?.let { return it }
-        val bytes = readEntry() ?: return null
+        val bytes = readEntry()
+        if (bytes == null) {
+            AppLog.d(LogCat.EBOOK) { "ParagraphCache miss for book=$bookId spine=$spineIndex: readEntry() returned null" }
+            return null
+        }
         val parsed = ParagraphExtractor.extract(bytes)
         cache.put(k, parsed)
         return parsed

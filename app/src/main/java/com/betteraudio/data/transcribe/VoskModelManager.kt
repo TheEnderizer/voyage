@@ -2,6 +2,7 @@ package com.betteraudio.data.transcribe
 
 import android.content.Context
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -105,9 +106,17 @@ class VoskModelManager @Inject constructor(
             zip.delete()
 
             _state.value = ModelState.Downloading(0)
+            val startMs = System.currentTimeMillis()
             val response = client.newCall(Request.Builder().url(model.url).build()).execute()
-            if (!response.isSuccessful) { _state.value = ModelState.Error("Download failed (HTTP ${response.code})"); return@withContext }
-            val body = response.body ?: run { _state.value = ModelState.Error("Empty download"); return@withContext }
+            if (!response.isSuccessful) {
+                AppLog.w(LogCat.SYNC, "model download: status=${response.code} for ${model.url}")
+                _state.value = ModelState.Error("Download failed (HTTP ${response.code})"); return@withContext
+            }
+            val body = response.body
+            if (body == null) {
+                AppLog.w(LogCat.SYNC, "model download: status=${response.code} had no body")
+                _state.value = ModelState.Error("Empty download"); return@withContext
+            }
             val total = body.contentLength()
             var downloaded = 0L
             body.byteStream().use { input ->
@@ -122,9 +131,18 @@ class VoskModelManager @Inject constructor(
                     output.flush()
                 }
             }
-            if (total > 0 && downloaded != total) { zip.delete(); _state.value = ModelState.Error("Download interrupted"); return@withContext }
+            if (total > 0 && downloaded != total) {
+                AppLog.w(LogCat.SYNC, "model download: truncated — got $downloaded of $total byte(s)")
+                zip.delete(); _state.value = ModelState.Error("Download interrupted"); return@withContext
+            }
             // A zip starts with "PK".
-            zip.inputStream().use { if (it.read() != 'P'.code || it.read() != 'K'.code) { zip.delete(); _state.value = ModelState.Error("Downloaded file is not a valid model"); return@withContext } }
+            zip.inputStream().use {
+                if (it.read() != 'P'.code || it.read() != 'K'.code) {
+                    AppLog.w(LogCat.SYNC, "model download: $downloaded byte(s) downloaded but bad ZIP header")
+                    zip.delete(); _state.value = ModelState.Error("Downloaded file is not a valid model"); return@withContext
+                }
+            }
+            AppLog.i(LogCat.SYNC, "model download: $downloaded bytes in ${System.currentTimeMillis() - startMs}ms, unzipping")
 
             _state.value = ModelState.Unzipping
             unzip(zip, voskRoot)
@@ -135,21 +153,23 @@ class VoskModelManager @Inject constructor(
                 // Normalize a drifted top-level folder name to the expected one so future probes
                 // hit it directly; if the rename fails, the scanned path works as-is.
                 if (dir != modelDir(model) && dir.renameTo(modelDir(model))) dir = modelDir(model)
+                AppLog.i(LogCat.SYNC, "model ready at ${dir.absolutePath} (${sizeOfDir(dir)} bytes)")
                 _state.value = ModelState.Ready(dir, sizeOfDir(dir))
             } else {
                 // Never delete here: a probe miss on a good extraction would otherwise orphan the
                 // files and re-prompt (and re-download) forever. Log what actually got extracted.
                 val tree = voskRoot.walkTopDown().take(50).joinToString("\n") { it.relativeTo(voskRoot).path }
-                AppLog.e("Vosk", "model probe failed after unzip; extracted tree:\n$tree")
+                AppLog.e(LogCat.SYNC, "model probe failed after unzip; extracted tree:\n$tree")
                 _state.value = ModelState.Error("Model extracted but not recognized — try again or report this")
             }
         } catch (e: Exception) {
-            AppLog.e("Vosk", "model download failed", e)
+            AppLog.e(LogCat.SYNC, "model download failed", e)
             _state.value = ModelState.Error(e.message ?: "Download failed")
         }
     }
 
     fun delete(model: VoskModel = VoskModel.EN_SMALL) {
+        AppLog.i(LogCat.SYNC, "deleting speech model ${model.dirName}")
         modelDirOrNull(model)?.let(::deleteDir)
         deleteDir(modelDir(model))
         refreshState()

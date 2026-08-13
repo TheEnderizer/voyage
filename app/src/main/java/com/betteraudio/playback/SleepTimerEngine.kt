@@ -6,6 +6,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -90,6 +91,7 @@ class SleepTimerEngine(
         get() = if (mode == PlaybackService.SLEEP_MODE_COUNTDOWN) endAtElapsedMs else 0L
 
     fun setTimer(newMode: String, durationMs: Long, targetBookPositionMsArg: Long) {
+        val prevMode = mode
         tickJob?.cancel()
         graceJob?.cancel()
         graceJob = null
@@ -115,6 +117,7 @@ class SleepTimerEngine(
                 remainingMsForWidget = 0L
             }
         }
+        AppLog.i(LogCat.SLEEP, "setTimer $prevMode -> $newMode durationMs=$durationMs targetBookPositionMs=$targetBookPositionMsArg")
         player.pushFullWidgetState()
         player.broadcastSleepState(mode, remainingMsForWidget)
     }
@@ -122,17 +125,23 @@ class SleepTimerEngine(
     /** Auto-arms the default sleep timer once per listening session when playback starts inside
      *  the configured schedule window (handles a window that wraps past midnight). */
     fun maybeAutoArmScheduled() {
-        if (!settings.currentSleepScheduleEnabled) return
-        if (mode != PlaybackService.SLEEP_MODE_OFF) return
-        if (scheduleArmedThisSession) return
+        if (!settings.currentSleepScheduleEnabled) { AppLog.d(LogCat.SLEEP) { "maybeAutoArmScheduled: schedule disabled" }; return }
+        if (mode != PlaybackService.SLEEP_MODE_OFF) { AppLog.d(LogCat.SLEEP) { "maybeAutoArmScheduled: a timer is already active ($mode)" }; return }
+        if (scheduleArmedThisSession) { AppLog.d(LogCat.SLEEP) { "maybeAutoArmScheduled: already armed this session" }; return }
         val cal = Calendar.getInstance()
         val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
         val inWindow = isInScheduleWindow(
             nowMinutes, settings.currentSleepScheduleStartMinutes, settings.currentSleepScheduleEndMinutes
         )
-        if (!inWindow) return
+        if (!inWindow) {
+            AppLog.d(LogCat.SLEEP) {
+                "maybeAutoArmScheduled: now=${nowMinutes}min outside window " +
+                    "[${settings.currentSleepScheduleStartMinutes},${settings.currentSleepScheduleEndMinutes})"
+            }
+            return
+        }
         scheduleArmedThisSession = true
-        AppLog.i("Player", "auto-arming scheduled sleep timer (${settings.currentSleepScheduleDefaultMinutes}min)")
+        AppLog.i(LogCat.SLEEP, "auto-arming scheduled sleep timer (${settings.currentSleepScheduleDefaultMinutes}min)")
         setTimer(PlaybackService.SLEEP_MODE_COUNTDOWN, settings.currentSleepScheduleDefaultMinutes * 60_000L, 0L)
     }
 
@@ -186,9 +195,15 @@ class SleepTimerEngine(
      *  duck in progress, which this shouldn't fight or stomp on completion. */
     private fun applyFade(remainingMs: Long, fadeMs: Long) {
         if (!fadeActive) {
-            if (player.getVolume() < 0.99f) return
+            if (player.getVolume() < 0.99f) {
+                AppLog.d(LogCat.SLEEP) { "fade skipped: volume already reduced (${player.getVolume()}), likely an audio-focus duck in progress" }
+                return
+            }
             preFadeVolume = player.getVolume()
             fadeActive = true
+            // Logged once per fade (the transition into fadeActive), not per tick — the fade
+            // itself still updates every second until it fires.
+            AppLog.d(LogCat.SLEEP) { "fade starting: remainingMs=$remainingMs fadeMs=$fadeMs preFadeVolume=$preFadeVolume" }
         }
         player.setVolume(preFadeVolume * fadeFraction(remainingMs, fadeMs))
     }
@@ -201,7 +216,7 @@ class SleepTimerEngine(
         }
         mode = PlaybackService.SLEEP_MODE_OFF
         remainingMsForWidget = 0L
-        AppLog.i("Player", "sleep timer fired, pausing")
+        AppLog.i(LogCat.SLEEP, "sleep timer fired, pausing")
         player.pushFullWidgetState()
         player.broadcastSleepState(mode, remainingMsForWidget)
         if (settings.currentSleepShakeEnabled) armShakeGraceWindow()
@@ -229,7 +244,7 @@ class SleepTimerEngine(
 
     /** Wired as [ShakeDetector]'s onShake callback by whoever constructs this engine. */
     fun onShakeDetected() {
-        AppLog.i("Player", "shake detected — extending sleep timer by ${resetMs / 60_000}min")
+        AppLog.i(LogCat.SLEEP, "shake detected — extending sleep timer by ${resetMs / 60_000}min")
         graceJob?.cancel()
         graceJob = null
         releaseWakeLock()
@@ -246,7 +261,7 @@ class SleepTimerEngine(
                 acquire(SHAKE_GRACE_WINDOW_MS)
             }
         } catch (e: Exception) {
-            Log.e("SleepTimerEngine", "sleep wakelock acquire failed", e)
+            AppLog.e(LogCat.SLEEP, "sleep wakelock acquire failed", e)
             null
         }
     }
@@ -258,6 +273,7 @@ class SleepTimerEngine(
 
     /** Cancels everything in flight — call from PlaybackService.onDestroy(). */
     fun stop() {
+        if (mode != PlaybackService.SLEEP_MODE_OFF) AppLog.i(LogCat.SLEEP, "stop: cancelling active timer (was $mode)")
         tickJob?.cancel()
         graceJob?.cancel()
         shakeDetector.stop()

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.Bookmark
@@ -680,7 +681,7 @@ class PlayerViewModel @Inject constructor(
      * and start playing. This is a confirmed jump, so it's recorded as a skip.
      */
     fun resumeFromHistory(endBookPositionMs: Long) {
-        AppLog.i("History", "resumeFromHistory target=${endBookPositionMs}ms book=$bookId")
+        AppLog.i(LogCat.PLAYBACK, "resumeFromHistory target=${endBookPositionMs}ms book=$bookId")
         val currentAbsPos = if (positionState.value.bookTotalDurationMs > 0)
             positionState.value.bookPositionMs
         else
@@ -737,7 +738,7 @@ class PlayerViewModel @Inject constructor(
             .filter { it.bookId == -1L || it.bookId == targetBookId }
         val active = items.lastOrNull { it.absStartMs <= toMs }
         val idx = active?.let { items.indexOf(it) } ?: -1
-        AppLog.i("History", "skip recorded book=$targetBookId ${fromMs}ms→${toMs}ms ch=$idx")
+        AppLog.i(LogCat.PLAYBACK, "skip recorded book=$targetBookId ${fromMs}ms→${toMs}ms ch=$idx")
         viewModelScope.launch {
             repository.insertSkipEventPruned(
                 SkipEvent(
@@ -834,7 +835,7 @@ class PlayerViewModel @Inject constructor(
             val gPreset = repository.getDefaultAudioPreset()
             val audio = com.betteraudio.playback.AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)
             if (bridgedMs != null) {
-                AppLog.i("Player", "play() book=${bwp.book.id} bridged from reading position -> ${bridgedMs}ms")
+                AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id} bridged from reading position -> ${bridgedMs}ms")
                 playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
                 playerController.bookSeekTo(bridgedMs)
             } else {
@@ -844,7 +845,7 @@ class PlayerViewModel @Inject constructor(
                 // Never rewind past the chapter/file boundary: if the saved position is shorter than
                 // the rewind amount, resume from the saved position instead of the file start.
                 val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
-                AppLog.i("Player", "play() book=${bwp.book.id}" +
+                AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id}" +
                     " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
                     " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
                 playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
@@ -951,7 +952,7 @@ class PlayerViewModel @Inject constructor(
                     toSpineTitle = spineTitle
                 )
             )
-            AppLog.i("Player", "readFromHere book=$bookId pos=${bookPosMs}ms -> spine=${locator.spineIndex} frac=${locator.fraction}")
+            AppLog.i(LogCat.PLAYBACK, "readFromHere book=$bookId pos=${bookPosMs}ms -> spine=${locator.spineIndex} frac=${locator.fraction}")
             onReady(bookId)
         }
     }
@@ -998,7 +999,7 @@ class PlayerViewModel @Inject constructor(
                 repository.updateCoverArt(bookId, dest)
                 widgetUpdater.refreshCoverIfCurrent(bookId, dest)
             } catch (e: Exception) {
-                AppLog.e("Player", "updateCoverArt failed for book $bookId", e)
+                AppLog.e(LogCat.PLAYBACK, "updateCoverArt failed for book $bookId", e)
                 android.widget.Toast.makeText(
                     context, "Couldn't set that cover image", android.widget.Toast.LENGTH_LONG
                 ).show()

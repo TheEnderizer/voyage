@@ -1,4 +1,5 @@
 package com.betteraudio.ui.update
+import com.betteraudio.util.log.LogCat
 
 import android.content.Context
 import android.content.Intent
@@ -56,7 +57,7 @@ class UpdateGateViewModel @Inject constructor(
                 is com.betteraudio.data.update.UpdateCheckResult.Available -> result.info
                 is com.betteraudio.data.update.UpdateCheckResult.UpToDate -> return@launch
                 is com.betteraudio.data.update.UpdateCheckResult.Failed -> {
-                    com.betteraudio.util.AppLog.i("Update", "launch check skipped: ${result.reason}")
+                    com.betteraudio.util.AppLog.i(LogCat.NET, "launch check skipped: ${result.reason}")
                     return@launch
                 }
             }

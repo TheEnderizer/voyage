@@ -9,6 +9,7 @@ import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.scanner.ImportStructure
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -88,13 +89,13 @@ class LibraryRestructurer @Inject constructor(
                         MoveOutcome.FAILED -> failed++
                     }
                 } catch (e: Exception) {
-                    AppLog.e("Restructure", "targeted move failed for '${move.title}'", e); failed++
+                    AppLog.e(LogCat.SCAN, "targeted move failed for '${move.title}'", e); failed++
                 }
             }
         }
         diskMirror.flushDirty()
         if (moved > 0) cleanupEmptyDirs(File(root))
-        AppLog.i("Restructure", "targeted done moved=$moved skipped=$skipped failed=$failed")
+        AppLog.i(LogCat.SCAN, "targeted done moved=$moved skipped=$skipped failed=$failed")
         Result(moved, skipped, failed)
     }
 
@@ -110,7 +111,7 @@ class LibraryRestructurer @Inject constructor(
                         MoveOutcome.FAILED -> failed++
                     }
                 } catch (e: Exception) {
-                    AppLog.e("Restructure", "move failed for '${move.title}'", e); failed++
+                    AppLog.e(LogCat.SCAN, "move failed for '${move.title}'", e); failed++
                 }
                 onProgress(index + 1, moves.size)
             }
@@ -120,7 +121,7 @@ class LibraryRestructurer @Inject constructor(
             val root = settings.libraryFolder.first()
             if (root.isNotBlank()) cleanupEmptyDirs(File(root))
         }
-        AppLog.i("Restructure", "done moved=$moved skipped=$skipped failed=$failed")
+        AppLog.i(LogCat.SCAN, "done moved=$moved skipped=$skipped failed=$failed")
         Result(moved, skipped, failed)
     }
 
@@ -166,8 +167,16 @@ class LibraryRestructurer @Inject constructor(
         to.parentFile?.mkdirs()
 
         // Copy → verify → then (and only then) remove the original.
-        val copied = runCatching { from.copyRecursively(to, overwrite = false) }.getOrDefault(false)
-        if (!copied || !verify(from, to)) {
+        val copyResult = runCatching { from.copyRecursively(to, overwrite = false) }
+        val copied = copyResult.getOrDefault(false)
+        if (!copied) {
+            AppLog.w(LogCat.SCAN, "restructure move '${move.title}': copy '${from.absolutePath}' -> '${to.absolutePath}' failed: ${copyResult.exceptionOrNull()?.message ?: "copyRecursively returned false"}")
+            if (to.exists()) runCatching { to.deleteRecursively() }
+            return MoveOutcome.FAILED
+        }
+        val mismatch = verify(from, to)
+        if (mismatch != null) {
+            AppLog.w(LogCat.SCAN, "restructure move '${move.title}': verify failed after copy, discarding the copy — $mismatch")
             if (to.exists()) runCatching { to.deleteRecursively() }
             return MoveOutcome.FAILED
         }
@@ -196,16 +205,27 @@ class LibraryRestructurer @Inject constructor(
         }
 
         runCatching { from.deleteRecursively() }
+            .onFailure { AppLog.w(LogCat.SCAN, "restructure move '${move.title}': verified copy is at '${to.absolutePath}' but deleting the original '${from.absolutePath}' failed (${it.message}) — both now exist on disk") }
         return MoveOutcome.MOVED
     }
 
-    /** Verify the copy: same set of relative file paths and matching sizes. */
-    private fun verify(from: File, to: File): Boolean {
+    /** Verify the copy: same set of relative file paths and matching sizes. Returns null when it
+     *  matches, else a human-readable description of the mismatch (missing/extra files, size
+     *  differences) — the caller logs this so a discarded copy leaves a real reason behind. */
+    private fun verify(from: File, to: File): String? {
         fun index(dir: File): Map<String, Long> =
             dir.walkTopDown().filter { it.isFile }
                 .associate { it.relativeTo(dir).path to it.length() }
         val a = index(from); val b = index(to)
-        return a.isNotEmpty() && a == b
+        if (a.isEmpty()) return "source folder reports zero files (unexpected)"
+        if (a == b) return null
+        val missing = a.keys - b.keys
+        val extra = b.keys - a.keys
+        val sizeMismatch = a.keys.intersect(b.keys).filter { a[it] != b[it] }
+        return "expected ${a.size} file(s), got ${b.size}" +
+            (if (missing.isNotEmpty()) "; missing=$missing" else "") +
+            (if (extra.isNotEmpty()) "; extra=$extra" else "") +
+            (if (sizeMismatch.isNotEmpty()) "; size-mismatch=$sizeMismatch" else "")
     }
 
     /** Target folder for [book] under [root] per the chosen [structure]; null when unresolved. */

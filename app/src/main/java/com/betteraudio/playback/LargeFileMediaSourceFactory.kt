@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import com.betteraudio.data.scanner.Mp4Boxes
 import com.betteraudio.data.scanner.Mp4Probe
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.File
 
 /**
@@ -64,9 +65,16 @@ class LargeFileMediaSourceFactory(
         val ext = file.extension
         if (ext.lowercase() !in Mp4Boxes.MP4_EXTS) return false
         return try {
-            Mp4Probe.sampleCount(path, ext) > LARGE_FILE_SAMPLE_THRESHOLD
+            val samples = Mp4Probe.sampleCount(path, ext)
+            val route = samples > LARGE_FILE_SAMPLE_THRESHOLD
+            // Only reached for files that passed the >=300MB size gate above, so this is rare
+            // enough to log at INFO rather than DEBUG — routing the wrong file here either OOMs
+            // (should have routed but didn't) or silently loses seek precision (routed but
+            // shouldn't have), both worth being able to see after the fact.
+            AppLog.i(LogCat.PLAYBACK, "routing $path: samples=$samples threshold=$LARGE_FILE_SAMPLE_THRESHOLD -> ${if (route) "native MediaExtractor" else "default Mp4Extractor"}")
+            route
         } catch (e: Exception) {
-            AppLog.e("LargeFileMediaSourceFactory", "probe failed for $path", e)
+            AppLog.e(LogCat.PLAYBACK, "probe failed for $path", e)
             false
         }
     }

@@ -1,5 +1,7 @@
 package com.betteraudio.playback
 
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,10 +36,17 @@ class JumpRestoreStore @Inject constructor() {
     /** Clears only if the current value matches [bookId] — avoids a UI dismiss/consume racing a
      *  newer jump for a different (or the same) book that landed in between. */
     fun clear(bookId: Long) {
-        _restore.compareAndSet(_restore.value?.takeIf { it.bookId == bookId }, null)
+        val current = _restore.value
+        val cleared = _restore.compareAndSet(current?.takeIf { it.bookId == bookId }, null)
+        if (current != null && !cleared) {
+            // The pill's underlying offer belonged to a different book than the caller expected —
+            // a real symptom worth seeing ("restore pill didn't go away") rather than a silent no-op.
+            AppLog.d(LogCat.PLAYBACK) { "JumpRestoreStore.clear(book=$bookId): no-op, current offer is for book=${current.bookId}" }
+        }
     }
 
     fun clearAll() {
+        if (_restore.value != null) AppLog.d(LogCat.PLAYBACK) { "JumpRestoreStore.clearAll" }
         _restore.value = null
     }
 }

@@ -3,6 +3,8 @@ package com.betteraudio.data.covers
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
@@ -71,8 +73,12 @@ class CoverEffectBaker @Inject constructor(
     }
 
     private suspend fun bakeLocked(sourceCoverPath: String, cacheKey: String): String? = withContext(Dispatchers.Default) {
+        val startMs = System.currentTimeMillis()
         val src = runCatching { BitmapFactory.decodeFile(sourceCoverPath) }.getOrNull()
-            ?: return@withContext null
+        if (src == null) {
+            AppLog.w(LogCat.UI, "CoverEffectBaker: could not decode '$sourceCoverPath' for cacheKey=$cacheKey")
+            return@withContext null
+        }
 
         var scaled: Bitmap? = null
         var outBmp: Bitmap? = null
@@ -151,8 +157,10 @@ class CoverEffectBaker @Inject constructor(
                 }
                 outBmp.compress(format, 82, os)
             }
+            AppLog.d(LogCat.UI) { "CoverEffectBaker: baked cacheKey=$cacheKey (${w}x$h) in ${System.currentTimeMillis() - startMs}ms -> ${dest.name}" }
             dest.absolutePath
-        } catch (_: Throwable) {
+        } catch (e: Throwable) {
+            AppLog.w(LogCat.UI, "CoverEffectBaker: baking failed for cacheKey=$cacheKey: ${e.message}")
             null
         } finally {
             outBmp?.recycle()

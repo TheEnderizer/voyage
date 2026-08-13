@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.os.Bundle
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +35,7 @@ class VoyageWidgetProvider : AppWidgetProvider() {
                     for (id in appWidgetIds) updater.renderOneSuspend(id)
                 }
             } catch (e: Exception) {
-                AppLog.e("Widget", "onUpdate failed", e)
+                AppLog.e(LogCat.WIDGET, "onUpdate failed", e)
             } finally {
                 pending.finish()
             }
@@ -52,7 +53,7 @@ class VoyageWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).renderOneSuspend(appWidgetId) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
+                AppLog.e(LogCat.WIDGET, "onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
             } finally {
                 pending.finish()
             }
@@ -65,7 +66,7 @@ class VoyageWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onWidgetsDeletedSuspend(appWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "onDeleted failed", e)
+                AppLog.e(LogCat.WIDGET, "onDeleted failed", e)
             } finally {
                 pending.finish()
             }
@@ -78,7 +79,7 @@ class VoyageWidgetProvider : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onRestoredSuspend(oldWidgetIds, newWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "onRestored failed", e)
+                AppLog.e(LogCat.WIDGET, "onRestored failed", e)
             } finally {
                 pending.finish()
             }

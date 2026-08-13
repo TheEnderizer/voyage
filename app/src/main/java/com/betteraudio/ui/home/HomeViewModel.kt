@@ -19,6 +19,7 @@ import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
@@ -634,11 +635,11 @@ class HomeViewModel @Inject constructor(
             // One-time cleanup of legacy auto-sliced chapters; the next scan rebuilds the
             // affected books' chapters from embedded markers (or one row per file).
             try { repository.purgeSyntheticChapters() } catch (e: Exception) {
-                AppLog.e("Home", "startup purgeSyntheticChapters failed", e)
+                AppLog.e(LogCat.UI, "startup purgeSyntheticChapters failed", e)
             }
             if (folder.isNotBlank() && hasFileAccess()) {
                 try { scanner.scanDirectory(folder) } catch (e: Exception) {
-                    AppLog.e("Home", "startup rescan of $folder failed", e)
+                    AppLog.e(LogCat.UI, "startup rescan of $folder failed", e)
                 }
             }
         }
@@ -668,7 +669,7 @@ class HomeViewModel @Inject constructor(
             }
             _scan.value = ScanResult(ScanStatus.Running)
             val f = File(path)
-            Log.e(TAG, "ScanStart: path=$path exists=${f.exists()}")
+            AppLog.e(LogCat.UI, "ScanStart: path=$path exists=${f.exists()}")
             try {
                 val count = scanner.scanDirectory(path)
                 _scan.value = ScanResult(ScanStatus.Done, booksFound = count)

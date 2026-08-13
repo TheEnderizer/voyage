@@ -8,6 +8,8 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.diskstore.DiskMirror
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
@@ -84,6 +86,7 @@ class SeriesRepository @Inject constructor(
     suspend fun removeBookFromSeries(bookId: Long) {
         bookDao.setSeriesMembership(bookId, null, null, null)
         seriesDao.deleteEmpty()
+        AppLog.i(LogCat.DB, "removeBookFromSeries: book=$bookId detached")
         diskMirror.flushLibrary()
         diskMirror.flushBook(bookId)
     }
@@ -101,6 +104,7 @@ class SeriesRepository @Inject constructor(
         // nothing else deletes either once the row is gone.
         series?.coverArtPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId cover") }
         series?.coverFxPath?.let { AudiobookRepository.deleteQuietly(it, "series $seriesId coverFx") }
+        AppLog.i(LogCat.DB, "deleteSeries: series=$seriesId '${series?.name}' deleted, detached ${members.size} member book(s)")
         diskMirror.flushLibrary()
         members.forEach { diskMirror.flushBook(it.id) }
     }

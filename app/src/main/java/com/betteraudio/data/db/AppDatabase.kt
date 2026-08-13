@@ -23,6 +23,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.ListeningSession
@@ -193,14 +194,14 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 10 → 11 (endBookPositionMs)")
+                AppLog.i(LogCat.DB, "migrating 10 → 11 (endBookPositionMs)")
                 db.execSQL("ALTER TABLE listening_sessions ADD COLUMN endBookPositionMs INTEGER NOT NULL DEFAULT 0")
             }
         }
 
         val MIGRATION_11_12 = object : Migration(11, 12) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 11 → 12 (first-class series)")
+                AppLog.i(LogCat.DB, "migrating 11 → 12 (first-class series)")
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `series` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -252,7 +253,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_12_13 = object : Migration(12, 13) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 12 → 13 (epub reader)")
+                AppLog.i(LogCat.DB, "migrating 12 → 13 (epub reader)")
                 db.execSQL("ALTER TABLE books ADD COLUMN ebookPath TEXT")
                 db.execSQL("ALTER TABLE books ADD COLUMN ebookSpineCount INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE books ADD COLUMN chapterMapJson TEXT")
@@ -265,7 +266,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 13 → 14 (sync anchors)")
+                AppLog.i(LogCat.DB, "migrating 13 → 14 (sync anchors)")
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `sync_anchors` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -285,7 +286,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 14 → 15 (skip_events text-side jumps)")
+                AppLog.i(LogCat.DB, "migrating 14 → 15 (skip_events text-side jumps)")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN kind TEXT NOT NULL DEFAULT 'AUDIO'")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN fromSpineIndex INTEGER")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN fromFraction REAL")
@@ -297,7 +298,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 15 → 16 (custom widget maker)")
+                AppLog.i(LogCat.DB, "migrating 15 → 16 (custom widget maker)")
                 db.execSQL("""
                     CREATE TABLE IF NOT EXISTS `custom_widget_design` (
                         `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -320,14 +321,14 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_16_17 = object : Migration(16, 17) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 16 → 17 (skip_events.source)")
+                AppLog.i(LogCat.DB, "migrating 16 → 17 (skip_events.source)")
                 db.execSQL("ALTER TABLE skip_events ADD COLUMN source TEXT NOT NULL DEFAULT 'jump'")
             }
         }
 
         val MIGRATION_17_18 = object : Migration(17, 18) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 17 → 18 (drop retired book-group feature)")
+                AppLog.i(LogCat.DB, "migrating 17 → 18 (drop retired book-group feature)")
                 db.execSQL("DROP TABLE IF EXISTS book_group_members")
                 db.execSQL("DROP TABLE IF EXISTS book_groups")
                 // Full rebuild (not ALTER TABLE ... DROP COLUMN) so this works on every SQLite
@@ -384,7 +385,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_18_19 = object : Migration(18, 19) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 18 → 19 (widget maker v2 — clean break, no data migration)")
+                AppLog.i(LogCat.DB, "migrating 18 → 19 (widget maker v2 — clean break, no data migration)")
                 db.execSQL("DROP TABLE IF EXISTS custom_widget_design")
                 db.execSQL("DROP TABLE IF EXISTS widget_binding")
                 db.execSQL("""
@@ -409,7 +410,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 19 → 20 (hot-column indexes + filesBeforeCurrentMs)")
+                AppLog.i(LogCat.DB, "migrating 19 → 20 (hot-column indexes + filesBeforeCurrentMs)")
 
                 // Room compares the declared @Entity indices against the schema by name, so these
                 // must match Room's own naming convention (index_<table>_<column>) exactly or
@@ -466,7 +467,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_20_21 = object : Migration(20, 21) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 20 → 21 (audio_files.damageRangesJson)")
+                AppLog.i(LogCat.DB, "migrating 20 → 21 (audio_files.damageRangesJson)")
                 // Nullable with no default: NULL distinguishes "never scanned" from "scanned and
                 // clean" (empty string), which is what stops a healthy file being rescanned on
                 // every failure and a damaged one being rescanned on every play.
@@ -476,7 +477,7 @@ abstract class AppDatabase : RoomDatabase() {
 
         val MIGRATION_21_22 = object : Migration(21, 22) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                AppLog.i("DB", "migrating 21 → 22 (books.dataAppliedAtMs)")
+                AppLog.i(LogCat.DB, "migrating 21 → 22 (books.dataAppliedAtMs)")
                 db.execSQL("ALTER TABLE books ADD COLUMN dataAppliedAtMs INTEGER NOT NULL DEFAULT 0")
             }
         }

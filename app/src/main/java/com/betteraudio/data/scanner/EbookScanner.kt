@@ -4,6 +4,7 @@ import android.content.Context
 import com.betteraudio.data.ebook.EpubParser
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -31,14 +32,14 @@ class EbookScanner @Inject constructor(
     suspend fun scanEbookDirectory(rootPath: String): Int = withContext(Dispatchers.IO) {
         val root = File(rootPath)
         if (!root.exists() || !root.isDirectory) {
-            AppLog.w("EbookScan", "skipped — path missing or not a dir: $rootPath")
+            AppLog.w(LogCat.SCAN, "skipped — path missing or not a dir: $rootPath")
             return@withContext 0
         }
         var count = 0
         root.walkEpubFiles().forEach { epub ->
             if (importStandaloneEpub(epub)) count++
         }
-        AppLog.i("EbookScan", "done path=$rootPath imported/updated=$count")
+        AppLog.i(LogCat.SCAN, "done path=$rootPath imported/updated=$count")
         count
     }
 
@@ -50,11 +51,11 @@ class EbookScanner @Inject constructor(
             if (File(path).exists()) continue
             if (book.fileCount > 0) {
                 // Connected to an audiobook: just detach — the audiobook itself is unaffected.
-                AppLog.i("EbookScan", "ebook missing for book id=${book.id}, detaching")
+                AppLog.i(LogCat.SCAN, "ebook missing for book id=${book.id}, detaching")
                 repository.setEbook(book.id, null, 0)
             } else if (!book.isIgnored) {
                 // Standalone ebook-only row: hide it (restorable via Settings > Hidden Books).
-                AppLog.i("EbookScan", "hiding missing ebook-only book id=${book.id}")
+                AppLog.i(LogCat.SCAN, "hiding missing ebook-only book id=${book.id}")
                 repository.setBookIgnored(book.id, true)
             }
         }
@@ -84,7 +85,7 @@ class EbookScanner @Inject constructor(
         val path = epubFile.absolutePath
         val info = runCatching { EpubParser(epubFile).use { it.parse() } }.getOrNull()
         if (info == null || info.encrypted) {
-            AppLog.w("EbookScan", "refusing epub (parse failed or DRM): $path")
+            AppLog.w(LogCat.SCAN, "refusing epub (parse failed or DRM): $path")
             return@withContext false
         }
         val standalone = repository.getBookByEbookPath(path)?.takeIf { it.id != bookId && it.fileCount == 0 }
@@ -111,11 +112,11 @@ class EbookScanner @Inject constructor(
 
         val info = runCatching { EpubParser(epubFile).use { it.parse() } }.getOrNull()
         if (info == null) {
-            AppLog.w("EbookScan", "failed to parse $path")
+            AppLog.w(LogCat.SCAN, "failed to parse $path")
             return false
         }
         if (info.encrypted) {
-            AppLog.w("EbookScan", "skipping DRM-protected epub: $path")
+            AppLog.w(LogCat.SCAN, "skipping DRM-protected epub: $path")
             return false
         }
 

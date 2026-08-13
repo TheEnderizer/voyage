@@ -9,6 +9,7 @@ import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -413,7 +414,7 @@ class BackupManager @Inject constructor(
         diskMirror.flushDirty()
         diskMirror.flushLibrary()
 
-        AppLog.i("Backup", "restore complete: matched=$matched noMatch=$noMatch ambiguous=$ambiguous stale=$staleSkipped bookmarks=$bookmarksRestored sessions=$sessionsRestored skips=$skipEventsRestored presets=$presetsRestored series=$seriesRestored")
+        AppLog.i(LogCat.BACKUP, "restore complete: matched=$matched noMatch=$noMatch ambiguous=$ambiguous stale=$staleSkipped bookmarks=$bookmarksRestored sessions=$sessionsRestored skips=$skipEventsRestored presets=$presetsRestored series=$seriesRestored")
 
         return RestoreResult(
             booksMatched = matched,
@@ -450,7 +451,7 @@ class BackupManager @Inject constructor(
                     else -> coreByName[name]?.set(settings, value) // unknown key (older/newer schema) — skip, don't throw
                 }
             } catch (e: Exception) {
-                AppLog.e("Backup", "failed to restore setting '$name'", e)
+                AppLog.e(LogCat.BACKUP, "failed to restore setting '$name'", e)
             }
         }
     }

@@ -4,6 +4,8 @@ import com.betteraudio.data.db.entities.SyncAnchor
 import com.betteraudio.data.diskstore.BookDataPaths
 import com.betteraudio.data.diskstore.ensureNoMedia
 import com.betteraudio.data.diskstore.writeTextAtomic
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -89,6 +91,11 @@ object MappingFileIO {
                 )
             }
             MappingFileData(chapterMapJson, anchors)
+        }.onFailure {
+            // Distinct from "file doesn't exist" (the isFile check above already returns null for
+            // that, silently) — this means a mapping.json IS present but couldn't be parsed, which
+            // is the "why did my sync anchors disappear" case worth a trace for.
+            AppLog.w(LogCat.SYNC, "mapping file exists but failed to parse: ${file.absolutePath}: ${it.message}")
         }.getOrNull()
     }
 }

@@ -12,9 +12,11 @@ import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.data.update.ReleaseInfo
 import com.betteraudio.data.update.UpdateChecker
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -91,7 +93,7 @@ class SettingsViewModel @Inject constructor(
     fun reExportDiskData() {
         viewModelScope.launch {
             try { diskExportMigration.runNow() } catch (e: Exception) {
-                AppLog.e("Settings", "manual disk re-export failed", e)
+                AppLog.e(LogCat.SETTINGS, "manual disk re-export failed", e)
                 _operationError.value = "Couldn't re-export library data: ${e.message ?: "unknown error"}"
             }
         }
@@ -107,7 +109,7 @@ class SettingsViewModel @Inject constructor(
                 diskExportMigration.forgetAllDiskData()
                 diskExportMigration.runNow()
             } catch (e: Exception) {
-                AppLog.e("Settings", "forget disk data failed", e)
+                AppLog.e(LogCat.SETTINGS, "forget disk data failed", e)
                 _operationError.value = "Couldn't forget library data: ${e.message ?: "unknown error"}"
             }
         }
@@ -233,7 +235,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _resetRunning.value = true
             try { repository.resetLibrary() } catch (e: Exception) {
-                AppLog.e("Settings", "resetLibrary failed", e)
+                AppLog.e(LogCat.SETTINGS, "resetLibrary failed", e)
                 _operationError.value = "Couldn't reset the library: ${e.message ?: "unknown error"}"
             }
             _resetRunning.value = false
@@ -249,7 +251,7 @@ class SettingsViewModel @Inject constructor(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                AppLog.e("Settings", "regenerateAllCoverFx failed", e)
+                AppLog.e(LogCat.SETTINGS, "regenerateAllCoverFx failed", e)
                 _operationError.value = "Couldn't refresh cover effects: ${e.message ?: "unknown error"}"
             } finally {
                 _coverRefreshRunning.value = false
@@ -475,9 +477,57 @@ class SettingsViewModel @Inject constructor(
     fun setBtAutoResumeWindowMinutes(minutes: Int) = viewModelScope.launch { settings.setBtAutoResumeWindowMinutes(minutes) }
 
     // ── Diagnostics ──────────────────────────────────────────────────────────
-    val enableFileLogging: StateFlow<Boolean> =
-        settings.enableFileLogging.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-    fun setEnableFileLogging(enabled: Boolean) = viewModelScope.launch { settings.setEnableFileLogging(enabled) }
+    /** "OFF" | "ON" | "VERBOSE". */
+    val logLevel: StateFlow<String> =
+        settings.logLevel.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_LOG_LEVEL)
+    fun setLogLevel(level: String) = viewModelScope.launch { settings.setLogLevel(level) }
+
+    val logBudgetMb: StateFlow<Float> =
+        settings.logBudgetMb.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsStore.DEFAULT_LOG_BUDGET_MB)
+    /** Live UI value while the user is dragging/typing — [setLogBudgetMb] persists it (debounced
+     *  by the caller) once they settle on one. */
+    private val _logBudgetInput = MutableStateFlow<Float?>(null)
+    val logBudgetInput: StateFlow<Float?> = _logBudgetInput.asStateFlow()
+    fun setLogBudgetInput(mb: Float) { _logBudgetInput.value = mb }
+    fun commitLogBudgetMb(mb: Float) {
+        _logBudgetInput.value = null
+        viewModelScope.launch { settings.setLogBudgetMb(mb) }
+    }
+
+    private val _logText = MutableStateFlow("")
+    val logText: StateFlow<String> = _logText.asStateFlow()
+    private val _logStats = MutableStateFlow<com.betteraudio.util.log.LogEngine.LogStats?>(null)
+    val logStats: StateFlow<com.betteraudio.util.log.LogEngine.LogStats?> = _logStats.asStateFlow()
+    private val _logLoading = MutableStateFlow(false)
+    val logLoading: StateFlow<Boolean> = _logLoading.asStateFlow()
+
+    /** Loads/refreshes the Diagnostics viewer's text and size/coverage readout. Both do file I/O
+     *  (recentText() can decompress older segments) — always dispatched off the main thread, since
+     *  the old code's direct AppLog.recentText() call during composition was a real ANR risk once
+     *  the budget can go up to 20MB. */
+    fun refreshLog(redactPaths: Boolean = true) {
+        _logLoading.value = true
+        viewModelScope.launch {
+            val (text, stats) = withContext(Dispatchers.IO) {
+                AppLog.recentTextForShare(redactPaths = redactPaths) to AppLog.stats()
+            }
+            _logText.value = text
+            _logStats.value = stats
+            _logLoading.value = false
+        }
+    }
+
+    fun clearLog() {
+        viewModelScope.launch(Dispatchers.IO) {
+            AppLog.clear()
+            withContext(Dispatchers.Main) { _logText.value = "" }
+        }
+    }
+
+    /** Builds the share zip (redacted by default) at [target] off the main thread; caller
+     *  (DiagnosticsSection) launches the share Intent once this returns. */
+    suspend fun buildLogShareBundle(target: java.io.File, redactPaths: Boolean) =
+        withContext(Dispatchers.IO) { AppLog.buildShareBundle(target, redactPaths) }
 
     fun rescan() {
         val path = libraryFolder.value
@@ -485,7 +535,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _rescanRunning.value = true
             try { scanner.scanDirectory(path) } catch (e: Exception) {
-                AppLog.e("Settings", "rescan of $path failed", e)
+                AppLog.e(LogCat.SETTINGS, "rescan of $path failed", e)
                 _operationError.value = "Couldn't scan $path: ${e.message ?: "unknown error"}"
             }
             _rescanRunning.value = false

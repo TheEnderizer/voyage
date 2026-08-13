@@ -6,6 +6,7 @@ import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.SeriesDao
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -110,7 +111,7 @@ class LibraryDataStore @Inject constructor(
             ensureNoMedia(coversDir)
             target.absolutePath
         }.getOrElse {
-            AppLog.w("DiskStore", "write $kind cover failed for '$name': ${it.message}")
+            AppLog.w(LogCat.DISK, "write $kind cover failed for '$name': ${it.message}")
             null
         }
     }

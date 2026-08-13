@@ -2,6 +2,8 @@ package com.betteraudio.playback
 
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Chapter
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 
 /**
  * One chapter's absolute position within its own book's timeline.
@@ -178,7 +180,14 @@ class ChapterTimeline private constructor(
             // Drop orphan chapters (fileId not among this book's files) instead of silently
             // anchoring them at position 0 — the bug all previous copies of this math shared.
             val valid = chapters.filter { it.fileId in fileIdSet }
-            if (valid.isEmpty()) return ofFiles(sorted, bookId)
+            val orphanCount = chapters.size - valid.size
+            if (orphanCount > 0) {
+                AppLog.w(LogCat.PLAYBACK, "ChapterTimeline.build book=$bookId: dropped $orphanCount orphan chapter(s) (fileId not among this book's ${fileIds.size} file(s))")
+            }
+            if (valid.isEmpty()) {
+                if (chapters.isNotEmpty()) AppLog.w(LogCat.PLAYBACK, "ChapterTimeline.build book=$bookId: all ${chapters.size} chapter(s) were orphans — falling back to one mark per file")
+                return ofFiles(sorted, bookId)
+            }
 
             data class Pending(val chapter: Chapter, val startMs: Long, val fileIndex: Int)
             val pending = valid

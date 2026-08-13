@@ -13,6 +13,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.palette.graphics.Palette
 import com.betteraudio.R
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.model.BackgroundLayerStyle
 import com.betteraudio.widget.model.BgSource
 import com.betteraudio.widget.model.CANVAS_UNITS
@@ -101,7 +102,7 @@ object WidgetPainter {
             try {
                 drawElement(context, canvas, el, box, scale, snapshot, accent, opts)
             } catch (e: Exception) {
-                AppLog.e("Widget", "failed to draw element ${el.id} (${el.type})", e)
+                AppLog.e(LogCat.WIDGET, "failed to draw element ${el.id} (${el.type})", e)
             }
         }
         return bmp
@@ -519,7 +520,7 @@ object WidgetPainter {
             hsl[2] = hsl[2].coerceIn(0.55f, 0.72f)
             ColorUtils.HSLToColor(hsl)
         } catch (e: Exception) {
-            AppLog.e("Widget", "palette extraction failed", e)
+            AppLog.e(LogCat.WIDGET, "palette extraction failed", e)
             fallback
         }
     }

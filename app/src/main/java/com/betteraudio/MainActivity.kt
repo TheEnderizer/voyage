@@ -75,6 +75,7 @@ import com.betteraudio.ui.theme.VoyageTheme
 import com.betteraudio.ui.update.UpdateAvailableScreen
 import com.betteraudio.ui.update.UpdateGateViewModel
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.WidgetIntents
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -108,7 +109,9 @@ class MainActivity : ComponentActivity() {
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
+    ) { results ->
+        AppLog.i(LogCat.UI, "permission results: " + results.entries.joinToString { (perm, granted) -> "${perm.substringAfterLast('.')}=$granted" })
+    }
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -232,7 +235,7 @@ class MainActivity : ComponentActivity() {
                 var currentRoute by androidx.compose.runtime.remember { mutableStateOf<String?>("home") }
                 DisposableEffect(navController) {
                     val listener = NavController.OnDestinationChangedListener { _, dest, _ ->
-                        AppLog.i("Nav", "→ ${dest.route}")
+                        AppLog.i(LogCat.UI, "→ ${dest.route}")
                         currentRoute = dest.route
                     }
                     navController.addOnDestinationChangedListener(listener)
@@ -258,6 +261,13 @@ class MainActivity : ComponentActivity() {
                         openPlayerFromWidget -> lastPlayedBookId.takeIf { it != -1L } ?: initialBookId
                         else -> initialBookId
                     }
+                    val reason = when {
+                        shortcutBookId != null -> "shortcut"
+                        openPlayerFromWidget -> "widget-tap"
+                        initialBookId != -1L -> "lastOpenBookId"
+                        else -> "none"
+                    }
+                    AppLog.i(LogCat.UI, "cold-start restore: coldStartBookId=$coldStartBookId ($reason) lastOpenBookId=$initialBookId lastPlayedBookId=$lastPlayedBookId openPlayerFromWidget=$openPlayerFromWidget shortcutBookPath=$shortcutBookPath")
                     when {
                         coldStartBookId != -1L -> {
                             // A widget tap should land on Home with the player shown (not
@@ -268,8 +278,11 @@ class MainActivity : ComponentActivity() {
                             }
                             sheetController.open(bookId = coldStartBookId, startPlaying = false)
                         }
-                        lastPlayedBookId != -1L ->
+                        lastPlayedBookId != -1L -> {
+                            AppLog.i(LogCat.UI, "cold-start restore: no expanded book, restoring collapsed mini bar for book=$lastPlayedBookId")
                             sheetController.restore(lastPlayedBookId)
+                        }
+                        else -> AppLog.i(LogCat.UI, "cold-start restore: nothing to restore")
                     }
                 }
 
@@ -575,8 +588,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        com.betteraudio.util.log.PostMortem.Watchdog.setSuppressed(false)
+    }
+
     override fun onStop() {
         super.onStop()
+        // Backgrounding (and the OEM background-freeze behavior CLAUDE.md documents) is exactly
+        // when a false "main thread stalled" warning would otherwise fire — see Watchdog's doc.
+        com.betteraudio.util.log.PostMortem.Watchdog.setSuppressed(true)
         // The position write that used to happen here (playerController.saveCurrentProgressNow())
         // is redundant now that the service itself flushes on pause/stop/file-transition/
         // onTaskRemoved (see PlaybackService's G2-3 fix) — it was the only thing forcing this onto

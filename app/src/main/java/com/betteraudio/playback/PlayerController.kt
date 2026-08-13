@@ -19,6 +19,7 @@ import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.util.concurrent.ConcurrentHashMap
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -260,7 +261,7 @@ class PlayerController @Inject constructor(
                 controller?.addListener(playerListener)
                 adoptLiveSession()
             } catch (e: Exception) {
-                Log.e("PlayerController", "Failed to connect to MediaSession", e)
+                AppLog.e(LogCat.PLAYBACK, "Failed to connect to MediaSession", e)
             }
         }, androidx.core.content.ContextCompat.getMainExecutor(context))
         // Main executor above is mandatory, not cosmetic: adoptLiveSession() reads MediaController
@@ -434,7 +435,7 @@ class PlayerController @Inject constructor(
             endBookPositionMs = pos,
             listenedMs = listened
         )
-        AppLog.i("History", "session closed book=$bid listened=${listened}ms endPos=${pos}ms ch=$ci")
+        AppLog.i(LogCat.PLAYBACK, "session closed book=$bid listened=${listened}ms endPos=${pos}ms ch=$ci")
         scope.launch { repository.insertListeningSessionPruned(session, SESSION_HISTORY_KEEP) }
     }
 
@@ -470,7 +471,7 @@ class PlayerController @Inject constructor(
 
     /** Toggle silence-skipping for the loaded book (forwarded to the playback service). */
     fun setSkipSilence(enabled: Boolean) {
-        AppLog.i("Player", "setSkipSilence=$enabled book=$currentBookId")
+        AppLog.i(LogCat.PLAYBACK, "setSkipSilence=$enabled book=$currentBookId")
         val ctrl = controller ?: return
         val args = Bundle().apply { putBoolean(PlaybackService.KEY_SKIP_SILENCE, enabled) }
         ctrl.sendCustomCommand(SessionCommand(PlaybackService.CMD_SET_SKIP_SILENCE, Bundle.EMPTY), args)
@@ -493,7 +494,7 @@ class PlayerController @Inject constructor(
         // (same as before this refactor; whether a still-armed service-side timer should also be
         // cancelled on a book change is a separate, pre-existing behavior this doesn't alter).
         if (sleepTimerIsEndOfChapter) updateSleepDisplay(0L, endOfChapter = false)
-        AppLog.i("Player", "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed series=$seriesId")
+        AppLog.i(LogCat.PLAYBACK, "playBook id=${book.id} '${book.displayTitle}' files=${files.size} startIdx=$startFileIndex startPos=${startPositionMs}ms speed=$speed series=$seriesId")
         currentBookId = book.id
         currentSeriesId = seriesId
         currentSeriesBookIds = seriesBookIds
@@ -534,7 +535,7 @@ class PlayerController @Inject constructor(
         val gaps = Mp3DamageScanner.decodeUsable(file.damageRangesJson, file.sizeOnDisk())
         val uri = if (gaps.isEmpty()) base else GapSkippingDataSource.wrapUri(base, gaps)
         AppLog.i(
-            "Damage",
+            LogCat.PLAYBACK,
             "item ${file.id} ${file.fileName}: cache=${if (file.damageRangesJson == null) "never scanned" else "${gaps.size} gap(s)"}"
         )
         return MediaItem.Builder()
@@ -628,7 +629,7 @@ class PlayerController @Inject constructor(
         _positionState.value = PositionState()
         scope.launch {
             if (closingBookId != null && closingFileId != null && closingPositionMs > 0L) {
-                AppLog.i("Player", "saveCurrentProgress book=$closingBookId file=$closingFileId pos=${closingPositionMs}ms")
+                AppLog.i(LogCat.PLAYBACK, "saveCurrentProgress book=$closingBookId file=$closingFileId pos=${closingPositionMs}ms")
                 repository.updatePosition(closingBookId, closingFileId, closingPositionMs)
             }
             settings.setLastPlayedBookId(-1L)
@@ -838,7 +839,7 @@ class PlayerController @Inject constructor(
         // a (re)load before the seek lands, or between media-item transitions).
         if (positionMs <= 0L) return
         scope.launch {
-            AppLog.i("Player", "saveCurrentProgress book=$bookId file=$fileId pos=${positionMs}ms")
+            AppLog.i(LogCat.PLAYBACK, "saveCurrentProgress book=$bookId file=$fileId pos=${positionMs}ms")
             repository.updatePosition(bookId, fileId, positionMs)
             // The only caller left is the pause listener below — pause is one of the cadence's
             // flush points, and this runs after the write above lands (same coroutine), not racing it.
@@ -852,8 +853,8 @@ class PlayerController @Inject constructor(
         val ctrl = controller ?: return
         val fileId = ctrl.currentMediaItem?.mediaId?.toLongOrNull() ?: return
         val positionMs = ctrl.currentPosition
-        if (positionMs <= 0L) { AppLog.i("Player", "saveProgressNow skipped (pos=0) book=$bookId"); return }
-        AppLog.i("Player", "saveProgressNow book=$bookId file=$fileId pos=${positionMs}ms")
+        if (positionMs <= 0L) { AppLog.i(LogCat.PLAYBACK, "saveProgressNow skipped (pos=0) book=$bookId"); return }
+        AppLog.i(LogCat.PLAYBACK, "saveProgressNow book=$bookId file=$fileId pos=${positionMs}ms")
         repository.updatePosition(bookId, fileId, positionMs)
     }
 
@@ -967,7 +968,7 @@ class PlayerController @Inject constructor(
         for ((mediaId, info) in fileInfoByItemId) {
             if (mediaId == exceptItemId) continue
             runCatching { scanFile(mediaId, info.first).await() }
-                .onFailure { AppLog.e("Damage", "background scan failed for ${info.first}", it) }
+                .onFailure { AppLog.e(LogCat.PLAYBACK, "background scan failed for ${info.first}", it) }
         }
     }
 
@@ -998,7 +999,7 @@ class PlayerController @Inject constructor(
         // Requiring real forward progress is what separates "stopped early" from "hasn't started".
         val progressed = reachedMs - (entryPositionMs[id] ?: 0L)
         if (progressed < MIN_TRUNCATION_PROGRESS_MS) {
-            AppLog.i("Damage", "item=$id at ${reachedMs}ms has not played yet (entered at ${entryPositionMs[id]}ms) — not an early end")
+            AppLog.i(LogCat.PLAYBACK, "item=$id at ${reachedMs}ms has not played yet (entered at ${entryPositionMs[id]}ms) — not an early end")
             return false
         }
         // Non-MP3 has no repair path — but this must still TAKE OVER rather than bail out, and the
@@ -1008,18 +1009,18 @@ class PlayerController @Inject constructor(
         // the common audiobook container, a plain "not an MP3, ignore it" would restore exactly
         // that cascade for most libraries. So: stop, say so, and stay on the file that failed.
         if (!Mp3DamageScanner.isMp3Path(path)) {
-            AppLog.e("Damage", "item=$id ended at ${reachedMs}ms of ${expected}ms and is not an MP3 — no repair path, stopping")
+            AppLog.e(LogCat.PLAYBACK, "item=$id ended at ${reachedMs}ms of ${expected}ms and is not an MP3 — no repair path, stopping")
             showUserMessage("This file stopped early. It may be incomplete or in an unsupported format.")
             scope.launch(Dispatchers.Main) { controller?.pause() }
             return true
         }
         if (!truncationHandled.add(id)) {
-            AppLog.e("Damage", "item=$id ended early AGAIN (${reachedMs}ms of ${expected}ms) — no strategy left")
+            AppLog.e(LogCat.PLAYBACK, "item=$id ended early AGAIN (${reachedMs}ms of ${expected}ms) — no strategy left")
             showUserMessage("This file stops early and can't be repaired any further.")
             scope.launch(Dispatchers.Main) { controller?.pause() }
             return true
         }
-        AppLog.w("Damage", "item=$id ended at ${reachedMs}ms but should run ${expected}ms — treating as damage")
+        AppLog.w(LogCat.PLAYBACK, "item=$id ended at ${reachedMs}ms but should run ${expected}ms — treating as damage")
         showUserMessage("This file stops early — checking it for damage…")
         val resumeMs = reachedMs.coerceAtLeast(0L)
         scope.launch {
@@ -1027,15 +1028,15 @@ class PlayerController @Inject constructor(
             // keep rolling through the rest of the book and (in a series) into the next book.
             withContext(Dispatchers.Main) { controller?.pause() }
             val gaps = runCatching { scanFile(id, path).await() }
-                .onFailure { AppLog.e("Damage", "early-end scan failed for $path", it) }
+                .onFailure { AppLog.e(LogCat.PLAYBACK, "early-end scan failed for $path", it) }
                 .getOrDefault(emptyList())
             if (gaps.isEmpty()) {
-                AppLog.w("Damage", "no recoverable damage found in $path despite the early end")
+                AppLog.w(LogCat.PLAYBACK, "no recoverable damage found in $path despite the early end")
                 showUserMessage("This file ends early, but no recoverable damage pattern was found.")
                 return@launch
             }
             val lostSec = gaps.sumOf { it.size } / 32_000L
-            AppLog.i("Damage", "repairing $path after early end: ${gaps.size} gap(s), ~${lostSec}s lost")
+            AppLog.i(LogCat.PLAYBACK, "repairing $path after early end: ${gaps.size} gap(s), ~${lostSec}s lost")
             showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
             withContext(Dispatchers.Main) {
                 val c = controller ?: return@withContext
@@ -1061,7 +1062,7 @@ class PlayerController @Inject constructor(
         recoveryAttempts[itemId] = attempt + 1
         if (attempt >= recoverySkipSeconds.size) {
             if (attempt == recoverySkipSeconds.size) {  // first error past the schedule → give up once
-                AppLog.e("Player", "corrupt-file recovery exhausted (30s) for item=$itemId")
+                AppLog.e(LogCat.PLAYBACK, "corrupt-file recovery exhausted (30s) for item=$itemId")
                 showUserMessage("Couldn't skip past the damaged section (tried up to 30s). Try skipping manually — if that doesn't work, this file can't be played.")
                 // Pause for the same reason giveUpOnCorruptFile does: an exhausted file left
                 // playing rolls into the next part, and eventually the next book of a series.
@@ -1097,15 +1098,15 @@ class PlayerController @Inject constructor(
                 showUserMessage("This file is damaged — scanning it so playback can skip the damage. This can take a moment…")
                 scope.launch {
                     val gaps = runCatching { scanFile(itemId, damagedPath).await() }
-                        .onFailure { AppLog.e("Damage", "scan failed for $damagedPath", it) }
+                        .onFailure { AppLog.e(LogCat.PLAYBACK, "scan failed for $damagedPath", it) }
                         .getOrDefault(emptyList())
                     if (gaps.isEmpty()) {
-                        AppLog.w("Damage", "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
+                        AppLog.w(LogCat.PLAYBACK, "scan found no damaged ranges in $damagedPath — falling back to the skip schedule")
                         showUserMessage("Couldn't find a recoverable pattern in this file.")
                         return@launch
                     }
                     val lostSec = gaps.sumOf { it.size } / 32_000L
-                    AppLog.i("Damage", "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${lostSec}s lost)")
+                    AppLog.i(LogCat.PLAYBACK, "recovering $damagedPath with ${gaps.size} gap(s) hidden (~${lostSec}s lost)")
                     showUserMessage("Skipping ${gaps.size} damaged section(s) — about ${lostSec}s of audio is unplayable.")
                     withContext(Dispatchers.Main) {
                         val c = controller ?: return@withContext
@@ -1156,11 +1157,11 @@ class PlayerController @Inject constructor(
             // STATE_ENDED, into the next book of a series — marking each one finished on the way.
             // Skipping forward can't help beyond the end of the audio anyway, so stop instead.
             if (targetMs >= playerDurationMs - RECOVERY_END_MARGIN_MS) {
-                AppLog.e("Player", "corrupt-file recovery item=$itemId: +${skipSeconds}s would pass the end (${targetMs}ms of ${playerDurationMs}ms) — giving up rather than rolling into the next file")
+                AppLog.e(LogCat.PLAYBACK, "corrupt-file recovery item=$itemId: +${skipSeconds}s would pass the end (${targetMs}ms of ${playerDurationMs}ms) — giving up rather than rolling into the next file")
                 giveUpOnCorruptFile(itemId)
                 return true
             }
-            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: mid-file, seeking +${skipSeconds}s from ${positionMs}ms (limit ${playerDurationMs}ms)")
+            AppLog.w(LogCat.PLAYBACK, "corrupt-file recovery item=$itemId attempt=${attempt + 1}: mid-file, seeking +${skipSeconds}s from ${positionMs}ms (limit ${playerDurationMs}ms)")
             scope.launch(Dispatchers.Main) {
                 val c = controller ?: return@launch
                 c.seekTo(index, targetMs)
@@ -1179,7 +1180,7 @@ class PlayerController @Inject constructor(
         // things worse: a scan skipped for an MP4 records "clean", which sends it straight here.
         val headSkipPath = fileInfoByItemId[itemId]?.first
         if (headSkipPath != null && !Mp3DamageScanner.isMp3Path(headSkipPath)) {
-            AppLog.e("Player", "corrupt-file recovery item=$itemId: not an MP3 — no head-skip strategy applies")
+            AppLog.e(LogCat.PLAYBACK, "corrupt-file recovery item=$itemId: not an MP3 — no head-skip strategy applies")
             giveUpOnCorruptFile(itemId)
             return true
         }
@@ -1188,7 +1189,7 @@ class PlayerController @Inject constructor(
         // splice the file at the wrong places. A gap-mapped file that still fails is out of
         // strategies, so stop rather than corrupt it.
         if (alreadySkipping) {
-            AppLog.e("Player", "corrupt-file recovery item=$itemId: still failing with a gap map applied — no strategy left")
+            AppLog.e(LogCat.PLAYBACK, "corrupt-file recovery item=$itemId: still failing with a gap map applied — no strategy left")
             giveUpOnCorruptFile(itemId)
             return true
         }
@@ -1208,7 +1209,7 @@ class PlayerController @Inject constructor(
             }
             // Keep the position the user was starting from, shifted into the skipped timeline.
             val resumeMs = (positionMs - skipSeconds * 1_000L).coerceAtLeast(0L)
-            AppLog.w("Player", "corrupt-file recovery item=$itemId attempt=${attempt + 1}: head, hiding ${skipSeconds}s ($skipBytes of $fileLen bytes), resume at ${resumeMs}ms")
+            AppLog.w(LogCat.PLAYBACK, "corrupt-file recovery item=$itemId attempt=${attempt + 1}: head, hiding ${skipSeconds}s ($skipBytes of $fileLen bytes), resume at ${resumeMs}ms")
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 val c = controller ?: return@withContext
                 val skipUri = SkipHeadDataSource.wrapUri(Uri.fromFile(file), skipBytes)
@@ -1234,11 +1235,11 @@ class PlayerController @Inject constructor(
 
     private val playerListener = object : Player.Listener {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            AppLog.e("Player", "playback error book=$currentBookId code=${error.errorCodeName}: ${error.message}", error)
+            AppLog.e(LogCat.PLAYBACK, "playback error book=$currentBookId code=${error.errorCodeName}: ${error.message}", error)
             if (tryRecoverFromCorruptFile(error)) return
         }
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            AppLog.i("Player", "isPlaying=$isPlaying book=$currentBookId pos=${controller?.currentPosition ?: -1}ms")
+            AppLog.i(LogCat.PLAYBACK, "isPlaying=$isPlaying book=$currentBookId pos=${controller?.currentPosition ?: -1}ms")
             if (isPlaying) startPositionTicker() else stopPositionTicker()
             if (!isPlaying && currentBookId != -1L) {
                 saveCurrentProgress()  // persist the moment we pause, not only at app-stop
@@ -1273,6 +1274,21 @@ class PlayerController @Inject constructor(
                 }
             }
         }
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            // Complements onIsPlayingChanged's INFO line with WHY — in particular distinguishing a
+            // user-initiated pause from an audio-focus loss (another app started playing) or
+            // AUDIO_BECOMING_NOISY (headphones unplugged), which look identical from isPlaying
+            // alone but have very different causes worth telling apart in a bug report.
+            val reasonName = when (reason) {
+                Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST -> "user"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS -> "audio-focus-loss"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY -> "becoming-noisy"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_REMOTE -> "remote"
+                Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM -> "end-of-item"
+                else -> "reason=$reason"
+            }
+            AppLog.d(LogCat.PLAYBACK) { "playWhenReady=$playWhenReady reason=$reasonName book=$currentBookId" }
+        }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // AUTO means the previous item reported that it ended. If it ended nowhere near its
             // real duration, it didn't end — it broke. lastSeen* still describe the OLD item.
@@ -1289,7 +1305,7 @@ class PlayerController @Inject constructor(
                 val id = controller?.currentMediaItem?.mediaId
                 val attempts = id?.let { recoveryAttempts[it] } ?: 0
                 if (attempts in 1..recoverySkipSeconds.size) {
-                    AppLog.i("Player", "corrupt-file recovery: prepared OK for item=$id after $attempts attempt(s) (${recoverySkipSeconds[attempts - 1]}s skipped)")
+                    AppLog.i(LogCat.PLAYBACK, "corrupt-file recovery: prepared OK for item=$id after $attempts attempt(s) (${recoverySkipSeconds[attempts - 1]}s skipped)")
                 }
             }
             if (playbackState == Player.STATE_ENDED && currentBookId != -1L) {

@@ -1,6 +1,7 @@
 package com.betteraudio.data.scanner
 
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.RandomAccessFile
 
 /**
@@ -40,7 +41,7 @@ object Mp4Probe {
                 best
             }
         } catch (e: Exception) {
-            AppLog.e("Mp4Probe", "sampleCount failed for $filePath", e)
+            AppLog.e(LogCat.PLAYBACK, "sampleCount failed for $filePath", e)
             0L
         }
     }
@@ -76,7 +77,7 @@ object Mp4Probe {
                 if (timescale <= 0L || duration <= 0L) 0L else duration * 1000L / timescale
             }
         } catch (e: Exception) {
-            AppLog.e("Mp4Probe", "durationMs failed for $filePath", e)
+            AppLog.e(LogCat.PLAYBACK, "durationMs failed for $filePath", e)
             0L
         }
     }

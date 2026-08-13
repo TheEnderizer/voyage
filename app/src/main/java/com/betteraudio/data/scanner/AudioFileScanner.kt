@@ -9,6 +9,7 @@ import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -68,11 +69,11 @@ class AudioFileScanner @Inject constructor(
     suspend fun scanDirectory(rootPath: String): Int = withContext(Dispatchers.IO) {
         val root = File(rootPath)
         if (!root.exists() || !root.isDirectory) {
-            AppLog.w("Scan", "skipped — path missing or not a dir: $rootPath")
+            AppLog.w(LogCat.SCAN, "skipped — path missing or not a dir: $rootPath")
             return@withContext 0
         }
         val structure = ImportStructure.fromName(settings.importStructure.first())
-        AppLog.i("Scan", "start path=$rootPath structure=$structure")
+        AppLog.i(LogCat.SCAN, "start path=$rootPath structure=$structure")
         val cache = DirCache()
         val count = try {
             when (structure) {
@@ -81,21 +82,21 @@ class AudioFileScanner @Inject constructor(
                 ImportStructure.AUTHOR_DASH_SERIES_BOOK -> scanAuthorDashSeriesBook(root, cache)
             }
         } catch (e: Throwable) {
-            AppLog.e("Scan", "failed for $rootPath", e); throw e
+            AppLog.e(LogCat.SCAN, "failed for $rootPath", e); throw e
         }
         runCatching { reconcileLibraryFromDisk() }
-            .onFailure { AppLog.e("Scan", "library.json reconcile failed for $rootPath", it) }
+            .onFailure { AppLog.e(LogCat.SCAN, "library.json reconcile failed for $rootPath", it) }
         // Auto-joining is disabled: series membership comes from folder structure (seriesName)
         // and playback groups are only ever created by an explicit user action.
         runCatching { reconcileAgainstDisk(root) }
-            .onFailure { AppLog.e("Scan", "reconcile failed for $rootPath", it) }
+            .onFailure { AppLog.e(LogCat.SCAN, "reconcile failed for $rootPath", it) }
         // One "rescan" covers both libraries: also sweep the (separate) standalone-ebook folder.
         runCatching {
             settings.ebookFolder.first().takeIf { it.isNotBlank() }
                 ?.let { ebookScanner.scanEbookDirectory(it) }
             ebookScanner.reconcileEbooks()
-        }.onFailure { AppLog.e("Scan", "ebook scan/reconcile failed", it) }
-        AppLog.i("Scan", "done path=$rootPath imported/updated=$count")
+        }.onFailure { AppLog.e(LogCat.SCAN, "ebook scan/reconcile failed", it) }
+        AppLog.i(LogCat.SCAN, "done path=$rootPath imported/updated=$count")
         count
     }
 
@@ -223,11 +224,21 @@ class AudioFileScanner @Inject constructor(
      */
     private suspend fun reconcileLibraryFromDisk() {
         val root = settings.libraryFolder.first()
-        if (root.isBlank() || !File(root).canRead()) return
+        if (root.isBlank() || !File(root).canRead()) {
+            AppLog.w(LogCat.SCAN, "reconcileLibraryFromDisk: skipped — library folder blank or unreadable ('$root')")
+            return
+        }
         val lastApplied = settings.libraryJsonAppliedAt.first()
         val docMtime = libraryDataStore.lastModified()
-        if (docMtime == 0L || docMtime <= lastApplied) return
-        val doc = libraryDataStore.read() ?: return
+        if (docMtime == 0L || docMtime <= lastApplied) {
+            AppLog.d(LogCat.SCAN) { "reconcileLibraryFromDisk: nothing to apply (docMtime=$docMtime lastApplied=$lastApplied)" }
+            return
+        }
+        val doc = libraryDataStore.read()
+        if (doc == null) {
+            AppLog.w(LogCat.SCAN, "reconcileLibraryFromDisk: library.json mtime says it changed but read() returned null")
+            return
+        }
 
         val currentBooks = repository.getAllBooksIncludingIgnoredOnce().map { b ->
             com.betteraudio.data.backup.BookCandidate(
@@ -246,13 +257,17 @@ class AudioFileScanner @Inject constructor(
         }
         diskMirror.flushLibrary()
         settings.setLibraryJsonAppliedAt(System.currentTimeMillis())
+        AppLog.i(LogCat.SCAN, "reconcileLibraryFromDisk: applied presets=${doc.presets.size} authors=${doc.authors.size} series=${doc.series.size}")
     }
 
     // ── Reconcile DB against disk (hide missing books, drop missing files) ──────
     private suspend fun reconcileAgainstDisk(root: File) {
         // Never prune when we can't actually read the tree — a revoked permission would
         // otherwise report every file as missing and hide the whole library.
-        if (!root.exists() || !root.canRead()) return
+        if (!root.exists() || !root.canRead()) {
+            AppLog.w(LogCat.SCAN, "reconcileAgainstDisk: skipped — '${root.absolutePath}' doesn't exist or isn't readable (permission revoked?)")
+            return
+        }
         val rootPath = root.absolutePath
         val books = repository.getAllBooksIncludingIgnoredOnce().filter { book ->
             val bookRoot = book.folderPath.substringBefore("::")
@@ -283,13 +298,13 @@ class AudioFileScanner @Inject constructor(
                 present.isEmpty() -> {
                     // Whole book gone → hide it (keep the record + progress).
                     if (!book.isIgnored) {
-                        AppLog.i("Scan", "hiding missing book id=${book.id} '${book.title}'")
+                        AppLog.i(LogCat.SCAN, "hiding missing book id=${book.id} '${book.title}'")
                         repository.setBookIgnored(book.id, true)
                     }
                 }
                 else -> {
                     // Some files vanished → drop them and rebuild the book's chapters/stats.
-                    AppLog.i("Scan", "book id=${book.id} lost ${files.size - present.size} file(s)")
+                    AppLog.i(LogCat.SCAN, "book id=${book.id} lost ${files.size - present.size} file(s)")
                     dropMissingFiles(book.id, present)
                 }
             }
@@ -598,25 +613,28 @@ class AudioFileScanner @Inject constructor(
         val legacyCoverName = if (multiBook) ".cover_${folderKey.substringAfterLast("::").safeFileName()}.jpg" else ".cover.jpg"
         val legacyExtractedCover = if (userCoverFile == null && explicitCover == null)
             File(folder, legacyCoverName).takeIf { it.isFile } else null
-        when {
+        val coverRule = when {
             userCoverFile != null -> {
                 if (existing?.coverArtPath != userCoverFile.absolutePath) {
                     repository.updateCoverArt(bookId, userCoverFile.absolutePath)
                 }
+                "1:user-cover"
             }
             // Doc not read this pass (mtime gate closed), so rule 1 could not be evaluated —
             // an existing cover therefore outranks cover.png here rather than risk silently
             // reverting a gallery/online pick that IS recorded in the doc we didn't open.
-            !consultedDisk && existing?.coverArtPath != null -> Unit
+            !consultedDisk && existing?.coverArtPath != null -> "1b:doc-not-consulted-kept-existing"
             explicitCover != null -> {
                 if (existing?.coverArtPath != explicitCover.absolutePath) {
                     repository.updateCoverArt(bookId, explicitCover.absolutePath)
                 }
+                "2:cover.png"
             }
-            existing?.coverArtPath != null -> Unit // rule 3: keep
-            legacyExtractedCover != null -> repository.updateCoverArt(bookId, legacyExtractedCover.absolutePath)
-            else -> extractCoverArt(sortedFiles.firstOrNull(), bookId, folderKey)
+            existing?.coverArtPath != null -> "3:kept-existing" // rule 3: keep
+            legacyExtractedCover != null -> { repository.updateCoverArt(bookId, legacyExtractedCover.absolutePath); "4:legacy-extracted" }
+            else -> { extractCoverArt(sortedFiles.firstOrNull(), bookId, folderKey); "5:fresh-extract" }
         }
+        AppLog.d(LogCat.SCAN) { "cover priority book=$bookId rule=$coverRule" }
 
         // A disk-doc-recorded ebook connection (restored from a prior install) wins outright for
         // a brand-new row when the epub it points at still exists, carrying its chapter-alignment
@@ -638,7 +656,7 @@ class AudioFileScanner @Inject constructor(
         if (!multiBook && !ebookRestoredFromDisk && existing?.ebookPath == null) {
             ebookScanner.findEpubIn(folder)?.let { epub ->
                 runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
-                    .onFailure { AppLog.e("Scan", "auto-attach epub failed for book=$bookId", it) }
+                    .onFailure { AppLog.e(LogCat.SCAN, "auto-attach epub failed for book=$bookId", it) }
             }
         }
 
@@ -648,7 +666,7 @@ class AudioFileScanner @Inject constructor(
         // without overwriting a fresher on-device alignment the user already ran. Clusters get
         // their own <slug>.mapping.json now, so this is no longer skipped for multiBook.
         runCatching { importMappingFileIfPresent(bookId, folderKey) }
-            .onFailure { AppLog.e("Scan", "mapping.json import failed for book=$bookId", it) }
+            .onFailure { AppLog.e(LogCat.SCAN, "mapping.json import failed for book=$bookId", it) }
     }
 
     /**
@@ -674,7 +692,7 @@ class AudioFileScanner @Inject constructor(
                 if (durationMs <= 0L) {
                     durationMs = Mp4Probe.durationMs(file.absolutePath, file.extension)
                     if (durationMs > 0L) {
-                        AppLog.i("Scan", "duration from mvhd for ${file.name}: ${durationMs}ms")
+                        AppLog.i(LogCat.SCAN, "duration from mvhd for ${file.name}: ${durationMs}ms")
                     }
                 }
                 result[file] = FileTags(
@@ -694,7 +712,7 @@ class AudioFileScanner @Inject constructor(
                 // Was silently swallowed: the file vanished from audioEntities while the Book was
                 // still created with fileCount = sortedFiles.size, leaving a book that claims files
                 // it has no rows for and that reconcileAgainstDisk skips forever.
-                AppLog.e("Scan", "metadata read failed, skipping ${file.absolutePath} (${file.length()} bytes)", e)
+                AppLog.e(LogCat.SCAN, "metadata read failed, skipping ${file.absolutePath} (${file.length()} bytes)", e)
                 result[file] = null
                 runCatching { retriever.release() }
                 retriever = MediaMetadataRetriever()
@@ -712,7 +730,7 @@ class AudioFileScanner @Inject constructor(
         mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }
         if (mapping.anchors.isNotEmpty()) {
             repository.insertSyncAnchors(mapping.anchors.map { it.copy(bookId = bookId) })
-            AppLog.i("Scan", "imported mapping.json for book=$bookId anchors=${mapping.anchors.size}")
+            AppLog.i(LogCat.SCAN, "imported mapping.json for book=$bookId anchors=${mapping.anchors.size}")
         }
     }
 
@@ -782,7 +800,7 @@ class AudioFileScanner @Inject constructor(
             if (!nomedia.exists()) runCatching { nomedia.createNewFile() }
             repository.updateCoverArt(bookId, coverPath)
         } catch (e: Exception) {
-            AppLog.e("Scan", "extractCoverArt failed for ${file.path}", e)
+            AppLog.e(LogCat.SCAN, "extractCoverArt failed for ${file.path}", e)
         } finally {
             retriever.release()
         }

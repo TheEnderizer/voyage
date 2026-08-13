@@ -31,6 +31,12 @@ data class SettingSpec(
  * failing on every run), `auto_backup_last_run_ms`/`auto_backup_last_status`,
  * `phantom_series_cleanup_done`, and the disk-mirror's own bootstrap/version flags.
  *
+ * Also excluded: `log_level`, `log_budget_mb`, and `enable_file_logging`. Logging is an opt-in
+ * diagnostic toggle, off by default — mirroring it would mean a "clean" reinstall silently turns
+ * it back on (or restores Verbose + a large budget) instead of actually starting clean. Unlike
+ * the settings above, `enable_file_logging` WAS mirrored here once (pre-tri-state); if it still
+ * shows up in an old settings.json, it is simply ignored, same as any other unrecognized key.
+ *
  * `default_audio_preset_id` is a row id, not portable — it is represented on disk as
  * `default_preset_name` and resolved by name after presets are restored (mirrors
  * BackupManager.restorePresets' own default-resolution step). That resolution needs both
@@ -87,7 +93,6 @@ object SettingsSpecs {
         spec("bt_auto_resume_enabled", "boolean", { it.btAutoResumeEnabled.first().toString() }, { s, v -> s.setBtAutoResumeEnabled(v.toBoolean()) }),
         spec("bt_auto_resume_window_minutes", "int", { it.btAutoResumeWindowMinutes.first().toString() }, { s, v -> s.setBtAutoResumeWindowMinutes(v.toInt()) }),
         spec("backup_include_api_key", "boolean", { it.backupIncludeApiKey.first().toString() }, { s, v -> s.setBackupIncludeApiKey(v.toBoolean()) }),
-        spec("enable_file_logging", "boolean", { it.enableFileLogging.first().toString() }, { s, v -> s.setEnableFileLogging(v.toBoolean()) }),
         spec(
             "widget_custom_colors", "string",
             { it.widgetCustomColors.first().joinToString(",").takeIf(String::isNotBlank) },

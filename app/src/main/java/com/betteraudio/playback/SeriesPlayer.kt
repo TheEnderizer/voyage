@@ -4,6 +4,8 @@ import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -41,10 +43,13 @@ class SeriesPlayer @Inject constructor(
             val endedIndex = orderedBookIds.indexOf(endedBookId)
             val nextId = if (endedIndex >= 0) orderedBookIds.getOrNull(endedIndex + 1) else null
             if (nextId != null) {
+                AppLog.i(LogCat.PLAYBACK, "series=$seriesId book=$endedBookId ended (index $endedIndex/${orderedBookIds.size - 1}) — advancing to book=$nextId")
                 scope.launch {
                     playBookInSeries(nextId, seriesId, orderedBookIds, resume = false)
                     playerController.seriesAdvanced.tryEmit(nextId)
                 }
+            } else {
+                AppLog.i(LogCat.PLAYBACK, "series=$seriesId book=$endedBookId ended (index $endedIndex/${orderedBookIds.size - 1}) — series finished, no next book")
             }
         }
     }
@@ -56,15 +61,28 @@ class SeriesPlayer @Inject constructor(
      */
     suspend fun playSeries(seriesId: Long, startBookId: Long? = null): Long {
         val books = seriesRepository.getBooksInSeriesOnce(seriesId)
-        if (books.isEmpty()) return -1L
+        if (books.isEmpty()) {
+            AppLog.w(LogCat.PLAYBACK, "playSeries: series=$seriesId has no books")
+            return -1L
+        }
         val orderedIds = books.map { it.id }
         val progressMap = books.associateWith { repository.getProgressForBookOnce(it.id) }
-        val startBook = startBookId?.let { id -> books.firstOrNull { it.id == id } }
-            ?: progressMap.entries
-                .filter { (_, p) -> (p?.lastPlayedMs ?: 0L) > 0L }
-                .maxByOrNull { (_, p) -> p?.lastPlayedMs ?: 0L }?.key
-            ?: books.firstOrNull { it.status != BookStatus.FINISHED }
-            ?: books.first()
+        val mostRecent = progressMap.entries
+            .filter { (_, p) -> (p?.lastPlayedMs ?: 0L) > 0L }
+            .maxByOrNull { (_, p) -> p?.lastPlayedMs ?: 0L }?.key
+        val startBook: com.betteraudio.data.db.entities.Book
+        val reason: String
+        when {
+            startBookId != null && books.any { it.id == startBookId } -> {
+                startBook = books.first { it.id == startBookId }; reason = "explicit"
+            }
+            mostRecent != null -> { startBook = mostRecent; reason = "most-recently-played" }
+            books.any { it.status != BookStatus.FINISHED } -> {
+                startBook = books.first { it.status != BookStatus.FINISHED }; reason = "first-unfinished"
+            }
+            else -> { startBook = books.first(); reason = "first (all finished)" }
+        }
+        AppLog.i(LogCat.PLAYBACK, "playSeries: series=$seriesId starting book=${startBook.id} reason=$reason")
         playBookInSeries(startBook.id, seriesId, orderedIds, resume = true)
         return startBook.id
     }
@@ -73,7 +91,11 @@ class SeriesPlayer @Inject constructor(
      *  a chapter from another book is picked in the chapter list); the series continues from there. */
     suspend fun playSeriesBookAt(seriesId: Long, bookId: Long, positionMs: Long) {
         val books = seriesRepository.getBooksInSeriesOnce(seriesId)
-        if (books.none { it.id == bookId }) return
+        if (books.none { it.id == bookId }) {
+            AppLog.w(LogCat.PLAYBACK, "playSeriesBookAt: book=$bookId is not a member of series=$seriesId")
+            return
+        }
+        AppLog.i(LogCat.PLAYBACK, "playSeriesBookAt: series=$seriesId switching to book=$bookId at ${positionMs}ms")
         playBookInSeries(bookId, seriesId, books.map { it.id }, resume = false, explicitPositionMs = positionMs)
         playerController.seriesAdvanced.tryEmit(bookId)
     }
@@ -82,9 +104,16 @@ class SeriesPlayer @Inject constructor(
         bookId: Long, seriesId: Long, orderedIds: List<Long>, resume: Boolean,
         explicitPositionMs: Long? = null
     ) {
-        val bwp = repository.getBookWithProgress(bookId).first() ?: return
+        val bwp = repository.getBookWithProgress(bookId).first()
+        if (bwp == null) {
+            AppLog.w(LogCat.PLAYBACK, "playBookInSeries: book=$bookId (series=$seriesId) not found")
+            return
+        }
         val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
-        if (files.isEmpty()) return
+        if (files.isEmpty()) {
+            AppLog.w(LogCat.PLAYBACK, "playBookInSeries: book=$bookId (series=$seriesId) has no audio files")
+            return
+        }
         val series = seriesRepository.getSeriesOnce(seriesId)
         val progress = bwp.progress
         val startIndex = if (resume && explicitPositionMs == null)

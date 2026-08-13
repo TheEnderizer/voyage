@@ -21,6 +21,7 @@ import com.betteraudio.sync.ChapterMatcher
 import com.betteraudio.sync.PositionBridge
 import com.betteraudio.sync.TextLocator
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -381,7 +382,7 @@ class EbookReaderViewModel @Inject constructor(
         settings.setLastPlayedBookId(book.id)
         settings.setThemeBookId(book.id)
         repository.setLastModeAudio(book.id)
-        AppLog.i("Reader", "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveScrollFraction -> ${targetMs}ms")
+        AppLog.i(LogCat.UI, "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveScrollFraction -> ${targetMs}ms")
         return book.id
     }
 

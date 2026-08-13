@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.model.WidgetDesignCodec
 import java.io.File
 import java.util.UUID
@@ -24,7 +25,7 @@ suspend fun copyPickedWidgetImage(context: Context, uri: Uri): String? = withCon
         }
         if (dest.exists() && dest.length() > 0) dest.absolutePath else null
     } catch (e: Exception) {
-        AppLog.e("Widget", "failed to copy picked image", e)
+        AppLog.e(LogCat.WIDGET, "failed to copy picked image", e)
         null
     }
 }
@@ -49,6 +50,6 @@ suspend fun sweepOrphanWidgetImages(context: Context, designDao: WidgetDesignDao
             if (f.absolutePath !in referenced) f.delete()
         }
     } catch (e: Exception) {
-        AppLog.e("Widget", "orphan widget-image sweep failed", e)
+        AppLog.e(LogCat.WIDGET, "orphan widget-image sweep failed", e)
     }
 }

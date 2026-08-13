@@ -5,6 +5,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlin.math.sqrt
 
 /**
@@ -29,8 +31,14 @@ class ShakeDetector(
 
     fun start() {
         if (isListening) return
-        val sm = (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager) ?: return
-        val sensor = sm.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION) ?: return
+        val sm = (context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager) ?: run {
+            AppLog.w(LogCat.SLEEP, "ShakeDetector.start: no SensorManager — shake-to-extend unavailable")
+            return
+        }
+        val sensor = sm.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION) ?: run {
+            AppLog.w(LogCat.SLEEP, "ShakeDetector.start: device has no TYPE_LINEAR_ACCELERATION sensor — shake-to-extend unavailable on this device")
+            return
+        }
         val l = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 val mag = sqrt(

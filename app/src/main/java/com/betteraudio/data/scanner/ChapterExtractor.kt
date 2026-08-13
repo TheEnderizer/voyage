@@ -1,6 +1,7 @@
 package com.betteraudio.data.scanner
 
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.RandomAccessFile
 
 /** A chapter marker parsed from an audio file's embedded metadata. */
@@ -23,11 +24,17 @@ object ChapterExtractor {
         if (extension.lowercase() !in Mp4Boxes.MP4_EXTS) return emptyList()
         return try {
             RandomAccessFile(filePath, "r").use { raf ->
-                val chpl = Mp4Boxes.findPath(raf, "moov", "udta", "chpl") ?: return emptyList()
-                parseChpl(raf, chpl)
+                val chpl = Mp4Boxes.findPath(raf, "moov", "udta", "chpl")
+                if (chpl == null) {
+                    AppLog.d(LogCat.SCAN) { "no chpl atom in $filePath — falling back to one chapter per file" }
+                    return emptyList()
+                }
+                val chapters = parseChpl(raf, chpl)
+                AppLog.d(LogCat.SCAN) { "chpl: ${chapters.size} chapter(s) in $filePath" }
+                chapters
             }
         } catch (e: Exception) {
-            AppLog.e("Chapters", "chpl parse failed for $filePath", e)
+            AppLog.e(LogCat.SCAN, "chpl parse failed for $filePath", e)
             emptyList()
         }
     }

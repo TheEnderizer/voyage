@@ -9,6 +9,7 @@ import com.betteraudio.sync.AudioChapterSpan
 import com.betteraudio.sync.AudioSpanBuilder
 import com.betteraudio.sync.TextSimilarity
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,7 +63,7 @@ class SyncAligner @Inject constructor(
         val job = scope.launch {
             try { align(bookId) }
             catch (e: Exception) {
-                AppLog.e("Aligner", "align failed for book=$bookId", e)
+                AppLog.e(LogCat.SYNC, "align failed for book=$bookId", e)
                 setProgress(bookId) { it.copy(running = false, error = e.message ?: "Alignment failed") }
             } finally { jobs.remove(bookId) }
         }
@@ -188,7 +189,7 @@ class SyncAligner @Inject constructor(
             repository.deleteSyncAnchors(bookId)
             if (accepted.isNotEmpty()) repository.insertSyncAnchors(accepted)
             setProgress(bookId) { AlignProgress(false, totalSteps, totalSteps, accepted.size) }
-            AppLog.i("Aligner", "book=$bookId anchors=${accepted.size} across ${spans.size} chapters")
+            AppLog.i(LogCat.SYNC, "book=$bookId anchors=${accepted.size} across ${spans.size} chapters")
 
             // Mirror the result into the book's own data/ folder (best-effort) — so it travels
             // with a backup/restructure/device move and can be re-imported without another
@@ -253,7 +254,7 @@ class SyncAligner @Inject constructor(
             if (transcript.size < MIN_WORDS || meanConf < MIN_MEAN_CONF) return null
 
             val (windowStart, score) = matchTranscript(bookToks, tokenIndex, transcript, range) ?: return null
-            AppLog.i("Aligner", "probe @${probeStartMs}ms words=${transcript.size} conf=${"%.2f".format(meanConf)} bestScore=${"%.2f".format(score)}")
+            AppLog.i(LogCat.SYNC, "probe @${probeStartMs}ms words=${transcript.size} conf=${"%.2f".format(meanConf)} bestScore=${"%.2f".format(score)}")
             if (score < ACCEPT_SCORE) return null
             val tp = bookToks[windowStart]
             val audioMs = probeStartMs + (firstStartSec * 1000).toLong()
@@ -263,7 +264,7 @@ class SyncAligner @Inject constructor(
             val windowEnd = (windowStart + transcript.size).coerceAtMost(bookToks.size)
             val matchedEpubText = (windowStart until windowEnd).joinToString(" ") { bookToks[it].token }
             AppLog.i(
-                "Aligner",
+                LogCat.SYNC,
                 "MATCH @${audioMs}ms spine=${tp.spineIndex} char=${tp.charOffset}\n" +
                     "  transcript: ${transcript.joinToString(" ")}\n" +
                     "  epub:       $matchedEpubText"

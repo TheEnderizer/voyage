@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.model.WidgetSnapshot
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -46,7 +47,7 @@ class WidgetStateStore @Inject constructor(
         try {
             context.widgetStateDataStore.edit { it[key] = json.encodeToString(snapshot) }
         } catch (e: Exception) {
-            AppLog.e("Widget", "failed to persist snapshot", e)
+            AppLog.e(LogCat.WIDGET, "failed to persist snapshot", e)
         }
     }
 
@@ -58,7 +59,7 @@ class WidgetStateStore @Inject constructor(
         val stored = try {
             decode(context.widgetStateDataStore.data.first()[key])
         } catch (e: Exception) {
-            AppLog.e("Widget", "failed to load persisted snapshot", e)
+            AppLog.e(LogCat.WIDGET, "failed to load persisted snapshot", e)
             null
         }
         current = coerceAfterPossibleReboot(stored ?: current)
@@ -75,7 +76,7 @@ class WidgetStateStore @Inject constructor(
         return try {
             json.decodeFromString<WidgetSnapshot>(text)
         } catch (e: Exception) {
-            AppLog.e("Widget", "failed to decode snapshot", e)
+            AppLog.e(LogCat.WIDGET, "failed to decode snapshot", e)
             WidgetSnapshot()
         }
     }

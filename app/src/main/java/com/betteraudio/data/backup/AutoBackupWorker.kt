@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.flow.first
@@ -85,10 +86,10 @@ class AutoBackupWorker @AssistedInject constructor(
 
             prune(folder)
             settings.setAutoBackupLastRun(System.currentTimeMillis(), "ok")
-            AppLog.i("Backup", "auto-backup wrote $fileName")
+            AppLog.i(LogCat.BACKUP, "auto-backup wrote $fileName")
             Result.success()
         } catch (e: Exception) {
-            AppLog.e("Backup", "auto-backup failed", e)
+            AppLog.e(LogCat.BACKUP, "auto-backup failed", e)
             settings.setAutoBackupLastRun(System.currentTimeMillis(), e.message ?: "Unknown error")
             Result.failure()
         }

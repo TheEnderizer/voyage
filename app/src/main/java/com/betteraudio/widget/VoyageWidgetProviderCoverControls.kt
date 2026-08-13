@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.os.Bundle
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +33,7 @@ class VoyageWidgetProviderCoverControls : AppWidgetProvider() {
                     }
                 }
             } catch (e: Exception) {
-                AppLog.e("Widget", "CoverControls onUpdate failed", e)
+                AppLog.e(LogCat.WIDGET, "CoverControls onUpdate failed", e)
             } finally {
                 pending.finish()
             }
@@ -50,7 +51,7 @@ class VoyageWidgetProviderCoverControls : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).renderOneSuspend(appWidgetId) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "CoverControls onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
+                AppLog.e(LogCat.WIDGET, "CoverControls onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
             } finally {
                 pending.finish()
             }
@@ -63,7 +64,7 @@ class VoyageWidgetProviderCoverControls : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onWidgetsDeletedSuspend(appWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "CoverControls onDeleted failed", e)
+                AppLog.e(LogCat.WIDGET, "CoverControls onDeleted failed", e)
             } finally {
                 pending.finish()
             }
@@ -76,7 +77,7 @@ class VoyageWidgetProviderCoverControls : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onRestoredSuspend(oldWidgetIds, newWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "CoverControls onRestored failed", e)
+                AppLog.e(LogCat.WIDGET, "CoverControls onRestored failed", e)
             } finally {
                 pending.finish()
             }

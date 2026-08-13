@@ -16,6 +16,7 @@ import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.WidgetDesignCodec
 import com.betteraudio.widget.model.WidgetSnapshot
@@ -38,6 +39,13 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
+/** RemoteViews/Binder transactions fail somewhere around 1MB total. capSize() already targets
+ *  ~190,000px (~742KB at ARGB_8888) as the normal ceiling, so this threshold sits ABOVE that
+ *  intended target, not near it — a normally-capped widget should never trip it; only a bitmap
+ *  that's unexpectedly larger than capSize should ever produce is worth a warning here (see
+ *  buildDesignViews). */
+private const val BITMAP_WARN_BYTES = 900 * 1024
+
 /**
  * The single write path to every placed widget: PlaybackService pushes state here directly
  * (no more exported ACTION_UPDATE_WIDGET broadcasts, which OEMs are free to throttle/kill), and
@@ -55,7 +63,7 @@ class WidgetUpdater @Inject constructor(
 ) {
     private val scope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default +
-            CoroutineExceptionHandler { _, e -> AppLog.e("Widget", "unhandled failure in WidgetUpdater scope", e) }
+            CoroutineExceptionHandler { _, e -> AppLog.e(LogCat.WIDGET, "unhandled failure in WidgetUpdater scope", e) }
     )
 
     /** Ordered, never-dropped state mutations. A single consumer coroutine applies these strictly
@@ -120,7 +128,7 @@ class WidgetUpdater @Inject constructor(
                         )
                     }
                 } catch (e: Exception) {
-                    AppLog.e("Widget", "state write failed", e)
+                    AppLog.e(LogCat.WIDGET, "state write failed", e)
                 }
                 renderSignal.trySend(Unit)
             }
@@ -131,7 +139,7 @@ class WidgetUpdater @Inject constructor(
                 try {
                     renderAllInternal()
                 } catch (e: Exception) {
-                    AppLog.e("Widget", "renderAllInternal failed", e)
+                    AppLog.e(LogCat.WIDGET, "renderAllInternal failed", e)
                 }
             }
         }
@@ -203,7 +211,7 @@ class WidgetUpdater @Inject constructor(
                     if (countdownCache[id] == true) renderOneInternal(manager, id)
                 }
             } catch (e: Exception) {
-                AppLog.e("Widget", "tickCountdown failed", e)
+                AppLog.e(LogCat.WIDGET, "tickCountdown failed", e)
             }
         }
     }
@@ -217,7 +225,7 @@ class WidgetUpdater @Inject constructor(
             bindingDao.deleteByIds(appWidgetIds.toList())
             appWidgetIds.forEach { countdownCache.remove(it) }
         } catch (e: Exception) {
-            AppLog.e("Widget", "onWidgetsDeleted failed", e)
+            AppLog.e(LogCat.WIDGET, "onWidgetsDeleted failed", e)
         }
     }
 
@@ -230,16 +238,19 @@ class WidgetUpdater @Inject constructor(
 
     suspend fun onRestoredSuspend(oldIds: IntArray, newIds: IntArray) {
         try {
+            var remapped = 0
             for (i in oldIds.indices) {
                 val old = oldIds.getOrNull(i) ?: continue
                 val new = newIds.getOrNull(i) ?: continue
                 val designId = bindingDao.getDesignId(old) ?: continue
                 bindingDao.upsert(WidgetBinding(new, designId, System.currentTimeMillis()))
                 bindingDao.deleteByIds(listOf(old))
+                remapped++
             }
+            AppLog.i(LogCat.WIDGET, "onRestored: remapped $remapped of ${oldIds.size} widget id(s) (launcher backup/restore or reboot)")
             triggerRenderAll()
         } catch (e: Exception) {
-            AppLog.e("Widget", "onRestored failed", e)
+            AppLog.e(LogCat.WIDGET, "onRestored failed", e)
         }
     }
 
@@ -255,7 +266,7 @@ class WidgetUpdater @Inject constructor(
                     for (b in bindings) renderOneInternal(manager, b.appWidgetId)
                 }
             } catch (e: Exception) {
-                AppLog.e("Widget", "onDesignDeleted failed for id=$designId", e)
+                AppLog.e(LogCat.WIDGET, "onDesignDeleted failed for id=$designId", e)
             }
         }
     }
@@ -284,7 +295,7 @@ class WidgetUpdater @Inject constructor(
             }
             renderOneInternal(AppWidgetManager.getInstance(context), appWidgetId)
         } catch (e: Exception) {
-            AppLog.e("Widget", "renderDefault failed for id=$appWidgetId name=$designName", e)
+            AppLog.e(LogCat.WIDGET, "renderDefault failed for id=$appWidgetId name=$designName", e)
         }
     }
 
@@ -338,15 +349,15 @@ class WidgetUpdater @Inject constructor(
                     return
                 } catch (e: Exception) {
                     lastError = e
-                    AppLog.e("Widget", "updateAppWidget attempt ${attempt + 1} failed at ${attemptW}x$attemptH for id=$appWidgetId", e)
+                    AppLog.e(LogCat.WIDGET, "updateAppWidget attempt ${attempt + 1} failed at ${attemptW}x$attemptH for id=$appWidgetId", e)
                     attemptW = (attemptW * 0.6f).toInt().coerceAtLeast(1)
                     attemptH = (attemptH * 0.6f).toInt().coerceAtLeast(1)
                 }
             }
-            AppLog.e("Widget", "renderOne exhausted retries for id=$appWidgetId", lastError)
+            AppLog.e(LogCat.WIDGET, "renderOne exhausted retries for id=$appWidgetId", lastError)
             return
         } catch (e: Exception) {
-            AppLog.e("Widget", "renderOne failed for id=$appWidgetId", e)
+            AppLog.e(LogCat.WIDGET, "renderOne failed for id=$appWidgetId", e)
         }
     }
 
@@ -364,6 +375,15 @@ class WidgetUpdater @Inject constructor(
     ): RemoteViews {
         val views = RemoteViews(context.packageName, R.layout.widget_host)
         val bitmap = WidgetPainter.paint(context, doc, design.aspectRatio, snapshot, pxW, pxH, paintOpts)
+        val bitmapBytes = bitmap.allocationByteCount
+        if (bitmapBytes > BITMAP_WARN_BYTES) {
+            // Not necessarily a failure yet — renderOneInternal's shrink-and-retry loop is what
+            // actually reacts to a real TransactionTooLargeException — but this is the early
+            // warning that a specific design is riding close to that limit, well before it starts
+            // failing (e.g. after the user makes the widget bigger, or on a very-high-density
+            // screen with a fixed dp size).
+            AppLog.w(LogCat.WIDGET, "buildDesignViews: bitmap for id=$appWidgetId is ${bitmapBytes / 1024}KB at ${pxW}x$pxH — close to the RemoteViews transaction limit")
+        }
         views.setImageViewBitmap(R.id.iv_canvas, bitmap)
 
         val box = WidgetPainter.contentBox(pxW, pxH, design.aspectRatio)
@@ -386,6 +406,7 @@ class WidgetUpdater @Inject constructor(
         // small (a handful of intents, not one per grid cell).
         views.setOnClickPendingIntent(R.id.widget_root, WidgetIntents.openAppIntent(context))
         val assigned = HitGrid.assign(pxW, pxH, claims)
+        AppLog.d(LogCat.WIDGET) { "buildDesignViews id=$appWidgetId: ${claims.size} tappable element(s) claimed ${assigned.count { it != null }}/${HitGrid.ROWS * HitGrid.COLS} grid cell(s)" }
         for (r in 0 until HitGrid.ROWS) {
             for (c in 0 until HitGrid.COLS) {
                 val pi = assigned[r * HitGrid.COLS + c] ?: continue
@@ -433,9 +454,12 @@ class WidgetUpdater @Inject constructor(
             val manager = AppWidgetManager.getInstance(context)
             val liveIds = allPlacedWidgetIds(manager).toSet()
             val stale = bindingDao.allBindings().map { it.appWidgetId }.filter { it !in liveIds }
-            if (stale.isNotEmpty()) bindingDao.deleteByIds(stale)
+            if (stale.isNotEmpty()) {
+                bindingDao.deleteByIds(stale)
+                AppLog.i(LogCat.WIDGET, "gcOrphanBindings: removed ${stale.size} binding(s) for widget(s) no longer placed: $stale")
+            }
         } catch (e: Exception) {
-            AppLog.e("Widget", "orphan binding GC failed", e)
+            AppLog.e(LogCat.WIDGET, "orphan binding GC failed", e)
         }
     }
 

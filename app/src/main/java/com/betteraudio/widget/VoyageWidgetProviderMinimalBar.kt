@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.os.Bundle
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,7 @@ class VoyageWidgetProviderMinimalBar : AppWidgetProvider() {
                     }
                 }
             } catch (e: Exception) {
-                AppLog.e("Widget", "MinimalBar onUpdate failed", e)
+                AppLog.e(LogCat.WIDGET, "MinimalBar onUpdate failed", e)
             } finally {
                 pending.finish()
             }
@@ -49,7 +50,7 @@ class VoyageWidgetProviderMinimalBar : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).renderOneSuspend(appWidgetId) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "MinimalBar onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
+                AppLog.e(LogCat.WIDGET, "MinimalBar onAppWidgetOptionsChanged failed for id=$appWidgetId", e)
             } finally {
                 pending.finish()
             }
@@ -62,7 +63,7 @@ class VoyageWidgetProviderMinimalBar : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onWidgetsDeletedSuspend(appWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "MinimalBar onDeleted failed", e)
+                AppLog.e(LogCat.WIDGET, "MinimalBar onDeleted failed", e)
             } finally {
                 pending.finish()
             }
@@ -75,7 +76,7 @@ class VoyageWidgetProviderMinimalBar : AppWidgetProvider() {
             try {
                 withTimeout(9_000) { updater(context).onRestoredSuspend(oldWidgetIds, newWidgetIds) }
             } catch (e: Exception) {
-                AppLog.e("Widget", "MinimalBar onRestored failed", e)
+                AppLog.e(LogCat.WIDGET, "MinimalBar onRestored failed", e)
             } finally {
                 pending.finish()
             }

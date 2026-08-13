@@ -5,6 +5,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.File
 import java.io.RandomAccessFile
 
@@ -55,6 +57,10 @@ class SkipHeadDataSource(private val upstream: DataSource) : DataSource {
     override fun open(dataSpec: DataSpec): Long {
         val skip = dataSpec.uri.getQueryParameter(PARAM_SKIP_BYTES)?.toLongOrNull() ?: 0L
         if (skip <= 0L) return upstream.open(dataSpec)
+        // The caller (PlayerController's corrupt-file recovery) already logs the decision to
+        // retry with a head-skip — this confirms the datasource actually received and is
+        // applying it, closing the loop in case the two ever disagree.
+        AppLog.d(LogCat.PLAYBACK) { "SkipHeadDataSource: skipping $skip head byte(s) of ${dataSpec.uri.buildUpon().clearQuery().build()}" }
         val realUri = dataSpec.uri.buildUpon().clearQuery().build()
         return upstream.open(
             dataSpec.buildUpon()

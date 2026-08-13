@@ -16,6 +16,8 @@ import androidx.media3.extractor.PositionHolder
 import androidx.media3.extractor.SeekMap
 import androidx.media3.extractor.SeekPoint
 import androidx.media3.extractor.TrackOutput
+import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import java.io.IOException
 import java.nio.ByteBuffer
 
@@ -75,11 +77,17 @@ class MediaExtractorProgressiveExtractor : ProgressiveMediaExtractor {
             ex.setDataSource(path)
         } catch (e: Exception) {
             ex.release()
+            AppLog.w(LogCat.PLAYBACK, "MediaExtractorProgressiveExtractor: native setDataSource failed for $path: ${e.message}")
             throw IOException("MediaExtractor could not open $path", e)
         }
         val trackIndex = (0 until ex.trackCount).firstOrNull { i ->
             ex.getTrackFormat(i).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
-        } ?: run { ex.release(); throw IOException("No audio track in $path") }
+        } ?: run {
+            val trackCount = ex.trackCount // read before release() — MediaExtractor state is undefined after
+            ex.release()
+            AppLog.w(LogCat.PLAYBACK, "MediaExtractorProgressiveExtractor: no audio track among $trackCount track(s) in $path")
+            throw IOException("No audio track in $path")
+        }
 
         val mediaFormat = ex.getTrackFormat(trackIndex)
         ex.selectTrack(trackIndex)
@@ -104,6 +112,7 @@ class MediaExtractorProgressiveExtractor : ProgressiveMediaExtractor {
 
         extractor = ex
         trackOutput = track
+        AppLog.d(LogCat.PLAYBACK) { "MediaExtractorProgressiveExtractor: opened $path track=$trackIndex durationUs=$durationUs bufferBytes=${readBuffer.capacity()}" }
     }
 
     override fun read(positionHolder: PositionHolder): Int {

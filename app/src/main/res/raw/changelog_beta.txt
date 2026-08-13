@@ -5,6 +5,11 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.16b] - 2026-08-13
+
+### Added
+- Diagnostics logging has been redesigned. Settings → Diagnostics now has three levels (Off / On / Verbose) instead of a single switch, a configurable size limit for how much history is kept (with a live readout of how much disk it's using and how far back it reaches), and far more of the app now actually records what it's doing — playback, library scanning, storage, widgets, and background tasks — so a bug report has something useful in it. Errors and crashes are captured even with logging turned off. Copying or sharing a log scrubs your folder/file names by default; a "raw" option is available if you want to include them.
+
 ## [1.9.15b] - 2026-08-10
 
 ### Fixed

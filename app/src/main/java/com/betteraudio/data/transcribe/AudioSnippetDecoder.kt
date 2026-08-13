@@ -4,6 +4,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
@@ -24,7 +25,7 @@ object AudioSnippetDecoder {
     suspend fun decode(filePath: String, startMs: Long, durationMs: Long): ShortArray? =
         withContext(Dispatchers.Default) {
             runCatching { decodeInternal(filePath, startMs, durationMs) }
-                .onFailure { AppLog.e("Decode", "snippet decode failed for $filePath", it) }
+                .onFailure { AppLog.e(LogCat.SYNC, "snippet decode failed for $filePath", it) }
                 .getOrNull()
         }
 

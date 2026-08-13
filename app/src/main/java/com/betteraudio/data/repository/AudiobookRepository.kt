@@ -24,6 +24,7 @@ import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.data.db.entities.SyncAnchor
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -307,22 +308,30 @@ class AudiobookRepository @Inject constructor(
 
     suspend fun deleteBook(bookId: Long, deleteFiles: Boolean) {
         val book = bookDao.getBookOnce(bookId)
-        if (deleteFiles && book != null) {
+        if (book == null) {
+            AppLog.w(LogCat.DB, "deleteBook: book=$bookId not found")
+            return
+        }
+        if (deleteFiles) {
             val folder = java.io.File(book.folderPath)
-            if (folder.exists() && folder.isDirectory) folder.deleteRecursively()
+            val folderDeleted = folder.exists() && folder.isDirectory
+            if (folderDeleted) folder.deleteRecursively()
+            AppLog.i(LogCat.DB, "deleteBook: book=$bookId '${book.title}' deleteFiles=true folderDeleted=$folderDeleted")
+        } else {
+            AppLog.i(LogCat.DB, "deleteBook: book=$bookId '${book.title}' deleteFiles=false (removed from app, audio left on disk)")
         }
         bookDao.deleteById(bookId)
         // The baked blur/reflection composite lives in filesDir/cover_fx regardless of
         // deleteFiles (it's a derived file, not part of the user's own audio folder), so nothing
         // else deletes it — a book removed from the app otherwise leaves it behind permanently.
-        book?.coverFxPath?.let { deleteQuietly(it, "book $bookId coverFx") }
+        book.coverFxPath?.let { deleteQuietly(it, "book $bookId coverFx") }
         // In BOTH branches, not just !deleteFiles: when deleteFiles is true the folder.
         // deleteRecursively() above already took data/ with it, so this is a no-op there, but it
         // still needs to clear DiskMirror's dirty-set entry either way. When deleteFiles is
         // false, this is load-bearing — without it, a book removed from the app but left on disk
         // would come back on the next rescan with all its old progress and overrides, which is
         // strictly worse than today's "the audio is still there so it comes back fresh".
-        book?.let { diskMirror.deleteBookData(it) }
+        diskMirror.deleteBookData(book)
     }
 
     /** All books by an effective author name (for deleting a whole author from the grid). */
@@ -344,9 +353,9 @@ class AudiobookRepository @Inject constructor(
         internal fun deleteQuietly(path: String, what: String) {
             try {
                 val f = java.io.File(path)
-                if (f.exists() && f.delete()) AppLog.i("DB", "deleted orphaned $what: $path")
+                if (f.exists() && f.delete()) AppLog.i(LogCat.DB, "deleted orphaned $what: $path")
             } catch (e: Exception) {
-                AppLog.e("DB", "failed to delete orphaned $what: $path", e)
+                AppLog.e(LogCat.DB, "failed to delete orphaned $what: $path", e)
             }
         }
     }

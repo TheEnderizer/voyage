@@ -12,6 +12,9 @@ local.properties
 # Release signing key - never commit
 keystore/
 
+# R8 mapping.txt per versionCode (see CLAUDE.md's release flow) - per-build output, not source
+mapping/
+
 # IDE
 .idea/
 *.iml

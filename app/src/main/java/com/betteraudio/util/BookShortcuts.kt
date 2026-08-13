@@ -9,6 +9,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.betteraudio.MainActivity
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.util.log.LogCat
 import kotlin.math.abs
 
 /**
@@ -24,6 +25,7 @@ object BookShortcuts {
 
     fun requestPin(context: Context, book: Book) {
         if (!canPin(context)) {
+            AppLog.w(LogCat.UI, "requestPin: launcher doesn't support pinned shortcuts, book=${book.id}")
             Toast.makeText(context, "Your launcher doesn't support pinned shortcuts", Toast.LENGTH_SHORT).show()
             return
         }
@@ -39,13 +41,17 @@ object BookShortcuts {
             .setIcon(loadIcon(context, book.coverArtPath))
             .setIntent(intent)
             .build()
-        ShortcutManagerCompat.requestPinShortcut(context, shortcut, null)
+        val requested = runCatching { ShortcutManagerCompat.requestPinShortcut(context, shortcut, null) }
+            .onFailure { AppLog.w(LogCat.UI, "requestPin: pin request threw for book=${book.id}: ${it.message}") }
+            .getOrDefault(false)
+        AppLog.i(LogCat.UI, "requestPin: book=${book.id} '$label' requested=$requested")
     }
 
     private fun loadIcon(context: Context, coverArtPath: String?): IconCompat {
         if (coverArtPath != null) {
             val bitmap = runCatching { BitmapFactory.decodeFile(coverArtPath) }.getOrNull()
             if (bitmap != null) return IconCompat.createWithAdaptiveBitmap(bitmap)
+            AppLog.w(LogCat.UI, "requestPin: could not decode cover '$coverArtPath', using launcher icon")
         }
         return IconCompat.createWithResource(context, com.betteraudio.R.mipmap.ic_launcher)
     }

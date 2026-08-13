@@ -12,6 +12,7 @@ import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.sync.ChapterMap
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -88,7 +89,7 @@ class BookDataStore @Inject constructor(
             val newBase = BookDataPaths.docFileName(folderKey).removeSuffix(".json")
             runCatching { oldFile.delete() }
             relocateSiblings(dir, oldBase, newBase)
-            AppLog.i("DiskStore", "relocated disk data for folderKey=$folderKey (was ${oldFile.name})")
+            AppLog.i(LogCat.DISK, "relocated disk data for folderKey=$folderKey (was ${oldFile.name})")
         }
         return relocated
     }
@@ -206,7 +207,7 @@ class BookDataStore @Inject constructor(
         File(dir, BookDataPaths.mappingFileName(folderKey)).delete()
         true
     }.getOrElse {
-        AppLog.w("DiskStore", "delete failed for ${book.folderPath}: ${it.message}")
+        AppLog.w(LogCat.DISK, "delete failed for ${book.folderPath}: ${it.message}")
         false
     }
 
@@ -274,7 +275,7 @@ class BookDataStore @Inject constructor(
             lastCoverSource[folderKey] = source
             target.absolutePath
         }.getOrElse {
-            AppLog.w("DiskStore", "writeCover failed for $folderKey: ${it.message}")
+            AppLog.w(LogCat.DISK, "writeCover failed for $folderKey: ${it.message}")
             null
         }
     }

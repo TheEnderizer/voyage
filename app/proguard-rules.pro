@@ -1,3 +1,11 @@
+# Keep line numbers (and the real, unobfuscated source file name) in stack traces so a crash
+# captured by AppLog's release-build handler — and shared by a beta user — can actually be
+# resolved against app/build/outputs/mapping/release/mapping.txt via `retrace`, instead of
+# reading "at a.b.c.d(SourceFile)" forever. See CLAUDE.md's release flow for archiving mapping.txt
+# per versionCode.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile
+
 -keep class com.betteraudio.data.db.entities.** { *; }
 
 # Widget package: only the classes the launcher/AppWidgetManager reflectively instantiate by name
