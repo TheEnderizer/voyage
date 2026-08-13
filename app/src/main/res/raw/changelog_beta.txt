@@ -5,6 +5,12 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.17b] - 2026-08-13
+
+### Fixed
+- Closing the app from the recent-apps list stopped playback. It now keeps playing — the notification and the home screen widget stay live and fully usable, and a running sleep timer survives too. Swiping the app away while paused still closes the player as before, and the widget's play button will start it up again.
+- Playback could also cut out with the screen off during long stretches of listening, because nothing was keeping the phone's processor awake for the audio. It now holds a wake lock while it is actually playing, and releases it the moment you pause.
+
 ## [1.9.16b] - 2026-08-13
 
 ### Added

@@ -59,10 +59,15 @@
         </activity>
 
         <!-- Media3 playback service -->
+        <!-- stopWithTask=false is already the platform default, but stating it explicitly is
+             what some OEM skins actually read when deciding whether to tear the service down
+             along with a swiped-away task. Keeping playback alive across that swipe is handled
+             in PlaybackService.onTaskRemoved; this is belt-and-braces for the same goal. -->
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            android:stopWithTask="false">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
                 <action android:name="androidx.media3.session.MediaLibraryService" />

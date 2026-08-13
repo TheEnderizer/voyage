@@ -319,6 +319,14 @@ class PlaybackService : MediaSessionService() {
             .build()
         exoPlayer = player
 
+        // Hold a PARTIAL_WAKE_LOCK while actually playing. Without this, the only thing keeping
+        // the CPU up for the audio pipeline is the foreground service itself — which is not
+        // enough once the Activity is gone (app swiped from recents) and the screen goes off.
+        // ExoPlayer takes the lock only while playWhenReady && state != IDLE/ENDED and drops it
+        // on pause/release, so there is no idle drain. WAKE_MODE_LOCAL, not _NETWORK: every
+        // source this app plays is a local file, so the WifiLock the latter adds is dead weight.
+        player.setWakeMode(C.WAKE_MODE_LOCAL)
+
         // Assign a known audio session up front so the LoudnessEnhancer can attach
         // immediately and reliably, rather than depending only on the callback (which can
         // fire late, with an unset id, or be missed entirely on some devices).
@@ -411,6 +419,21 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, skippingPlayer)
             .setCallback(SessionCallback())
             .build()
+
+        // Purely diagnostic. When the foreground-service promotion is refused (notification
+        // permission denied, or a background-start restriction), Media3 swallows it and
+        // isPlaybackOngoing() — which is what its onTaskRemoved consults, see below — is quietly
+        // false forever after. That is one of the ways playback used to die on an app swipe with
+        // nothing in the log to say why. Distinct from the MediaController.Listener in
+        // PlayerController; this one is the service-side hook.
+        setListener(object : MediaSessionService.Listener {
+            override fun onForegroundServiceStartNotAllowedException() {
+                AppLog.e(
+                    LogCat.PLAYBACK,
+                    "Foreground service start NOT allowed — playback will not survive an app swipe"
+                )
+            }
+        })
 
         btAutoResumeWatcher.register()
         registerScreenStateReceiver()
@@ -889,12 +912,48 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
+    /**
+     * App swiped from recents. An audiobook must keep playing through this — so when the player
+     * is live we deliberately do NOT call through to [MediaSessionService.onTaskRemoved], whose
+     * 1.10.0 implementation is:
+     *
+     *     if (!isPlaybackOngoing() || !isAnySessionPlaying()) pauseAllPlayersAndStopSelf();
+     *
+     * `isPlaybackOngoing()` is `mediaNotificationManager.isStartedInForeground()`, so the
+     * superclass only spares a session that is *both* promoted to a foreground service *and*
+     * reporting isPlaying at this exact instant. Anything else — buffering, a momentary
+     * audio-focus duck, a refused FGS promotion (see the Listener in onCreate), an OEM that has
+     * already frozen the process — took the stopSelf() path into onDestroy() and released the
+     * player. Gating on our own player state instead is what makes surviving the swipe the rule
+     * rather than a race we usually win.
+     *
+     * When the player is genuinely idle the old behaviour is kept verbatim: bounded durable save,
+     * then super → pauseAllPlayersAndStopSelf → onDestroy. The widget's cold-start play path
+     * ([loadLastPlayedAndPlay]) is what brings a book back from there.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // App swiped from recents — save position directly from ExoPlayer (not through the
-        // MediaController proxy, which can transiently report 0 during reconnect).
-        val posMs = exoPlayer?.currentPosition ?: 0L
+        // Read directly from ExoPlayer, not through the MediaController proxy, which can
+        // transiently report 0 during reconnect. Main thread — ExoPlayer is not thread-safe.
+        val player = exoPlayer
+        val keepPlaying = player != null && (player.isPlaying || player.playWhenReady)
+        AppLog.i(
+            LogCat.PLAYBACK,
+            "onTaskRemoved — keepPlaying=$keepPlaying isPlaying=${player?.isPlaying} " +
+                "playWhenReady=${player?.playWhenReady} playbackOngoing=${isPlaybackOngoing()}"
+        )
+
+        if (keepPlaying) {
+            // No runBlocking: the process is staying alive to play, so the appScope coroutine
+            // saveCurrentPositionAndFlush() launches will finish normally, and blocking the main
+            // thread on Room + a possibly-unmounted SD card is exactly the kind of stall that
+            // invites the system to kill us during task removal.
+            saveCurrentPositionAndFlush()
+            return
+        }
+
+        val posMs = player?.currentPosition ?: 0L
         if (posMs > 0L) {
-            val item = exoPlayer?.currentMediaItem
+            val item = player?.currentMediaItem
             val bookId = item?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
             val fileId = item?.mediaId?.toLongOrNull()
             if (bookId != -1L && fileId != null) {
@@ -902,7 +961,10 @@ class PlaybackService : MediaSessionService() {
                     repository.updatePosition(bookId, fileId, posMs)
                     // Bounded: the process can be killed right after this callback returns, but a
                     // slow/unmounted SD card must never hang the app-swipe-away path indefinitely.
-                    withTimeoutOrNull(1_500) { diskMirror.flushDirty() }
+                    // 500 ms, not 1500: onDestroy — which super is about to trigger — flushes
+                    // again on appScope, so this only has to cover the case where the kill lands
+                    // before that coroutine is dispatched.
+                    withTimeoutOrNull(500) { diskMirror.flushDirty() }
                 }
             }
         }
