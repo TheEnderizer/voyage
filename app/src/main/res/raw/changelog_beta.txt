@@ -5,6 +5,11 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.9.18b] - 2026-08-13
+
+### Changed
+- Closing the app from the recent-apps list now changes nothing about the player at all. 1.9.17b kept a *playing* book going, but still closed a paused one. Now a paused book stays loaded and paused, ready to resume instantly from the notification or the widget — closing the app is not a playback command, so it no longer acts like one. To actually stop the player, dismiss the media notification, fling the mini bar down, or use the widget's close-book button, all unchanged.
+
 ## [1.9.17b] - 2026-08-13
 
 ### Fixed

@@ -58,8 +58,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 @UnstableApi
@@ -913,62 +911,50 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
 
     /**
-     * App swiped from recents. An audiobook must keep playing through this — so when the player
-     * is live we deliberately do NOT call through to [MediaSessionService.onTaskRemoved], whose
+     * App swiped from recents. This is a **no-op for the player** — whatever it was doing, it
+     * carries on doing. Playing keeps playing; paused stays paused-and-loaded, resumable from the
+     * notification or the widget without a cold start. Closing the app is not a playback command.
+     *
+     * That means deliberately not calling through to [MediaSessionService.onTaskRemoved], whose
      * 1.10.0 implementation is:
      *
      *     if (!isPlaybackOngoing() || !isAnySessionPlaying()) pauseAllPlayersAndStopSelf();
      *
      * `isPlaybackOngoing()` is `mediaNotificationManager.isStartedInForeground()`, so the
-     * superclass only spares a session that is *both* promoted to a foreground service *and*
-     * reporting isPlaying at this exact instant. Anything else — buffering, a momentary
+     * superclass spares a session only when it is *both* promoted to a foreground service *and*
+     * reporting isPlaying at this exact instant. Anything else — paused, buffering, a momentary
      * audio-focus duck, a refused FGS promotion (see the Listener in onCreate), an OEM that has
-     * already frozen the process — took the stopSelf() path into onDestroy() and released the
-     * player. Gating on our own player state instead is what makes surviving the swipe the rule
-     * rather than a race we usually win.
+     * already frozen the process — took the stopSelf() path into onDestroy(), which releases the
+     * player and flips the widget to paused. Even for a genuinely playing book that made survival
+     * a race rather than a rule.
      *
-     * When the player is genuinely idle the old behaviour is kept verbatim: bounded durable save,
-     * then super → pauseAllPlayersAndStopSelf → onDestroy. The widget's cold-start play path
-     * ([loadLastPlayedAndPlay]) is what brings a book back from there.
+     * The one case still handed to super is an **empty** service (no media items at all, e.g.
+     * after the widget's close-book action). There is no player state to preserve there, so
+     * letting it stop is invisible to the user and avoids parking an idle service in memory.
+     *
+     * The user's escape hatch is unchanged and explicit: dismiss the media notification, or fling
+     * the mini bar down / use the widget's close action, all of which stop playback deliberately.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Read directly from ExoPlayer, not through the MediaController proxy, which can
         // transiently report 0 during reconnect. Main thread — ExoPlayer is not thread-safe.
         val player = exoPlayer
-        val keepPlaying = player != null && (player.isPlaying || player.playWhenReady)
+        val hasBookLoaded = (player?.mediaItemCount ?: 0) > 0
         AppLog.i(
             LogCat.PLAYBACK,
-            "onTaskRemoved — keepPlaying=$keepPlaying isPlaying=${player?.isPlaying} " +
+            "onTaskRemoved — hasBookLoaded=$hasBookLoaded isPlaying=${player?.isPlaying} " +
                 "playWhenReady=${player?.playWhenReady} playbackOngoing=${isPlaybackOngoing()}"
         )
 
-        if (keepPlaying) {
-            // No runBlocking: the process is staying alive to play, so the appScope coroutine
-            // saveCurrentPositionAndFlush() launches will finish normally, and blocking the main
-            // thread on Room + a possibly-unmounted SD card is exactly the kind of stall that
-            // invites the system to kill us during task removal.
-            saveCurrentPositionAndFlush()
-            return
-        }
+        // No runBlocking on either path. The process is staying alive, so the appScope coroutine
+        // this launches finishes normally — and blocking the main thread on Room plus a
+        // possibly-unmounted SD card inside the task-removal frame is exactly the kind of stall
+        // that invites the system to kill us, which is the outcome this whole method exists to
+        // avoid. (Even in the empty-service case below there is nothing to lose: no media item
+        // means saveCurrentPositionAndFlush returns without writing.)
+        saveCurrentPositionAndFlush()
 
-        val posMs = player?.currentPosition ?: 0L
-        if (posMs > 0L) {
-            val item = player?.currentMediaItem
-            val bookId = item?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
-            val fileId = item?.mediaId?.toLongOrNull()
-            if (bookId != -1L && fileId != null) {
-                runBlocking {
-                    repository.updatePosition(bookId, fileId, posMs)
-                    // Bounded: the process can be killed right after this callback returns, but a
-                    // slow/unmounted SD card must never hang the app-swipe-away path indefinitely.
-                    // 500 ms, not 1500: onDestroy — which super is about to trigger — flushes
-                    // again on appScope, so this only has to cover the case where the kill lands
-                    // before that coroutine is dispatched.
-                    withTimeoutOrNull(500) { diskMirror.flushDirty() }
-                }
-            }
-        }
-        super.onTaskRemoved(rootIntent)
+        if (!hasBookLoaded) super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
