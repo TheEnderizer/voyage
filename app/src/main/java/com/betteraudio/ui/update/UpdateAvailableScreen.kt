@@ -24,11 +24,14 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.betteraudio.ui.components.ChangelogBodyView
+import com.betteraudio.ui.components.parseChangelogBody
 
 /**
  * Full-screen "an update is available" prompt shown over the app on launch. Two actions:
@@ -100,11 +103,24 @@ fun UpdateAvailableScreen(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
-                Text(
-                    releaseNotes.ifBlank { "No release notes provided." },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                // Rendered with the same parser/renderer as Settings → About, not as raw text:
+                // this body IS a changelog entry (published verbatim as the GitHub release
+                // notes), so its headings, bullets and bold would otherwise show as literal
+                // "###"/"-"/"**" to the one audience guaranteed to read them.
+                val body = remember(releaseNotes) { parseChangelogBody(releaseNotes) }
+                if (body.isEmpty) {
+                    Text(
+                        "No release notes provided.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                } else {
+                    ChangelogBodyView(
+                        body,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        headingStyle = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
 
             if (downloading) {

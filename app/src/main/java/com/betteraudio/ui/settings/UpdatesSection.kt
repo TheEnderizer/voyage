@@ -207,9 +207,16 @@ internal fun LazyListScope.updatesSection(
                     whatsNew.notes.isNotEmpty() -> {
                         Surface(shape = MaterialTheme.shapes.medium,
                             color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                            Text(whatsNew.notes, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.fillMaxWidth().padding(12.dp))
+                            // Same renderer as the launch-time update prompt and About's
+                            // changelog — see ui/components/ChangelogMarkdown.kt.
+                            val body = remember(whatsNew.notes) {
+                                com.betteraudio.ui.components.parseChangelogBody(whatsNew.notes)
+                            }
+                            com.betteraudio.ui.components.ChangelogBodyView(
+                                body,
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                textColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                     whatsNew.error -> {

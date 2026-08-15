@@ -27,6 +27,7 @@ The details:
 ### Changed
 - The library now opens sorted by **most recently listened** instead of title A–Z. If you have ever chosen a sort yourself, your choice is untouched — this only changes the starting default.
 - The player's skip-silence toggle is now an icon rather than a labelled pill, which is what freed the row space the landscape layouts needed.
+- Release notes are now shown properly formatted — headings, bullets and emphasis — in the update prompt at launch and in Settings → Updates, instead of as raw text with the markup left in. Each entry also opens with a short summary now, so you can see what an update is before reading the detail.
 
 ### Fixed
 - **A finished book could restart in the wrong place.** Playing a book marked finished correctly began at position zero — but of whichever file you last listened to, not of the book. On a multi-part book that landed you hours in, reading as though the book had reset itself mid-file. Every way of resuming a book — the player, the library, a series, a widget tap — now goes through one shared calculation, and a finished book restarts at the true beginning. If there was a real saved position, it is offered back as a one-tap restore, the same pill an unexpected jump uses.
