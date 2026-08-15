@@ -36,7 +36,7 @@ data class BackgroundLayerStyle(
     val gradientAngleDeg: Float = 90f,
     /** 0f..0.8f black overlay for text legibility over busy covers. */
     val dim: Float = 0f,
-    /** Stack-blur radius in design units (0 = off). */
+    /** Box-blur radius in design units (0 = off); see [com.betteraudio.widget.render.BlurUtil]. */
     val blurRadius: Float = 0f,
     val opacity: Float = 1f,
     val shapeKind: ShapeKind = ShapeKind.RECT,

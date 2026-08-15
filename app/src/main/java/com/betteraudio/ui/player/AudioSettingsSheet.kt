@@ -70,9 +70,13 @@ fun AudioSettingsSheet(
                 Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Balance") })
             }
 
+            // A forced 280dp minimum (so tab-switching doesn't jump the sheet's height around)
+            // plus the tab row can exceed a ~380dp landscape window's available height; EqTab's
+            // own internal scroll (below) already handles genuine overflow, so this only needs
+            // shrinking, not removing, in that shape of window.
             Box(modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 280.dp)
+                .heightIn(min = if (com.betteraudio.ui.material.MaterialAdaptive.isMaterialLandscape()) 160.dp else 280.dp)
             ) {
                 when (selectedTab) {
                     0 -> SpeedTab(

@@ -8,10 +8,15 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -30,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -37,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.ui.components.FolderBrowser
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
@@ -100,6 +107,10 @@ fun SettingsScreen(
     val darkMode                  by viewModel.darkMode.collectAsStateWithLifecycle()
     val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
     val dynamicPills              by viewModel.dynamicPills.collectAsStateWithLifecycle()
+    // Not a Flow: PackageManager has no change-notification API for this, and changeAppIcon ends
+    // the process the moment a switch actually lands, so a plain one-shot read on first
+    // composition is all this ever needs — see SettingsViewModel.currentAppIcon's KDoc.
+    val appIcon                   = remember { viewModel.currentAppIcon() }
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
@@ -139,8 +150,13 @@ fun SettingsScreen(
     }
 
     val motion = LocalVoyageMotion.current
+    val landscape = isLandscapeWindow()
+    // In landscape the root list is ALWAYS visible (the left pane below), so a back gesture
+    // "returning to Root" has nothing to visibly do there — it should exit Settings instead,
+    // exactly like a back press from Root already does. Disabling this handler lets the gesture
+    // fall through to whatever handles that (the enclosing NavHost).
     val sectionBackProgress = rememberPredictiveBackProgress(
-        enabled = currentSection != SettingsSection.Root
+        enabled = !landscape && currentSection != SettingsSection.Root
     ) {
         viewModel.navigateTo(SettingsSection.Root)
     }
@@ -159,15 +175,60 @@ fun SettingsScreen(
         SettingsSection.Diagnostics -> "Diagnostics"
     }
 
+    // The section dispatch itself — shared by portrait's single pane and landscape's right pane.
+    // A local function (not a top-level one) so it closes over every `viewModel.xxx` state val
+    // above without a 25-parameter signature; both call sites are in this same composable.
+    fun LazyListScope.sectionContent(section: SettingsSection) {
+        when (section) {
+            SettingsSection.Root -> rootSection(viewModel)
+            SettingsSection.Theme -> themeSection(
+                appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, dynamicPills, appIcon, viewModel
+            )
+            SettingsSection.Library -> librarySection(
+                context, storageGranted, libraryFolder, bookCount, rescanRunning,
+                coverRefreshRunning, coverRefreshProgress, resetRunning, ignoredBooks, importStructure,
+                storageSettingsLauncher, { showBrowser = true },
+                ebookFolder, { showEbookBrowser = true }, viewModel
+            )
+            SettingsSection.Playback -> playbackSection(
+                skipForwardMs, skipBackMs,
+                autoRewindSeconds, autoRewindThresholdMinutes,
+                skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs,
+                sleepFadeSeconds, sleepShakeEnabled, sleepShakeResetMinutes,
+                sleepScheduleEnabled, sleepScheduleStartMinutes, sleepScheduleEndMinutes,
+                sleepScheduleDefaultMinutes,
+                headsetMultiPressEnabled, headsetDoublePressAction, headsetTriplePressAction,
+                btAutoResumeEnabled, btAutoResumeWindowMinutes,
+                viewModel
+            )
+            SettingsSection.Presets -> presetsSection(presets, viewModel)
+            SettingsSection.Widget -> widgetSection(
+                widgetDefaultCover, widgetHideWhenIdle, onOpenWidgetGallery, viewModel
+            )
+            SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
+            SettingsSection.Backup -> backupSection(context, viewModel)
+            SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
+            SettingsSection.About -> aboutSection(updateState, viewModel)
+            SettingsSection.Diagnostics -> diagnosticsSection(context, viewModel)
+        }
+    }
+
     Scaffold(
         containerColor = MaterialStyle.surfaceColor(),
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
-                title = { Text(sectionTitle, style = MaterialTheme.typography.titleLarge) },
+                title = {
+                    // Static title in two-pane mode: the left pane IS the root list, so
+                    // "Settings" describes the screen better than whichever detail happens
+                    // to be open in the right pane.
+                    Text(if (landscape) "Settings" else sectionTitle, style = MaterialTheme.typography.titleLarge)
+                },
                 navigationIcon = {
                     IconButton(onClick = {
-                        if (currentSection == SettingsSection.Root) onBack()
+                        // In two-pane mode there's no "collapse to Root" step — the root list
+                        // never collapses — so the arrow always exits Settings.
+                        if (landscape || currentSection == SettingsSection.Root) onBack()
                         else viewModel.navigateTo(SettingsSection.Root)
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -179,61 +240,71 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
-        AnimatedContent(
-            targetState = currentSection,
-            transitionSpec = {
-                // SizeTransform(clip = false): the two sections being crossfaded rarely share a
-                // height, and clipping the shorter one to the taller one's bounds (the default)
-                // shows as a visible hard edge mid-fade.
-                fadeIn(motion.effectsFast) togetherWith fadeOut(motion.effectsFast) using
-                    SizeTransform(clip = false)
-            },
-            label = "settings_section",
-            modifier = Modifier
-                .padding(padding)
-                .graphicsLayer {
-                    val p = sectionBackProgress.value
-                    scaleX = 1f - 0.05f * p
-                    scaleY = 1f - 0.05f * p
-                    alpha = 1f - 0.15f * p
+        if (landscape) {
+            Row(Modifier.padding(padding).fillMaxSize()) {
+                // Left pane: the root list, always visible.
+                LazyColumn(
+                    Modifier.width(320.dp).fillMaxHeight(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    sectionContent(SettingsSection.Root)
                 }
-        ) { section ->
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                when (section) {
-                    SettingsSection.Root -> rootSection(viewModel)
-                    SettingsSection.Theme -> themeSection(
-                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, dynamicPills, viewModel
-                    )
-                    SettingsSection.Library -> librarySection(
-                        context, storageGranted, libraryFolder, bookCount, rescanRunning,
-                        coverRefreshRunning, coverRefreshProgress, resetRunning, ignoredBooks, importStructure,
-                        storageSettingsLauncher, { showBrowser = true },
-                        ebookFolder, { showEbookBrowser = true }, viewModel
-                    )
-                    SettingsSection.Playback -> playbackSection(
-                        skipForwardMs, skipBackMs,
-                        autoRewindSeconds, autoRewindThresholdMinutes,
-                        skipSilenceMinMs, skipSilenceThreshold, skipSilencePaddingMs,
-                        sleepFadeSeconds, sleepShakeEnabled, sleepShakeResetMinutes,
-                        sleepScheduleEnabled, sleepScheduleStartMinutes, sleepScheduleEndMinutes,
-                        sleepScheduleDefaultMinutes,
-                        headsetMultiPressEnabled, headsetDoublePressAction, headsetTriplePressAction,
-                        btAutoResumeEnabled, btAutoResumeWindowMinutes,
-                        viewModel
-                    )
-                    SettingsSection.Presets -> presetsSection(presets, viewModel)
-                    SettingsSection.Widget -> widgetSection(
-                        widgetDefaultCover, widgetHideWhenIdle, onOpenWidgetGallery, viewModel
-                    )
-                    SettingsSection.AI -> aiSection(geminiApiKey, viewModel)
-                    SettingsSection.Backup -> backupSection(context, viewModel)
-                    SettingsSection.Updates -> updatesSection(updateState, whatsNew, viewModel)
-                    SettingsSection.About -> aboutSection(updateState, viewModel)
-                    SettingsSection.Diagnostics -> diagnosticsSection(context, viewModel)
+                // Right pane: the selected detail section (or a placeholder while none is picked).
+                AnimatedContent(
+                    targetState = currentSection,
+                    transitionSpec = {
+                        fadeIn(motion.effectsFast) togetherWith fadeOut(motion.effectsFast) using
+                            SizeTransform(clip = false)
+                    },
+                    label = "settings_section_detail",
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                ) { section ->
+                    if (section == SettingsSection.Root) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                "Pick a section",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            sectionContent(section)
+                        }
+                    }
+                }
+            }
+        } else {
+            AnimatedContent(
+                targetState = currentSection,
+                transitionSpec = {
+                    // SizeTransform(clip = false): the two sections being crossfaded rarely share
+                    // a height, and clipping the shorter one to the taller one's bounds (the
+                    // default) shows as a visible hard edge mid-fade.
+                    fadeIn(motion.effectsFast) togetherWith fadeOut(motion.effectsFast) using
+                        SizeTransform(clip = false)
+                },
+                label = "settings_section",
+                modifier = Modifier
+                    .padding(padding)
+                    .graphicsLayer {
+                        val p = sectionBackProgress.value
+                        scaleX = 1f - 0.05f * p
+                        scaleY = 1f - 0.05f * p
+                        alpha = 1f - 0.15f * p
+                    }
+            ) { section ->
+                LazyColumn(
+                    Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    sectionContent(section)
                 }
             }
         }

@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import coil3.compose.AsyncImage
+import com.betteraudio.ui.material.MaterialAdaptive
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,10 +55,14 @@ fun CoverSearchSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ) {
+        // Fixed minimums sized for a portrait window can alone exceed a short landscape one's
+        // available height (the outer Column has no scroll of its own — the grid below scrolls
+        // itself, but the surrounding chrome doesn't) — shrink them there rather than restructure.
+        val wide = MaterialAdaptive.isMaterialLandscape()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 300.dp)
+                .heightIn(min = if (wide) 160.dp else 300.dp)
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 24.dp)
                 .navigationBarsPadding(),
@@ -82,12 +87,12 @@ fun CoverSearchSheet(
 
             when {
                 loading -> Box(
-                    Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                    Modifier.fillMaxWidth().heightIn(min = if (wide) 100.dp else 200.dp),
                     contentAlignment = Alignment.Center
                 ) { CircularProgressIndicator() }
 
                 searched && results.isEmpty() -> Box(
-                    Modifier.fillMaxWidth().heightIn(min = 200.dp),
+                    Modifier.fillMaxWidth().heightIn(min = if (wide) 100.dp else 200.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -101,7 +106,7 @@ fun CoverSearchSheet(
                     columns = GridCells.Fixed(3),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)
+                    modifier = Modifier.fillMaxWidth().heightIn(max = if (wide) 220.dp else 420.dp)
                 ) {
                     items(results, key = { it }) { url ->
                         AsyncImage(

@@ -26,7 +26,8 @@ class SeriesPlayer @Inject constructor(
     private val seriesRepository: SeriesRepository,
     private val repository: AudiobookRepository,
     private val settings: SettingsStore,
-    private val playerController: PlayerController
+    private val playerController: PlayerController,
+    private val jumpRestoreStore: JumpRestoreStore
 ) {
     // MediaController calls must happen on the main thread; Room suspend reads switch context
     // internally, so a main scope is safe for the load-then-play advance.
@@ -116,15 +117,22 @@ class SeriesPlayer @Inject constructor(
         }
         val series = seriesRepository.getSeriesOnce(seriesId)
         val progress = bwp.progress
-        val startIndex = if (resume && explicitPositionMs == null)
-            files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0) else 0
-        val rawPos = if (resume && explicitPositionMs == null && progress?.isCompleted != true)
-            progress?.positionMs ?: 0L else 0L
-        // Same auto-rewind as PlayerViewModel.play()/HomeViewModel.playResumeBook — only applies
-        // to a genuine resume (not a fresh auto-advance to the next book or a chapter pick).
-        val rewind = if (resume && explicitPositionMs == null)
-            AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L) else 0L
-        val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
+        // A genuine resume (not a fresh auto-advance to the next book or an explicit chapter
+        // pick) goes through the same resolveStart every other resume path uses — which forces
+        // file 0 / position 0 for a finished book (see its KDoc). Anything else starts at file 0,
+        // position 0 unconditionally: an auto-advance starts its new book from the beginning, and
+        // an explicit pick is seeked to its exact position afterward via bookSeekTo below.
+        val startIndex: Int
+        val startPos: Long
+        if (resume && explicitPositionMs == null) {
+            val rewind = AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
+            val resolved = AudioCascade.resolveStart(files, progress, rewind, bookId, jumpRestoreStore)
+            startIndex = resolved.startIndex
+            startPos = resolved.startPositionMs
+        } else {
+            startIndex = 0
+            startPos = 0L
+        }
         // Effective audio: book override → series default → global default preset → scalar fallback.
         val gPreset = repository.getDefaultAudioPreset()
         val audio = AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)

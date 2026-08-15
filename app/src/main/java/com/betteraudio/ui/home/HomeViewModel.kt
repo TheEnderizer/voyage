@@ -65,8 +65,8 @@ enum class SortOption(val label: String) {
 enum class SortDirection { ASC, DESC }
 
 data class SortFilter(
-    val option: SortOption = SortOption.TITLE,
-    val direction: SortDirection = SortDirection.ASC
+    val option: SortOption = SortOption.LAST_PLAYED,
+    val direction: SortDirection = SortDirection.DESC
 )
 
 /** Status sections shown as tabs above the library grid. */
@@ -146,6 +146,7 @@ class HomeViewModel @Inject constructor(
     private val libraryDataStore: com.betteraudio.data.diskstore.LibraryDataStore,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     val playerController: PlayerController,
+    private val jumpRestoreStore: com.betteraudio.playback.JumpRestoreStore,
     @ApplicationScope private val appScope: CoroutineScope
 ) : ViewModel() {
 
@@ -566,12 +567,13 @@ class HomeViewModel @Inject constructor(
                 playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
                 playerController.bookSeekTo(bridgedMs)
             } else {
-                val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-                val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
                 // Same auto-rewind as the full player (PlayerViewModel.play()) — resuming from this
                 // card shouldn't behave differently just because it skipped opening the full player.
+                // resolveStart forces file 0 / position 0 for a finished book — see its KDoc.
                 val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
-                val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
+                val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
+                    files, progress, rewind, bwp.book.id, jumpRestoreStore
+                )
                 playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             }
             playerController.setVolumeBoost(audio.boostDb)
@@ -617,8 +619,9 @@ class HomeViewModel @Inject constructor(
     init {
         // Restore the persisted sort order so the library opens the way the user left it.
         viewModelScope.launch {
-            val opt = runCatching { SortOption.valueOf(settings.sortOption.first()) }.getOrDefault(SortOption.TITLE)
-            val dir = runCatching { SortDirection.valueOf(settings.sortDirection.first()) }.getOrDefault(SortDirection.ASC)
+            val fallback = SortFilter()
+            val opt = runCatching { SortOption.valueOf(settings.sortOption.first()) }.getOrDefault(fallback.option)
+            val dir = runCatching { SortDirection.valueOf(settings.sortDirection.first()) }.getOrDefault(fallback.direction)
             _sortFilter.value = SortFilter(opt, dir)
         }
 

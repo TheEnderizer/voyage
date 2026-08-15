@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.BoxBlur
 import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -113,8 +114,8 @@ class CoverEffectBaker @Inject constructor(
             val colScratch = IntArray(h)
 
             for (k in 1..BLUR_ITERATIONS) {
-                boxBlurHorizontal(working, w, h, inc, lineScratch)
-                boxBlurVertical(working, w, h, inc, colScratch)
+                BoxBlur.horizontal(working, w, h, inc, lineScratch)
+                BoxBlur.vertical(working, w, h, inc, colScratch)
                 val levelLow = (k - 1).toFloat() / BLUR_ITERATIONS
                 val levelHigh = k.toFloat() / BLUR_ITERATIONS
                 for (y in 0 until h) {
@@ -166,53 +167,6 @@ class CoverEffectBaker @Inject constructor(
             outBmp?.recycle()
             if (scaled != null && scaled != src) scaled.recycle()
             src.recycle()
-        }
-    }
-
-    /** Separable box blur (running-sum, radius-independent cost), horizontal pass, in place.
-     *  [line] is caller-owned scratch of size >= w, reused across calls to avoid reallocating. */
-    private fun boxBlurHorizontal(px: IntArray, w: Int, h: Int, r: Int, line: IntArray) {
-        if (r < 1 || w < 2) return
-        val window = 2 * r + 1
-        for (y in 0 until h) {
-            val base = y * w
-            System.arraycopy(px, base, line, 0, w)
-            var sr = 0; var sg = 0; var sb = 0
-            for (i in -r..r) {
-                val c = line[i.coerceIn(0, w - 1)]
-                sr += (c shr 16) and 0xFF; sg += (c shr 8) and 0xFF; sb += c and 0xFF
-            }
-            for (x in 0 until w) {
-                px[base + x] = (0xFF shl 24) or ((sr / window) shl 16) or ((sg / window) shl 8) or (sb / window)
-                val cOut = line[(x - r).coerceIn(0, w - 1)]
-                val cIn = line[(x + r + 1).coerceIn(0, w - 1)]
-                sr += ((cIn shr 16) and 0xFF) - ((cOut shr 16) and 0xFF)
-                sg += ((cIn shr 8) and 0xFF) - ((cOut shr 8) and 0xFF)
-                sb += (cIn and 0xFF) - (cOut and 0xFF)
-            }
-        }
-    }
-
-    /** Separable box blur, vertical pass, in place.
-     *  [col] is caller-owned scratch of size >= h, reused across calls to avoid reallocating. */
-    private fun boxBlurVertical(px: IntArray, w: Int, h: Int, r: Int, col: IntArray) {
-        if (r < 1 || h < 2) return
-        val window = 2 * r + 1
-        for (x in 0 until w) {
-            for (y in 0 until h) col[y] = px[y * w + x]
-            var sr = 0; var sg = 0; var sb = 0
-            for (i in -r..r) {
-                val c = col[i.coerceIn(0, h - 1)]
-                sr += (c shr 16) and 0xFF; sg += (c shr 8) and 0xFF; sb += c and 0xFF
-            }
-            for (y in 0 until h) {
-                px[y * w + x] = (0xFF shl 24) or ((sr / window) shl 16) or ((sg / window) shl 8) or (sb / window)
-                val cOut = col[(y - r).coerceIn(0, h - 1)]
-                val cIn = col[(y + r + 1).coerceIn(0, h - 1)]
-                sr += ((cIn shr 16) and 0xFF) - ((cOut shr 16) and 0xFF)
-                sg += ((cIn shr 8) and 0xFF) - ((cOut shr 8) and 0xFF)
-                sb += (cIn and 0xFF) - (cOut and 0xFF)
-            }
         }
     }
 

@@ -4,15 +4,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,13 +28,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.betteraudio.ui.components.ScrimButton
-import com.betteraudio.ui.components.ScrimPill
 import com.betteraudio.ui.components.frostedWhenVisible
 import com.betteraudio.ui.history.BookHistoryOverlay
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.PlaybackOptions
-import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.material.coverCropMorph
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.AudioSettingsSheet
@@ -55,7 +49,6 @@ import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.theme.Pill
 import java.io.File
-import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,9 +101,7 @@ fun PlayerContent(
     var showBookmarks      by remember { mutableStateOf(false) }
     var showAddBookmark    by remember { mutableStateOf(false) }
     var bookmarkComment    by remember { mutableStateOf("") }
-    var showReturnMenu     by remember { mutableStateOf(false) }
     var showAudioSettings  by remember { mutableStateOf(false) }
-    var showOverflow       by remember { mutableStateOf(false) }
     var showHistory        by remember { mutableStateOf(false) }
     // null = closed; true = editing skip-forward; false = editing skip-back (long-press a skip button)
     var skipEditForward    by remember { mutableStateOf<Boolean?>(null) }
@@ -150,6 +141,22 @@ fun PlayerContent(
     // progress-1 target; doesn't change as the cover's own animated size changes (see
     // coverCropMorph's doc for why that stability matters).
     val coverParentBounds = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+
+    // Built once, shared by the portrait top bar and the landscape body's top bar — both call
+    // into the SAME PlayerTopBar (PlayerControls.kt), whose "Lock screen" item invokes this.
+    val onLockPlayer: () -> Unit = {
+        isLocked = true
+        // A sheet hosted above LockOverlay would otherwise stay reachable while "locked" —
+        // close everything first.
+        showChapters = false
+        showBookOptions = false
+        showSleepTimer = false
+        showSkipSilenceSettings = false
+        showBookmarks = false
+        showAddBookmark = false
+        showAudioSettings = false
+        showHistory = false
+    }
 
     Scaffold(
         containerColor = Color.Transparent
@@ -216,6 +223,23 @@ fun PlayerContent(
             inactiveTrackColor = trackColor
         )
 
+        // Shared by both layouts' cover image — hoisted here (rather than computed inside each
+        // cover Box) so portrait and landscape don't each build their own ImageRequest/cacheKey.
+        val cacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
+        val imageModel = remember(coverPath, cacheKey) {
+            coverPath?.let {
+                coil3.request.ImageRequest.Builder(context)
+                    .data(File(it))
+                    .memoryCacheKey(cacheKey)
+                    .build()
+            }
+        }
+        // State<Float> (not `by`-delegated) so the graphicsLayer below reads it deferred, at draw
+        // time, instead of recomposing this whole screen on every lock-toggle animation frame.
+        val lockAnim = animateFloatAsState(
+            if (isLocked) 1f else 0f, motion.effectsDefault, label = "lockAnim"
+        )
+
         // Background is provided by PlayerSheet's expandingContainer, which grows out of the
         // mini bar's pill instead of fading in — no dim/solidify overlay needed here.
         Box(
@@ -223,93 +247,171 @@ fun PlayerContent(
                 .fillMaxSize()
                 .frostedWhenVisible(showHistory || showChapters)
         ) {
+            if (isLandscapeWindow()) {
+                // Two landscape layouts, one portrait — the user picks in Settings → Theme.
+                // Both are called from HERE, inside the same Box, so LocalPlayerExpand still
+                // resolves to PlayerSheet's instance and the mini-bar morph is untouched by the
+                // choice; switching styles is purely a swap of which body composes.
+                val landscapeStyle by viewModel.landscapePlayerStyle.collectAsStateWithLifecycle()
+                if (landscapeStyle == LandscapePlayerStyle.STAGE) {
+                    PlayerLandscapeStageBody(
+                        padding = padding,
+                        book = book,
+                        author = effectiveAuthor,
+                        inSeries = inSeries,
+                        showSeriesCover = showSeriesCover,
+                        isPlaying = state.isPlaying,
+                        serviceHasBook = serviceHasBook,
+                        bookPos = bookPos,
+                        bookTotal = bookTotal,
+                        cur = cur,
+                        hasMultipleChapters = chapterTimeline.hasMultiple,
+                        chapterNavCount = chapterNav.count,
+                        hasPrevChapter = chapterNav.hasPrev,
+                        hasNextChapter = chapterNav.hasNext,
+                        positionStack = positionStack,
+                        hasJumpRestore = jumpRestore != null,
+                        skipForwardMs = skipForwardMs,
+                        skipBackMs = skipBackMs,
+                        sleepTimerRemainingMs = position.sleepTimerRemainingMs,
+                        isLocked = isLocked,
+                        coverModel = imageModel,
+                        expand = expand,
+                        coverParentBounds = coverParentBounds,
+                        lockAnim = lockAnim,
+                        sliderColors = sliderColors,
+                        accent = accent,
+                        onScrim = onScrim,
+                        onScrimMuted = onScrimMuted,
+                        trackColor = trackColor,
+                        onBack = onBack,
+                        onBookOptions = { showBookOptions = true },
+                        onAddBookmark = { showAddBookmark = true },
+                        onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
+                        onHistory = { showHistory = true },
+                        onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                        onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
+                        onLock = onLockPlayer,
+                        onOpenChapters = { showChapters = true },
+                        onPlayPause = { if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause() },
+                        onSkipForward = { viewModel.skipForward() },
+                        onSkipBack = { viewModel.skipBack() },
+                        onEditSkip = { forward -> skipEditForward = forward },
+                        onPrevChapter = { viewModel.prevChapter() },
+                        onNextChapter = { viewModel.nextChapter() },
+                        onSeekBook = { viewModel.bookSeekTo(it) },
+                        onScrubSeek = { from, to -> viewModel.onScrubSeek(from, to) },
+                        onReturnJump = { viewModel.returnFromJump() },
+                        onReturnToIndex = { viewModel.returnToIndex(it) },
+                        onConfirmPosition = { viewModel.confirmPosition() },
+                        onRestoreJump = { jumpRestore?.let { viewModel.restoreFromJump(it.preJumpBookPosMs) } },
+                        onDismissJumpRestore = { viewModel.dismissJumpRestore() },
+                        onToggleSkipSilence = { viewModel.setSkipSilenceEnabled(book?.skipSilenceEnabled != true) },
+                        onSkipSilenceLongPress = { showSkipSilenceSettings = true },
+                        onAudioSettings = { showAudioSettings = true },
+                        onBookmarksClick = { showBookmarks = true },
+                        onSleepTap = {
+                            if (position.sleepTimerRemainingMs > 0L) {
+                                viewModel.playerController.setSleepTimer(0L)
+                            } else {
+                                viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                            }
+                        },
+                        onSleepLongPress = { showSleepTimer = true }
+                    )
+                    return@Box
+                }
+                PlayerLandscapeBody(
+                    padding = padding,
+                    book = book,
+                    author = effectiveAuthor,
+                    inSeries = inSeries,
+                    showSeriesCover = showSeriesCover,
+                    isPlaying = state.isPlaying,
+                    serviceHasBook = serviceHasBook,
+                    bookPos = bookPos,
+                    bookTotal = bookTotal,
+                    cur = cur,
+                    hasMultipleChapters = chapterTimeline.hasMultiple,
+                    chapterNavCount = chapterNav.count,
+                    hasPrevChapter = chapterNav.hasPrev,
+                    hasNextChapter = chapterNav.hasNext,
+                    positionStack = positionStack,
+                    hasJumpRestore = jumpRestore != null,
+                    skipForwardMs = skipForwardMs,
+                    skipBackMs = skipBackMs,
+                    sleepTimerRemainingMs = position.sleepTimerRemainingMs,
+                    sleepTimerMinutes = sleepTimerMinutes,
+                    isLocked = isLocked,
+                    coverModel = imageModel,
+                    expand = expand,
+                    coverParentBounds = coverParentBounds,
+                    lockAnim = lockAnim,
+                    sliderColors = sliderColors,
+                    accent = accent,
+                    onScrim = onScrim,
+                    onScrimMuted = onScrimMuted,
+                    trackColor = trackColor,
+                    onBack = onBack,
+                    onBookOptions = { showBookOptions = true },
+                    onAddBookmark = { showAddBookmark = true },
+                    onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
+                    onHistory = { showHistory = true },
+                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                    onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
+                    onLock = onLockPlayer,
+                    onOpenChapters = { showChapters = true },
+                    onPlayPause = { if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause() },
+                    onSkipForward = { viewModel.skipForward() },
+                    onSkipBack = { viewModel.skipBack() },
+                    onEditSkip = { forward -> skipEditForward = forward },
+                    onPrevChapter = { viewModel.prevChapter() },
+                    onNextChapter = { viewModel.nextChapter() },
+                    onSeekBook = { viewModel.bookSeekTo(it) },
+                    onScrubSeek = { from, to -> viewModel.onScrubSeek(from, to) },
+                    onReturnJump = { viewModel.returnFromJump() },
+                    onReturnToIndex = { viewModel.returnToIndex(it) },
+                    onConfirmPosition = { viewModel.confirmPosition() },
+                    onRestoreJump = { jumpRestore?.let { viewModel.restoreFromJump(it.preJumpBookPosMs) } },
+                    onDismissJumpRestore = { viewModel.dismissJumpRestore() },
+                    onToggleSkipSilence = { viewModel.setSkipSilenceEnabled(book?.skipSilenceEnabled != true) },
+                    onSkipSilenceLongPress = { showSkipSilenceSettings = true },
+                    onAudioSettings = { showAudioSettings = true },
+                    onBookmarksClick = { showBookmarks = true },
+                    onSleepTap = {
+                        if (position.sleepTimerRemainingMs > 0L) {
+                            viewModel.playerController.setSleepTimer(0L)
+                        } else {
+                            viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                        }
+                    },
+                    onSleepLongPress = { showSleepTimer = true }
+                )
+                return@Box
+            }
             Column(
                 Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = 20.dp)
             ) {
-                // ── Top bar ─────────────────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(expandProgress),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = true, onClick = onBack)
-                    Spacer(Modifier.weight(1f))
-                    val topLabel = book?.seriesName?.takeIf { it.isNotBlank() }
-                    topLabel?.let {
-                        Text(
-                            it.uppercase(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = onScrimMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Box {
-                        ScrimButton(Icons.Default.MoreVert, "More", tonal = true) { showOverflow = true }
-                        DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Book options") },
-                                leadingIcon = { Icon(Icons.Default.Edit, null) },
-                                onClick = { showOverflow = false; showBookOptions = true }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Add bookmark") },
-                                leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
-                                onClick = { showOverflow = false; showAddBookmark = true }
-                            )
-                            if (inSeries) {
-                                DropdownMenuItem(
-                                    text = { Text(if (showSeriesCover) "Show book cover" else "Show series cover") },
-                                    leadingIcon = { Icon(Icons.Default.Image, null) },
-                                    onClick = { showOverflow = false; viewModel.toggleShowSeriesCover() }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Listening history") },
-                                leadingIcon = { Icon(Icons.Default.History, null) },
-                                onClick = { showOverflow = false; showHistory = true }
-                            )
-                            if (book?.ebookPath != null) {
-                                DropdownMenuItem(
-                                    text = { Text("Read from here") },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
-                                    onClick = {
-                                        showOverflow = false
-                                        viewModel.readFromHere { bookId -> onOpenReader(bookId) }
-                                    }
-                                )
-                            }
-                            DropdownMenuItem(
-                                text = { Text("Refresh cover effect") },
-                                leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                                onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Lock screen") },
-                                leadingIcon = { Icon(Icons.Default.Lock, null) },
-                                onClick = {
-                                    showOverflow = false
-                                    isLocked = true
-                                    // A sheet hosted above LockOverlay would otherwise stay
-                                    // reachable while "locked" — close everything first.
-                                    showChapters = false
-                                    showBookOptions = false
-                                    showSleepTimer = false
-                                    showSkipSilenceSettings = false
-                                    showBookmarks = false
-                                    showAddBookmark = false
-                                    showReturnMenu = false
-                                    showAudioSettings = false
-                                    showHistory = false
-                                }
-                            )
-                        }
-                    }
-                }
+                // ── Top bar (shared with the landscape body — PlayerControls.kt) ────────
+                PlayerTopBar(
+                    seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() },
+                    inSeries = inSeries,
+                    showSeriesCover = showSeriesCover,
+                    hasEbook = book?.ebookPath != null,
+                    onScrimMuted = onScrimMuted,
+                    expandProgress = expandProgress,
+                    onBack = onBack,
+                    onBookOptions = { showBookOptions = true },
+                    onAddBookmark = { showAddBookmark = true },
+                    onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
+                    onHistory = { showHistory = true },
+                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                    onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
+                    onLock = onLockPlayer
+                )
 
                 // ── Large rounded cover card in the leftover space — the SAME element that
                 // travels out of the mini player's cover slot (it stays as the player cover
@@ -319,12 +421,6 @@ fun PlayerContent(
                 // TopStart (not Center): when morphing from a grid card, coverCropMorph positions
                 // the cover with an absolute offset computed from this Box's own top-left, so any
                 // implicit centering here would double up with that math.
-                // State<Float> (not `by`-delegated) so the graphicsLayer below reads it deferred,
-                // at draw time, instead of recomposing this whole screen on every lock-toggle
-                // animation frame.
-                val lockAnim = animateFloatAsState(
-                    if (isLocked) 1f else 0f, motion.effectsDefault, label = "lockAnim"
-                )
                 Box(
                     Modifier
                         .weight(1f)
@@ -338,16 +434,6 @@ fun PlayerContent(
                         },
                     contentAlignment = Alignment.TopStart
                 ) {
-                    val cacheKey = if (!useSeriesCover && book != null) "cover-${book.id}" else null
-                    val context = LocalContext.current
-                    val imageModel = remember(coverPath, cacheKey) {
-                        coverPath?.let {
-                            coil3.request.ImageRequest.Builder(context)
-                                .data(File(it))
-                                .memoryCacheKey(cacheKey)
-                                .build()
-                        }
-                    }
                     if (expand.sourceIsGridCard) {
                         // Grid card → this full player, opened directly with no live mini bar
                         // (e.g. Book Info's Resume button, or a fresh unplayed book): aspect-aware
@@ -436,62 +522,25 @@ fun PlayerContent(
                     )
                 }
 
-                // ── Return / Confirm jump-history pills ─────────────────
-                if (!isLocked && positionStack.isNotEmpty()) {
-                    Spacer(Modifier.height(14.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.expandReveal(expandProgress)
-                    ) {
-                        Box {
-                            ScrimPill(
-                                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                                label = "Return ${formatDuration(positionStack.last())}",
-                                trailing = if (positionStack.size > 1) Icons.Default.ArrowDropDown else null,
-                                onClick = {
-                                    if (positionStack.size > 1) showReturnMenu = true
-                                    else viewModel.returnFromJump()
-                                }
-                            )
-                            DropdownMenu(expanded = showReturnMenu, onDismissRequest = { showReturnMenu = false }) {
-                                positionStack.reversed().forEachIndexed { displayIdx, posMs ->
-                                    val stackIdx = positionStack.size - 1 - displayIdx
-                                    DropdownMenuItem(
-                                        text = { Text(formatDuration(posMs)) },
-                                        onClick = { showReturnMenu = false; viewModel.returnToIndex(stackIdx) }
-                                    )
-                                }
-                            }
-                        }
-                        ScrimPill(
-                            icon = Icons.Default.Check,
-                            label = "Confirm",
-                            filled = true,
-                            onClick = { viewModel.confirmPosition() }
-                        )
-                    }
-                }
-
-                // ── Unexpected-jump restore pill (non-destructive; never auto-seeks) ────
+                // ── Return / Confirm + unexpected-jump-restore pills (shared with the
+                // landscape body — PlayerControls.kt; each is a no-op composable when it has
+                // nothing to show, so no manual Spacer/if-gating is needed here). ────────────
                 if (!isLocked) {
-                    jumpRestore?.let { restore ->
-                        Spacer(Modifier.height(14.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.expandReveal(expandProgress)
-                        ) {
-                            ScrimPill(
-                                icon = Icons.AutoMirrored.Filled.Undo,
-                                label = "Playback jumped — tap to go back",
-                                onClick = { viewModel.restoreFromJump(restore.preJumpBookPosMs) }
-                            )
-                            ScrimPill(
-                                icon = Icons.Default.Close,
-                                label = "Dismiss",
-                                onClick = { viewModel.dismissJumpRestore() }
-                            )
-                        }
-                    }
+                    ReturnConfirmPills(
+                        positionStack = positionStack,
+                        expandProgress = expandProgress,
+                        onReturn = { viewModel.returnFromJump() },
+                        onReturnToIndex = { viewModel.returnToIndex(it) },
+                        onConfirm = { viewModel.confirmPosition() },
+                        modifier = Modifier.padding(top = 14.dp)
+                    )
+                    JumpRestorePill(
+                        visible = jumpRestore != null,
+                        expandProgress = expandProgress,
+                        onRestore = { jumpRestore?.let { viewModel.restoreFromJump(it.preJumpBookPosMs) } },
+                        onDismiss = { viewModel.dismissJumpRestore() },
+                        modifier = Modifier.padding(top = 14.dp)
+                    )
                 }
 
                 Spacer(Modifier.height(16.dp))
@@ -636,70 +685,27 @@ fun PlayerContent(
 
                 Spacer(Modifier.height(14.dp))
 
-                // ── Secondary actions ───────────────────────────────────
-                Row(
-                    Modifier.fillMaxWidth().expandReveal(expandProgress),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Skip-silence toggle (replaces the old playback-speed pill — speed lives
-                    // in the audio settings sheet's Speed tab).
-                    run {
-                        val skipSilenceOn = book?.skipSilenceEnabled == true
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(Pill)
-                                .background(if (skipSilenceOn) accent.copy(alpha = 0.22f) else Color.Transparent)
-                                .combinedClickable(
-                                    onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
-                                    onLongClick = { showSkipSilenceSettings = true }
-                                )
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.FastForward, null, Modifier.size(16.dp),
-                                tint = if (skipSilenceOn) accent else onScrimMuted
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Skip silence",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (skipSilenceOn) accent else onScrimMuted
-                            )
-                        }
-                    }
-                    SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
-                    SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
-                    // Tap starts a timer at the slider's set duration (or cancels one already
-                    // running); long-press opens the full options (slider/custom entry/end-of-
-                    // chapter/fade/shake/schedule).
-                    Box(
-                        Modifier
-                            .clip(Pill)
-                            .combinedClickable(
-                                onClick = {
-                                    if (position.sleepTimerRemainingMs > 0L) {
-                                        viewModel.playerController.setSleepTimer(0L)
-                                    } else {
-                                        viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
-                                    }
-                                },
-                                onLongClick = { showSleepTimer = true }
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
+                // ── Secondary actions (shared with the landscape body — PlayerControls.kt) ──
+                PlayerSecondaryActionsRow(
+                    skipSilenceOn = book?.skipSilenceEnabled == true,
+                    accent = accent,
+                    onScrim = onScrim,
+                    onScrimMuted = onScrimMuted,
+                    sleepRemainingMs = position.sleepTimerRemainingMs,
+                    expandProgress = expandProgress,
+                    onToggleSkipSilence = { viewModel.setSkipSilenceEnabled(book?.skipSilenceEnabled != true) },
+                    onSkipSilenceLongPress = { showSkipSilenceSettings = true },
+                    onAudioSettings = { showAudioSettings = true },
+                    onBookmarks = { showBookmarks = true },
+                    onSleepTap = {
                         if (position.sleepTimerRemainingMs > 0L) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
-                                Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
-                            }
+                            viewModel.playerController.setSleepTimer(0L)
                         } else {
-                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = onScrim)
+                            viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
                         }
-                    }
-                }
+                    },
+                    onSleepLongPress = { showSleepTimer = true }
+                )
                 } // end Column (transport + secondary actions group)
                 } // end AnimatedVisibility (music controls slide-away on lock)
 
@@ -764,12 +770,24 @@ fun PlayerContent(
         // Material You: the hold-to-unlock indicator appears roughly where the transport/
         // secondary-action rows sit (rather than LockOverlay's own default bottom-of-screen
         // placement), tinted to match the tonal player instead of Immersive's white-on-scrim.
-        LockOverlay(
-            locked = isLocked,
-            onUnlock = { isLocked = false },
-            contentPadding = PaddingValues(bottom = 90.dp),
-            contentColor = MaterialTheme.colorScheme.onSurface
-        )
+        // Landscape's transport/secondary-actions vacate the right rail on lock (not the bottom
+        // of the screen, as in portrait), so the hold-to-unlock indicator follows it there.
+        if (isLandscapeWindow()) {
+            LockOverlay(
+                locked = isLocked,
+                onUnlock = { isLocked = false },
+                alignment = Alignment.CenterEnd,
+                contentPadding = PaddingValues(end = 30.dp),
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        } else {
+            LockOverlay(
+                locked = isLocked,
+                onUnlock = { isLocked = false },
+                contentPadding = PaddingValues(bottom = 90.dp),
+                contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        }
 
         if (showBookOptions && bwp != null) {
             BookOptionsSheet(
@@ -876,159 +894,5 @@ fun PlayerContent(
     }
 }
 
-/** Slim whole-book progress, tappable to reveal a full book scrubber. Styled for the dark scrim.
- *  [readOnly] (used for the locked player) disables the tap-to-expand/drag entirely and hides the
- *  expand chevron, leaving a purely passive progress display. */
-@Composable
-private fun CompactBookProgress(
-    positionMs: Long,
-    totalMs: Long,
-    accent: Color,
-    muted: Color,
-    trackColor: Color,
-    readOnly: Boolean = false,
-    onSeek: (Long) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val frac = if (totalMs > 0) (positionMs.toFloat() / totalMs).coerceIn(0f, 1f) else 0f
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth()
-                .let { if (readOnly) it else it.clip(Pill).clickable { expanded = !expanded } }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Book", style = MaterialTheme.typography.labelSmall, color = muted)
-            Spacer(Modifier.width(10.dp))
-            LinearProgressIndicator(
-                progress = { frac },
-                modifier = Modifier.weight(1f).height(4.dp).clip(Pill),
-                color = accent,
-                trackColor = trackColor
-            )
-            Spacer(Modifier.width(10.dp))
-            Text("${(frac * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = muted)
-            if (!readOnly) {
-                Icon(
-                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    if (expanded) "Collapse" else "Expand book progress",
-                    Modifier.size(18.dp),
-                    tint = muted
-                )
-            }
-        }
-        if (!readOnly && expanded) {
-            var dragFrac by remember { mutableStateOf<Float?>(null) }
-            val displayFrac = dragFrac ?: frac
-            Slider(
-                value = displayFrac,
-                onValueChange = { dragFrac = it },
-                onValueChangeFinished = { dragFrac?.let { onSeek((it * totalMs).toLong()) }; dragFrac = null },
-                colors = SliderDefaults.colors(
-                    thumbColor = accent,
-                    activeTrackColor = accent,
-                    inactiveTrackColor = trackColor
-                ),
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-    }
-}
-
-@Composable
-private fun TimeRow(left: String, right: String, color: Color) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(left, style = MaterialTheme.typography.labelMedium, color = color)
-        Text(right, style = MaterialTheme.typography.labelMedium, color = color)
-    }
-}
-
-/** A circular skip control that shows the configured seconds in its centre. Long-press to change
- *  the skip amount. */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun SkipButton(
-    seconds: Int,
-    forward: Boolean,
-    tint: Color,
-    onLongPress: () -> Unit = {},
-    onClick: () -> Unit
-) {
-    Box(
-        Modifier.size(56.dp).clip(Pill)
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            Icons.Default.Replay,
-            if (forward) "Skip forward $seconds seconds" else "Skip back $seconds seconds",
-            Modifier.size(38.dp).graphicsLayer { if (forward) scaleX = -1f },
-            tint = tint
-        )
-        // The Replay glyph's open loop sits slightly low-left of the box centre, so the centred
-        // number reads as off. Nudge it into the loop's optical centre (the icon is mirrored for
-        // the forward button, but the text is a separate child so it isn't flipped).
-        Text(
-            "$seconds",
-            style = MaterialTheme.typography.labelSmall,
-            color = tint,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.offset(x = 0.5.dp, y = 1.5.dp)
-        )
-    }
-}
-
-/** Stepper dialog to change a skip interval (opened by long-pressing a skip button). */
-@Composable
-private fun SkipValueDialog(
-    forward: Boolean,
-    currentSeconds: Int,
-    onConfirm: (Int) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var secs by remember { mutableStateOf(currentSeconds.coerceIn(5, 300)) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (forward) "Skip forward" else "Skip back") },
-        text = {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                FilledTonalIconButton(onClick = { secs = (secs - 5).coerceAtLeast(5) }) {
-                    Icon(Icons.Default.Remove, "Less")
-                }
-                Text("$secs s", style = MaterialTheme.typography.headlineSmall)
-                FilledTonalIconButton(onClick = { secs = (secs + 5).coerceAtMost(300) }) {
-                    Icon(Icons.Default.Add, "More")
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
-private fun SecondaryIcon(icon: ImageVector, cd: String, tint: Color, onClick: () -> Unit) {
-    IconButton(onClick = onClick) { Icon(icon, cd, Modifier.size(22.dp), tint = tint) }
-}
-
-private fun formatDurationHuman(ms: Long): String {
-    val hours   = TimeUnit.MILLISECONDS.toHours(ms)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(ms) % 60
-    return when {
-        hours > 0   -> "${hours}h ${minutes}m"
-        minutes > 0 -> "${minutes}m"
-        else        -> "<1m"
-    }
-}
-
-private fun formatDuration(ms: Long): String {
-    val s = ms / 1000
-    val h = s / 3600
-    val m = (s % 3600) / 60
-    val sec = s % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
-}
+// CompactBookProgress, TimeRow, SkipButton, SkipValueDialog, SecondaryIcon, formatDuration and
+// formatDurationHuman moved to PlayerControls.kt (shared with the landscape body).

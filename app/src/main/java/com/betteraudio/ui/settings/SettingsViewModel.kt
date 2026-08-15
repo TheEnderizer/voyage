@@ -75,8 +75,41 @@ class SettingsViewModel @Inject constructor(
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     private val backupManager: com.betteraudio.data.backup.BackupManager,
     private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
-    private val diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration
+    private val diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration,
+    private val playerController: com.betteraudio.playback.PlayerController
 ) : ViewModel() {
+
+    // ── App icon (see util/AppIconManager.kt) ──────────────────────────────
+    // A one-shot read, not a StateFlow: PackageManager has no change-notification API for this,
+    // and it doesn't need one — changeAppIcon ends the process the moment a switch actually
+    // happens, so the next value that matters is read fresh on the next launch's first composition.
+    fun currentAppIcon(): com.betteraudio.util.AppIconManager.AppIcon =
+        com.betteraudio.util.AppIconManager.current(appContext)
+
+    /** Plain snapshot, not collected — only read once, when the confirm dialog opens, to decide
+     *  whether to show its "Playback will stop" line. */
+    fun isPlaying(): Boolean = playerController.playbackState.value.isPlaying
+
+    /**
+     * Saves the current playback position, switches the launcher icon, then deliberately ends
+     * this process and relaunches MainActivity fresh — see [AppIconManager.apply]'s KDoc for why
+     * the switch itself must fully land (via DONT_KILL_APP) before anything is allowed to kill
+     * this process. MainActivity is targeted explicitly rather than through a launcher lookup:
+     * it's the one component that's never disabled by this switch, unlike the icon aliases
+     * themselves, so this works regardless of which alias state has just landed.
+     */
+    fun changeAppIcon(icon: com.betteraudio.util.AppIconManager.AppIcon) {
+        viewModelScope.launch {
+            playerController.pauseAndFlush()
+            com.betteraudio.util.AppIconManager.apply(appContext, icon)
+            AppLog.i(LogCat.SETTINGS, "changeAppIcon: switched to ${icon.id}, restarting")
+            val relaunch = Intent(appContext, com.betteraudio.MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            }
+            appContext.startActivity(relaunch)
+            kotlin.system.exitProcess(0)
+        }
+    }
 
     // ── Disk mirror (reinstall-proof library data) ────────────────────────────
     val diskMirrorHealthy: StateFlow<Boolean> =
@@ -363,6 +396,18 @@ class SettingsViewModel @Inject constructor(
 
     val dynamicPills: StateFlow<Boolean> =
         settings.dynamicPills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Which landscape layout the Material You player uses — see `LandscapePlayerStyle`. */
+    val landscapePlayerStyle: StateFlow<com.betteraudio.ui.material.player.LandscapePlayerStyle> =
+        settings.playerLandscapeStyle
+            .map { com.betteraudio.ui.material.player.LandscapePlayerStyle.fromName(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.material.player.LandscapePlayerStyle.RAILS
+            )
+
+    fun setLandscapePlayerStyle(style: com.betteraudio.ui.material.player.LandscapePlayerStyle) =
+        viewModelScope.launch { settings.setPlayerLandscapeStyle(style.name) }
 
     fun setCustomThemeColor(value: String) =
         viewModelScope.launch { settings.setCustomThemeColor(value) }

@@ -30,10 +30,13 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
+import com.betteraudio.R
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.sizeOnDisk
 import com.betteraudio.data.repository.AudiobookRepository
@@ -44,6 +47,7 @@ import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
 import com.betteraudio.widget.WidgetUpdater
 import com.betteraudio.widget.model.WidgetSnapshot
+import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
@@ -428,6 +432,12 @@ class PlaybackService : MediaSessionService() {
         mediaSession = MediaSession.Builder(this, skippingPlayer)
             .setCallback(SessionCallback())
             .build()
+
+        // Because of that ForwardingPlayer, the notification's outer two buttons skip by time —
+        // but Media3's defaults for those commands are the track-skip arrows (|<< / >>|), which
+        // read as "previous/next file". Re-icon them with the player's own circular seek glyph so
+        // the notification shows what the buttons actually do.
+        setMediaNotificationProvider(SkipIconNotificationProvider(this))
 
         // Purely diagnostic. When the foreground-service promotion is refused (notification
         // permission denied, or a background-start restriction), Media3 swallows it and
@@ -920,15 +930,14 @@ class PlaybackService : MediaSessionService() {
             val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
             val audio = AudioCascade.resolve(book, progress, series, gPreset, settings.currentDefaultSpeed)
-            val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-            val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
             // Same auto-rewind as every other resume path (PlayerViewModel.play() etc.) — a cold
             // widget tap shouldn't behave differently just because no Activity is open yet.
+            // resolveStart forces file 0 / position 0 for a finished book — see its KDoc.
             val rewind = AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
-            val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
+            val (startIndex, startPos) = AudioCascade.resolveStart(files, progress, rewind, bookId, jumpRestoreStore)
             AppLog.i(LogCat.PLAYBACK, "widget loadLastPlayedAndPlay book=$bookId" +
                 " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
-                " → startIdx=$startIndex startPos=${startPos}ms")
+                " → rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
 
             val items = files.map { file ->
                 // Uri.fromFile percent-encodes; "file://$path" breaks on '%' or '#' in a name.
@@ -1209,6 +1218,54 @@ class PlaybackService : MediaSessionService() {
                 )
             )
         }
+    }
+
+    /**
+     * The stock notification provider, with the two seek buttons re-drawn as the app's time-based
+     * skip control instead of Media3's track-skip arrows.
+     *
+     * Media3 builds those buttons around `COMMAND_SEEK_TO_{PREVIOUS,NEXT}_MEDIA_ITEM`, which the
+     * session's [ForwardingPlayer] redefines as "skip back/forward by the configured interval" —
+     * so only the icon (and its content description) was ever wrong. Matching on the button's
+     * `icon` constant rather than its player command keeps this pinned to the two buttons whose
+     * glyph is the problem, whichever command Media3 happens to wire them to.
+     */
+    private inner class SkipIconNotificationProvider(context: Context) :
+        DefaultMediaNotificationProvider(context) {
+
+        override fun getMediaButtons(
+            session: MediaSession,
+            playerCommands: Player.Commands,
+            customLayout: ImmutableList<CommandButton>,
+            showPauseButton: Boolean
+        ): ImmutableList<CommandButton> {
+            val buttons = super.getMediaButtons(session, playerCommands, customLayout, showPauseButton)
+            return ImmutableList.copyOf(buttons.map { button ->
+                when (button.icon) {
+                    CommandButton.ICON_PREVIOUS -> button.withSkipIcon(
+                        R.drawable.ic_w_skip_back,
+                        "Skip back ${settings.currentSkipBackMs / 1000} seconds"
+                    )
+                    CommandButton.ICON_NEXT -> button.withSkipIcon(
+                        R.drawable.ic_w_skip_forward,
+                        "Skip forward ${settings.currentSkipForwardMs / 1000} seconds"
+                    )
+                    else -> button
+                }
+            })
+        }
+
+        /** Rebuild [this] with a different drawable and label, carrying every other field over —
+         *  `slots` in particular, since that is what fixes the button's position in the layout. */
+        private fun CommandButton.withSkipIcon(iconRes: Int, name: String): CommandButton =
+            CommandButton.Builder(icon)
+                .setPlayerCommand(playerCommand)
+                .setCustomIconResId(iconRes)
+                .setDisplayName(name)
+                .setExtras(extras)
+                .setEnabled(isEnabled)
+                .apply { if (slots.length() > 0) setSlots(*slots.toArray()) }
+                .build()
     }
 
     private inner class SessionCallback : MediaSession.Callback {

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -38,6 +40,7 @@ import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
 import com.betteraudio.ui.home.SeriesOptions
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.series.SeriesDetailViewModel
@@ -135,7 +138,13 @@ fun SeriesDetailScreen(
     val onScrimMuted = MaterialTheme.colorScheme.onSurfaceVariant
 
     BoxWithConstraints(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val panelHeightPx = constraints.maxHeight * 0.84f
+        val landscape = isLandscapeWindow()
+        // A 0.84 panel over a short landscape window leaves a cramped strip of the info page
+        // above it — take almost the whole window instead. panelHeightPx and the Surface's own
+        // fillMaxHeight below MUST use the same fraction or the drag distance stops matching how
+        // far the panel actually travels.
+        val panelFraction = if (landscape) 0.94f else 0.84f
+        val panelHeightPx = constraints.maxHeight * panelFraction
 
         fun dragBy(delta: Float) {
             // Synchronous, no coroutine — see dragProgress's declaration above (AN-2).
@@ -149,22 +158,13 @@ fun SeriesDetailScreen(
 
         val coverPath = series?.coverArtPath
             ?: books.firstOrNull { it.coverArtPath != null }?.coverArtPath
+        val effectiveAuthor = series?.author?.takeIf { it.isNotBlank() }
+            ?: books.firstOrNull { it.displayAuthor.isNotBlank() }?.displayAuthor
 
-        // ── Info page (swipe up anywhere to reveal the books panel) ────────────
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-                .draggable(
-                    orientation = Orientation.Vertical,
-                    state = rememberDraggableState { dragBy(it) },
-                    onDragStarted = { isDragging = true },
-                    onDragStopped = { dragStopped(it) }
-                )
-        ) {
-            // ── Top bar ────────────────────────────────────────────────────────
+        // Top bar — identical content in both layouts, just placed differently (self-contained:
+        // its own Row provides the RowScope its Spacer(weight()) calls need, so it's safe to
+        // extract as a closure, unlike the swipe-up hint below).
+        val topBar: @Composable () -> Unit = {
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -201,34 +201,9 @@ fun SeriesDetailScreen(
                     }
                 }
             }
+        }
 
-            // Rounded cover card in the leftover space — same tonal treatment as the player's
-            // own cover and the book info page, instead of the old full-bleed blurred backdrop.
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.TopCenter
-            ) {
-                AsyncImage(
-                    model = coverPath?.let { File(it) },
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .aspectRatio(0.72f)
-                        .morphFrom(
-                            coverSource, coverOpenProgress,
-                            anchorTopLeft = true, byWidth = true,
-                            sourceRadius = coverSourceRadius, destRadius = 28.dp
-                        )
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                )
-            }
-
-            // ── Bottom info block — same panel as a book, incl. the AI synopsis ─
-            val effectiveAuthor = series?.author?.takeIf { it.isNotBlank() }
-                ?: books.firstOrNull { it.displayAuthor.isNotBlank() }?.displayAuthor
+        val infoPanel: @Composable () -> Unit = {
             BookInfoPanel(
                 title            = series?.name ?: "",
                 author           = effectiveAuthor,
@@ -241,25 +216,141 @@ fun SeriesDetailScreen(
                                    ?: if (synopsisGenerating) "Generating synopsis…" else null,
                 onResume         = { viewModel.playSeries() }
             )
+        }
 
-            // ── Swipe-up hint ──────────────────────────────────────────────────
+        val infoDragModifier = Modifier.draggable(
+            orientation = Orientation.Vertical,
+            state = rememberDraggableState { dragBy(it) },
+            onDragStarted = { isDragging = true },
+            onDragStopped = { dragStopped(it) }
+        )
+
+        // ── Info page (swipe up anywhere to reveal the books panel) ────────────
+        if (landscape) {
             Row(
                 Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .clip(Pill)
-                    .clickable { settlePanel(true) }
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .then(infoDragModifier)
             ) {
-                Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(18.dp), tint = onScrimMuted)
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    "Swipe up for books",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = onScrimMuted
-                )
+                // LEFT: cover — uses morphFrom (not coverCropMorph), so no stable-parent-rect
+                // requirement and no mandatory TopStart, matching Book Info's landscape cover.
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .padding(vertical = 12.dp)
+                        .aspectRatio(0.72f, matchHeightConstraintsFirst = true),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = coverPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .morphFrom(
+                                coverSource, coverOpenProgress,
+                                anchorTopLeft = true, byWidth = true,
+                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                }
+
+                Spacer(Modifier.width(20.dp))
+
+                // RIGHT: top bar + info panel + swipe-up hint, scrollable as a whole (same
+                // rationale as Book Info's landscape layout — the panel's own synopsis has an
+                // internal scroll box, but the surrounding chrome is fixed-height content that
+                // can still exceed a short landscape window on its own). Because this whole pane
+                // scrolls, a swipe-up gesture starting over it is captured by the scroll rather
+                // than the panel-reveal drag on the outer Row — the same tension the synopsis
+                // box's own internal scroll already has in portrait, just widened to the whole
+                // pane. The "Swipe up for books" pill is the reliable, gesture-independent way to
+                // open the panel either way.
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) {
+                    topBar()
+
+                    Box(Modifier.fillMaxWidth().padding(vertical = 4.dp)) { infoPanel() }
+
+                    Row(
+                        Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .clip(Pill)
+                            .clickable { settlePanel(true) }
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(18.dp), tint = onScrimMuted)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Swipe up for books",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = onScrimMuted
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                }
             }
-            Spacer(Modifier.height(10.dp))
+        } else {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .then(infoDragModifier)
+            ) {
+                topBar()
+
+                // Rounded cover card in the leftover space — same tonal treatment as the
+                // player's own cover and the book info page, instead of the old full-bleed
+                // blurred backdrop.
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    AsyncImage(
+                        model = coverPath?.let { File(it) },
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .aspectRatio(0.72f)
+                            .morphFrom(
+                                coverSource, coverOpenProgress,
+                                anchorTopLeft = true, byWidth = true,
+                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                }
+
+                infoPanel()
+
+                // ── Swipe-up hint ──────────────────────────────────────────────
+                Row(
+                    Modifier
+                        .align(Alignment.CenterHorizontally)
+                        .clip(Pill)
+                        .clickable { settlePanel(true) }
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.KeyboardArrowUp, null, Modifier.size(18.dp), tint = onScrimMuted)
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Swipe up for books",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = onScrimMuted
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+            }
         }
 
         // ── Books panel (slides up over the info page) ─────────────────────────
@@ -268,8 +359,11 @@ fun SeriesDetailScreen(
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                // Capped BEFORE fillMaxWidth() so the cap actually narrows the node — a wide
+                // landscape window otherwise leaves the list swimming in 890dp of whitespace.
+                .widthIn(max = 720.dp)
                 .fillMaxWidth()
-                .fillMaxHeight(0.84f)
+                .fillMaxHeight(panelFraction)
                 .graphicsLayer { translationY = panelHeightPx * (1f - dragProgress.floatValue) }
         ) {
             Column(Modifier.fillMaxSize()) {

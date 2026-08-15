@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.model.HomeGridBook
 import com.betteraudio.ui.home.HomeStyle
+import com.betteraudio.ui.material.MaterialAdaptive
 import com.betteraudio.ui.material.MaterialStyle
 import java.io.File
 
@@ -36,6 +37,7 @@ object MaterialHomeStyle : HomeStyle {
     @Composable override fun scrimBase(): Color = Color.Black
     @Composable override fun emptyIconBackground(): Color = MaterialTheme.colorScheme.surfaceContainerHigh
     @Composable override fun scrimText(muted: Boolean): Color = MaterialStyle.scrimText(muted)
+    @Composable override fun gridColumns(): Int = MaterialAdaptive.homeGridColumns()
 
     override fun bookCoverModel(context: Context, book: HomeGridBook): Any? =
         book.coverArtPath?.let {

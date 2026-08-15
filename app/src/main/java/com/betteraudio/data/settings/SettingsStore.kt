@@ -62,6 +62,9 @@ class SettingsStore @Inject constructor(
         // In the player, for a book that belongs to a series: show the series cover (true) instead
         // of the book's own cover (false, default).
         val PLAYER_SHOW_SERIES_COVER     = booleanPreferencesKey("player_show_series_cover")
+        // Which landscape layout the Material You player uses: RAILS (default) | STAGE. Portrait
+        // is unaffected — see ui/material/player/LandscapePlayerStyle.kt.
+        val PLAYER_LANDSCAPE_STYLE       = stringPreferencesKey("player_landscape_style")
         // "" = not chosen yet (drives the first-launch theme prompt); otherwise an AppTheme name
         // (MATERIAL_YOU | IMMERSIVE). Blank renders as MATERIAL_YOU behind the prompt.
         val APP_THEME                    = stringPreferencesKey("app_theme")
@@ -206,8 +209,9 @@ class SettingsStore @Inject constructor(
     val defaultSpeed: Flow<Float>    = prefsData.map { it[Keys.DEFAULT_SPEED]   ?: DEFAULT_SPEED }.distinctUntilChanged()
     val geminiApiKey: Flow<String>          = prefsData.map { it[Keys.GEMINI_API_KEY]          ?: "" }.distinctUntilChanged()
     val defaultAudioPresetId: Flow<Long>    = prefsData.map { it[Keys.DEFAULT_AUDIO_PRESET_ID] ?: -1L }.distinctUntilChanged()
-    val sortOption: Flow<String>            = prefsData.map { it[Keys.SORT_OPTION]    ?: "TITLE" }.distinctUntilChanged()
-    val sortDirection: Flow<String>         = prefsData.map { it[Keys.SORT_DIRECTION] ?: "ASC" }.distinctUntilChanged()
+    // Defaults mirror ui/home/SortFilter's — a library opens most-recently-listened first.
+    val sortOption: Flow<String>            = prefsData.map { it[Keys.SORT_OPTION]    ?: "LAST_PLAYED" }.distinctUntilChanged()
+    val sortDirection: Flow<String>         = prefsData.map { it[Keys.SORT_DIRECTION] ?: "DESC" }.distinctUntilChanged()
     val lastOpenBookId: Flow<Long>          = prefsData.map { it[Keys.LAST_OPEN_BOOK_ID] ?: -1L }.distinctUntilChanged()
     val lastPlayedBookId: Flow<Long>        = prefsData.map { it[Keys.LAST_PLAYED_BOOK_ID] ?: -1L }.distinctUntilChanged()
     /** The book whose cover the app-wide Material You theme should track — set alongside
@@ -229,6 +233,7 @@ class SettingsStore @Inject constructor(
     val importStructure: Flow<String>         = prefsData.map { it[Keys.IMPORT_STRUCTURE] ?: "" }.distinctUntilChanged()
     val skippedUpdateVersion: Flow<String>    = prefsData.map { it[Keys.SKIPPED_UPDATE_VERSION] ?: "" }.distinctUntilChanged()
     val playerShowSeriesCover: Flow<Boolean>  = prefsData.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }.distinctUntilChanged()
+    val playerLandscapeStyle: Flow<String>    = prefsData.map { it[Keys.PLAYER_LANDSCAPE_STYLE] ?: "RAILS" }.distinctUntilChanged()
     val homeViewMode: Flow<String>            = prefsData.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }.distinctUntilChanged()
     val appTheme: Flow<String>                = prefsData.map { it[Keys.APP_THEME] ?: "" }.distinctUntilChanged()
     val themeColorSource: Flow<String>        = prefsData.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }.distinctUntilChanged()
@@ -507,6 +512,9 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setPlayerShowSeriesCover(enabled: Boolean) {
         context.dataStore.edit { it[Keys.PLAYER_SHOW_SERIES_COVER] = enabled }
+    }
+    suspend fun setPlayerLandscapeStyle(name: String) {
+        context.dataStore.edit { it[Keys.PLAYER_LANDSCAPE_STYLE] = name }
     }
     suspend fun setAppTheme(name: String) {
         context.dataStore.edit { it[Keys.APP_THEME] = name }

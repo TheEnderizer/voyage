@@ -38,6 +38,11 @@ class ReaderWebView(
      *  caller (via [loadSpine]) before triggering the load. */
     var pendingRestoreFraction: Float = 0f
 
+    /** Set while a size-change (e.g. rotation with the Activity NOT recreated) is settling — see
+     *  [onSizeChanged]. Suppresses [onFractionChanged] so the transient scroll-range values
+     *  Chromium reports mid-reflow never get written back as the "real" position. */
+    private var suppressFractionCallback = false
+
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             onTap()
@@ -127,7 +132,35 @@ class ReaderWebView(
 
     override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
         super.onScrollChanged(l, t, oldl, oldt)
+        if (suppressFractionCallback) return
         val maxScroll = (computeVerticalScrollRange() - computeVerticalScrollExtent()).coerceAtLeast(1)
         onFractionChanged((t.toFloat() / maxScroll).coerceIn(0f, 1f))
+    }
+
+    /**
+     * A resize in place — chiefly a rotation where the Activity is NOT recreated — reflows the
+     * document at the new width asynchronously. `scrollY` itself doesn't move, but
+     * `computeVerticalScrollRange()` keeps changing while Chromium relayouts land, so
+     * [onScrollChanged] would otherwise report a series of wrong transient fractions and — since
+     * the caller persists every fraction it's given — silently corrupt the saved reading
+     * position. Capture the correct fraction right now (content geometry is still the pre-resize
+     * one at this exact point, before the async reflow lands), suppress the callback, and reapply
+     * it once layout has had a chance to settle — the same double-apply-with-delay [restoreScroll]
+     * already uses for the equivalent post-load race.
+     */
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (oldw <= 0 || oldh <= 0 || (w == oldw && h == oldh)) return // first layout, not a resize
+        val maxScroll = (computeVerticalScrollRange() - computeVerticalScrollExtent()).coerceAtLeast(1)
+        val fraction = (scrollY.toFloat() / maxScroll).coerceIn(0f, 1f)
+        pendingRestoreFraction = fraction
+        suppressFractionCallback = true
+        post {
+            applyFraction(fraction)
+            postDelayed({
+                applyFraction(fraction)
+                suppressFractionCallback = false
+            }, 150)
+        }
     }
 }

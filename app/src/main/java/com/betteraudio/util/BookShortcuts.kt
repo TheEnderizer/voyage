@@ -1,5 +1,6 @@
 package com.betteraudio.util
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
@@ -40,6 +41,14 @@ object BookShortcuts {
             .setLongLabel(label)
             .setIcon(loadIcon(context, book.coverArtPath))
             .setIntent(intent)
+            // Explicit, rather than relying on the framework's "the app's first main activity"
+            // fallback when this is omitted: MainActivity itself carries no MAIN/LAUNCHER filter
+            // anymore (that moved to the AppIconManager activity-aliases, so the launcher icon can
+            // switch without recreating this Activity's component identity), which would make that
+            // fallback either ambiguous across six aliases or simply wrong. Anchoring directly to
+            // MainActivity — always present, always exported, never disabled by an icon switch —
+            // keeps a pinned shortcut launchable regardless of which icon alias is currently active.
+            .setActivity(ComponentName(context, MainActivity::class.java))
             .build()
         val requested = runCatching { ShortcutManagerCompat.requestPinShortcut(context, shortcut, null) }
             .onFailure { AppLog.w(LogCat.UI, "requestPin: pin request threw for book=${book.id}: ${it.message}") }

@@ -101,7 +101,9 @@ Single-Activity (`MainActivity`) with a Compose `NavHost`. Routes: `home`, `sett
 
 ### App icon
 
-Adaptive icon (`mipmap-anydpi-v26/ic_launcher*.xml`): navy gradient `@drawable/ic_launcher_background` + a raster foreground `@mipmap/ic_launcher_fg` (the sailboat/book, extracted from the source art and centered on navy at 5 densities). Regenerate the foregrounds with PIL if the art changes. `minSdk 26` means the density-specific legacy vector `ic_launcher.xml`s are never used.
+Adaptive icon (`mipmap-anydpi-v26/ic_launcher*.xml`): a gradient background `@drawable/ic_launcher_background*` + a raster foreground `@mipmap/ic_launcher_fg` (the sailboat/book at 5 densities). **The foreground must stay transparent outside the mark** — it is drawn over the background layer at the same size, so an opaque foreground hides the background entirely. The original export was the complete icon (sailboat *on* an opaque navy square), which silently made the background layer dead weight and forced every icon variant to render identically navy; `scripts/gen_launcher_fg.py` stripped that baked-in navy out and documents the method. Regenerate the foregrounds with PIL if the art changes, and verify a non-navy variant actually renders in its own colour rather than assuming the wiring is enough.
+
+The user can switch the launcher icon among six colour variants (Settings → Theme → App icon; `util/AppIconManager.kt`). Each variant is an `<activity-alias>` in the manifest targeting `MainActivity`, toggled with `setComponentEnabledSetting` — **always passing `PackageManager.DONT_KILL_APP`**, since that call otherwise kills the process mid-sequence and can leave two enabled launcher icons or none at all. `PackageManager` is the sole source of truth for the active icon (not mirrored into `SettingsStore`). The settings preview paints each variant's gradient from colours duplicated in the `AppIcon` enum — keep those in sync with the background drawables. `<application android:icon>` deliberately stays navy, so Settings → Apps and the task switcher keep showing navy regardless of the chosen launcher icon.
 
 ### Widget maker v2 & AI
 

@@ -8,12 +8,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -46,6 +50,7 @@ import com.betteraudio.ui.bookinfo.BookInfoViewModel
 import com.betteraudio.ui.components.BookInfoPanel
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.home.BookOptionsSheet
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
 import com.betteraudio.ui.player.containerReveal
@@ -171,13 +176,13 @@ fun BookInfoScreen(
             }
         }
 
-        Column(
-            Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 20.dp)
-        ) {
+        val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+            if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
+        }
+
+        // Top bar (back / "BOOK" label / overflow) — identical content in both layouts, just
+        // placed differently, so kept as a small local closure rather than a second definition.
+        val topBar: @Composable () -> Unit = {
             Row(
                 Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(coverOpenProgress),
                 verticalAlignment = Alignment.CenterVertically
@@ -204,51 +209,120 @@ fun BookInfoScreen(
                     }
                 }
             }
+        }
 
-            // Rounded cover card in the leftover space — same tonal treatment as the player's
-            // own cover (see ui/material/player/PlayerScreen.kt), instead of the old full-bleed
-            // blurred backdrop, which was expensive to recompose during the grid-card morph and
-            // fought with it visually.
-            Box(
+        if (isLandscapeWindow()) {
+            Row(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.TopCenter
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
             ) {
-                AsyncImage(
-                    model = coverModel,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .aspectRatio(0.72f)
-                        .morphFrom(
-                            coverSource, coverOpenProgress,
-                            anchorTopLeft = true, byWidth = true,
-                            sourceRadius = coverSourceRadius, destRadius = 28.dp
-                        )
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                )
-            }
+                // LEFT: cover. Uses morphFrom (not coverCropMorph), so — unlike the landscape
+                // player's cover — there's no stable-parent-rect requirement and no mandatory
+                // TopStart; this box can size itself from height the ordinary way.
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .padding(vertical = 12.dp)
+                        .aspectRatio(0.72f, matchHeightConstraintsFirst = true),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AsyncImage(
+                        model = coverModel,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .morphFrom(
+                                coverSource, coverOpenProgress,
+                                anchorTopLeft = true, byWidth = true,
+                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                }
 
-            val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
-                if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
+                Spacer(Modifier.width(20.dp))
+
+                // RIGHT: top bar + info panel. Scrollable as a whole — the panel's synopsis has
+                // its own internal scroll box for a long synopsis, but the surrounding chrome
+                // (title, buttons, progress) is fixed-height content that can still exceed a
+                // short landscape window on its own.
+                Column(
+                    Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())
+                ) {
+                    topBar()
+                    BookInfoPanel(
+                        title            = book?.displayTitle ?: "",
+                        author           = book?.displayAuthor,
+                        narrator         = book?.narrator,
+                        seriesLabel      = seriesLabel,
+                        status           = book?.status,
+                        progressFraction = bwp?.progressFraction ?: 0f,
+                        totalMs          = book?.totalDurationMs ?: 0L,
+                        synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
+                                           ?: book?.description?.takeIf { it.isNotBlank() }
+                                           ?: if (synopsisGenerating) "Generating synopsis…" else null,
+                        onResume         = { resumeWithMorph() },
+                        modifier         = Modifier.expandReveal(coverOpenProgress)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
             }
-            BookInfoPanel(
-                title            = book?.displayTitle ?: "",
-                author           = book?.displayAuthor,
-                narrator         = book?.narrator,
-                seriesLabel      = seriesLabel,
-                status           = book?.status,
-                progressFraction = bwp?.progressFraction ?: 0f,
-                totalMs          = book?.totalDurationMs ?: 0L,
-                synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
-                                   ?: book?.description?.takeIf { it.isNotBlank() }
-                                   ?: if (synopsisGenerating) "Generating synopsis…" else null,
-                onResume         = { resumeWithMorph() },
-                modifier         = Modifier.expandReveal(coverOpenProgress)
-            )
-            Spacer(Modifier.height(10.dp))
+        } else {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 20.dp)
+            ) {
+                topBar()
+
+                // Rounded cover card in the leftover space — same tonal treatment as the
+                // player's own cover (see ui/material/player/PlayerScreen.kt), instead of the
+                // old full-bleed blurred backdrop, which was expensive to recompose during the
+                // grid-card morph and fought with it visually.
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    AsyncImage(
+                        model = coverModel,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .aspectRatio(0.72f)
+                            .morphFrom(
+                                coverSource, coverOpenProgress,
+                                anchorTopLeft = true, byWidth = true,
+                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                }
+
+                BookInfoPanel(
+                    title            = book?.displayTitle ?: "",
+                    author           = book?.displayAuthor,
+                    narrator         = book?.narrator,
+                    seriesLabel      = seriesLabel,
+                    status           = book?.status,
+                    progressFraction = bwp?.progressFraction ?: 0f,
+                    totalMs          = book?.totalDurationMs ?: 0L,
+                    synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
+                                       ?: book?.description?.takeIf { it.isNotBlank() }
+                                       ?: if (synopsisGenerating) "Generating synopsis…" else null,
+                    onResume         = { resumeWithMorph() },
+                    modifier         = Modifier.expandReveal(coverOpenProgress)
+                )
+                Spacer(Modifier.height(10.dp))
+            }
         }
     }
 

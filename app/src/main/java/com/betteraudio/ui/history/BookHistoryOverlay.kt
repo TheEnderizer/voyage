@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.SkipEvent
 import com.betteraudio.ui.components.FrostedOverlay
+import com.betteraudio.ui.material.MaterialAdaptive
 import com.betteraudio.ui.theme.Pill
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -60,10 +62,15 @@ fun BookHistoryOverlay(
         val onScrim = Color.White
         val onScrimMuted = Color.White.copy(alpha = 0.6f)
         val accent = MaterialTheme.colorScheme.primary
+        // Same pattern as ChapterSheet.kt / MiniPlayerBar's isImmersive branch / appSheetColor().
+        val wide = MaterialAdaptive.isMaterialLandscape()
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = Color.Black.copy(alpha = 0.42f),
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f)
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (wide) Modifier.widthIn(max = 640.dp) else Modifier)
+                .fillMaxHeight(if (wide) 0.94f else 0.82f)
         ) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

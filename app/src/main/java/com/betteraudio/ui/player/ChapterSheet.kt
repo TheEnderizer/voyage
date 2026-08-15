@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.betteraudio.playback.ChapterMark
 import com.betteraudio.ui.components.FrostedOverlay
+import com.betteraudio.ui.material.MaterialAdaptive
 
 /**
  * Row index in [rows] matching [cur] — the same active chapter the pill/scrubber show, computed
@@ -70,10 +71,18 @@ fun ChapterOverlay(
     }
 
     FrostedOverlay(visible = visible, onDismiss = onDismiss) {
+        // Shared/unsplit file resolving one thing per theme, same pattern as MiniPlayerBar's
+        // isImmersive branch (PlayerSheet.kt) and appSheetColor() (SheetStyle.kt).
+        // isMaterialLandscape() folds the theme check in, so Immersive is false in BOTH
+        // orientations by construction. At ~890x338dp a one-column list is mostly whitespace.
+        val wide = MaterialAdaptive.isMaterialLandscape()
         Surface(
             shape = RoundedCornerShape(28.dp),
             color = Color.Black.copy(alpha = 0.42f),
-            modifier = Modifier.fillMaxWidth().fillMaxHeight(0.82f)
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (wide) Modifier.widthIn(max = 640.dp) else Modifier)
+                .fillMaxHeight(if (wide) 0.94f else 0.82f)
         ) {
             Column(Modifier.padding(horizontal = 8.dp, vertical = 18.dp)) {
                 Row(

@@ -4,6 +4,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.search.SearchViewModel
 import com.betteraudio.ui.theme.Pill
@@ -41,6 +45,7 @@ fun SearchScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
+    val landscape = isLandscapeWindow()
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
@@ -49,10 +54,12 @@ fun SearchScreen(
         contentColor = MaterialTheme.colorScheme.onBackground
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            // Search bar row
+            // Search bar row — capped and centred in landscape; a full-bleed 890dp text field
+            // looks broken.
             Row(
                 Modifier
                     .fillMaxWidth()
+                    .then(if (landscape) Modifier.widthIn(max = 720.dp).align(Alignment.CenterHorizontally) else Modifier)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -101,6 +108,20 @@ fun SearchScreen(
                         icon = false,
                         text = "No results for \"$query\""
                     )
+                    landscape -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        gridItems(results, key = { it.id }) { book ->
+                            SearchResultRow(
+                                book = book,
+                                onClick = { onBookClick(book.id) },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
+                    }
                     else -> LazyColumn(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)

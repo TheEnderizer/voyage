@@ -1,0 +1,43 @@
+<!--
+  Skip-silence glyph: two halves of an audio waveform with the quiet stretch between them
+  collapsed out, marked by a pair of arrowheads closing on each other. Reads as "squeeze the
+  silence out" without needing the words, which is the point — it replaces a labelled pill in
+  both the portrait and landscape players.
+
+  Stroked (not filled) so the weight matches the Material icons it sits beside; Icon()'s tint
+  colours strokes and fills alike.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Waveform, left half -->
+    <path
+        android:pathData="M2.6,9.75V14.25M6.1,6.25V17.75"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- Waveform, right half (mirrored) -->
+    <path
+        android:pathData="M17.9,6.25V17.75M21.4,9.75V14.25"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round" />
+
+    <!-- The two arrowheads closing the gap -->
+    <path
+        android:pathData="M9.1,8.4L11.4,12L9.1,15.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M14.9,8.4L12.6,12L14.9,15.6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

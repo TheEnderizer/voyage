@@ -19,14 +19,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.setValue
@@ -470,16 +480,57 @@ class MainActivity : ComponentActivity() {
                     com.betteraudio.ui.home.HomeViewMode.valueOf(homeViewModeRaw)
                 }.getOrDefault(com.betteraudio.ui.home.HomeViewMode.BOOKS)
                 val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                // Landscape (a side nav bar, a long-edge display cutout) can put content under a
+                // horizontal system inset the pill previously ignored — bottom-only padding was
+                // enough while every window was portrait-shaped.
+                val safeDrawingInsets = WindowInsets.safeDrawing.asPaddingValues()
+                val layoutDirection = LocalLayoutDirection.current
+                val onHome = currentRoute == "home" && seriesOverlayController.seriesId == -1L &&
+                    bookInfoOverlayController.bookId == -1L
+
+                // ── Landscape: the mini player sits BESIDE this pill, not stacked above it ──
+                // A landscape window has no height to spare for two 64dp bands, so the pair shares
+                // one row and is centred as a unit. Only this scope can size that: the pill wraps
+                // its icon row, so its width is measured, not a constant — hence the round trip
+                // through navPillWidth here and the slot handed to PlayerSheet below.
+                val density = LocalDensity.current
+                var navPillWidth by remember { mutableStateOf(0.dp) }
+                val hasMiniBar = playerController.playbackState
+                    .collectAsStateWithLifecycle().value.bookId != -1L
+                val startInset = safeDrawingInsets.calculateStartPadding(layoutDirection)
+                val endInset = safeDrawingInsets.calculateEndPadding(layoutDirection)
+                val miniBarSlot = if (
+                    com.betteraudio.ui.material.MaterialAdaptive.isMaterialLandscape() &&
+                    onHome && hasMiniBar
+                ) {
+                    com.betteraudio.ui.components.miniBarSlotBesideNavPill(
+                        availableWidth = LocalConfiguration.current.screenWidthDp.dp -
+                            startInset - endInset,
+                        navPillWidth = navPillWidth,
+                        startInset = startInset,
+                        endInset = endInset
+                    )
+                } else null
+
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = currentRoute == "home" && seriesOverlayController.seriesId == -1L &&
-                        bookInfoOverlayController.bookId == -1L,
+                    visible = onHome,
                     enter = androidx.compose.animation.fadeIn() +
                         androidx.compose.animation.slideInVertically { it },
                     exit = androidx.compose.animation.fadeOut() +
                         androidx.compose.animation.slideOutVertically { it },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = navInset + com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING)
+                        .offset(x = miniBarSlot?.navPillOffsetX ?: 0.dp)
+                        .padding(
+                            // Paired: centerShift already carries the inset correction, so
+                            // applying start/end padding too would double it (see MiniBarSlot).
+                            start = if (miniBarSlot != null) 0.dp else startInset,
+                            end = if (miniBarSlot != null) 0.dp else endInset,
+                            bottom = navInset + com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING
+                        )
+                        // INSIDE the inset padding, so this is the pill's own width — the number
+                        // the pairing maths wants — not the padded footprint.
+                        .onSizeChanged { navPillWidth = with(density) { it.width.toDp() } }
                 ) {
                     com.betteraudio.ui.components.FloatingNavPill(
                         section = pillSection,
@@ -509,6 +560,8 @@ class MainActivity : ComponentActivity() {
                         seriesOverlayController.seriesId != -1L ||
                         bookInfoOverlayController.bookId != -1L,
                     liftForNavPill = currentRoute == "home",
+                    // Non-null only in landscape, where the bar sits beside the pill instead.
+                    miniBarSlot = miniBarSlot,
                     onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )
                 } // CompositionLocalProvider(LocalCoverBoundsRegistry)

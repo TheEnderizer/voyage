@@ -13,11 +13,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -183,6 +187,10 @@ fun PlayerSheet(
     // On routes showing the floating nav pill (home), the mini bar floats above the pill instead
     // of hugging the bottom edge.
     liftForNavPill: Boolean = false,
+    // Landscape only: instead of floating ABOVE the nav pill, the mini bar sits BESIDE it, at the
+    // width and bottom-centre offset the caller worked out (it's the only scope that knows how
+    // wide the pill measured). Null = the usual stacked layout.
+    miniBarSlot: com.betteraudio.ui.components.MiniBarSlot? = null,
     // "Read from here" (player overflow) needs to collapse this sheet and navigate to the reader
     // route underneath it — that navigation lives outside the sheet's own nested NavHost.
     onOpenReader: (Long) -> Unit = {}
@@ -238,6 +246,11 @@ fun PlayerSheet(
     // from a fully settled mini bar, which is the only case a firm downward fling may close the
     // book (see Feature 10 in the mini bar's draggable onDragStopped).
     var gestureStartedSettled by remember { mutableStateOf(true) }
+    // Highest dragProgress reached during the CURRENT gesture, reset in onDragStarted. A flick
+    // that visibly opened the sheet — even a little — before being flung back down is a
+    // correction, not "close the book" intent; requiring the whole gesture to have stayed near
+    // the bottom (not just ended there) prevents that from being misread as a close.
+    var gesturePeak by remember { mutableStateOf(0f) }
 
     // Mirror progressAnim's animated value into dragProgress whenever an animation (not a live
     // drag) is driving progress. Silent while isDragging — see above.
@@ -267,8 +280,26 @@ fun PlayerSheet(
     val miniPx = with(density) { MINI_HEIGHT_DP.dp.toPx() }
     // Sit the mini bar 20dp above the system navigation bar (gesture bar / button bar).
     val bottomNavInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Landscape (a side nav bar, a long-edge display cutout) can put the bar under a horizontal
+    // system inset the fixed 12dp content padding below doesn't account for — bottom-only inset
+    // handling was enough while every window was portrait-shaped.
+    val safeDrawingInsets = WindowInsets.safeDrawing.asPaddingValues()
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val horizontalSafeInset = maxOf(
+        safeDrawingInsets.calculateStartPadding(layoutDirection),
+        safeDrawingInsets.calculateEndPadding(layoutDirection)
+    )
     val navReservePx = with(density) { (bottomNavInset + 20.dp).toPx() }
     val travelPx = (heightPx - miniPx - navReservePx).coerceAtLeast(1f)
+    // Drag sensitivity is a PHYSICAL distance, not a fraction of the window. On a landscape-shaped
+    // window heightPx roughly halves, which would make every drag ~2x twitchier and could turn a
+    // flick-up-then-correct-down on the mini bar into an accidental "close the book" fling (see
+    // gesturePeak below). Widen the divisor so a given finger movement maps to roughly the same
+    // expansion it does in portrait. widthPx > heightPx isn't exclusive to landscape devices (a
+    // portrait-device split-screen half can be wider than tall too), but the effect is only ever
+    // to REDUCE sensitivity, so it's harmless wherever it fires — including in both themes, since
+    // this is pure window geometry and intentionally doesn't consult the current theme.
+    val gestureTravelPx = if (widthPx > heightPx) maxOf(travelPx, widthPx * 0.55f) else travelPx
     // Material You's expandingContainer needs the full player's TRUE (unparked) size — NOT
     // measured via onGloballyPositioned on a descendant of the parked/translated container, since
     // boundsInRoot() there wasn't reliably reflecting the un-parked position (the container was
@@ -355,13 +386,28 @@ fun PlayerSheet(
     // applied at its call site below) — kept as State<Dp>, read only inside that graphicsLayer,
     // per C3-5.
     val miniBarLift = androidx.compose.animation.core.animateDpAsState(
-        if (liftForNavPill)
-            com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING +
-                com.betteraudio.ui.components.NAV_PILL_HEIGHT +
-                com.betteraudio.ui.components.NAV_PILL_GAP - 20.dp
-        else 0.dp,
+        when {
+            // Beside the pill (landscape): same height as it, so line their bottoms up instead of
+            // clearing it. The baseline padding below is navInset + 20dp; the pill's is
+            // navInset + NAV_PILL_BOTTOM_PADDING, so this drops the bar by the difference.
+            miniBarSlot != null ->
+                com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING - 20.dp
+            liftForNavPill ->
+                com.betteraudio.ui.components.NAV_PILL_BOTTOM_PADDING +
+                    com.betteraudio.ui.components.NAV_PILL_HEIGHT +
+                    com.betteraudio.ui.components.NAV_PILL_GAP - 20.dp
+            else -> 0.dp
+        },
         label = "miniBarLift"
     )
+
+    // The full player's own resume action (PlayerViewModel.play(), with series context and the
+    // isCompleted-safe start position — see AudioCascade.resolveStart), captured from whichever
+    // PlayerViewModel is currently backing the nested NavHost's player route below. The mini
+    // bar's play button uses this instead of a bare playerController.togglePlayPause() whenever
+    // the service doesn't actually have a queue loaded (see hasLoadedQueue's KDoc for why
+    // relying on playback.bookId alone isn't enough — it goes stale in exactly the same way).
+    var resumeAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     Box(modifier.fillMaxSize().onSizeChanged { heightPx = it.height; widthPx = it.width }) {
         // ── Mini bar — docked at the bottom, drawn UNDER the full player so the morphing
@@ -392,7 +438,18 @@ fun PlayerSheet(
                 if (playback.bookId != -1L) controller.open(bookId = playback.bookId)
                 else controller.expandCurrent()
             },
-            onPlayPause = { playerController.togglePlayPause() },
+            onPlayPause = {
+                // The service can report a book here (playback.bookId, hence usingLivePlayback)
+                // while its actual queue is empty — that public state is never reset when the
+                // playback service is torn down and rebuilt, so it can go stale exactly like the
+                // private currentBookId field used to (see hasLoadedQueue's KDoc). Calling
+                // togglePlayPause() on an empty queue used to STATE_ENDED the player and wrongly
+                // mark the book finished. Route through the full player's own resume action —
+                // same series context and isCompleted-safe start position as every other resume
+                // entry point — whenever there's nothing actually loaded to toggle.
+                if (playerController.hasLoadedQueue()) playerController.togglePlayPause()
+                else resumeAction?.invoke()
+            },
             onSkip = { playerController.skipForward() },
             onCoverBounds = { miniCoverRect.value = it },
             onTitleBounds = { miniTitleRect.value = it },
@@ -401,6 +458,16 @@ fun PlayerSheet(
             expandProgress = progressState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                // Landscape pairs the bar with the nav pill on one row: a fixed width and an
+                // x-shift off bottom-centre, both sized by the caller so the pair reads as centred.
+                // MiniPlayerBar's own fillMaxWidth() then resolves to exactly this width.
+                .then(
+                    miniBarSlot?.let { Modifier.offset(x = it.offsetX).width(it.width) }
+                        ?: Modifier
+                )
+                // Paired: the slot's width and centerShift were derived from an already
+                // inset-free available width, so adding the inset here would shrink it twice.
+                .padding(horizontal = if (miniBarSlot != null) 0.dp else horizontalSafeInset)
                 // Fixed baseline padding (no animation → no per-frame remeasure); the animated
                 // part of the lift moves via graphicsLayer's translationY below instead of a
                 // second, animated padding value (C3-5: padding()-driven animation forces a
@@ -422,7 +489,8 @@ fun PlayerSheet(
                     orientation = Orientation.Vertical,
                     state = rememberDraggableState { delta ->
                         // Synchronous, no coroutine — see dragProgress's declaration (AN-2).
-                        dragProgress.floatValue = (dragProgress.floatValue - delta / travelPx).coerceIn(0f, 1f)
+                        dragProgress.floatValue = (dragProgress.floatValue - delta / gestureTravelPx).coerceIn(0f, 1f)
+                        if (dragProgress.floatValue > gesturePeak) gesturePeak = dragProgress.floatValue
                     },
                     // Only a flick that BEGAN from a genuinely settled mini bar is eligible to
                     // close the book — otherwise a downward flick caught mid-expansion (tap to
@@ -432,14 +500,18 @@ fun PlayerSheet(
                     onDragStarted = {
                         isDragging = true
                         gestureStartedSettled = dragProgress.floatValue < 0.001f
+                        gesturePeak = dragProgress.floatValue
                     },
                     // A firm downward fling starting from the settled mini bar closes the book
                     // (stops playback and dismisses the mini bar); otherwise settle open/closed
                     // as usual — which, for an in-flight expansion flicked back down, means
-                    // returning to the mini bar rather than closing.
+                    // returning to the mini bar rather than closing. gesturePeak < 0.15f requires
+                    // the gesture to have STAYED near the bottom throughout, not merely ended
+                    // there — a strict tightening that can only ever prevent an accidental close.
                     onDragStopped = { velocity ->
                         isDragging = false
-                        if (velocity > 1800f && dragProgress.floatValue < 0.15f && gestureStartedSettled) {
+                        if (velocity > 1800f && dragProgress.floatValue < 0.15f &&
+                            gestureStartedSettled && gesturePeak < 0.15f) {
                             playerController.stop()
                             controller.clear()
                         } else scope.launch { settle(velocity) }
@@ -474,7 +546,7 @@ fun PlayerSheet(
                         orientation = Orientation.Vertical,
                         state = rememberDraggableState { delta ->
                             // Synchronous, no coroutine — see dragProgress's declaration (AN-2).
-                            dragProgress.floatValue = (dragProgress.floatValue - delta / travelPx).coerceIn(0f, 1f)
+                            dragProgress.floatValue = (dragProgress.floatValue - delta / gestureTravelPx).coerceIn(0f, 1f)
                         },
                         onDragStarted = { isDragging = true },
                         onDragStopped = { velocity ->
@@ -530,11 +602,18 @@ fun PlayerSheet(
                                 navArgument("bookId") { type = NavType.LongType; defaultValue = -1L },
                                 navArgument("startPlaying") { type = NavType.BoolType; defaultValue = true }
                             )
-                        ) {
+                        ) { backStackEntry ->
+                            // Obtained explicitly (rather than via PlayerContent's own default
+                            // hiltViewModel()) purely so this composable can also capture it —
+                            // hiltViewModel() called with this entry resolves to the SAME instance
+                            // PlayerContent gets internally, since both are scoped to it.
+                            val playerViewModel: PlayerViewModel = hiltViewModel(backStackEntry)
+                            LaunchedEffect(playerViewModel) { resumeAction = { playerViewModel.play() } }
                             PlayerContent(
                                 onCollapse = { controller.collapse() },
-                                startPlaying = it.arguments?.getBoolean("startPlaying") ?: true,
-                                onOpenReader = { bookId -> controller.collapse(); onOpenReader(bookId) }
+                                startPlaying = backStackEntry.arguments?.getBoolean("startPlaying") ?: true,
+                                onOpenReader = { bookId -> controller.collapse(); onOpenReader(bookId) },
+                                viewModel = playerViewModel
                             )
                         }
                     }

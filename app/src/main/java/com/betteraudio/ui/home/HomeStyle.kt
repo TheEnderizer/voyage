@@ -33,6 +33,11 @@ interface HomeStyle {
     @Composable fun emptyIconBackground(): Color
     @Composable fun scrimText(muted: Boolean = false): Color
 
+    /** Grid column count. Immersive has no landscape layout, so it always returns 2 — today's
+     *  exact value — in both orientations; Material You widens in a landscape-shaped window (see
+     *  MaterialHomeStyle/MaterialAdaptive.homeGridColumns). */
+    @Composable fun gridColumns(): Int
+
     /** Coil model for a grid card's cover art. Both themes share a "cover-<id>" cache key with
      *  their full player's cover (see MaterialHomeStyle/ImmersiveHomeStyle), so the grid → full
      *  player morph (when opened directly with nothing already playing) reuses the decoded bitmap

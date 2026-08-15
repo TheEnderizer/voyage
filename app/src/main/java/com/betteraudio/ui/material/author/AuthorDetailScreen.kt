@@ -2,6 +2,9 @@ package com.betteraudio.ui.material.author
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -18,6 +21,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.ui.author.AuthorDetailViewModel
+import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
@@ -58,13 +62,27 @@ fun AuthorDetailScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(books, key = { it.id }) { book ->
-                AuthorBookRow(book = book, onClick = { onBookClick(book.id) }, modifier = Modifier.animateItem())
+        if (isLandscapeWindow()) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                gridItems(books, key = { it.id }) { book ->
+                    AuthorBookRow(book = book, onClick = { onBookClick(book.id) }, modifier = Modifier.animateItem())
+                }
+            }
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(books, key = { it.id }) { book ->
+                    AuthorBookRow(book = book, onClick = { onBookClick(book.id) }, modifier = Modifier.animateItem())
+                }
             }
         }
     }

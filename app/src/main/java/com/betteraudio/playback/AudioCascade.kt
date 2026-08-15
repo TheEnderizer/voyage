@@ -1,5 +1,6 @@
 package com.betteraudio.playback
 
+import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.AudioPreset
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.PlaybackProgress
@@ -113,4 +114,57 @@ object AudioCascade {
             appStoppedAt = settings.currentAppStoppedAt,
             lastPausedAt = lastPausedAt,
         )
+
+    data class ResolvedStart(val startIndex: Int, val startPositionMs: Long)
+
+    /**
+     * Where a full-book resume should start within [files] given [progress] — the file index and
+     * position shared by every entry point that resumes a book from its saved progress rather
+     * than a specific pick: [com.betteraudio.ui.player.PlayerViewModel.startPlayback],
+     * [com.betteraudio.ui.home.HomeViewModel.playResumeBook], [PlaybackService.loadLastPlayedAndPlay]
+     * (the cold widget-tap resume), and a genuine series resume in [SeriesPlayer.playBookInSeries].
+     *
+     * A book marked [PlaybackProgress.isCompleted] always resolves to file 0, position 0 —
+     * **not** file 0 of `progress.currentFileId`'s index. Ignoring `isCompleted` for the file
+     * index while zeroing only the position was the actual defect behind a real incident: a
+     * finished book resumed at position 0 of the *last file played* instead of the true
+     * beginning, which read to the user as the book having reset mid-file. (The other half of
+     * that incident — a stale, service-outlived `currentBookId` getting a book wrongly marked
+     * `isCompleted` in the first place — is guarded in [PlayerController]'s `STATE_ENDED`
+     * handler, not here; this function only decides where a legitimately-finished book restarts.)
+     *
+     * [rewindMs] is the auto-rewind amount, already resolved via [autoRewindMs] — passed in
+     * rather than recomputed here so a caller that must skip it entirely (an explicit chapter
+     * pick, a series auto-advance to the next book) can pass `0L` without this function needing
+     * to know why.
+     *
+     * When a book resolves to the isCompleted reset and it had a real, non-trivial saved
+     * position, that position is offered as a one-tap [com.betteraudio.playback.JumpRestore] —
+     * the same restore pill a live involuntary jump uses — via [jumpRestoreStore], if [bookId]
+     * and a store are supplied. This is deliberate defence in depth, not the fix itself: a book
+     * should only ever reach here `isCompleted` because it genuinely finished, or because of the
+     * exact currentBookId-outlives-the-service defect [PlayerController]'s `STATE_ENDED` handler
+     * now guards against. Either way, offering the position back costs nothing and turns a wrong
+     * restart from a silent, permanent loss into something one tap undoes. Both params default to
+     * off so the pure unit tests in AudioCascadeTest need not supply a store.
+     */
+    fun resolveStart(
+        files: List<AudioFile>,
+        progress: PlaybackProgress?,
+        rewindMs: Long,
+        bookId: Long = -1L,
+        jumpRestoreStore: JumpRestoreStore? = null,
+    ): ResolvedStart {
+        if (progress?.isCompleted == true) {
+            val priorPositionMs = progress.positionMs
+            if (jumpRestoreStore != null && bookId != -1L && priorPositionMs > 0L) {
+                jumpRestoreStore.set(JumpRestore(priorPositionMs, bookId, System.currentTimeMillis()))
+            }
+            return ResolvedStart(0, 0L)
+        }
+        val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
+        val rawPos = progress?.positionMs ?: 0L
+        val startPos = if (rawPos >= rewindMs) rawPos - rewindMs else rawPos
+        return ResolvedStart(startIndex, startPos)
+    }
 }

@@ -36,6 +36,8 @@ object ImmersiveHomeStyle : HomeStyle {
     @Composable override fun scrimBase(): Color = lerp(Color.Black, MaterialTheme.colorScheme.primary, 0.10f)
     @Composable override fun emptyIconBackground(): Color = ImmersiveStyle.cardHighColor()
     @Composable override fun scrimText(muted: Boolean): Color = ImmersiveStyle.scrimText(muted)
+    // Immersive has no landscape layout — always today's 2.
+    @Composable override fun gridColumns(): Int = 2
 
     override fun bookCoverModel(context: Context, book: HomeGridBook): Any? =
         book.coverArtPath?.let {

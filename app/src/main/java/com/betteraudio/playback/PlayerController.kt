@@ -604,6 +604,20 @@ class PlayerController @Inject constructor(
         controller?.let { if (it.isPlaying) it.pause() else it.play() }
     }
 
+    /**
+     * Whether the connected MediaController actually has a media item loaded right now — the
+     * live ground truth, unlike [PlaybackState.bookId] (via [playbackState]). That published
+     * state is only overwritten by a fresh [syncState] call and is **never reset** when the
+     * playback service is torn down and rebuilt with an empty queue, so it can go stale and keep
+     * reporting the previous book indefinitely. Callers that are about to start playback on a
+     * possibly-empty queue (see [com.betteraudio.ui.player.PlayerSheet]'s mini bar play button)
+     * must check this rather than trust `playbackState.value.bookId != -1L` — that stale-state
+     * gap is exactly what let a tap on the mini bar call [togglePlayPause] on an empty player,
+     * which Media3 resolves to `STATE_ENDED` and used to wrongly mark the book finished.
+     * Main-thread only, like every other direct controller read in this class.
+     */
+    fun hasLoadedQueue(): Boolean = (controller?.mediaItemCount ?: 0) > 0
+
     /** Close the current book entirely: save its resume position, stop playback and clear the
      *  queue, then wipe the last-played/last-open markers so the mini bar disappears and nothing
      *  is restored on next launch. Called when the user swipes the mini bar down. */
@@ -856,6 +870,26 @@ class PlayerController @Inject constructor(
         if (positionMs <= 0L) { AppLog.i(LogCat.PLAYBACK, "saveProgressNow skipped (pos=0) book=$bookId"); return }
         AppLog.i(LogCat.PLAYBACK, "saveProgressNow book=$bookId file=$fileId pos=${positionMs}ms")
         repository.updatePosition(bookId, fileId, positionMs)
+    }
+
+    /**
+     * Pauses and *awaits* the current position being saved and flushed to disk, without closing
+     * the book — unlike [stopAndFlush], `lastPlayedBookId`/`lastOpenBookId` are left alone, so the
+     * mini bar keeps showing this book afterwards instead of vanishing. Used before an action that
+     * is about to end this process on its own terms (see [com.betteraudio.util.AppIconManager] —
+     * changing the app icon), where a fire-and-forget save could lose the race against the
+     * process actually dying. Must be called from the main thread (MediaController is
+     * main-thread-only) — same as [stop]/[stopAndFlush].
+     *
+     * Same caveat as [saveCurrentProgressNow] itself: it no-ops when the position is `<= 0L` (a
+     * transient reading right after a load, or a book that was never actually played), so this
+     * saves nothing in that narrow window — callers presenting this as "your place is saved"
+     * should account for that rather than promise it unconditionally.
+     */
+    suspend fun pauseAndFlush() {
+        controller?.pause()
+        saveCurrentProgressNow()
+        diskMirror.flushDirty()
     }
 
     private fun showUserMessage(msg: String) {
@@ -1317,7 +1351,24 @@ class PlayerController @Inject constructor(
                     syncState()
                     return
                 }
-                val endedBook = currentBookId
+                // Derive the ended book from the item actually playing, not from currentBookId
+                // alone. currentBookId is an app-scoped singleton field that outlives the
+                // playback service: if the service was torn down and rebuilt with an empty
+                // queue, currentBookId can still hold the previous book's id while nothing is
+                // loaded. Calling play() on that empty player reaches STATE_ENDED right here
+                // with a stale-but-real book id and no current item — which used to mark that
+                // book "finished" and restart it from scratch (see AudioCascade.resolveStart's
+                // isCompleted branch). Requiring the item's own bookId extra — the same value
+                // syncState() prefers over currentBookId at :1353 — plus a non-empty queue closes
+                // that hole, and incidentally also covers "the service loaded a different book".
+                val endedItemBookId = ctrl?.currentMediaItem?.mediaMetadata?.extras?.getLong("bookId", -1L) ?: -1L
+                val hasLoadedItem = (ctrl?.mediaItemCount ?: 0) > 0
+                if (endedItemBookId == -1L || !hasLoadedItem) {
+                    AppLog.w(LogCat.PLAYBACK, "STATE_ENDED with no loaded item (currentBookId=$currentBookId, mediaItemCount=${ctrl?.mediaItemCount ?: 0}) — ignoring, not marking finished")
+                    syncState()
+                    return
+                }
+                val endedBook = endedItemBookId
                 scope.launch { repository.markBookFinished(endedBook) }
                 // Part of a series? Hand off so the next member book auto-starts.
                 if (currentSeriesId != -1L) {

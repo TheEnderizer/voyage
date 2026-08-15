@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "Minimal" app icon variant: a flat single colour, deliberately with no gradient — the
+     other five variants (navy default, midnight, ocean, ember, plum) are all two-stop gradients,
+     so this is the one visually distinct "flat" choice in the set. Same neutral dark family as
+     the default navy so the sailboat foreground (light-on-dark) still reads clearly. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M0,0h108v108H0z"
+        android:fillColor="#FF23262E" />
+</vector>

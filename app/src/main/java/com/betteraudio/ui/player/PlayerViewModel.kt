@@ -178,6 +178,16 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { settings.setPlayerShowSeriesCover(!showSeriesCover.value) }
     }
 
+    // Which of the two landscape layouts the Material You player draws (Settings → Theme). Read
+    // only by the Material You player; portrait and the Immersive look ignore it entirely.
+    val landscapePlayerStyle: StateFlow<com.betteraudio.ui.material.player.LandscapePlayerStyle> =
+        settings.playerLandscapeStyle
+            .map { com.betteraudio.ui.material.player.LandscapePlayerStyle.fromName(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.material.player.LandscapePlayerStyle.RAILS
+            )
+
     // The current book's series (if any), for the cover toggle and author/narrator fallback.
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentSeries: StateFlow<com.betteraudio.data.db.entities.Series?> =
@@ -839,15 +849,15 @@ class PlayerViewModel @Inject constructor(
                 playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
                 playerController.bookSeekTo(bridgedMs)
             } else {
-                val startIndex = files.indexOfFirst { it.id == progress?.currentFileId }.coerceAtLeast(0)
-                val rawPos = if (progress?.isCompleted == true) 0L else (progress?.positionMs ?: 0L)
+                // resolveStart forces file 0 / position 0 for a finished book, never file 0 of the
+                // last file played — see its KDoc for the incident that made this matter.
                 val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
-                // Never rewind past the chapter/file boundary: if the saved position is shorter than
-                // the rewind amount, resume from the saved position instead of the file start.
-                val startPos = if (rawPos >= rewind) rawPos - rewind else rawPos
+                val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
+                    files, progress, rewind, bwp.book.id, jumpRestoreStore
+                )
                 AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id}" +
                     " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
-                    " → rawPos=${rawPos}ms rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
+                    " → rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
                 playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             }
             // Restore per-book (or inherited series/global) boost and EQ so they don't bleed between books

@@ -99,6 +99,10 @@ fun SettingsScreen(
     val darkMode                  by viewModel.darkMode.collectAsStateWithLifecycle()
     val pureBlack                 by viewModel.pureBlack.collectAsStateWithLifecycle()
     val dynamicPills              by viewModel.dynamicPills.collectAsStateWithLifecycle()
+    // Not a Flow: PackageManager has no change-notification API for this, and changeAppIcon ends
+    // the process the moment a switch actually lands, so a plain one-shot read on first
+    // composition is all this ever needs — see SettingsViewModel.currentAppIcon's KDoc.
+    val appIcon                   = remember { viewModel.currentAppIcon() }
     val presets                   by viewModel.presets.collectAsStateWithLifecycle()
     val widgetDefaultCover        by viewModel.widgetDefaultCover.collectAsStateWithLifecycle()
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
@@ -200,7 +204,7 @@ fun SettingsScreen(
                 when (section) {
                     SettingsSection.Root -> rootSection(viewModel)
                     SettingsSection.Theme -> themeSection(
-                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, dynamicPills, viewModel
+                        appTheme, themeColorSource, customThemeColor, darkMode, pureBlack, dynamicPills, appIcon, viewModel
                     )
                     SettingsSection.Library -> librarySection(
                         context, storageGranted, libraryFolder, bookCount, rescanRunning,

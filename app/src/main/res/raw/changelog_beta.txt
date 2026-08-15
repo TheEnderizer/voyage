@@ -5,20 +5,51 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
-## [1.9.19b] - 2026-08-13
+## [1.10.0b] - 2026-08-15
+
+Voyage works sideways. Every screen — library, player, Settings, book info, series, search —
+now has a real landscape layout instead of the portrait one stretched, and rotating no longer
+restarts the screen you were on. The full player comes in two landscape styles, Rails and
+Stage, picked in Settings → Theme.
+
+You can also change the app icon: six colours, in Settings → Theme → App icon.
+
+Two playback bugs are fixed that could restart a book you had already finished, or mark one
+finished when it wasn't. The library now opens sorted by most recently listened.
+
+The details:
+
+### Added
+- **Voyage works sideways now.** Turning the phone used to give you the portrait layout stretched across a screen half as tall — a search field a full 890dp wide, one-column lists of mostly whitespace, sheets taller than the window they opened in. Every screen now has a real landscape layout: the library grid adds columns instead of inflating the covers (a book card stays about the same physical size whichever way you hold the phone), Settings becomes two panes with the section list always on the left, Book info and Series put the cover beside the text rather than above it, Search and an author's books lay out in two columns, and the chapter list, audio settings and history sheets are capped to a sensible width and centred. The mini player moves up beside the navigation pill instead of stacking above it, since a landscape window has no height to spare for two rows. Rotating no longer restarts the screen either, so the player, your scroll position and any open sheet survive the turn.
+- **Two landscape layouts for the full player**, picked in Settings → Theme → Landscape player. **Rails** (the default) turns the seek bars on their side and stacks the controls down the edge, which keeps the cover as large as possible. **Stage** is the conventional split — cover on the left, a wide scrubber and full-size transport buttons on the right, with bigger touch targets. Portrait is identical either way.
+- **Six app icons** — Navy (the original), Midnight, Ocean, Ember, Plum and Minimal — in Settings → Theme → App icon. Android only lets an app switch between icons baked in ahead of time, and doing it requires the app to close: your place in the current book is saved first, and playback stops. Some launchers only pick up the new icon after the phone restarts. Pinned book shortcuts and the widget keep working across a switch.
+
+### Changed
+- The library now opens sorted by **most recently listened** instead of title A–Z. If you have ever chosen a sort yourself, your choice is untouched — this only changes the starting default.
+- The player's skip-silence toggle is now an icon rather than a labelled pill, which is what freed the row space the landscape layouts needed.
 
 ### Fixed
-- Closing the app from recents could still stop the player in one case 1.9.18b missed: a book that was open but had not been played yet in that session — reopening the app to a paused book and closing it again, for instance. The player is now held open from the moment a book loads rather than from the moment it first plays, so closing the app leaves it alone in every case. Closing the book itself, from the mini bar or the widget, releases it as before.
+- **A finished book could restart in the wrong place.** Playing a book marked finished correctly began at position zero — but of whichever file you last listened to, not of the book. On a multi-part book that landed you hours in, reading as though the book had reset itself mid-file. Every way of resuming a book — the player, the library, a series, a widget tap — now goes through one shared calculation, and a finished book restarts at the true beginning. If there was a real saved position, it is offered back as a one-tap restore, the same pill an unexpected jump uses.
+- **Tapping play on the mini bar could mark a book finished and restart it.** After the playback service had been torn down and rebuilt, the app could still believe a book was loaded when the player was actually empty; playing an empty player immediately reports "ended", which was taken as the book finishing. The mini bar now checks whether anything is really loaded and falls back to a proper resume, and a finished report with nothing playing is ignored outright.
+- Flicking the mini bar up and correcting downwards could be read as the downward fling that closes the book. Closing now requires the whole gesture to have stayed near the bottom, not merely ended there, and drag sensitivity is a fixed physical distance rather than a fraction of the window, so a short landscape window is no longer twice as twitchy.
+- Rotating while reading an ebook could corrupt the saved reading position. Re-flowing the page at the new width makes the browser engine report a series of transient, wrong positions, each of which was being saved.
+
+## [1.9.19b] - 2026-08-13
+
+### Changed
+- Further work on keeping the player alive when the app is closed from the recent-apps list — see 1.9.17b.
 
 ## [1.9.18b] - 2026-08-13
 
 ### Changed
-- Closing the app from the recent-apps list now changes nothing about the player at all. 1.9.17b kept a *playing* book going, but still closed a paused one. Now a paused book stays loaded and paused, ready to resume instantly from the notification or the widget — closing the app is not a playback command, so it no longer acts like one. To actually stop the player, dismiss the media notification, fling the mini bar down, or use the widget's close-book button, all unchanged.
+- Further work on keeping the player alive when the app is closed from the recent-apps list — see 1.9.17b.
 
 ## [1.9.17b] - 2026-08-13
 
+### Changed
+- An attempt at keeping playback going when the app is closed from the recent-apps list. **On some phones this does not work and cannot be made to** — OnePlus and other ColorOS-based ROMs kill the app outright when you swipe it away, and no app can refuse that. Where the system allows it, the notification and widget stay live and a running sleep timer survives.
+
 ### Fixed
-- Closing the app from the recent-apps list stopped playback. It now keeps playing — the notification and the home screen widget stay live and fully usable, and a running sleep timer survives too. Swiping the app away while paused still closes the player as before, and the widget's play button will start it up again.
 - Playback could also cut out with the screen off during long stretches of listening, because nothing was keeping the phone's processor awake for the audio. It now holds a wake lock while it is actually playing, and releases it the moment you pause.
 
 ## [1.9.16b] - 2026-08-13

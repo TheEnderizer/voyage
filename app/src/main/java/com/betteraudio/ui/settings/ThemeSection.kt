@@ -109,6 +109,7 @@ internal fun LazyListScope.themeSection(
     darkMode: com.betteraudio.ui.theme.DarkMode,
     pureBlack: Boolean,
     dynamicPills: Boolean,
+    appIcon: com.betteraudio.util.AppIconManager.AppIcon,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -123,6 +124,59 @@ internal fun LazyListScope.themeSection(
                     )
                 }
             }
+        }
+    }
+
+    // ── App icon (see util/AppIconManager.kt) ───────────────────────────────
+    item {
+        var pendingIcon by remember { mutableStateOf<com.betteraudio.util.AppIconManager.AppIcon?>(null) }
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("App icon", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    com.betteraudio.util.AppIconManager.AppIcon.entries.forEach { candidate ->
+                        AppIconPreview(
+                            icon = candidate,
+                            selected = candidate == appIcon,
+                            onClick = { if (candidate != appIcon) pendingIcon = candidate }
+                        )
+                    }
+                }
+                // Always visible, not just inside the confirm dialog — the user should know what
+                // tapping a variant commits to before they even tap one.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Filled.Warning, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp).padding(top = 2.dp)
+                    )
+                    Text(
+                        "Changing the icon closes Voyage. Your place in the current book is " +
+                            "saved first. On some phones the new icon only appears after " +
+                            "restarting the phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        pendingIcon?.let { target ->
+            AppIconConfirmDialog(
+                target = target,
+                isPlaying = viewModel.isPlaying(),
+                onConfirm = {
+                    pendingIcon = null
+                    viewModel.changeAppIcon(target)
+                },
+                onDismiss = { pendingIcon = null }
+            )
         }
     }
 
@@ -174,6 +228,33 @@ internal fun LazyListScope.themeSection(
                     onSelect = { hex -> viewModel.setCustomThemeColor(hex) },
                     onDismiss = { showColorPicker = false }
                 )
+            }
+        }
+    }
+
+    // Landscape player layout — Material You only (the Immersive player has a single landscape
+    // layout). Portrait is unaffected by this choice either way.
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+            val style by viewModel.landscapePlayerStyle.collectAsStateWithLifecycle()
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Landscape player", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "How the full player lays out when you turn the phone sideways. " +
+                            "Portrait is the same either way.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    com.betteraudio.ui.material.player.LandscapePlayerStyle.entries.forEach { opt ->
+                        ThemeRadioRow(
+                            title = opt.label,
+                            detail = opt.blurb,
+                            selected = style == opt,
+                            onSelect = { viewModel.setLandscapePlayerStyle(opt) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -306,6 +387,83 @@ private fun FlowRowSwatches(current: String, onPick: (androidx.compose.ui.graphi
             }
         }
     }
+}
+
+@Composable
+private fun AppIconPreview(
+    icon: com.betteraudio.util.AppIconManager.AppIcon,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.width(64.dp)
+    ) {
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .clickable(onClick = onClick)
+                .then(
+                    if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                    else Modifier
+                )
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            listOf(Color(icon.previewTopColor), Color(icon.previewBottomColor))
+                        )
+                    )
+            )
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(icon.previewForeground),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Text(
+            icon.label,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun AppIconConfirmDialog(
+    target: com.betteraudio.util.AppIconManager.AppIcon,
+    isPlaying: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change app icon?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Switching to \"${target.label}\" closes Voyage. Your place in the current " +
+                        "book is saved first. On some phones the new icon only appears after " +
+                        "restarting the phone."
+                )
+                if (isPlaying) {
+                    Text(
+                        "Playback will stop.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Change icon") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

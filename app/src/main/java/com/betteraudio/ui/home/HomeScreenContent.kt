@@ -196,7 +196,7 @@ fun HomeScreenContent(
                     modifier = Modifier.fillMaxSize()
                 ) {
                 LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
+                    columns = GridCells.Fixed(style.gridColumns()),
                     contentPadding = PaddingValues(
                         // Bottom clears the floating nav pill + mini player stacked above the
                         // nav inset (see FloatingNavPill / PlayerSheet).
