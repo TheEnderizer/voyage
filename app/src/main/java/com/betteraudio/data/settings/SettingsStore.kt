@@ -245,7 +245,10 @@ class SettingsStore @Inject constructor(
     val customThemeColor: Flow<String>         = prefsData.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }.distinctUntilChanged()
     val darkMode: Flow<String>                 = prefsData.map { it[Keys.DARK_MODE] ?: "AUTO" }.distinctUntilChanged()
     val pureBlack: Flow<Boolean>               = prefsData.map { it[Keys.PURE_BLACK] ?: false }.distinctUntilChanged()
-    val dynamicPills: Flow<Boolean>            = prefsData.map { it[Keys.DYNAMIC_PILLS] ?: false }.distinctUntilChanged()
+    // Defaults ON: the pills' real backdrop blur is the Immersive theme's signature surface, and
+    // it should be what a user sees without hunting through Settings. The toggle exists to turn it
+    // OFF (older/slower devices, or a preference for the static cover smudge).
+    val dynamicPills: Flow<Boolean>            = prefsData.map { it[Keys.DYNAMIC_PILLS] ?: true }.distinctUntilChanged()
     val widgetAppColor: Flow<Int>              = prefsData.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }.distinctUntilChanged()
     val widgetHideWhenIdle: Flow<Boolean>      = prefsData.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }.distinctUntilChanged()
     val autoBackupEnabled: Flow<Boolean>       = prefsData.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }.distinctUntilChanged()

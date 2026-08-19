@@ -17,6 +17,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -99,8 +101,8 @@ fun Modifier.recordBackdrop(capture: BackdropCapture?): Modifier =
 fun Modifier.backdropGlass(
     capture: BackdropCapture,
     rootOffset: () -> Offset,
-    blurX: Dp = 14.dp,
-    blurY: Dp = 40.dp
+    blurX: Dp = BLUR_X,
+    blurY: Dp = BLUR_Y
 ): Modifier = this
     .graphicsLayer {
         renderEffect = BlurEffect(blurX.toPx(), blurY.toPx(), TileMode.Clamp)
@@ -112,3 +114,38 @@ fun Modifier.backdropGlass(
             drawLayer(capture.layer)
         }
     }
+
+/**
+ * Grows an element past its parent's bounds by [x]/[y] on every side while still *reporting* the
+ * parent's size, so layout is unaffected and only the drawing is bigger. The parent's own clip
+ * trims the excess back.
+ *
+ * This is what makes the glass scroll smoothly instead of appearing to be rebuilt every frame. A
+ * `BlurEffect` can only sample pixels that exist inside its own layer, and the layer is the size
+ * of the element — so at the pill's edges the blur had nothing real to read and `TileMode.Clamp`
+ * invented the missing pixels by smearing the edge row. As content scrolled, the pixels being
+ * smeared changed, so the *whole* blur field was subtly rebuilt each frame rather than translating
+ * with the content underneath: exactly the "it's remaking it, with slight variation" stutter.
+ *
+ * Bleeding the sampled area out by roughly the blur radius means the kernel reads genuine content
+ * all the way to the visible edge, and a scroll now just moves that content through a stable blur.
+ */
+fun Modifier.overdraw(x: Dp, y: Dp): Modifier = this.layout { measurable, constraints ->
+    val ex = x.roundToPx()
+    val ey = y.roundToPx()
+    val placeable = measurable.measure(
+        Constraints.fixed(
+            (constraints.maxWidth + ex * 2).coerceAtLeast(0),
+            (constraints.maxHeight + ey * 2).coerceAtLeast(0)
+        )
+    )
+    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-ex, -ey) }
+}
+
+/** Horizontal blur radius — modest, so the pill still reads as glass rather than fog. */
+val BLUR_X = 12.dp
+
+/** Vertical blur radius. Much larger than [BLUR_X]: the asymmetry IS the vertical smudge. Kept
+ *  below the original 40dp because the cost of a blur scales with its radius and this runs on
+ *  every frame of every scroll. */
+val BLUR_Y = 32.dp

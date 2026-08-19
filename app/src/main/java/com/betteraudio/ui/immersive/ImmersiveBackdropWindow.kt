@@ -1,10 +1,13 @@
 package com.betteraudio.ui.immersive
 
+import android.graphics.BitmapFactory
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -13,6 +16,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * The state behind Immersive Home's "clear window" into the app backdrop.
@@ -34,8 +40,25 @@ import androidx.compose.ui.graphics.graphicsLayer
  * `AppBlurredBackdrop`), which cannot be deferred because `Modifier.blur` takes a plain Dp.
  */
 class HeroWindowState {
+    /**
+     * Whether Home has a book to feature. Set by the header.
+     *
+     * Deliberately separate from [routeAllows]: this one follows composition, and Home stays
+     * composed until its exit animation finishes. Hanging the whole window off it meant leaving
+     * Settings' route meant the sharp region and the darkening both vanished a beat LATE, which
+     * read as a stutter partway through the transition.
+     */
+    var hasHero by mutableStateOf(false)
+
+    /**
+     * Whether the current destination should show a window at all. Written from MainActivity the
+     * instant the route changes, so the window goes exactly when the navigation animation starts
+     * rather than when Home is finally torn down.
+     */
+    var routeAllows by mutableStateOf(false)
+
     /** True only while Immersive Home is on screen; every other route gets the plain backdrop. */
-    var active by mutableStateOf(false)
+    val active: Boolean get() = hasHero && routeAllows
 
     /** 0 = window fully sharp (unscrolled), 1 = window fully blurred, i.e. gone. */
     val scrolledFraction = mutableFloatStateOf(0f)
@@ -50,7 +73,7 @@ class HeroWindowState {
     val scrimBottomPx = mutableFloatStateOf(0f)
 
     fun reset() {
-        active = false
+        hasHero = false
         scrolledFraction.floatValue = 0f
         windowBottomPx.floatValue = 0f
         scrimBottomPx.floatValue = 0f
@@ -59,6 +82,57 @@ class HeroWindowState {
 
 /** Provided once from MainActivity; written by Immersive Home, read by the app backdrop. */
 val LocalHeroWindow = compositionLocalOf { HeroWindowState() }
+
+/**
+ * Whether [coverPath]'s artwork is light enough to need darkening behind Home's hero copy.
+ *
+ * The scrim exists so the title and status tabs stay readable. A dark cover already provides that
+ * on its own, and darkening it further just muddies artwork that was fine — so the band is only
+ * drawn over light covers. Decoded tiny and averaged off the main thread; the answer changes about
+ * once per book.
+ */
+@Composable
+fun rememberCoverIsLight(coverPath: String?): Boolean {
+    var isLight by remember(coverPath) { mutableStateOf(false) }
+    LaunchedEffect(coverPath) {
+        isLight = withContext(Dispatchers.IO) { coverIsLight(coverPath) }
+    }
+    return isLight
+}
+
+/** Mean perceptual luminance of the cover, thresholded. Cheap: decodes at 1/16 scale. */
+private fun coverIsLight(path: String?): Boolean {
+    if (path.isNullOrBlank()) return false
+    return runCatching {
+        val file = File(path)
+        if (!file.exists()) return false
+        val opts = BitmapFactory.Options().apply { inSampleSize = 16 }
+        val bmp = BitmapFactory.decodeFile(path, opts) ?: return false
+        try {
+            var sum = 0.0
+            var count = 0
+            // Every pixel of an already-tiny bitmap — a few hundred at this sample size.
+            for (y in 0 until bmp.height) {
+                for (x in 0 until bmp.width) {
+                    val c = bmp.getPixel(x, y)
+                    val r = (c shr 16 and 0xFF) / 255.0
+                    val g = (c shr 8 and 0xFF) / 255.0
+                    val b = (c and 0xFF) / 255.0
+                    // Rec. 709 luma — matches how bright the eye actually finds the pixel.
+                    sum += 0.2126 * r + 0.7152 * g + 0.0722 * b
+                    count++
+                }
+            }
+            if (count == 0) false else (sum / count) > LIGHT_COVER_THRESHOLD
+        } finally {
+            bmp.recycle()
+        }
+    }.getOrDefault(false)
+}
+
+/** Above this mean luminance a cover is treated as light. Deliberately below 0.5: a cover only
+ *  slightly brighter than mid-grey is already enough to fight near-white text. */
+private const val LIGHT_COVER_THRESHOLD = 0.42
 
 /**
  * Masks the sharp backdrop copy down to the window: fully opaque to [state]'s window bottom, then

@@ -268,10 +268,17 @@ fun GlassPillSurface(
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         )
         if (useRealBackdrop && capture != null) {
+            // The sampler is deliberately LARGER than the pill (see overdraw): the blur needs real
+            // content past the visible edge or it invents it, and invented edges change as the
+            // content scrolls. It tracks its own bounds rather than reusing the pill's, since
+            // overdraw shifts it up and left by the bleed.
+            var sampleTopLeft by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
             Box(
                 Modifier
                     .matchParentSize()
-                    .backdropGlass(capture, rootOffset = { ownTopLeft })
+                    .overdraw(BLUR_X, BLUR_Y)
+                    .onGloballyPositioned { sampleTopLeft = it.boundsInRoot().topLeft }
+                    .backdropGlass(capture, rootOffset = { sampleTopLeft })
             )
         }
         val currentSmudge = smudged

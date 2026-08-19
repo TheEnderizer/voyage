@@ -272,6 +272,8 @@ fun HomeScreenContent(
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         isNowPlaying = playbackState.bookId == gridItem.book.id,
+                                        isPlayingNow = playbackState.bookId == gridItem.book.id &&
+                                            playbackState.isPlaying,
                                         style = style,
                                         useReadingProgress = homeSection == HomeSection.EBOOKS,
                                         onClick = {
@@ -287,8 +289,17 @@ fun HomeScreenContent(
                                         // Play in place (mini bar), do NOT open the full player —
                                         // unless this row has no audio, in which case play = read.
                                         onPlayClick = {
-                                            if (ebookOnly) onOpenReader(gridItem.book.id)
-                                            else viewModel.playResumeBook(gridItem.book.id)
+                                            when {
+                                                ebookOnly -> onOpenReader(gridItem.book.id)
+                                                // Already the live book and actually playing: this
+                                                // is a PAUSE. It used to fall through to
+                                                // playResumeBook, which reloads the queue from the
+                                                // saved position — so the button paused and then
+                                                // instantly restarted.
+                                                playbackState.bookId == gridItem.book.id &&
+                                                    playbackState.isPlaying -> viewModel.togglePlayPause()
+                                                else -> viewModel.playResumeBook(gridItem.book.id)
+                                            }
                                         },
                                         onLongClick = { viewModel.toggleSelection(key) }
                                     )
@@ -553,7 +564,7 @@ private fun CollectionCoverSearchSheetHost(viewModel: HomeViewModel) {
  */
 @Composable
 private fun rememberHomeHero(viewModel: HomeViewModel, onOpenBook: (Long) -> Unit): HomeHeroData? {
-    val resume by viewModel.resumeBook.collectAsStateWithLifecycle()
+    val resume by viewModel.heroBook.collectAsStateWithLifecycle()
     val playback by viewModel.playbackState.collectAsStateWithLifecycle()
     val bwp = resume ?: return null
     val book = bwp.book
@@ -684,7 +695,10 @@ private fun BookGridCard(
     onPlayClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    useReadingProgress: Boolean = false
+    useReadingProgress: Boolean = false,
+    /** [isNowPlaying] only means this is the book the service has loaded — it may well be paused.
+     *  The button's icon needs the stricter "and audio is actually running". */
+    isPlayingNow: Boolean = false
 ) {
     // Immersive collapses the border + badge + inset bar into one accent hairline on the card's
     // bottom edge (which is itself the progress bar), so only Material You draws a border for
@@ -851,8 +865,8 @@ private fun BookGridCard(
         if (!isSelectionMode) {
             Box(Modifier.padding(8.dp).align(Alignment.BottomEnd)) {
                 style.CardPlayButton(
-                    isPlaying = isNowPlaying,
-                    contentDescription = if (isNowPlaying) "Pause" else "Play",
+                    isPlaying = isPlayingNow,
+                    contentDescription = if (isPlayingNow) "Pause" else "Play",
                     onClick = onPlayClick
                 )
             }

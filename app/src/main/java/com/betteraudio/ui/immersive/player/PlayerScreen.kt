@@ -263,13 +263,18 @@ fun PlayerContent(
                         .build()
                 }
             }
+            // Shape and scaling must match the BAKE exactly, or the morph lands crooked. The bake
+            // keeps the cover's own aspect (CoverEffectBaker: hc = height/width * w, sharp half on
+            // top) and is drawn FillWidth/top-anchored — so a hardcoded square with Crop only ever
+            // agreed with it for perfectly square art. See rememberCoverAspect.
+            val coverAspect = com.betteraudio.ui.components.rememberCoverAspect(coverPath)
             AsyncImage(
                 model = coverImageModel,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
+                    .aspectRatio(coverAspect)
                     .morphFrom(
                         expand.miniCover, expandProgress,
                         anchorTopLeft = true, byWidth = true,
@@ -533,11 +538,7 @@ fun PlayerContent(
                         timeline = chapterTimeline,
                         accent = accent,
                         trackColor = trackColor
-                    ) { target ->
-                        val before = bookPos
-                        viewModel.bookSeekTo(target)
-                        viewModel.onScrubSeek(before, target)
-                    }
+                    )
                     Spacer(Modifier.height(5.dp))
                     ThreeUpTimeRow(
                         left = formatDuration(chDisplayPos),
@@ -943,24 +944,20 @@ private fun BookTickTrack(
     bookTotal: Long,
     timeline: com.betteraudio.playback.ChapterTimeline,
     accent: Color,
-    trackColor: Color,
-    onSeek: (Long) -> Unit
+    trackColor: Color
 ) {
     if (bookTotal <= 0L) return
-    val inkTick = Color.Black.copy(alpha = 0.55f)
+    val inkTick = Color.Black.copy(alpha = 0.62f)
     val cur = timeline.chapterAt(bookPos)
     val curStart = cur?.startMs ?: 0L
     val curEnd = cur?.endMs ?: bookTotal
+    // Deliberately NOT tappable. This is a picture of where you are in the book, not a second
+    // control — the chapter slider directly above it is the thing your thumb reaches for, and a
+    // 2.5dp line sitting right under it was far too easy to hit by accident and jump the book.
     Canvas(
         Modifier
             .fillMaxWidth()
-            .height(14.dp)                    // generous touch target; the track itself is 2.5dp
-            .pointerInput(bookTotal) {
-                detectTapGestures { offset ->
-                    val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                    onSeek((frac * bookTotal).toLong())
-                }
-            }
+            .height(10.dp)
     ) {
         val h = 2.5.dp.toPx()
         val y = (size.height - h) / 2f
@@ -988,19 +985,29 @@ private fun BookTickTrack(
             size = Size(litWidth, h),
             cornerRadius = CornerRadius(h / 2f, h / 2f)
         )
-        // Chapter boundaries. Skipped when they would be closer together than 3px — a 200-chapter
-        // book would otherwise draw a solid bar of ticks and read as noise.
-        val minGap = 3f
+        // Chapter boundaries, drawn 2px wide so a split actually reads as a split rather than a
+        // hairline artefact. A book with a lot of chapters counts in 2s, 3s or more instead of
+        // trying to draw every one: past a certain density the ticks stop being information and
+        // become a grey bar. The stride is chosen so roughly TARGET_TICKS marks survive, which
+        // keeps the divisions legible at any chapter count while still showing the book's shape.
+        val tickWidth = 2f
+        val stride = ((timeline.marks.size + TARGET_TICKS - 1) / TARGET_TICKS).coerceAtLeast(1)
+        // Even after striding, refuse to place two ticks closer than their own width plus a gap.
+        val minGap = tickWidth * 3f
         var lastX = -minGap
-        timeline.marks.forEach { mark ->
-            if (mark.startMs <= 0L) return@forEach
+        timeline.marks.forEachIndexed { index, mark ->
+            if (mark.startMs <= 0L) return@forEachIndexed
+            if (index % stride != 0) return@forEachIndexed
             val tx = x(mark.startMs)
-            if (tx - lastX < minGap) return@forEach
+            if (tx - lastX < minGap) return@forEachIndexed
             lastX = tx
-            drawRect(color = inkTick, topLeft = Offset(tx, y), size = Size(1f, h))
+            drawRect(color = inkTick, topLeft = Offset(tx, y), size = Size(tickWidth, h))
         }
     }
 }
+
+/** How many chapter ticks the book track aims to show before it starts counting in 2s, 3s, … */
+private const val TARGET_TICKS = 24
 
 /** Elapsed, a dim whole-book figure, and time left — one row where there used to be two. */
 @Composable

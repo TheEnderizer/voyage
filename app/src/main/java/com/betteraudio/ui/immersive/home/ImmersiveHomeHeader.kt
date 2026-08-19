@@ -71,9 +71,11 @@ fun ImmersiveHomeHeader(
     val hero = LocalHeroWindow.current
     val heroData = data.hero
 
-    // The window belongs to Home alone; every other route gets the plain blurred backdrop.
+    // Only says whether there is a book to feature. Whether the window is SHOWN is ANDed with
+    // the route in MainActivity, so leaving Home kills it at the moment navigation starts rather
+    // than when Home finally leaves composition at the end of the exit animation.
     DisposableEffect(heroData != null) {
-        hero.active = heroData != null
+        hero.hasHero = heroData != null
         onDispose { hero.reset() }
     }
 

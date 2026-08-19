@@ -27,6 +27,7 @@ import com.betteraudio.ui.immersive.ImmersiveStyle
 import com.betteraudio.ui.immersive.LocalHeroWindow
 import com.betteraudio.ui.immersive.heroScrim
 import com.betteraudio.ui.immersive.heroWindowMask
+import com.betteraudio.ui.immersive.rememberCoverIsLight
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -64,6 +65,8 @@ private fun windowBlurRadius(hero: HeroWindowState): Dp {
 fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: Modifier = Modifier) {
     val hero = LocalHeroWindow.current
     val density = LocalDensity.current
+    // Drives whether the hero band darkens at all — see the scrim below.
+    val coverIsLight = rememberCoverIsLight(coverPath)
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // AN-13 (Gate AN): remember'd so this File.exists() stat only runs when bakedPath itself
         // changes (roughly once per book), not on every recomposition — matches the same pattern
@@ -161,7 +164,10 @@ fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: 
                 .fillMaxSize()
                 .background(ImmersiveStyle.backdropVeil())
                 .then(
-                    if (hero.active)
+                    // Only over LIGHT artwork. A dark cover already gives near-white text all the
+                    // contrast it needs, and darkening it further just muddies a cover that was
+                    // fine — the band would be doing nothing but dulling the picture.
+                    if (hero.active && coverIsLight)
                         Modifier.heroScrim(hero, ImmersiveStyle.coverInk(), maxAlpha = 0.62f)
                     else Modifier
                 )

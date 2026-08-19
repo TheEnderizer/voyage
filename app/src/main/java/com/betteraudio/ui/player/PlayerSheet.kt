@@ -137,6 +137,20 @@ class PlayerSheetController {
         expandToken++
     }
 
+    /**
+     * Start a book WITHOUT taking over the screen: playback begins and the mini bar appears, but
+     * the sheet stays collapsed.
+     *
+     * Starting a book is not a request to be moved to another screen — a grid card's play button
+     * has always worked this way, and every other "start listening" affordance should match it.
+     * Unlike [prime] this replaces whatever target is loaded and does start playback; unlike
+     * [open] it never bumps expandToken, so nothing expands.
+     */
+    fun startCollapsed(bookId: Long) {
+        if (bookId == -1L) return
+        target = PlayerTarget(bookId, startPlaying = true)
+    }
+
     fun expandCurrent() { if (target != null) expandToken++ }
     fun collapse() { collapseToken++ }
 
@@ -698,13 +712,21 @@ private fun MiniPlayerBar(
                 // frequently visible surface; now it IS the bar's leading form, clipped into a
                 // "D" by the pill's own left cap (GlassPillSurface clips its children), with just
                 // enough radius on the trailing edge to stop it reading as a cut.
+                // Immersive sizes the cap by the cover's REAL aspect rather than forcing a square.
+                // The full player's artwork keeps that same aspect (the bake does, and the
+                // travelling sharp copy now matches it), so source and destination are the same
+                // shape and the morph between them is one uniform scale — no squash, no re-crop,
+                // nothing to land crooked. Material You is untouched and keeps its square thumb.
+                val miniAspect =
+                    if (isImmersive) com.betteraudio.ui.components.rememberCoverAspect(coverPath) else 1f
                 Box(
                     Modifier
                         .then(handOff)
                         .then(
                             if (isImmersive)
                                 Modifier
-                                    .size(MINI_HEIGHT_DP.dp)
+                                    .height(MINI_HEIGHT_DP.dp)
+                                    .width(MINI_HEIGHT_DP.dp * miniAspect)
                                     .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
                             else
                                 Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
@@ -715,7 +737,10 @@ private fun MiniPlayerBar(
                     AsyncImage(
                         model = coverPath?.let { File(it) },
                         contentDescription = null,
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        // FillWidth in Immersive to match the full player and the bake; Crop
+                        // elsewhere, where the slot is a fixed square.
+                        contentScale = if (isImmersive) androidx.compose.ui.layout.ContentScale.FillWidth
+                                       else androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

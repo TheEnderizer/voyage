@@ -347,6 +347,14 @@ class MainActivity : ComponentActivity() {
                 // Immersive Home's "clear window" into the backdrop: Home publishes its scroll
                 // here, the backdrop reads it to decide how much of itself to render sharp.
                 val heroWindow = remember { com.betteraudio.ui.immersive.HeroWindowState() }
+                // Route-driven, so the window and its darkening go the instant navigation starts
+                // — in step with the destination's own transition. Waiting for Home to leave
+                // composition (which happens only once its exit animation finishes) made the
+                // change land late and read as a stutter mid-transition.
+                val heroRouteAllows = currentRoute == "home" &&
+                    seriesOverlayController.seriesId == -1L &&
+                    bookInfoOverlayController.bookId == -1L
+                LaunchedEffect(heroRouteAllows) { heroWindow.routeAllows = heroRouteAllows }
                 // Live capture of everything the floating glass sits on. Null unless the user has
                 // Dynamic pills on (and the device can do RenderEffect) — see BackdropGlass.kt.
                 val backdropCapture =
@@ -483,7 +491,10 @@ class MainActivity : ComponentActivity() {
                 // opens the full player on that book.
                 BookInfoOverlay(
                     controller = bookInfoOverlayController,
-                    onResume = { bookId -> sheetController.open(bookId = bookId, startPlaying = true) }
+                    // Starts the book behind the closing overlay rather than expanding the full
+                    // player over it — starting a book is not a request to be taken to another
+                    // screen. Matches a grid card's play button and Home's hero Resume.
+                    onResume = { bookId -> sheetController.startCollapsed(bookId) }
                 )
                 } // end recordBackdrop Box — everything the floating glass is allowed to sample
 
