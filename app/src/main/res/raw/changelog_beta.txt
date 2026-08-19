@@ -5,6 +5,51 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.11.0b] - 2026-08-19
+
+The Immersive theme is now genuinely cover-first. The book cover used to be painted across the
+whole app and then buried under a flat sheet that left it about a fifth visible — it arrived as
+grey fog. Now the artwork is the subject: the top of your library is a sharp window into that
+same background, which blurs away into it as you scroll, and the mini player and nav pill blur
+whatever is really behind them, live, as the library moves underneath.
+
+The player lost half its clutter. Seven stacked rows of controls became four, giving the cover
+back about a third of the space it had lost, and the whole book now reads as one hairline with a
+tick per chapter instead of a second slider competing with the first.
+
+Material You is completely unchanged.
+
+The details:
+
+### Added
+- Home opens on a sharp window into the app backdrop showing the book you were last on, with its
+  progress and a Resume button. It blurs back into the background as you scroll.
+- The mini player and nav pill show a real blurred sample of what is behind them, updating as you
+  scroll. Settings → Theme → Dynamic pills, now on by default, turns it off.
+- The whole-book progress track marks every chapter, counting in 2s or 3s on books with a lot of
+  them.
+
+### Changed
+- The cover is no longer veiled to near-invisibility; the backdrop's darkening is a gradient that
+  is light where the artwork lives and only heavy where content is dense.
+- Glass surfaces keep the cover's colour instead of landing the same grey for every book.
+- Library cards are mostly cover now: no background plate, a gentler scrim, and a glass play
+  button instead of a black disc. "Now playing" is one accent hairline along the card's bottom
+  edge rather than a border, a badge and a bar.
+- The status tabs are plain text with an accent underline instead of four filled chips.
+- The player's four utility controls (skip silence, audio, bookmarks, sleep) are one rail.
+- The mini player's cover is now the full height of the bar and expands into the full player's
+  cover instead of the two crossfading out of alignment.
+- Progress on the mini player traces the pill's outline rather than running straight underneath it.
+- Starting a book no longer opens the full player over whatever you were doing.
+- The nav pill's selected icon is tinted rather than sitting in a filled capsule.
+
+### Fixed
+- The pause button on a library card paused and then immediately restarted the book.
+- The cover morph out of a library card began at the wrong corner radius.
+- Mini player text is accent-tinted like the rest of the theme.
+- The whole-book track can no longer be tapped by accident while reaching for the chapter slider.
+
 ## [1.10.0b] - 2026-08-15
 
 Voyage works sideways. Every screen — library, player, Settings, book info, series, search —
