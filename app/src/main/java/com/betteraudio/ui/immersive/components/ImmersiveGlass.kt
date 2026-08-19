@@ -21,8 +21,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathMeasure
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -115,6 +122,54 @@ private suspend fun verticalSmudge(path: String): Bitmap? = withContext(Dispatch
     }.getOrNull()
     if (result != null) synchronized(smudgeCache) { smudgeCache[path] = result }
     result
+}
+
+/**
+ * Progress drawn along a pill's own rounded outline instead of as a straight bar beneath it.
+ *
+ * A `LinearProgressIndicator` pinned to the bottom of a `RoundedCornerShape(percent = 50)` is
+ * geometrically wrong — the bar runs the full width while the shape it belongs to curves away
+ * from it at both ends, so the last stretch of progress reads as "done" while the pill's caps sit
+ * empty. Tracing the outline puts the progress *on* the object.
+ *
+ * This is the same recipe as `WidgetPainter.drawPerimeterProgressBar` (which does it for the
+ * widget's RING / SQUARE / ROUNDED_SQUARE progress shapes): build the outline as a `Path`, then
+ * walk `fraction * length` of it with `PathMeasure`. Compose's `drawBehind` here rather than a
+ * `Canvas`, and [progress] is a lambda read only inside that draw lambda — the value ticks twice
+ * a second, and reading it in composition would recompose the whole pill on every tick.
+ */
+@Composable
+fun PillPerimeterProgress(
+    progress: () -> Float,
+    color: Color,
+    modifier: Modifier = Modifier,
+    strokeWidth: Dp = 2.5.dp
+) {
+    Box(
+        modifier.drawBehind {
+            val w = strokeWidth.toPx()
+            val inset = w / 2f
+            val radius = ((size.height - w) / 2f).coerceAtLeast(0f)
+            val outline = Path().apply {
+                addRoundRect(
+                    RoundRect(
+                        left = inset,
+                        top = inset,
+                        right = size.width - inset,
+                        bottom = size.height - inset,
+                        cornerRadius = CornerRadius(radius, radius)
+                    )
+                )
+            }
+            val measure = PathMeasure().apply { setPath(outline, false) }
+            val length = measure.length
+            val fraction = progress().coerceIn(0f, 1f)
+            if (length <= 0f || fraction <= 0f) return@drawBehind
+            val travelled = Path()
+            measure.getSegment(0f, length * fraction, travelled, true)
+            drawPath(travelled, color, style = Stroke(width = w, cap = StrokeCap.Round))
+        }
+    )
 }
 
 /**
