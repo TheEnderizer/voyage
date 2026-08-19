@@ -473,7 +473,11 @@ class MainActivity : ComponentActivity() {
                 // draws over it and it slides away in lockstep with the sheet's expansion.
                 val homeSectionRaw by settings.homeSection.collectAsStateWithLifecycle("AUDIO")
                 val homeViewModeRaw by settings.homeViewMode.collectAsStateWithLifecycle("BOOKS")
-                val pillSection = runCatching {
+                // Pinned to AUDIO while the ebook UI is hidden — matches HomeViewModel.homeSection,
+                // so the pill's indicator can't sit on a slot that isn't drawn.
+                val pillSection = if (!com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
+                    com.betteraudio.ui.home.HomeSection.AUDIO
+                } else runCatching {
                     com.betteraudio.ui.home.HomeSection.valueOf(homeSectionRaw)
                 }.getOrDefault(com.betteraudio.ui.home.HomeSection.AUDIO)
                 val pillViewMode = runCatching {

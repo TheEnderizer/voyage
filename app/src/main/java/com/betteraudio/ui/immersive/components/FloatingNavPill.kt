@@ -54,6 +54,7 @@ import com.betteraudio.ui.home.HomeSection
 import com.betteraudio.ui.home.HomeViewMode
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
+import com.betteraudio.util.FeatureFlags
 
 /**
  * ArchiveTune-style floating bottom pill: all-icon slots for the Audio/Ebooks sections (with a
@@ -119,13 +120,15 @@ fun FloatingNavPill(
                     onClick = { onSelectSection(HomeSection.AUDIO) },
                     measure = { x, w -> slotX[HomeSection.AUDIO] = x; slotW[HomeSection.AUDIO] = w }
                 )
-                PillSlot(
-                    icon = Icons.AutoMirrored.Filled.MenuBook,
-                    cd = "Ebooks",
-                    selected = section == HomeSection.EBOOKS,
-                    onClick = { onSelectSection(HomeSection.EBOOKS) },
-                    measure = { x, w -> slotX[HomeSection.EBOOKS] = x; slotW[HomeSection.EBOOKS] = w }
-                )
+                if (FeatureFlags.EBOOKS_UI) {
+                    PillSlot(
+                        icon = Icons.AutoMirrored.Filled.MenuBook,
+                        cd = "Ebooks",
+                        selected = section == HomeSection.EBOOKS,
+                        onClick = { onSelectSection(HomeSection.EBOOKS) },
+                        measure = { x, w -> slotX[HomeSection.EBOOKS] = x; slotW[HomeSection.EBOOKS] = w }
+                    )
+                }
                 // View-cycle: icon shows the CURRENT view; tap advances Books→Series→Authors.
                 // Ebooks ignores view modes, so the slot collapses away in that section.
                 AnimatedVisibility(

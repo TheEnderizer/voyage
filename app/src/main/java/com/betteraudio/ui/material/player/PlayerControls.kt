@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import com.betteraudio.R
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
+import com.betteraudio.ui.player.ElementMotion
+import com.betteraudio.ui.player.elementMotion
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
@@ -288,7 +290,7 @@ internal fun PlayerOverflowMenu(
                 leadingIcon = { Icon(Icons.Default.History, null) },
                 onClick = { showOverflow = false; onHistory() }
             )
-            if (hasEbook) {
+            if (hasEbook && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
                 DropdownMenuItem(
                     text = { Text("Read from here") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
@@ -330,9 +332,15 @@ internal fun PlayerTopBar(
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Material You portrait passes its choreographed slice here (see PlayerChoreography);
+     *  landscape leaves it null and keeps the original shared fade. */
+    motion: ElementMotion? = null,
 ) {
     Row(
-        modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(expandProgress),
+        modifier.fillMaxWidth().padding(vertical = 6.dp).then(
+            if (motion != null) Modifier.elementMotion(motion, expandProgress)
+            else Modifier.expandReveal(expandProgress)
+        ),
         verticalAlignment = Alignment.CenterVertically
     ) {
         ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = true, onClick = onBack)
@@ -445,9 +453,15 @@ internal fun PlayerSecondaryActionsRow(
     onSleepTap: () -> Unit,
     onSleepLongPress: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Material You portrait passes its choreographed slice here (see PlayerChoreography);
+     *  landscape leaves it null and keeps the original shared fade. */
+    motion: ElementMotion? = null,
 ) {
     Row(
-        modifier.fillMaxWidth().expandReveal(expandProgress),
+        modifier.fillMaxWidth().then(
+            if (motion != null) Modifier.elementMotion(motion, expandProgress)
+            else Modifier.expandReveal(expandProgress)
+        ),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voyage Motion Lab</title>
+<style>
+  :root{
+    --bg:#12131a; --panel:#1b1d27; --panel2:#232634; --line:#2f3342;
+    --text:#e7e9f2; --muted:#9aa0b5; --accent:#7aa2ff; --accent2:#ffb26b; --accent3:#7ee0b0;
+    --phone-bg:#0c0d12; --onbg:#e8dff0; --onmuted:#b3a8bf; --fill:#efe6f5;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif}
+  .wrap{display:flex;gap:18px;padding:16px;align-items:flex-start;flex-wrap:wrap}
+
+  #phone{position:relative;width:360px;height:760px;border-radius:28px;overflow:hidden;
+         background:var(--phone-bg);border:1px solid var(--line);
+         touch-action:none;user-select:none;cursor:grab}
+  #phone.dragging{cursor:grabbing}
+  #phone > *{position:absolute}
+  .lyr{transform-origin:50% 50%}
+  #overlay{inset:0;pointer-events:none;z-index:99}
+
+  #home{inset:0;padding:16px;background:#141620}
+  #homeTitle{position:absolute;top:20px;left:16px;font-size:20px;font-weight:600;color:#cfd4e8}
+  #homeGrid{position:absolute;top:56px;left:16px;right:16px}
+  #homeGrid .card{position:relative;display:inline-block;width:96px;height:133px;margin:0 8px 8px 0;
+                  border-radius:12px;background:linear-gradient(140deg,#3b4260,#232839)}
+
+  #navpill{border-radius:32px;background:#2a2e3e;display:flex;align-items:center;
+           justify-content:space-around}
+  #navpill i{position:relative;width:22px;height:22px;border-radius:6px;background:#8a90a8;display:block}
+
+  #container{background:#3a3346}
+  #minibar{border-radius:32px;background:#3a3346}
+  #miniCover{border-radius:12px;background:linear-gradient(140deg,#ffb26b,#c2506a)}
+  #miniTitle{font-size:13px;font-weight:600;color:var(--fill);white-space:nowrap;overflow:hidden}
+  #miniAuthor{font-size:11px;color:#a99fb5;white-space:nowrap;overflow:hidden}
+  #miniPlay{border-radius:50%;background:var(--fill)}
+
+  #cover{background:linear-gradient(140deg,#ffb26b,#c2506a)}
+  #chapter{display:flex;align-items:center;gap:6px;border-radius:13px;background:#2c2733;
+           padding:0 10px;font-size:11px;color:var(--onmuted);white-space:nowrap;overflow:hidden}
+  #chapter b{position:relative;width:11px;height:11px;border-radius:2px;background:#6f6880;flex:0 0 auto}
+  #title{text-align:center;font-size:19px;font-weight:600;color:var(--onbg);overflow:hidden}
+  #author{text-align:center;font-size:13px;color:var(--onmuted);overflow:hidden}
+  #topbar b,#topbar s{position:absolute;top:0;width:32px;height:32px;border-radius:10px;
+                      background:#4a4458;text-decoration:none}
+  #topbar b{left:0} #topbar s{right:0}
+  #bar{border-radius:2px;background:#5b5368}
+  #bar i{position:absolute;left:0;top:0;height:100%;width:38%;border-radius:2px;background:var(--fill)}
+  #times{font-size:11px;color:#9b93a8}
+  #times s{position:absolute;top:0;text-decoration:none} #times s.r{right:0}
+  #bottom{display:flex;justify-content:space-between}
+  #bottom u{position:relative;display:block;width:44px;height:44px;border-radius:14px;background:#332e3d}
+  .tbtn{border-radius:14px;background:#4a4458;display:flex;align-items:center;justify-content:center;
+        font-size:9px;color:#cfc6d8;text-align:center;line-height:1.1}
+  #play{border-radius:50%;background:var(--fill);color:#2a2333;font-size:11px;font-weight:700;
+        display:flex;align-items:center;justify-content:center;z-index:40}
+
+  .col{flex:1 1 330px;min-width:310px;max-width:430px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+         padding:13px;margin-bottom:13px}
+  h1{margin:0 0 3px;font-size:16px}
+  .sub{color:var(--muted);font-size:12px;margin:0 0 11px}
+  h2{font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;
+     letter-spacing:.07em;margin:0 0 8px}
+  .row{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .row label{flex:0 0 132px;font-size:12px;color:var(--muted)}
+  .row input[type=range]{flex:1;min-width:60px;accent-color:var(--accent)}
+  .row select{flex:1;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+              border-radius:6px;padding:4px 6px;font-size:12px}
+  .row output{flex:0 0 50px;text-align:right;font:12px ui-monospace,Consolas,monospace;color:var(--accent2)}
+  .btns{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+  button{background:var(--accent);color:#0d1020;border:0;border-radius:8px;padding:7px 12px;
+         font-weight:600;font-size:12px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  button.ghost.on{border-color:var(--accent);color:var(--accent)}
+  #scrub{width:100%;accent-color:var(--accent2)}
+  .prog{font:12px ui-monospace,Consolas,monospace;color:var(--accent2);margin:3px 0 0}
+  textarea{width:100%;height:210px;background:#0e0f16;color:#cfd6e6;border:1px solid var(--line);
+           border-radius:8px;padding:10px;font:11.5px/1.45 ui-monospace,Consolas,monospace;resize:vertical}
+  .note{font-size:11.5px;color:var(--muted);margin:8px 0 0}
+  .chk{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin:0 10px 4px 0}
+  #timeline{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+  .tl{display:flex;align-items:center;gap:7px;cursor:pointer;border-radius:6px;padding:1px 4px}
+  .tl:hover{background:var(--panel2)}
+  .tl.sel{background:#2b3550}
+  .tl .nm{flex:0 0 86px;font-size:11px;color:var(--muted);white-space:nowrap;
+          overflow:hidden;text-overflow:ellipsis}
+  .tl .track{position:relative;flex:1;height:13px;background:#171a24;border-radius:4px;overflow:hidden}
+  .tl .span{position:absolute;top:0;height:13px;background:var(--accent);opacity:.5;border-radius:4px}
+  .tl.sel .span{opacity:.95}
+  .tl .span.off{opacity:.15}
+  .tl input{margin:0}
+  .ph{position:absolute;top:0;width:2px;height:100%;background:var(--accent2);z-index:3}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div>
+    <div id="phone">
+      <div id="home"><div id="homeTitle">Library</div><div id="homeGrid"></div></div>
+      <div id="navpill" class="lyr"><i></i><i></i><i></i><i></i></div>
+
+      <div id="minibar" class="lyr"></div>
+      <div id="miniCover" class="lyr"></div>
+      <div id="miniTitle" class="lyr">The Long Way</div>
+      <div id="miniAuthor" class="lyr">Becky Chambers</div>
+      <div id="miniPlay" class="lyr"></div>
+
+      <div id="container" class="lyr"></div>
+
+      <div id="topbar" class="lyr"><b></b><s></s></div>
+      <div id="cover" class="lyr"></div>
+      <div id="chapter" class="lyr"><b></b>Chapter 4 &middot; The Wayfarer</div>
+      <div id="title" class="lyr">The Long Way</div>
+      <div id="author" class="lyr">Becky Chambers</div>
+      <div id="bar" class="lyr"><i></i></div>
+      <div id="times" class="lyr"><s>4:21:08</s><s class="r">11:02:44</s></div>
+      <div id="prevCh" class="lyr tbtn">prev</div>
+      <div id="skipBack" class="lyr tbtn">30</div>
+      <div id="play" class="lyr">II</div>
+      <div id="skipFwd" class="lyr tbtn">30</div>
+      <div id="nextCh" class="lyr tbtn">next</div>
+      <div id="bottom" class="lyr"><u></u><u></u><u></u><u></u></div>
+
+      <svg id="overlay" viewBox="0 0 360 760"></svg>
+    </div>
+
+    <div class="panel" style="margin-top:13px;width:360px">
+      <div class="btns">
+        <button id="bOpen">&#9650; Open</button>
+        <button id="bClose">&#9660; Close</button>
+        <button class="ghost" id="bLoop">Loop</button>
+        <span style="flex:1"></span>
+        <button class="ghost on" data-speed="1">1&times;</button>
+        <button class="ghost" data-speed="0.25">0.25&times;</button>
+        <button class="ghost" data-speed="0.1">0.1&times;</button>
+      </div>
+      <input type="range" id="scrub" min="0" max="1.15" step="0.001" value="0">
+      <div class="prog" id="progOut"></div>
+      <div style="margin-top:8px">
+        <label class="chk"><input type="checkbox" id="v_path" checked> path</label>
+        <label class="chk"><input type="checkbox" id="v_onion"> onion skin</label>
+        <label class="chk"><input type="checkbox" id="v_solo"> solo</label>
+        <label class="chk"><input type="checkbox" id="v_cover"> coverage debug</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h1>Choreography</h1>
+      <p class="sub">Click a bar to select and edit that element. The checkbox disables it entirely.
+        Bars marked &#9679; use a spawn rule instead of a plain fade.</p>
+      <div id="timeline"></div>
+    </div>
+    <div class="panel">
+      <h2 id="elTitle">Element</h2>
+      <div id="elControls"></div>
+      <p class="note" id="elNote"></p>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="panel">
+      <h2>Driver spring &mdash; MotionTokens.floatSpatial</h2>
+      <div class="row"><label>dampingRatio</label>
+        <input type="range" id="g_damping" min="0.3" max="1.2" step="0.01"><output></output></div>
+      <div class="row"><label>stiffness</label>
+        <input type="range" id="g_stiffness" min="40" max="2000" step="10"><output></output></div>
+      <div class="row"><label>expand fling px/s</label>
+        <input type="range" id="g_flingUp" min="200" max="3000" step="50"><output></output></div>
+      <div class="row"><label>midpoint</label>
+        <input type="range" id="g_midpoint" min="0.1" max="0.9" step="0.01"><output></output></div>
+      <div class="row"><label>bounce applies to</label>
+        <select id="g_bounceMode">
+          <option value="group">the whole mini player</option>
+          <option value="perElement">each element separately</option>
+        </select></div>
+      <div class="row"><label>bounce drop (px/unit)</label>
+        <input type="range" id="g_bounceDrop" min="0" max="700" step="10"><output></output></div>
+      <p class="note"><b>This is where the bounce lives.</b> The app ships 0.82 (~1% overshoot).
+        Lower it and progress overshoots past 1.0. On <em>the whole mini player</em> the four elements
+        that morph out of the mini bar &mdash; cover, title, author, play button &mdash; dip DOWN together
+        as one rigid object rather than each bouncing separately. Membership is a checkbox on each element.
+        The cover still rebounds, so it still flicks the chapter pill out.</p>
+    </div>
+    <div class="panel">
+      <h2>Export</h2>
+      <div class="btns">
+        <button id="bExport">Spec + Kotlin</button>
+        <button class="ghost" id="bResetEl">Reset element</button>
+        <button class="ghost" id="bResetAll">Reset all</button>
+      </div>
+      <textarea id="out" readonly placeholder="Exports a readable spec plus ElementMotion(...) Kotlin."></textarea>
+    </div>
+  </div>
+</div>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONFIG — edit and refresh, or use the sliders.
+
+   Everything is a pure function of ONE float: sheet progress. With a bouncy
+   driver spring that float overshoots past 1.0, and every element inherits the
+   rebound. That is where the bounce comes from — there is no per-element spring.
+
+   spawn rules (new — no Kotlin equivalent yet):
+     uncover   hidden until the play button covers `coverage` of its area, then
+               visible for good. Reads as the play button depositing it.
+     slideOut  starts stacked under the resting play button centre and slides
+               out to its own spot, hidden meanwhile by the play button z-order.
+     dropFrom  starts behind another element (clipBehind) and drops out of it.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const M = (o={}) => Object.assign({
+  from:0, to:1, easing:'linear', path:'linear', bulge:0, arcBias:0.55,
+  scaleMode:'uniformH', scaleEasing:'same', anchor:'center',
+  spawn:'none', coverage:0.75, clipBehind:'', inBounceGroup:false,
+  fade:false, alphaFrom:0, alphaTo:0.5,
+  radiusFrom:0, radiusTo:0, enabled:true
+}, o);
+
+const DEFAULTS = {
+  container: M({ radiusFrom:32, radiusTo:0 }),
+  cover:     M({ fade:true, alphaTo:0.5, radiusFrom:12, radiusTo:24, inBounceGroup:true }),
+
+  /* EDIT 3 — drops out from behind the cover once the cover is home. The cover
+     overshoots (driver bounce) and the pill is released on the rebound. */
+  chapter:   M({ from:0.88, to:1, easing:'decelerate', clipBehind:'cover',
+                 spawn:'dropFrom', fade:true, alphaFrom:0.88, alphaTo:0.89 }),
+
+  title:     M({ inBounceGroup:true }),
+  /* EDIT 4 — travels out of the new mini bar author line, like the title. */
+  author:    M({ inBounceGroup:true }),
+
+  /* EDIT 2 — the play button arcs up first, then sweeps left along the row,
+     passing over next-chapter and skip-forward on its way to centre. */
+  play:      M({ path:'arcV', arcBias:0.55, inBounceGroup:true }),
+  nextCh:    M({ spawn:'uncover', coverage:0.40 }),   // ceiling is 47% — see note
+  skipFwd:   M({ spawn:'uncover', coverage:0.70 }),
+  /* The play button never passes over the left pair, so they slide out from
+     underneath its resting position instead. */
+  skipBack:  M({ from:0.80, to:1, easing:'decelerate', spawn:'slideOut' }),
+  prevCh:    M({ from:0.84, to:1, easing:'decelerate', spawn:'slideOut' }),
+
+  /* EDIT 4b — the rest stagger in sequence instead of one shared crossfade. */
+  topbar:    M({ from:0.55, to:0.75, easing:'decelerate', fade:true, alphaFrom:0.55, alphaTo:0.62 }),
+  bar:       M({ from:0.62, to:0.82, easing:'decelerate', fade:true, alphaFrom:0.62, alphaTo:0.69 }),
+  times:     M({ from:0.66, to:0.86, easing:'decelerate', fade:true, alphaFrom:0.66, alphaTo:0.73 }),
+  bottom:    M({ from:0.70, to:0.90, easing:'decelerate', fade:true, alphaFrom:0.70, alphaTo:0.77 }),
+
+  minibar:   M({ fade:true, alphaFrom:0, alphaTo:0.4 }),
+  navpill:   M({}),
+};
+
+/* EDIT 1 — bounce lives here. App ships 0.82 for Immersive; Material You uses 0.68/900:
+   391ms settle, peak at 143ms, 5.4% overshoot. */
+const G_DEFAULTS = { damping:0.68, stiffness:900, flingUp:1000, midpoint:0.5,
+  /* 'group'      the elements that morph out of the mini player overshoot as ONE
+                  rigid unit: a single scale about their shared centre.
+     'perElement' every element overshoots its own target independently.
+     bounceDrop   how far the group dips DOWN, in px per unit of overshoot. A pure translation:
+                  scaling text/images every frame resampled them and read as stutter, and a scale
+                  about a shared centre pushed the members apart instead of landing together. */
+  bounceMode:'group', bounceDrop:250 };
+
+const ELEMENTS = {
+  container:{label:'Container', node:'container', kind:'rect',  src:'miniBar'},
+  cover:    {label:'Cover',     node:'cover',     kind:'morph', src:'miniCover'},
+  chapter:  {label:'Chapter pill',node:'chapter', kind:'morph', rise:-46, shrink:1},
+  title:    {label:'Title',     node:'title',     kind:'morph', src:'miniTitle'},
+  author:   {label:'Author',    node:'author',    kind:'morph', src:'miniAuthor'},
+  play:     {label:'Play/pause',node:'play',      kind:'morph', src:'miniControls'},
+  skipFwd:  {label:'Skip fwd',  node:'skipFwd',   kind:'morph'},
+  nextCh:   {label:'Next chapter',node:'nextCh',  kind:'morph'},
+  skipBack: {label:'Skip back', node:'skipBack',  kind:'morph'},
+  prevCh:   {label:'Prev chapter',node:'prevCh',  kind:'morph'},
+  topbar:   {label:'Top bar',   node:'topbar',    kind:'morph', rise:14, shrink:0.8},
+  bar:      {label:'Seek bar',  node:'bar',       kind:'morph', rise:14, shrink:0.8},
+  times:    {label:'Times',     node:'times',     kind:'morph', rise:14, shrink:0.8},
+  bottom:   {label:'Secondary row',node:'bottom', kind:'morph', rise:14, shrink:0.8},
+  minibar:  {label:'Mini bar',  node:'minibar',   kind:'alpha'},
+  navpill:  {label:'Nav pill',  node:'navpill',   kind:'slide', travel:124},
+};
+
+/* Layout, 360x760. The mini bar now carries an author line under the title. */
+const RECTS = {
+  miniBar:{x:16,y:652,w:328,h:64}, miniCover:{x:24,y:660,w:48,h:48},
+  miniTitle:{x:84,y:661,w:180,h:18}, miniAuthor:{x:84,y:681,w:180,h:14},
+  miniControls:{x:288,y:664,w:40,h:40}, miniPlay:{x:288,y:664,w:40,h:40},
+  container:{x:0,y:0,w:360,h:760},
+  topbar:{x:20,y:36,w:320,h:32},
+  cover:{x:60,y:110,w:240,h:240},
+  chapter:{x:84,y:368,w:192,h:26},
+  title:{x:40,y:404,w:280,h:30},
+  author:{x:40,y:438,w:280,h:20},
+  bar:{x:40,y:486,w:280,h:4},
+  times:{x:40,y:500,w:280,h:16},
+  prevCh:{x:26.7,y:510,w:48,h:48}, skipBack:{x:85.3,y:510,w:48,h:48},
+  play:{x:144,y:498,w:72,h:72},
+  skipFwd:{x:226.7,y:510,w:48,h:48}, nextCh:{x:285.3,y:510,w:48,h:48},
+  bottom:{x:40,y:600,w:280,h:44},
+  navpill:{x:76,y:684,w:208,h:64},
+  minibar:{x:16,y:652,w:328,h:64},
+};
+const SCREEN={w:360,h:760};
+const GESTURE_TRAVEL = SCREEN.h - 64 - (24 + 20);
+
+const K = JSON.parse(JSON.stringify(DEFAULTS));
+const G = Object.assign({}, G_DEFAULTS);
+let speed=1, loop=false, selected='play';
+
+const $ = id => document.getElementById(id);
+const lerp=(a,b,t)=>a+(b-a)*t;
+const clamp01=v=>v<0?0:v>1?1:v;
+
+function bezier(x1,y1,x2,y2){
+  const cx=3*x1, bx=3*(x2-x1)-cx, ax=1-cx-bx;
+  const cy=3*y1, by=3*(y2-y1)-cy, ay=1-cy-by;
+  const fx=t=>((ax*t+bx)*t+cx)*t, fy=t=>((ay*t+by)*t+cy)*t;
+  const dfx=t=>(3*ax*t+2*bx)*t+cx;
+  return x=>{
+    if(x<=0)return 0; if(x>=1)return 1;
+    let t=x;
+    for(let i=0;i<6;i++){ const e=fx(t)-x; if(Math.abs(e)<1e-5)break;
+      const d=dfx(t); if(Math.abs(d)<1e-6)break; t-=e/d; }
+    return fy(Math.max(0,Math.min(1,t)));
+  };
+}
+const EASINGS = {
+  linear:x=>x, standard:bezier(0.2,0,0,1), decelerate:bezier(0.05,0.7,0.1,1),
+  accelerate:bezier(0.3,0,1,1), emphasized:bezier(0.2,0,0,1),
+  overshoot:x=>{const c=2.70158; return 1+c*Math.pow(x-1,3)+1.70158*Math.pow(x-1,2);},
+  anticipate:x=>{const c=1.70158; return c*x*x*x-c*x*x;},
+};
+const EASING_NAMES=Object.keys(EASINGS);
+const arcXCache={};
+const arcX = b => arcXCache[b] || (arcXCache[b]=bezier(b,0,1,1));
+
+/* Remap raw progress onto the slice of one element, PRESERVING overshoot above
+   1 for elements still in flight at the end. Ones that finished earlier stay put. */
+function remapOver(raw, from, to){
+  const span = Math.max(1e-4, to-from);
+  const base = clamp01((Math.min(raw,1)-from)/span);
+  if(raw>1 && to>=0.999) return base + (raw-1)/span;
+  return base;
+}
+const ease=(name,p)=> p<=1 ? EASINGS[name](p) : p;
+
+const sim={value:0,velocity:0,target:0,running:false};
+function stepSpring(dt){
+  const k=G.stiffness, c=G.damping*2*Math.sqrt(k);
+  let rem=dt;
+  while(rem>0){
+    const h=Math.min(0.0005,rem);
+    sim.velocity += (-k*(sim.value-sim.target)-c*sim.velocity)*h;
+    sim.value    += sim.velocity*h;
+    rem-=h;
+  }
+  if(Math.abs(sim.value-sim.target)<0.001 && Math.abs(sim.velocity)<0.01){
+    sim.value=sim.target; sim.velocity=0; sim.running=false;
+    if(loop) setTimeout(()=>springTo(sim.target>0.5?0:1),450);
+  }
+}
+function springTo(t,v){ sim.target=t; if(v!==undefined)sim.velocity=v; sim.running=true; }
+
+const UNIT={x:0,y:0,w:1,h:1};
+function sourceRect(key){
+  const def=ELEMENTS[key], dst=RECTS[key]||UNIT;
+  if(K[key].spawn==='slideOut'){
+    const p=RECTS.play;
+    return {x:p.x+p.w/2-dst.w/2, y:p.y+p.h/2-dst.h/2, w:dst.w, h:dst.h};
+  }
+  if(def.src) return RECTS[def.src]||UNIT;
+  if(def.rise!==undefined){
+    const s=def.shrink;
+    return {x:dst.x+dst.w*(1-s)/2, y:dst.y+dst.h*(1-s)/2+def.rise, w:dst.w*s, h:dst.h*s};
+  }
+  return dst;
+}
+function solve(key, raw){
+  const m=K[key];
+  const groupMode = G.bounceMode==='group';
+  const p0raw = remapOver(raw, m.from, m.to);
+  const p0 = groupMode ? Math.min(p0raw,1) : p0raw;
+  const p  = ease(m.easing, p0);
+  const ps = ease(m.scaleEasing==='same'?m.easing:m.scaleEasing, p0);
+  const src=sourceRect(key), dst=RECTS[key]||UNIT;
+
+  let sx=1, sy=1;
+  if(m.scaleMode==='xy'){ sx=lerp(src.w/dst.w,1,ps); sy=lerp(src.h/dst.h,1,ps); }
+  else if(m.scaleMode==='uniformW'){ sx=sy=lerp(src.w/dst.w,1,ps); }
+  else if(m.scaleMode==='uniformH'){ sx=sy=lerp(src.h/dst.h,1,ps); }
+
+  const topLeft = m.anchor==='topLeft';
+  const dx = topLeft ? src.x-dst.x : (src.x+src.w/2)-(dst.x+dst.w/2);
+  const dy = topLeft ? src.y-dst.y : (src.y+src.h/2)-(dst.y+dst.h/2);
+
+  let tx,ty;
+  const pc = Math.min(p0,1), over = Math.max(0,p0-1);
+  if(m.path==='arcV'){
+    tx=dx*(1-arcX(m.arcBias)(pc)) - dx*over;
+    ty=dy*(1-EASINGS.decelerate(pc)) - dy*over;
+  } else if(m.path==='arcH'){
+    tx=dx*(1-EASINGS.decelerate(pc)) - dx*over;
+    ty=dy*(1-arcX(m.arcBias)(pc)) - dy*over;
+  } else if(m.path==='bulge'){
+    const len=Math.hypot(dx,dy)||1, u=1-p;
+    const cxp=dx/2 + (-dy/len)*m.bulge*len*0.5;
+    const cyp=dy/2 + ( dx/len)*m.bulge*len*0.5;
+    tx=u*u*dx+2*u*p*cxp; ty=u*u*dy+2*u*p*cyp;
+  } else { tx=dx*(1-p); ty=dy*(1-p); }
+
+  /* One rigid overshoot for the whole group: scale about the shared centre, which
+     also pushes each member outward by its offset from that centre. */
+  if(groupMode && m.inBounceGroup && raw>1){
+    ty += (raw-1)*G.bounceDrop;   // one uniform dip for every member: no scale, nothing spreads
+  }
+
+  const alpha = !m.fade ? 1
+    : clamp01((raw-m.alphaFrom)/Math.max(1e-4,m.alphaTo-m.alphaFrom));
+  return {p0,p,sx,sy,tx,ty,alpha,
+          radOnScreen:lerp(m.radiusFrom,m.radiusTo,Math.min(Math.max(p,0),1)),
+          topLeft,src,dst};
+}
+function boundsAt(key, raw){
+  const s=solve(key,raw), d=s.dst;
+  const w=d.w*s.sx, h=d.h*s.sy;
+  const cx = s.topLeft ? d.x+s.tx+w/2 : d.x+d.w/2+s.tx;
+  const cy = s.topLeft ? d.y+s.ty+h/2 : d.y+d.h/2+s.ty;
+  return {x:cx-w/2,y:cy-h/2,w,h,cx,cy,alpha:s.alpha};
+}
+/* Fraction of the resting rect of `key` that the play button covers at `raw`. */
+function coverageOf(key, raw){
+  const t=RECTS[key], p=boundsAt('play',raw);
+  const ox=Math.max(0,Math.min(p.x+p.w,t.x+t.w)-Math.max(p.x,t.x));
+  const oy=Math.max(0,Math.min(p.y+p.h,t.y+t.h)-Math.max(p.y,t.y));
+  return (ox*oy)/(t.w*t.h);
+}
+/* First progress at which the play button covers enough. Pure + cached, so
+   scrubbing backwards reproduces exactly what playback showed. */
+const uncoverCache={};
+function uncoverPoint(key){
+  const m=K[key], pm=K.play;
+  const sig=[m.coverage,pm.path,pm.arcBias,pm.easing,pm.scaleEasing,pm.from,pm.to,pm.scaleMode].join('|');
+  const hit=uncoverCache[key];
+  if(hit && hit.sig===sig) return hit.at;
+  let at=null;
+  for(let i=0;i<=200;i++){ const r=i/200;
+    if(coverageOf(key,r)>=m.coverage){ at=r; break; } }
+  uncoverCache[key]={sig,at};
+  return at;
+}
+
+const MINI_PARTS=['minibar','miniCover','miniTitle','miniAuthor','miniPlay'];
+function place(node, r){
+  node.style.left=r.x+'px'; node.style.top=r.y+'px';
+  node.style.width=r.w+'px'; node.style.height=r.h+'px';
+}
+function apply(key){
+  const def=ELEMENTS[key], node=$(def.node), m=K[key];
+  const raw=Math.max(0,sim.value);
+  const solo = $('v_solo').checked && selected!==key;
+  if(!m.enabled || solo){
+    if(def.kind==='alpha') MINI_PARTS.forEach(id=>$(id).style.opacity=0);
+    else node.style.opacity=0;
+    return;
+  }
+  if(def.kind==='rect'){
+    const s=solve(key,raw), src=s.src, p=Math.min(s.p,1);
+    node.style.left=lerp(src.x,0,p)+'px';   node.style.top=lerp(src.y,0,p)+'px';
+    node.style.width=lerp(src.w,SCREEN.w,p)+'px';
+    node.style.height=lerp(src.h,SCREEN.h,p)+'px';
+    node.style.borderRadius=s.radOnScreen+'px';
+    node.style.opacity = raw>0.001?1:0;
+    const c1=[58,51,70],c2=[22,18,25];
+    node.style.background='rgb('+c1.map((v,i)=>Math.round(lerp(v,c2[i],p))).join(',')+')';
+    return;
+  }
+  if(def.kind==='alpha'){
+    const s=solve(key,raw);
+    MINI_PARTS.forEach(id=>$(id).style.opacity = raw>0.999?0:1-s.alpha);
+    return;
+  }
+  if(def.kind==='slide'){
+    const s=solve(key,raw);
+    node.style.transform='translateY('+(Math.min(s.p,1)*def.travel)+'px)';
+    node.style.opacity=1;
+    return;
+  }
+
+  const s=solve(key,raw);
+  let visible=true, alpha=s.alpha;
+  if(m.spawn==='uncover'){
+    const at=uncoverPoint(key);
+    visible = at!==null && raw>=at;
+    alpha = visible?1:0;
+  } else if(m.spawn==='slideOut'){
+    visible = raw>=m.from;          // before this it would float uncovered at centre
+    alpha = visible?1:0;
+  }
+  node.style.transformOrigin = s.topLeft?'0 0':'50% 50%';
+  node.style.transform='translate('+s.tx+'px,'+s.ty+'px) scale('+s.sx+','+s.sy+')';
+  node.style.opacity = visible?alpha:0;
+  if(m.radiusFrom||m.radiusTo){
+    const avg=(s.sx+s.sy)/2;
+    node.style.borderRadius=(avg>0.001?s.radOnScreen/avg:s.radOnScreen)+'px';
+  }
+  /* dropFrom: mask whatever still overlaps the element it hides behind. */
+  if(m.clipBehind && RECTS[m.clipBehind]){
+    const b=boundsAt(key,raw), host=boundsAt(m.clipBehind,raw);
+    const hide=Math.max(0, Math.min(host.y+host.h-b.y, b.h));
+    node.style.clipPath = hide>0 ? 'inset('+hide+'px 0 0 0)' : 'none';
+  } else node.style.clipPath='none';
+}
+
+function drawOverlay(){
+  const svg=$('overlay'); const raw=Math.max(0,sim.value);
+  if(!$('v_path').checked && !$('v_onion').checked && !$('v_cover').checked){ svg.innerHTML=''; return; }
+  const keys = $('v_solo').checked ? [selected]
+             : Object.keys(ELEMENTS).filter(k=>K[k].enabled && ELEMENTS[k].kind==='morph');
+  let out='';
+  keys.forEach(k=>{
+    const on = k===selected;
+    if($('v_path').checked){
+      const pts=[];
+      for(let i=0;i<=60;i++){ const b=boundsAt(k,i/60); pts.push(b.cx.toFixed(1)+','+b.cy.toFixed(1)); }
+      out+='<polyline points="'+pts.join(' ')+'" fill="none" stroke="'+(on?'#ffb26b':'#7aa2ff')+
+           '" stroke-width="'+(on?2:1)+'" stroke-dasharray="'+(on?'':'3 3')+
+           '" opacity="'+(on?0.95:0.3)+'"/>';
+      [0,0.25,0.5,0.75,1].forEach(t=>{const b=boundsAt(k,t);
+        out+='<circle cx="'+b.cx.toFixed(1)+'" cy="'+b.cy.toFixed(1)+'" r="'+(on?3:2)+
+             '" fill="'+(on?'#ffb26b':'#7aa2ff')+'" opacity="'+(on?0.95:0.3)+'"/>';});
+    }
+    if($('v_onion').checked && on){
+      [0,0.25,0.5,0.75,1].forEach(t=>{const b=boundsAt(k,t);
+        out+='<rect x="'+b.x.toFixed(1)+'" y="'+b.y.toFixed(1)+'" width="'+Math.max(0,b.w).toFixed(1)+
+             '" height="'+Math.max(0,b.h).toFixed(1)+'" fill="none" stroke="#7ee0b0" stroke-width="1" opacity=".5"/>';});
+    }
+  });
+  if($('v_cover').checked){
+    const pb=boundsAt('play',raw);
+    out+='<rect x="'+pb.x.toFixed(1)+'" y="'+pb.y.toFixed(1)+'" width="'+pb.w.toFixed(1)+
+         '" height="'+pb.h.toFixed(1)+'" fill="none" stroke="#7ee0b0" stroke-width="1.5"/>';
+    ['skipFwd','nextCh'].forEach(k=>{
+      const t=RECTS[k], c=coverageOf(k,raw), at=uncoverPoint(k);
+      out+='<rect x="'+t.x+'" y="'+t.y+'" width="'+t.w+'" height="'+t.h+
+           '" fill="none" stroke="'+(c>=K[k].coverage?'#7ee0b0':'#ff7a7a')+'" stroke-width="1.5"/>'+
+           '<text x="'+(t.x+t.w/2)+'" y="'+(t.y-4)+'" fill="#cfd6e6" font-size="9" text-anchor="middle">'+
+           Math.round(c*100)+'% '+(at===null?'never':'@'+at.toFixed(2))+'</text>';
+    });
+  }
+  svg.innerHTML=out;
+}
+
+function render(){
+  const raw=Math.max(0,sim.value);
+  Object.keys(ELEMENTS).forEach(apply);
+  $('scrub').value=Math.min(raw,1.15);
+  $('progOut').textContent='progress '+raw.toFixed(3)+
+    (raw>1.001?'  ← overshoot':'')+' · velocity '+sim.velocity.toFixed(2)+'/s'+
+    (sim.running?' · settling':'');
+  drawOverlay();
+  document.querySelectorAll('.ph').forEach(p=>p.style.left=(Math.min(raw,1)*100)+'%');
+}
+
+const phone=$('phone');
+let dragging=false,lastY=0,lastT=0,pxVel=0;
+phone.addEventListener('pointerdown',e=>{
+  dragging=true; sim.running=false; sim.velocity=0;
+  lastY=e.clientY; lastT=performance.now(); pxVel=0;
+  phone.setPointerCapture(e.pointerId); phone.classList.add('dragging');
+});
+phone.addEventListener('pointermove',e=>{
+  if(!dragging)return;
+  const now=performance.now(), dy=e.clientY-lastY, dt=Math.max(1,now-lastT)/1000;
+  sim.value=clamp01(sim.value-dy/GESTURE_TRAVEL);
+  pxVel=dy/dt; lastY=e.clientY; lastT=now;
+});
+function endDrag(){
+  if(!dragging)return;
+  dragging=false; phone.classList.remove('dragging');
+  const goExpand = pxVel<-G.flingUp || (pxVel<=G.flingUp && sim.value>G.midpoint);
+  springTo(goExpand?1:0, -pxVel/GESTURE_TRAVEL);
+}
+phone.addEventListener('pointerup',endDrag);
+phone.addEventListener('pointercancel',endDrag);
+
+const SCHEMA=[
+  {k:'from',       l:'starts at progress', t:'range', min:0,max:1,step:0.01},
+  {k:'to',         l:'arrives at',         t:'range', min:0,max:1,step:0.01},
+  {k:'easing',     l:'easing',             t:'select',opts:EASING_NAMES},
+  {k:'spawn',      l:'spawn rule',         t:'select',opts:['none','uncover','slideOut','dropFrom'],
+                   if:()=>ELEMENTS[selected].kind==='morph'},
+  {k:'coverage',   l:'reveal at coverage', t:'range', min:0.1,max:1,step:0.05,
+                   if:m=>m.spawn==='uncover'},
+  {k:'path',       l:'path',               t:'select',opts:['linear','arcV','arcH','bulge'],
+                   if:()=>ELEMENTS[selected].kind==='morph'},
+  {k:'arcBias',    l:'arc bias',           t:'range', min:0.1,max:0.95,step:0.05,
+                   if:m=>m.path==='arcV'||m.path==='arcH'},
+  {k:'bulge',      l:'path bulge',         t:'range', min:-1,max:1,step:0.05, if:m=>m.path==='bulge'},
+  {k:'scaleMode',  l:'scale',              t:'select',opts:['uniformH','uniformW','xy','none'],
+                   if:()=>ELEMENTS[selected].kind==='morph'},
+  {k:'scaleEasing',l:'scale easing',       t:'select',opts:['same'].concat(EASING_NAMES),
+                   if:m=>ELEMENTS[selected].kind==='morph'&&m.scaleMode!=='none'},
+  {k:'anchor',     l:'anchor',             t:'select',opts:['center','topLeft'],
+                   if:()=>ELEMENTS[selected].kind==='morph'},
+  {k:'inBounceGroup', l:'bounces with group', t:'check',
+                   if:()=>ELEMENTS[selected].kind==='morph'},
+  {k:'fade',       l:'starts transparent', t:'check', if:()=>ELEMENTS[selected].kind!=='rect'},
+  {k:'alphaFrom',  l:'alpha starts at',    t:'range', min:0,max:1,step:0.01, if:m=>m.fade},
+  {k:'alphaTo',    l:'alpha done by',      t:'range', min:0.02,max:1,step:0.01, if:m=>m.fade},
+  {k:'radiusFrom', l:'radius from (dp)',   t:'range', min:0,max:60,step:1,
+                   if:()=>['cover','container'].indexOf(selected)>=0},
+  {k:'radiusTo',   l:'radius to (dp)',     t:'range', min:0,max:60,step:1,
+                   if:()=>['cover','container'].indexOf(selected)>=0},
+];
+const NOTES={
+  play:'EDIT 2. The straight path never passed over the right-hand buttons — it arrives from below. arcV sends it up first, then sweeps left across the row. Turn on "coverage debug" to watch the numbers.',
+  skipFwd:'Hidden until the play button covers 70% of this rect, then visible for good. The debug overlay shows the live percentage and the progress it triggers at.',
+  nextCh:'Same rule, but it can never be FULLY covered: the play button is still small when it sweeps this far right. Measured ceiling is 47% at arcBias 0.55 (63% at 0.85), so the threshold is 40%. Raise arc bias for a stronger sweep.',
+  skipBack:'The play button never reaches this side. Starts stacked under the resting play button and slides out left, hidden by z-order until it emerges.',
+  prevCh:'Same, one beat later.',
+  chapter:'EDIT 3. Sits behind the cover and drops out when the cover is home. clipBehind masks whatever still overlaps the cover, so it genuinely emerges from underneath.',
+  cover:'The anchor. Its overshoot comes from the driver spring, and that rebound is what releases the chapter pill.',
+  author:'EDIT 4. Now travels out of the mini bar author line instead of fading.',
+  minibar:'Material You leaves this opaque (occluded by the container). alpha done by 0.4 equals the old fade rate 2.5.',
+  container:'Four edges plus radius interpolate; the fill is drawn directly, so nothing inside ever squashes.',
+};
+function buildControls(){
+  const m=K[selected];
+  $('elTitle').textContent=ELEMENTS[selected].label;
+  $('elNote').textContent=NOTES[selected]||'';
+  const host=$('elControls'); host.innerHTML='';
+  SCHEMA.forEach(s=>{
+    if(s.if && !s.if(m)) return;
+    const row=document.createElement('div'); row.className='row';
+    const lab=document.createElement('label'); lab.textContent=s.l; row.appendChild(lab);
+    let inp;
+    if(s.t==='select'){
+      inp=document.createElement('select');
+      s.opts.forEach(o=>{const op=document.createElement('option');op.value=o;op.textContent=o;inp.appendChild(op);});
+      inp.value=m[s.k];
+      inp.onchange=()=>{ m[s.k]=inp.value; buildControls(); drawTimeline(); };
+    } else if(s.t==='check'){
+      inp=document.createElement('input'); inp.type='checkbox'; inp.checked=!!m[s.k];
+      inp.style.flex='0 0 auto';
+      inp.onchange=()=>{ m[s.k]=inp.checked; buildControls(); };
+    } else {
+      inp=document.createElement('input'); inp.type='range';
+      inp.min=s.min; inp.max=s.max; inp.step=s.step; inp.value=m[s.k];
+      const out=document.createElement('output'); out.textContent=m[s.k];
+      inp.oninput=()=>{ m[s.k]=parseFloat(inp.value); out.textContent=m[s.k];
+                        if(s.k==='from'||s.k==='to') drawTimeline(); };
+      row.appendChild(inp); row.appendChild(out); host.appendChild(row); return;
+    }
+    row.appendChild(inp); host.appendChild(row);
+  });
+}
+function drawTimeline(){
+  const host=$('timeline'); host.innerHTML='';
+  Object.keys(ELEMENTS).forEach((k,idx)=>{
+    const m=K[k], d=ELEMENTS[k];
+    const row=document.createElement('div');
+    row.className='tl'+(k===selected?' sel':'');
+    row.onclick=e=>{ if(e.target.tagName==='INPUT')return; selected=k; buildControls(); drawTimeline(); };
+    const cb=document.createElement('input'); cb.type='checkbox'; cb.checked=m.enabled;
+    cb.onchange=()=>{ m.enabled=cb.checked; drawTimeline(); };
+    const nm=document.createElement('div'); nm.className='nm';
+    nm.textContent=(m.spawn!=='none'?'● ':'')+d.label;
+    const tr=document.createElement('div'); tr.className='track';
+    const sp=document.createElement('div'); sp.className='span'+(m.enabled?'':' off');
+    sp.style.left=(m.from*100)+'%'; sp.style.width=Math.max(1,(m.to-m.from)*100)+'%';
+    tr.appendChild(sp);
+    const ph=document.createElement('div'); ph.className='ph'; tr.appendChild(ph);
+    row.appendChild(cb); row.appendChild(nm); row.appendChild(tr);
+    host.appendChild(row);
+  });
+}
+
+['damping','stiffness','flingUp','midpoint'].forEach(k=>{
+  const el=$('g_'+k), out=el.nextElementSibling;
+  el.value=G[k]; out.textContent=G[k];
+  el.oninput=()=>{ G[k]=parseFloat(el.value); out.textContent=G[k]; };
+});
+$('g_bounceMode').value=G.bounceMode;
+$('g_bounceMode').onchange=()=>{ G.bounceMode=$('g_bounceMode').value; };
+(()=>{ const b=$('g_bounceDrop'); b.value=G.bounceDrop; b.nextElementSibling.textContent=G.bounceDrop;
+       b.oninput=()=>{ G.bounceDrop=parseFloat(b.value); b.nextElementSibling.textContent=G.bounceGain; }; })();
+$('scrub').oninput=e=>{ sim.running=false; sim.velocity=0; sim.value=parseFloat(e.target.value); };
+$('bOpen').onclick=()=>springTo(1);
+$('bClose').onclick=()=>springTo(0);
+$('bLoop').onclick=e=>{ loop=!loop; e.target.classList.toggle('on',loop);
+                        if(loop) springTo(sim.value>0.5?0:1); };
+document.querySelectorAll('[data-speed]').forEach(b=>b.onclick=()=>{
+  speed=parseFloat(b.dataset.speed);
+  document.querySelectorAll('[data-speed]').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+});
+$('bResetEl').onclick=()=>{ K[selected]=JSON.parse(JSON.stringify(DEFAULTS[selected]));
+                            buildControls(); drawTimeline(); };
+$('bResetAll').onclick=()=>{
+  Object.keys(DEFAULTS).forEach(k=>K[k]=JSON.parse(JSON.stringify(DEFAULTS[k])));
+  Object.assign(G,G_DEFAULTS);
+  ['damping','stiffness','flingUp','midpoint','bounceDrop'].forEach(k=>{
+    const el=$('g_'+k); el.value=G[k]; el.nextElementSibling.textContent=G[k];});
+  $('g_bounceMode').value=G.bounceMode;
+  buildControls(); drawTimeline();
+};
+
+const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+$('bExport').onclick=()=>{
+  const lines=[], kt=[];
+  Object.keys(ELEMENTS).forEach(k=>{
+    const m=K[k], d=DEFAULTS[k];
+    const diff=Object.keys(m).filter(x=>m[x]!==d[x]);
+    if(diff.length) lines.push('  '+ELEMENTS[k].label+': '+
+      diff.map(x=>x+' '+JSON.stringify(d[x])+' -> '+JSON.stringify(m[x])).join(', '));
+    let s='    "'+k+'" to ElementMotion(\n';
+    s+='        from = '+m.from+'f, to = '+m.to+'f, easing = Easing.'+cap(m.easing)+',\n';
+    if(ELEMENTS[k].kind==='morph'){
+      const pathName={linear:'Linear',arcV:'ArcVerticalFirst',arcH:'ArcHorizontalFirst',bulge:'Bulge'}[m.path];
+      s+='        path = MorphPath.'+pathName+(m.path==='bulge'?'('+m.bulge+'f)':
+          (m.path==='arcV'||m.path==='arcH'?'(bias = '+m.arcBias+'f)':''))+',\n';
+      s+='        scale = ScaleMode.'+{uniformH:'UniformByHeight',uniformW:'UniformByWidth',
+          xy:'Independent',none:'None'}[m.scaleMode]+',\n';
+      if(m.scaleEasing!=='same') s+='        scaleEasing = Easing.'+cap(m.scaleEasing)+',\n';
+      if(m.anchor!=='center')    s+='        anchor = Anchor.TopLeft,\n';
+      if(m.spawn==='uncover')  s+='        spawn = Spawn.UncoveredBy("play", coverage = '+m.coverage+'f),\n';
+      if(m.spawn==='slideOut') s+='        spawn = Spawn.SlideOutFrom("play"),\n';
+      if(m.spawn==='dropFrom') s+='        spawn = Spawn.DropFromBehind("'+(m.clipBehind||'cover')+'"),\n';
+    }
+    if(m.fade) s+='        alpha = '+m.alphaFrom+'f..'+m.alphaTo+'f,\n';
+    if(m.radiusFrom||m.radiusTo) s+='        radius = '+m.radiusFrom+'.dp..'+m.radiusTo+'.dp,\n';
+    kt.push(s+'    ),');
+  });
+  $('out').value =
+'### Mini player -> full player   (Material You, portrait)\n\n'+
+'Driver:  spring damping '+G.damping+', stiffness '+G.stiffness+
+'   <- the bounce; app currently ships 0.82\n'+
+'Bounce:  '+(G.bounceMode==='group'? 'ONE rigid overshoot for ['+Object.keys(ELEMENTS).filter(k=>K[k].inBounceGroup).join(', ')+'], drop '+G.bounceDrop+'px/unit' : 'each element overshoots independently')+String.fromCharCode(10)+
+'Gesture: fling '+G.flingUp+' px/s, midpoint '+G.midpoint+'\n\n'+
+'Reveal points measured from the current play-button path:\n'+
+'  skip forward  covered 70% at progress '+(uncoverPoint('skipFwd')===null?'NEVER':uncoverPoint('skipFwd').toFixed(2))+'\n'+
+'  next chapter  covered 70% at progress '+(uncoverPoint('nextCh')===null?'NEVER':uncoverPoint('nextCh').toFixed(2))+'\n\n'+
+(lines.length?'Changed from the defaults in this file:\n'+lines.join('\n')+'\n\n':'')+
+'-- Kotlin (needs ElementMotion + Modifier.elementMotion + the Spawn rules) --\n\n'+
+'val PlayerMorphChoreography = mapOf(\n'+kt.join('\n')+'\n)';
+  $('out').select();
+};
+
+$('homeGrid').innerHTML=Array.from({length:9},
+  (_,i)=>'<div class="card" style="filter:hue-rotate('+(i*37)+'deg)"></div>').join('');
+Object.keys(RECTS).forEach(k=>{ const n=$(k); if(n) place(n,RECTS[k]); });
+['v_path','v_onion','v_solo','v_cover'].forEach(id=>{ $(id).onchange=()=>{}; });
+buildControls(); drawTimeline();
+
+let last=performance.now();
+(function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000)*speed; last=now;
+  if(sim.running && !dragging) stepSpring(dt);
+  render();
+  requestAnimationFrame(frame);
+})(performance.now());
+</script>
+</body>
+</html>

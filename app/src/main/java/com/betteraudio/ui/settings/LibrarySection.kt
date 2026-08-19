@@ -135,15 +135,17 @@ internal fun LazyListScope.librarySection(
             onClick = onBrowse
         )
     }
-    item {
-        SettingsCard(
-            icon = Icons.AutoMirrored.Filled.MenuBook,
-            iconTint = MaterialTheme.colorScheme.primary,
-            title = "Ebook folder",
-            subtitle = ebookFolder.ifBlank { "Not set — standalone ebooks live here" },
-            subtitleMono = ebookFolder.isNotBlank(),
-            onClick = onBrowseEbooks
-        )
+    if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
+        item {
+            SettingsCard(
+                icon = Icons.AutoMirrored.Filled.MenuBook,
+                iconTint = MaterialTheme.colorScheme.primary,
+                title = "Ebook folder",
+                subtitle = ebookFolder.ifBlank { "Not set — standalone ebooks live here" },
+                subtitleMono = ebookFolder.isNotBlank(),
+                onClick = onBrowseEbooks
+            )
+        }
     }
     item {
         var showStructureDialog by remember { mutableStateOf(false) }

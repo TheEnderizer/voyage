@@ -4,6 +4,11 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -13,28 +18,86 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.betteraudio.ui.theme.AppTheme
-import com.betteraudio.ui.theme.LocalAppTheme
-import com.betteraudio.ui.immersive.bookinfo.BookInfoScreen as ImmersiveBookInfoScreen
-import com.betteraudio.ui.material.bookinfo.BookInfoScreen as MaterialBookInfoScreen
+import com.betteraudio.ui.components.InfoPageData
+import com.betteraudio.ui.components.InfoPageKind
+import com.betteraudio.ui.components.InfoPageScaffold
+import com.betteraudio.ui.components.rememberInfoPageState
+import com.betteraudio.ui.home.BookOptionsSheet
 
-/** Dispatches to the Immersive or Material You implementation — see CLAUDE.md's theming section
- *  for the split convention. Mirrors [com.betteraudio.ui.series.SeriesDetailScreen] verbatim,
- *  down to the overlay-hosting recipe below (was previously a mode inside the player itself). */
+/**
+ * Book Info page. The page itself — cover morph out of the tapped grid card, reveal, backdrop, top
+ * bar, info panel — is [InfoPageScaffold], shared verbatim with
+ * [com.betteraudio.ui.series.SeriesDetailScreen] and split per theme inside it (see its doc). This
+ * file supplies only what is specific to a book: its data, its overflow item, and the fact that
+ * Resume has to shrink the page back onto the card before the player opens.
+ *
+ * No theme `when` here — the scaffold owns the split, so a single implementation serves both looks.
+ */
 @Composable
 fun BookInfoScreen(
     onBack: () -> Unit,
     onResume: (bookId: Long) -> Unit,
     viewModel: BookInfoViewModel = hiltViewModel()
 ) {
-    when (LocalAppTheme.current) {
-        AppTheme.IMMERSIVE -> ImmersiveBookInfoScreen(onBack, onResume, viewModel)
-        AppTheme.MATERIAL_YOU -> MaterialBookInfoScreen(onBack, onResume, viewModel)
+    val bwp by viewModel.bookWithProgress.collectAsStateWithLifecycle()
+    val synopsisGenerating by viewModel.synopsisGenerating.collectAsStateWithLifecycle()
+    val book = bwp?.book
+
+    var showBookOptions by remember { mutableStateOf(false) }
+    val pageState = rememberInfoPageState()
+
+    val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+        if (book.seriesOrder != null) "$series · #${book.seriesOrder}" else series
+    }
+
+    InfoPageScaffold(
+        state = pageState,
+        morphId = viewModel.bookId,
+        kind = InfoPageKind.BOOK,
+        data = InfoPageData(
+            kindLabel        = "BOOK",
+            coverPath        = book?.coverArtPath,
+            bakedCoverPath   = book?.coverFxPath,
+            // Shares the grid card's decoded bitmap, so the morph never re-decodes mid-flight.
+            coverCacheKey    = book?.id?.let { "cover-$it" },
+            title            = book?.displayTitle ?: "",
+            author           = book?.displayAuthor,
+            narrator         = book?.narrator,
+            seriesLabel      = seriesLabel,
+            status           = book?.status,
+            progressFraction = bwp?.progressFraction ?: 0f,
+            totalMs          = book?.totalDurationMs ?: 0L,
+            synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
+                               ?: book?.description?.takeIf { it.isNotBlank() }
+                               ?: if (synopsisGenerating) "Generating synopsis…" else null,
+        ),
+        onBack = onBack,
+        // Close the page onto the grid card FIRST, then open the player — the two animations fight
+        // if they overlap.
+        onResume = { pageState.closeWithMorph { onResume(viewModel.bookId) } },
+        overflowItems = { dismiss ->
+            DropdownMenuItem(
+                text = { Text("Book options") },
+                leadingIcon = { Icon(Icons.Default.Edit, null) },
+                onClick = { dismiss(); showBookOptions = true }
+            )
+        }
+    )
+
+    if (showBookOptions && bwp != null) {
+        BookOptionsSheet(
+            bwp = bwp,
+            onDismiss = { showBookOptions = false },
+            onUpdateMetadata = { title, author -> viewModel.updateMetadata(title, author) },
+            onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
+            onUpdateStatus = { viewModel.updateStatus(it) }
+        )
     }
 }
 

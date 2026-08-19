@@ -19,6 +19,7 @@ import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
+import com.betteraudio.util.FeatureFlags
 import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -338,9 +339,16 @@ class HomeViewModel @Inject constructor(
     }
 
     // ── Top-level home section (Audio / Ebooks) ───────────────────────────────
+    // While FeatureFlags.EBOOKS_UI is off this is pinned to AUDIO: the pill has no Ebooks slot to
+    // get back from, so a user whose persisted section is EBOOKS would otherwise launch into an
+    // Ebooks grid with no way out. The stored value is left alone, so flipping the flag on restores
+    // whatever section they were last in.
     val homeSection: StateFlow<HomeSection> =
         settings.homeSection
-            .map { runCatching { HomeSection.valueOf(it) }.getOrDefault(HomeSection.AUDIO) }
+            .map {
+                if (!FeatureFlags.EBOOKS_UI) HomeSection.AUDIO
+                else runCatching { HomeSection.valueOf(it) }.getOrDefault(HomeSection.AUDIO)
+            }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeSection.AUDIO)
 
     fun setHomeSection(section: HomeSection) {

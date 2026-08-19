@@ -245,7 +245,7 @@ fun BookOptionsSheet(
                 }
 
                 // ── Ebook (EPUB) ─────────────────────────────────────────────
-                OptionsSection("Ebook") {
+                if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) OptionsSection("Ebook") {
                     if (book.ebookPath != null) {
                         Text(
                             java.io.File(book.ebookPath).name,

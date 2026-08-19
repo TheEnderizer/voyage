@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -307,17 +309,28 @@ fun PlayerSheet(
     // already-tracked outer size directly sidesteps that.
     val ownSizePx = remember { derivedStateOf { androidx.compose.ui.geometry.Size(widthPx.toFloat(), heightPx.toFloat()) } }
 
+    // Material You's morph choreography is built around a visible rebound: progress deliberately
+    // overshoots past 1.0 and the mini-player group (cover/title/author/play) absorbs that as ONE
+    // rigid unit — see docs/motion-spec.md section 8 and ui/player/ElementMotion.kt. Immersive
+    // keeps the shared near-flat token, so its player is unchanged.
+    // (This is the one sanctioned exception to AN-11's "no sheet-specific springs" unification:
+    // the bounce IS the design here, and it is scoped to one theme.)
+    val sheetSpring = remember(isMaterialYou) {
+        if (isMaterialYou) androidx.compose.animation.core.spring<Float>(
+            // 391ms settle, peak at 143ms, 5.4% overshoot. The first pass (0.60/380) took 580ms
+            // and overshot 9.4%, which read as slow and wobbly rather than as a landing.
+            dampingRatio = 0.68f, stiffness = 900f
+        ) else com.betteraudio.ui.theme.MotionTokens.floatSpatial
+    }
+
     // React to expand/collapse intents (token-based so they survive composition timing).
-    // AN-11 (Gate AN): previously hardcoded sheet-specific springs (0.85/380, 0.9/400) that
-    // diverged from every other spatial animation in the app for no recorded reason — unified
-    // with the shared token.
     LaunchedEffect(controller.expandToken) {
         if (controller.expandToken > 0)
-            progressAnim.animateTo(1f, com.betteraudio.ui.theme.MotionTokens.floatSpatial)
+            progressAnim.animateTo(1f, sheetSpring)
     }
     LaunchedEffect(controller.collapseToken) {
         if (controller.collapseToken > 0)
-            progressAnim.animateTo(0f, com.betteraudio.ui.theme.MotionTokens.floatSpatial)
+            progressAnim.animateTo(0f, sheetSpring)
     }
 
     // derivedStateOf: recompose only when the threshold flips, not every animation frame.
@@ -329,6 +342,7 @@ fun PlayerSheet(
     val progressState = remember { derivedStateOf { dragProgress.floatValue } }
     val miniCoverRect = remember { mutableStateOf(Rect.Zero) }
     val miniTitleRect = remember { mutableStateOf(Rect.Zero) }
+    val miniAuthorRect = remember { mutableStateOf(Rect.Zero) }
     val miniControlsRect = remember { mutableStateOf(Rect.Zero) }
     // Material You only: the mini bar's own Surface bounds, so the full player's background can
     // grow out of the pill (see MaterialMotion.kt's expandingContainer) instead of crossfading.
@@ -366,7 +380,8 @@ fun PlayerSheet(
     val transition = remember(effectiveCoverSource, effectiveCoverRadius, sourceIsGridCard) {
         PlayerExpandTransition(
             progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius,
-            miniBar = miniBarRect, miniBarRadius = MINI_BAR_RADIUS, sourceIsGridCard = sourceIsGridCard
+            miniBar = miniBarRect, miniBarRadius = MINI_BAR_RADIUS, sourceIsGridCard = sourceIsGridCard,
+            miniAuthor = miniAuthorRect
         )
     }
 
@@ -376,10 +391,7 @@ fun PlayerSheet(
     suspend fun settle(velocity: Float) {
         progressAnim.snapTo(dragProgress.floatValue)
         val goExpand = velocity < -1000f || (velocity <= 1000f && dragProgress.floatValue > 0.5f)
-        progressAnim.animateTo(
-            if (goExpand) 1f else 0f,
-            com.betteraudio.ui.theme.MotionTokens.floatSpatial
-        )
+        progressAnim.animateTo(if (goExpand) 1f else 0f, sheetSpring)
     }
 
     // The animated PART of the mini bar's bottom lift (on top of the fixed baseline padding
@@ -423,6 +435,7 @@ fun PlayerSheet(
                 usingLivePlayback -> playback.bookTitle
                 else -> restoreInfo?.title.orEmpty()
             },
+            author = if (usingLivePlayback) playback.author else "",
             coverPath = if (usingLivePlayback) playback.coverArtUri?.removePrefix("file://") else restoreInfo?.coverArtPath,
             isPlaying = usingLivePlayback && playback.isPlaying,
             progress = {
@@ -453,6 +466,7 @@ fun PlayerSheet(
             onSkip = { playerController.skipForward() },
             onCoverBounds = { miniCoverRect.value = it },
             onTitleBounds = { miniTitleRect.value = it },
+            onAuthorBounds = { miniAuthorRect.value = it },
             onControlsBounds = { miniControlsRect.value = it },
             onBarBounds = { miniBarRect.value = it },
             expandProgress = progressState,
@@ -627,6 +641,7 @@ fun PlayerSheet(
 @Composable
 private fun MiniPlayerBar(
     title: String,
+    author: String,
     coverPath: String?,
     isPlaying: Boolean,
     // Lambda so the (500ms-ticking) position State is read only inside the progress
@@ -640,6 +655,7 @@ private fun MiniPlayerBar(
     modifier: Modifier = Modifier,
     onCoverBounds: (Rect) -> Unit = {},
     onTitleBounds: (Rect) -> Unit = {},
+    onAuthorBounds: (Rect) -> Unit = {},
     onControlsBounds: (Rect) -> Unit = {},
     onBarBounds: (Rect) -> Unit = {},
     expandProgress: androidx.compose.runtime.State<Float>? = null
@@ -684,17 +700,33 @@ private fun MiniPlayerBar(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f)
-                        .onGloballyPositioned { onTitleBounds(it.boundsInRoot()) }
-                        .then(handOff)
-                )
+                Column(
+                    Modifier.weight(1f).then(handOff),
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { onTitleBounds(it.boundsInRoot()) }
+                    )
+                    if (author.isNotBlank()) {
+                        Text(
+                            author,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { onAuthorBounds(it.boundsInRoot()) }
+                        )
+                    }
+                }
                 Spacer(Modifier.width(8.dp))
                 // Skip-forward: a quiet secondary control — reveals into the full transport.
                 Box(

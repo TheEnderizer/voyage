@@ -325,7 +325,7 @@ fun PlayerContent(
                                 leadingIcon = { Icon(Icons.Default.History, null) },
                                 onClick = { showOverflow = false; showHistory = true }
                             )
-                            if (book?.ebookPath != null) {
+                            if (book?.ebookPath != null && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
                                 DropdownMenuItem(
                                     text = { Text("Read from here") },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },

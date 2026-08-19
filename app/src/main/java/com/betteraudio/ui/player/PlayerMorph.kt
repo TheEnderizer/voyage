@@ -57,6 +57,9 @@ class PlayerExpandTransition(
     // rather than the live mini-player's cover slot — Material You uses this to pick the
     // aspect-aware coverCropMorph instead of the mini-bar's morphFrom (see MaterialMotion.kt).
     val sourceIsGridCard: Boolean = false,
+    /** The mini bar's author line — the full player's author travels out of it, the way the title
+     *  travels out of [miniTitle]. Zero when the mini bar has no author to show. */
+    val miniAuthor: State<Rect> = stateOfZeroRect,
 )
 
 private val stateOfOne = mutableStateOf(1f)

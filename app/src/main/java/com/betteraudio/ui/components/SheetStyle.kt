@@ -1,5 +1,6 @@
 package com.betteraudio.ui.components
 
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -21,3 +22,15 @@ fun appSheetColor(): Color =
         MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.92f)
     else
         BottomSheetDefaults.ContainerColor
+
+/**
+ * Container fill for the shared alert dialogs, resolved per theme for the same reason as
+ * [appSheetColor]. Dialogs already sit over the system dim scrim, so a whisper of translucency is
+ * enough to keep Immersive's dialogs in the family without hurting reading.
+ */
+@Composable
+fun appDialogColor(): Color =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE)
+        MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.93f)
+    else
+        AlertDialogDefaults.containerColor

@@ -45,6 +45,12 @@ import com.betteraudio.ui.player.PlayerViewModel
 import com.betteraudio.ui.player.activeChapterRowIndex
 import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.zIndex
+import com.betteraudio.ui.player.PlayerChoreography
+import com.betteraudio.ui.player.elementMotion
+import com.betteraudio.ui.player.rememberUncoverPoint
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.theme.Pill
@@ -136,6 +142,14 @@ fun PlayerContent(
     // Shared-element expansion from the mini player: 0 = mini bar, 1 = full player. The cover,
     // title and transport morph from their mini counterparts; everything else reveals.
     val expand = LocalPlayerExpand.current
+    // ── Morph choreography (Material You portrait only) — ui/player/ElementMotion.kt ──
+    // The four elements that morph out of the mini player share one downward dip on the driver
+    // spring's overshoot; the transport buttons are revealed by the play button rather than fading.
+    val playRect = remember { mutableStateOf(Rect.Zero) }
+    val skipFwdRect = remember { mutableStateOf(Rect.Zero) }
+    val nextChRect = remember { mutableStateOf(Rect.Zero) }
+    val skipFwdReveal = rememberUncoverPoint(skipFwdRect, expand.miniControls, playRect, 0.70f)
+    val nextChReveal = rememberUncoverPoint(nextChRect, expand.miniControls, playRect, 0.40f)
     val expandProgress = expand.progress
     // Stable "available space" rect for the cover's parent Box — used by coverCropMorph as the
     // progress-1 target; doesn't change as the cover's own animated size changes (see
@@ -397,6 +411,7 @@ fun PlayerContent(
             ) {
                 // ── Top bar (shared with the landscape body — PlayerControls.kt) ────────
                 PlayerTopBar(
+                    motion = PlayerChoreography.topBar,
                     seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() },
                     inSeries = inSeries,
                     showSeriesCover = showSeriesCover,
@@ -424,6 +439,9 @@ fun PlayerContent(
                 Box(
                     Modifier
                         .weight(1f)
+                        // Above the controls column: the chapter pill starts behind this cover and
+                        // drops out from under it, which only works if the cover paints on top.
+                        .zIndex(1f)
                         .fillMaxWidth()
                         .padding(vertical = 12.dp)
                         .onGloballyPositioned { coverParentBounds.value = it.boundsInRoot() }
@@ -465,10 +483,9 @@ fun PlayerContent(
                             modifier = Modifier
                                 // Largest square that fits the leftover space.
                                 .aspectRatio(1f)
-                                .morphFrom(
-                                    expand.miniCover, expandProgress,
-                                    anchorTopLeft = true, byWidth = true,
-                                    sourceRadius = expand.coverSourceRadius, destRadius = 28.dp
+                                .elementMotion(
+                                    PlayerChoreography.cover, expandProgress,
+                                    source = expand.miniCover
                                 )
                                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         )
@@ -483,7 +500,7 @@ fun PlayerContent(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .expandReveal(expandProgress)
+                            .elementMotion(PlayerChoreography.chapterPill, expandProgress)
                             .clip(com.betteraudio.ui.theme.Pill)
                             .clickable { showChapters = true }
                             .padding(horizontal = 6.dp, vertical = 3.dp)
@@ -508,7 +525,10 @@ fun PlayerContent(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     // Moves/enlarges out of the mini player's title as the sheet opens.
-                    modifier = Modifier.fillMaxWidth().morphFrom(expand.miniTitle, expandProgress, anchorTopLeft = true)
+                    modifier = Modifier.fillMaxWidth().elementMotion(
+                        PlayerChoreography.title, expandProgress,
+                        source = expand.miniTitle
+                    )
                 )
                 if (!effectiveAuthor.isNullOrBlank()) {
                     Spacer(Modifier.height(2.dp))
@@ -518,7 +538,10 @@ fun PlayerContent(
                         color = onScrimMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().expandReveal(expandProgress)
+                        modifier = Modifier.fillMaxWidth().elementMotion(
+                            PlayerChoreography.author, expandProgress,
+                            source = expand.miniAuthor
+                        )
                     )
                 }
 
@@ -552,7 +575,7 @@ fun PlayerContent(
                     CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor, readOnly = true) {}
                 } else {
                 // ── Scrubber (reveals as the sheet opens) ───────────────
-                Column(Modifier.fillMaxWidth().expandReveal(expandProgress)) {
+                Column(Modifier.fillMaxWidth().elementMotion(PlayerChoreography.seekBar, expandProgress)) {
                 if (chapterTimeline.hasMultiple && cur != null) {
                     val chDur = (cur.endMs - cur.startMs).coerceAtLeast(1L)
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
@@ -641,19 +664,31 @@ fun PlayerContent(
                         IconButton(
                             onClick = { viewModel.prevChapter() },
                             enabled = enabled,
-                            modifier = Modifier.expandReveal(expandProgress)
+                            modifier = Modifier.elementMotion(
+                                PlayerChoreography.prevChapter, expandProgress, playRect = playRect
+                            )
                         ) {
                             Icon(Icons.Default.SkipPrevious, "Previous chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
                     }
-                    Box(Modifier.expandReveal(expandProgress)) {
+                    Box(Modifier.elementMotion(
+                        PlayerChoreography.skipBack, expandProgress, playRect = playRect
+                    )) {
                         SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim,
                             onLongPress = { skipEditForward = false }) { viewModel.skipBack() }
                     }
                     Box(
                         Modifier
-                            .morphFrom(expand.miniControls, expandProgress)
+                            // Above its siblings: it has to occlude the buttons it deposits.
+                            .zIndex(1f)
+                            // Reported BEFORE the motion modifier, so this is the resting rect the
+                            // coverage sampling and the slide-out sources are measured against.
+                            .onGloballyPositioned { playRect.value = it.boundsInRoot() }
+                            .elementMotion(
+                                PlayerChoreography.play, expandProgress,
+                                source = expand.miniControls
+                            )
                             .size(72.dp).clip(Pill).background(accent).clickable {
                                 if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause()
                             },
@@ -666,7 +701,11 @@ fun PlayerContent(
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
-                    Box(Modifier.expandReveal(expandProgress)) {
+                    Box(Modifier
+                        .onGloballyPositioned { skipFwdRect.value = it.boundsInRoot() }
+                        .elementMotion(
+                            PlayerChoreography.skipForward, expandProgress, visibleFrom = skipFwdReveal
+                        )) {
                         SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim,
                             onLongPress = { skipEditForward = true }) { viewModel.skipForward() }
                     }
@@ -675,7 +714,12 @@ fun PlayerContent(
                         IconButton(
                             onClick = { viewModel.nextChapter() },
                             enabled = enabled,
-                            modifier = Modifier.expandReveal(expandProgress)
+                            modifier = Modifier
+                                .onGloballyPositioned { nextChRect.value = it.boundsInRoot() }
+                                .elementMotion(
+                                    PlayerChoreography.nextChapter, expandProgress,
+                                    visibleFrom = nextChReveal
+                                )
                         ) {
                             Icon(Icons.Default.SkipNext, "Next chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
@@ -687,6 +731,7 @@ fun PlayerContent(
 
                 // ── Secondary actions (shared with the landscape body — PlayerControls.kt) ──
                 PlayerSecondaryActionsRow(
+                    motion = PlayerChoreography.secondaryRow,
                     skipSilenceOn = book?.skipSilenceEnabled == true,
                     accent = accent,
                     onScrim = onScrim,
