@@ -1,0 +1,819 @@
+<title>The Cover Is The Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+
+<style>
+:root{
+  --void:#0A0C12; --slab:#12161F; --slab-2:#191E2B;
+  --edge:rgba(233,230,242,.10); --edge-2:rgba(233,230,242,.20);
+  --paper:#ECEAF2; --paper-2:#B4B8CB; --dim:#7E8399;
+  --amber:#F0A94C; --amber-soft:rgba(240,169,76,.15);
+  --rust:#C7563B; --jade:#63B892;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+  --serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--void); color:var(--paper);
+  font-family:var(--sans); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1120px; margin:0 auto; padding:0 28px}
+a{color:var(--amber)}
+
+/* type */
+h1,h2,h3{margin:0; text-wrap:balance}
+h1{font-family:var(--serif); font-weight:400; font-size:clamp(44px,7vw,84px); line-height:1.02; letter-spacing:-.015em}
+h2{font-family:var(--serif); font-weight:400; font-size:clamp(30px,4vw,44px); line-height:1.1}
+h3{font-size:15px; font-weight:600; letter-spacing:.01em}
+.eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--amber); margin:0}
+.eyebrow.quiet{color:var(--dim)}
+.stand{font-size:19px; line-height:1.55; color:var(--paper-2); max-width:60ch; margin:0}
+p{margin:0; max-width:66ch}
+.lede{color:var(--paper-2)}
+small,.small{font-size:13.5px; color:var(--dim); line-height:1.55}
+code{font-family:var(--mono); font-size:.86em; color:var(--amber); background:rgba(240,169,76,.09);
+  padding:1px 5px; border-radius:4px; border:1px solid rgba(240,169,76,.16); white-space:nowrap}
+
+/* furniture */
+header.hero{padding:96px 0 56px; border-bottom:1px solid var(--edge)}
+.hero .stack{display:flex; flex-direction:column; gap:22px}
+.metastrip{display:flex; flex-wrap:wrap; gap:0 34px; padding-top:14px;
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--dim)}
+.metastrip b{color:var(--paper-2); font-weight:500}
+section{padding:76px 0; border-bottom:1px solid var(--edge)}
+.sec-head{display:flex; flex-direction:column; gap:14px; margin-bottom:44px; max-width:70ch}
+.rule{height:1px; background:var(--edge); border:0; margin:0}
+
+/* devices */
+.rail{display:flex; flex-wrap:wrap; gap:34px; align-items:flex-start}
+.dev{display:flex; flex-direction:column; gap:12px; width:288px; flex:0 0 auto}
+.devcap{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
+.tag{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  padding:3px 8px; border-radius:999px; border:1px solid var(--edge-2); color:var(--dim)}
+.tag.now{border-color:rgba(199,86,59,.5); color:#E68467; background:rgba(199,86,59,.1)}
+.tag.new{border-color:rgba(240,169,76,.5); color:var(--amber); background:var(--amber-soft)}
+.devcap .what{font-size:13.5px; color:var(--paper-2)}
+
+.phone{position:relative; width:288px; height:616px; border-radius:36px; overflow:hidden;
+  border:1px solid var(--edge-2); background:#07090E;
+  box-shadow:0 30px 70px rgba(0,0,0,.6), 0 0 0 6px rgba(255,255,255,.02);
+  font-size:11px; line-height:1.3; color:#fff}
+.phone *{box-sizing:border-box}
+.layer{position:absolute; inset:0}
+.ui{position:absolute; inset:0; display:flex; flex-direction:column; padding:0 14px}
+.statusbar{display:flex; justify-content:space-between; align-items:center; height:26px;
+  font-family:var(--mono); font-size:9px; letter-spacing:.06em; color:rgba(255,255,255,.75); flex:0 0 auto}
+.gesture{position:absolute; left:50%; bottom:7px; width:96px; height:3.5px; border-radius:2px;
+  background:rgba(255,255,255,.5); transform:translateX(-50%)}
+
+/* simulated cover art */
+.art{position:absolute; inset:0}
+.art-dune{background:
+  radial-gradient(125% 78% at 50% 108%, #F6BE68 0%, #D9762F 30%, rgba(217,118,47,0) 60%),
+  radial-gradient(30% 20% at 64% 26%, #FFEBBE 0%, rgba(255,235,190,0) 72%),
+  linear-gradient(178deg,#161C3B 0%, #3A2450 52%, #71303A 100%)}
+.art-found{background:
+  radial-gradient(72% 44% at 20% 14%, #6FE6D8 0%, rgba(111,230,216,0) 62%),
+  linear-gradient(158deg,#0C2742 0%, #241F52 46%, #4E1D55 100%)}
+.art-empire{background:
+  radial-gradient(60% 40% at 78% 88%, #F0705F 0%, rgba(240,112,95,0) 60%),
+  linear-gradient(200deg,#2A1348 0%, #6B1D45 55%, #1B1230 100%)}
+.art-long{background:
+  radial-gradient(92% 55% at 50% -6%, #B6DEBD 0%, rgba(182,222,189,0) 58%),
+  linear-gradient(180deg,#153429 0%, #0B1A21 100%)}
+.art-tide{background:
+  radial-gradient(80% 50% at 84% 12%, #7FB6E8 0%, rgba(127,182,232,0) 58%),
+  linear-gradient(200deg,#0E1E38 0%, #1A2B4E 60%, #08111F 100%)}
+
+.backdrop{position:absolute; inset:0; overflow:hidden}
+.backdrop .art{transform:scale(1.35) translateY(-6%); filter:blur(26px) saturate(1.15)}
+.dimsheet{position:absolute; inset:0; background:#0A0C12; opacity:.78}
+.dimgrad{position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(10,12,18,.30) 0%, rgba(10,12,18,.52) 46%, rgba(10,12,18,.80) 100%)}
+
+/* app bits */
+.glass{background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
+.mut{color:rgba(255,255,255,.62)}
+.acc{color:#F0A94C}
+
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:9px}
+.card{position:relative; border-radius:12px; overflow:hidden; aspect-ratio:.72; background:rgba(255,255,255,.06)}
+.card .scrim-flat{position:absolute; left:0; right:0; bottom:0; height:44%;
+  background:linear-gradient(180deg, rgba(9,10,16,0) 0%, rgba(9,10,16,.86) 62%)}
+.card .scrim-soft{position:absolute; left:0; right:0; bottom:0; height:56%;
+  background:linear-gradient(180deg, rgba(8,9,14,0) 0%, rgba(8,9,14,.30) 40%, rgba(8,9,14,.88) 100%)}
+.card .meta{position:absolute; left:8px; right:8px; bottom:8px}
+.card .t{font-size:10.5px; font-weight:600; line-height:1.22}
+.card .a{font-size:8.5px; color:rgba(255,255,255,.66); margin-top:1px}
+.card .a.trk{letter-spacing:.07em; text-transform:uppercase; font-size:7.5px}
+.playdisc{position:absolute; right:6px; bottom:6px; width:24px; height:24px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; font-size:9px}
+.playdisc.old{background:rgba(0,0,0,.55)}
+.playdisc.glassy{background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.28);
+  backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px)}
+.badge-old{position:absolute; left:6px; top:6px; padding:2px 6px; border-radius:999px;
+  background:#F0A94C; color:#241603; font-size:7.5px; font-weight:600; z-index:2}
+.bar-old{height:3px; border-radius:2px; background:rgba(255,255,255,.3); margin-top:5px; overflow:hidden}
+.bar-old i{display:block; height:100%; background:#F0A94C}
+.edgeprog{position:absolute; left:0; right:0; bottom:0; height:2.5px; background:rgba(255,255,255,.16)}
+.edgeprog i{display:block; height:100%; background:#F0A94C; box-shadow:0 0 8px rgba(240,169,76,.8)}
+.ring-now{position:absolute; inset:0; border:2px solid rgba(240,169,76,.7); border-radius:12px; z-index:2}
+
+.chips{display:flex; gap:6px; margin:9px 0 11px}
+.chip{padding:4px 9px; border-radius:999px; font-size:9px; background:rgba(255,255,255,.10);
+  border:1px solid rgba(255,255,255,.14); white-space:nowrap}
+.chip.on{background:rgba(240,169,76,.9); color:#241603; border-color:transparent; font-weight:600}
+.tabs{display:flex; gap:15px; margin:10px 0 12px; font-size:9.5px; letter-spacing:.09em;
+  text-transform:uppercase; color:rgba(255,255,255,.45)}
+.tabs .on{color:#fff; position:relative}
+.tabs .on:after{content:""; position:absolute; left:0; right:0; bottom:-5px; height:1.5px; background:#F0A94C}
+.tabs sup{font-size:7.5px; opacity:.6; margin-left:2px}
+
+.dock{position:absolute; left:12px; right:12px; display:flex; flex-direction:column; gap:8px}
+.minibar{position:relative; height:46px; border-radius:999px; display:flex; align-items:center;
+  overflow:hidden; padding-right:7px}
+.minibar .mc{width:38px; height:38px; border-radius:9px; overflow:hidden; position:relative;
+  flex:0 0 auto; margin-left:5px}
+.minibar .mc.flush{border-radius:0; margin-left:0}
+.minibar .txt{flex:1 1 auto; min-width:0; padding:0 9px}
+.minibar .txt b{display:block; font-size:9.5px; font-weight:600; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis}
+.minibar .txt span{display:block; font-size:8px; color:rgba(255,255,255,.6)}
+.mplay{width:32px; height:32px; border-radius:50%; background:#F0A94C; color:#241603;
+  display:flex; align-items:center; justify-content:center; font-size:12px; flex:0 0 auto}
+.mline{position:absolute; left:0; bottom:0; height:2px; background:#F0A94C}
+.mtrace{position:absolute; inset:0; pointer-events:none}
+.navpill{height:46px; border-radius:999px; display:flex; align-items:center;
+  justify-content:space-around; padding:0 8px; font-size:13px}
+.navpill .slot{width:30px; height:30px; border-radius:999px; display:flex; align-items:center;
+  justify-content:center; color:rgba(255,255,255,.66)}
+.navpill .slot.on{background:rgba(240,169,76,.9); color:#241603}
+.fused{border-radius:26px; overflow:hidden}
+.fused .minibar{border-radius:0; height:48px}
+.fused .navpill{border-radius:0; border-top:1px solid rgba(255,255,255,.12)}
+
+.pbar{display:flex; align-items:center; justify-content:space-between; height:30px; flex:0 0 auto}
+.pbar .ic{width:24px; height:24px; border-radius:50%; display:flex; align-items:center;
+  justify-content:center; font-size:12px; color:rgba(255,255,255,.85)}
+.pbar .ser{font-size:8px; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.55)}
+.chpill{display:inline-flex; align-items:center; gap:5px; font-size:8.5px;
+  color:rgba(255,255,255,.62); padding:3px 7px; border-radius:999px}
+.ptitle{font-size:17px; font-weight:600; line-height:1.16; letter-spacing:-.01em}
+.pauthor{font-size:10px; color:rgba(255,255,255,.62); margin-top:2px}
+.pchapline{font-size:9px; color:rgba(255,255,255,.55); margin-top:5px; display:flex; align-items:center; gap:5px}
+.slider{position:relative; height:14px; display:flex; align-items:center}
+.slider .trk{height:3px; border-radius:2px; background:rgba(255,255,255,.24); width:100%}
+.slider .fil{position:absolute; left:0; height:3px; border-radius:2px; background:#F0A94C}
+.slider .thumb{position:absolute; width:11px; height:11px; border-radius:50%; background:#F0A94C;
+  box-shadow:0 0 0 4px rgba(240,169,76,.2)}
+.times{display:flex; justify-content:space-between; font-family:var(--mono); font-size:8px;
+  color:rgba(255,255,255,.6); font-variant-numeric:tabular-nums}
+.booktrk{position:relative; height:2.5px; border-radius:2px; background:rgba(255,255,255,.18); overflow:hidden}
+.booktrk .lit{position:absolute; top:0; bottom:0; background:#F0A94C}
+.booktrk .tick{position:absolute; top:0; bottom:0; width:1px; background:rgba(10,12,18,.85)}
+.transport{display:flex; align-items:center; justify-content:space-between; padding:0 2px}
+.tbtn{font-size:11px; color:rgba(255,255,255,.85); display:flex; flex-direction:column;
+  align-items:center; gap:1px}
+.tbtn small{font-size:7px; color:rgba(255,255,255,.6); font-family:var(--mono)}
+.bigplay{position:relative; width:52px; height:52px; border-radius:50%; background:#F0A94C; color:#241603;
+  display:flex; align-items:center; justify-content:center; font-size:20px}
+.playring{position:absolute; inset:-5px; border-radius:50%;
+  background:conic-gradient(#F0A94C 0deg 118deg, rgba(255,255,255,.20) 118deg 360deg);
+  -webkit-mask:radial-gradient(circle, transparent 0 25px, #000 25px);
+  mask:radial-gradient(circle, transparent 0 25px, #000 25px)}
+.util-loose{display:flex; justify-content:space-between; align-items:center; padding:0 4px; font-size:13px;
+  color:rgba(255,255,255,.8)}
+.util-rail{display:flex; align-items:center; justify-content:space-around; height:36px;
+  border-radius:999px; font-size:13px; color:rgba(255,255,255,.82)}
+.util-rail .u{width:38px; height:26px; border-radius:999px; display:flex; align-items:center; justify-content:center}
+.util-rail .u.on{background:rgba(240,169,76,.24); color:#F6C687}
+.reflect{position:absolute; left:0; right:0}
+
+.hero-window{position:relative; height:250px; margin:0; overflow:hidden}
+.hero-window .fade{position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(10,12,18,0) 40%, rgba(10,12,18,.55) 74%, rgba(10,12,18,.92) 100%)}
+.hero-copy{position:absolute; left:14px; right:14px; bottom:12px}
+.resume{display:inline-flex; align-items:center; gap:6px; padding:6px 13px; border-radius:999px;
+  background:#F0A94C; color:#241603; font-size:10px; font-weight:600}
+.hairline{height:2px; border-radius:2px; background:rgba(255,255,255,.22); margin-top:9px; overflow:hidden}
+.hairline i{display:block; height:100%; background:#F0A94C}
+
+/* content blocks */
+.cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:28px}
+.law{display:flex; flex-direction:column; gap:9px; padding:22px; border:1px solid var(--edge);
+  border-radius:2px; background:linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0))}
+.law .n{font-family:var(--mono); font-size:11px; color:var(--amber); letter-spacing:.14em}
+.law h3{font-family:var(--serif); font-weight:400; font-size:24px; letter-spacing:0}
+
+.changes{display:flex; flex-direction:column}
+.chg{display:grid; grid-template-columns:130px 1fr; gap:20px; padding:18px 0; border-top:1px solid var(--edge)}
+.chg:last-child{border-bottom:1px solid var(--edge)}
+.chg .k{font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--dim); padding-top:2px}
+.chg .v{display:flex; flex-direction:column; gap:6px}
+.chg .v b{font-weight:600; font-size:15.5px}
+.chg .v p{font-size:14.5px; color:var(--paper-2)}
+.was{font-size:13px; color:var(--dim)}
+.was em{font-style:normal; color:#D9705A}
+
+.q{border:1px solid var(--edge); border-radius:2px; padding:24px; display:flex; flex-direction:column; gap:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,.025), rgba(255,255,255,0))}
+.q h3{font-size:17px; font-weight:600}
+.opts{display:flex; flex-direction:column; gap:9px}
+.opt{display:grid; grid-template-columns:24px 1fr; gap:12px; padding:12px 14px; border:1px solid var(--edge);
+  border-radius:2px; font-size:14px; color:var(--paper-2); align-items:start}
+.opt .l{font-family:var(--mono); font-size:12px; color:var(--dim)}
+.opt.rec{border-color:rgba(240,169,76,.4); background:var(--amber-soft)}
+.opt.rec .l{color:var(--amber)}
+.opt strong{color:var(--paper); font-weight:600}
+.pick{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--amber)}
+
+.demo{display:grid; grid-template-columns:288px 1fr; gap:40px; align-items:center}
+.slidewrap{display:flex; flex-direction:column; gap:14px; max-width:46ch}
+input[type=range]{width:100%; accent-color:var(--amber); height:22px}
+.readout{font-family:var(--mono); font-size:13px; color:var(--paper-2); font-variant-numeric:tabular-nums}
+.readout b{color:var(--amber); font-weight:500}
+
+.fix{display:grid; grid-template-columns:auto 1fr; gap:16px; padding:16px 0; border-top:1px solid var(--edge)}
+.fix:last-child{border-bottom:1px solid var(--edge)}
+.fix .dot{width:7px; height:7px; border-radius:50%; background:var(--jade); margin-top:9px}
+.fix p{font-size:14.5px; color:var(--paper-2)}
+
+footer{padding:76px 0 110px; display:flex; flex-direction:column; gap:18px}
+footer h2{max-width:20ch}
+
+:focus-visible{outline:2px solid var(--amber); outline-offset:3px}
+@media (max-width:760px){
+  .demo{grid-template-columns:1fr}
+  .chg{grid-template-columns:1fr; gap:8px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none !important; transition:none !important}}
+</style>
+
+<header class="hero">
+  <div class="wrap stack">
+    <p class="eyebrow">Voyage &middot; Immersive theme &middot; design proposal</p>
+    <h1>The cover<br>is the room.</h1>
+    <p class="stand">Immersive paints a book cover across the whole app, then covers it with a 78%-opaque sheet of theme background. The artwork is wallpaper. This proposal makes it the subject &mdash; and rebuilds Home, the player and the mini bar around that one rule.</p>
+    <div class="metastrip">
+      <span>Screens <b>3</b></span>
+      <span>Scope <b>ui/immersive/** + PlayerSheet</b></span>
+      <span>Status <b>approved &mdash; building on branch immersive-cover-first</b></span>
+      <span>Material You <b>untouched</b></span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow quiet">What's actually there now</p>
+      <h2>Immersive is Material You wearing a translucent coat</h2>
+      <p class="lede">Not a slight &mdash; it's literally the architecture. <code>ui/immersive/home/HomeScreen.kt</code> is a 31-line wrapper that hands <code>ImmersiveHomeStyle</code> to the same <code>HomeScreenContent</code> Material uses. The theme swaps colours; it never changes what is on screen or how big it is. Six things follow from that.</p>
+    </div>
+
+    <div class="rail">
+      <div class="dev">
+        <div class="devcap"><span class="tag now">Now</span><span class="what">Home, Immersive</span></div>
+        <div class="phone">
+          <div class="backdrop"><div class="art art-found"></div><div class="dimsheet"></div></div>
+          <div class="ui">
+            <div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-top:8px">
+              <div>
+                <div style="font-size:26px;font-weight:600;letter-spacing:-.02em">Library</div>
+                <div class="mut" style="font-size:9px;margin-top:1px">11 books</div>
+              </div>
+              <div class="glass" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px">&#8801;</div>
+            </div>
+            <div class="chips">
+              <span class="chip on">All &middot; 11</span><span class="chip">Listening &middot; 1</span><span class="chip">Not started</span>
+            </div>
+            <div class="grid2">
+              <div class="card"><div class="art art-dune"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Dune</div><div class="a">Frank Herbert</div></div>
+                <div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-found"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Foundation</div><div class="a">Isaac Asimov</div></div>
+                <div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-empire"></div><div class="ring-now"></div><div class="badge-old">&#8776;</div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Foundation and Empire</div><div class="a">Isaac Asimov</div>
+                  <div class="bar-old"><i style="width:34%"></i></div></div>
+                <div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-long"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">The Long Way</div><div class="a">Becky Chambers</div></div>
+                <div class="playdisc old">&#9654;</div></div>
+            </div>
+          </div>
+          <div class="dock" style="bottom:22px">
+            <div class="minibar glass">
+              <div class="mc"><div class="art art-empire"></div></div>
+              <div class="txt"><b>Foundation and Empire</b><span>Isaac Asimov</span></div>
+              <span class="mut" style="font-size:13px;margin-right:8px">&#187;</span>
+              <div class="mplay">&#10073;&#10073;</div>
+              <div class="mline" style="width:34%"></div>
+            </div>
+            <div class="navpill glass">
+              <div class="slot on">&#9678;</div><div class="slot">&#9636;</div><div class="slot">&#9707;</div>
+              <div class="slot">&#8981;</div><div class="slot">&#9881;</div>
+            </div>
+          </div>
+          <div class="gesture"></div>
+        </div>
+      </div>
+
+      <div class="dev" style="flex:1 1 340px; width:auto; min-width:300px">
+        <div class="devcap"><span class="tag">Findings</span></div>
+        <div class="changes">
+          <div class="chg"><div class="k">01 Backdrop</div><div class="v">
+            <b>The cover is 22% visible</b>
+            <p class="was"><code>AppBlurredBackdrop</code> paints the baked cover, then <em>a flat <code>background</code> sheet at alpha 0.78</em> over the entire screen. Whatever the artwork was, it arrives as grey-blue fog.</p></div></div>
+          <div class="chg"><div class="k">02 Top of Home</div><div class="v">
+            <b>The first 150dp show no art at all</b>
+            <p class="was">A 26sp &ldquo;Library&rdquo;, a count and four filled chips occupy the top fifth of the screen before a single cover appears. That real estate is where a cover-first theme should be loudest.</p></div></div>
+          <div class="chg"><div class="k">03 Cards</div><div class="v">
+            <b>Six drawn objects per cover</b>
+            <p class="was">Background plate, 2.5dp accent border, badge pill, black-55% play disc, 82%-black scrim band, progress bar &mdash; all competing with the art on a 130dp-wide tile.</p></div></div>
+          <div class="chg"><div class="k">04 Player</div><div class="v">
+            <b>Seven stacked bands below the cover</b>
+            <p class="was">Chapter pill, title, author, chapter slider, time row, book bar, second time row, transport, secondary icons. Two sliders and two time rows say the same thing twice.</p></div></div>
+          <div class="chg"><div class="k">05 Mini bar</div><div class="v">
+            <b>The cover is the smallest element</b>
+            <p class="was">A 48dp thumbnail inset in a 64dp pill, with a straight 2dp progress line drawn under a fully rounded shape &mdash; and <em>text in <code>onSurface</code>, the one place Immersive is not accent-tinted</em>.</p></div></div>
+          <div class="chg"><div class="k">06 Glass</div><div class="v">
+            <b>Cover-sampled, then neutralised</b>
+            <p class="was"><code>GlassPillSurface</code> does real work smudging the cover &mdash; then flattens it under <em><code>Color.Black</code> at 0.30</em>, so every pill lands the same grey regardless of the book.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">The rule</p>
+      <h2>At any moment, the largest and brightest thing on screen is cover art</h2>
+      <p class="lede">Everything else is glass over it or type on it. Three laws follow, and they settle every question below without further debate.</p>
+    </div>
+
+    <div class="cols">
+      <div class="law"><span class="n">LAW 01</span><h3>Art at full strength, legibility from shape</h3>
+        <p class="small">The flat dim sheet goes. Contrast comes from gradients shaped to the content that needs them &mdash; a scrim under text, nothing under empty space. One vertical gradient replaces the 0.78 wall: light at the top where art lives, heavier at the bottom where the grid is dense.</p></div>
+      <div class="law"><span class="n">LAW 02</span><h3>No plates, only glass or nothing</h3>
+        <p class="small">If a control needs a ground it gets the cover-sampled pill. If it does not, it sits on a gradient with no container at all. Filled chips, card background plates and opaque black discs are all replaced under this law.</p></div>
+      <div class="law"><span class="n">LAW 03</span><h3>Colour is borrowed, never chosen</h3>
+        <p class="small">Accent already derives from the cover. Extend that to the glass tint and the scrim base: darken toward <code>lerp(Black, primary, 0.12)</code> instead of pure black, so a warm book gets warm glass and a cold one gets cold glass.</p></div>
+    </div>
+
+    <hr class="rule" style="margin:56px 0 44px">
+
+    <div class="demo">
+      <div class="phone" style="height:420px">
+        <div class="backdrop"><div class="art art-dune"></div><div class="dimsheet" id="demoDim"></div></div>
+        <div class="ui">
+          <div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div>
+          <div class="tabs" style="margin-top:14px"><span class="on">All<sup>11</sup></span><span>Listening<sup>1</sup></span><span>Finished</span></div>
+          <div class="grid2">
+            <div class="card"><div class="art art-empire"></div><div class="scrim-soft"></div>
+              <div class="meta"><div class="t">Foundation and Empire</div><div class="a trk">Isaac Asimov</div></div></div>
+            <div class="card"><div class="art art-tide"></div><div class="scrim-soft"></div>
+              <div class="meta"><div class="t">Children of Time</div><div class="a trk">A. Tchaikovsky</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="slidewrap">
+        <p class="eyebrow quiet">Try the single most important change</p>
+        <h3 style="font-family:var(--serif);font-weight:400;font-size:28px">Backdrop dim</h3>
+        <p class="small">Drag it. Everything else in this proposal is composition; this one line is the difference between a cover-first theme and a grey app that happens to load a picture. It ships as a two-stop gradient, not a flat value &mdash; the number below is its midpoint.</p>
+        <input type="range" id="dimRange" min="20" max="90" value="78" aria-label="Backdrop dim opacity">
+        <div class="readout">dim <b><span id="dimVal">0.78</span></b> &nbsp;&middot;&nbsp; <span id="dimNote">today &mdash; cover reads as fog</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Screen 01</p>
+      <h2>Home</h2>
+      <p class="lede">The backdrop already <em>is</em> the now-playing cover. So instead of adding a &ldquo;Continue&rdquo; card on top of it, the top of the scroll becomes a sharp window into the same image &mdash; the wallpaper coming into focus. Scroll and the hero dissolves back into its own blur.</p>
+    </div>
+
+    <div class="rail">
+      <div class="dev">
+        <div class="devcap"><span class="tag now">Now</span><span class="what">headline + chips + grid</span></div>
+        <div class="phone">
+          <div class="backdrop"><div class="art art-found"></div><div class="dimsheet"></div></div>
+          <div class="ui">
+            <div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div>
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;padding-top:8px">
+              <div><div style="font-size:26px;font-weight:600;letter-spacing:-.02em">Library</div>
+                <div class="mut" style="font-size:9px;margin-top:1px">11 books</div></div>
+              <div class="glass" style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px">&#8801;</div>
+            </div>
+            <div class="chips"><span class="chip on">All &middot; 11</span><span class="chip">Listening &middot; 1</span><span class="chip">Not started</span></div>
+            <div class="grid2">
+              <div class="card"><div class="art art-dune"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Dune</div><div class="a">Frank Herbert</div></div><div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-found"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Foundation</div><div class="a">Isaac Asimov</div></div><div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-empire"></div><div class="ring-now"></div><div class="badge-old">&#8776;</div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">Foundation and Empire</div><div class="a">Isaac Asimov</div>
+                <div class="bar-old"><i style="width:34%"></i></div></div><div class="playdisc old">&#9654;</div></div>
+              <div class="card"><div class="art art-long"></div><div class="scrim-flat"></div>
+                <div class="meta"><div class="t">The Long Way</div><div class="a">Becky Chambers</div></div><div class="playdisc old">&#9654;</div></div>
+            </div>
+          </div>
+          <div class="dock" style="bottom:22px">
+            <div class="minibar glass"><div class="mc"><div class="art art-empire"></div></div>
+              <div class="txt"><b>Foundation and Empire</b><span>Isaac Asimov</span></div>
+              <span class="mut" style="font-size:13px;margin-right:8px">&#187;</span><div class="mplay">&#10073;&#10073;</div>
+              <div class="mline" style="width:34%"></div></div>
+            <div class="navpill glass"><div class="slot on">&#9678;</div><div class="slot">&#9636;</div><div class="slot">&#9707;</div><div class="slot">&#8981;</div><div class="slot">&#9881;</div></div>
+          </div>
+          <div class="gesture"></div>
+        </div>
+      </div>
+
+      <div class="dev">
+        <div class="devcap"><span class="tag new">Proposed</span><span class="what">hero window + grid</span></div>
+        <div class="phone">
+          <div class="backdrop"><div class="art art-empire"></div><div class="dimgrad"></div></div>
+          <div class="ui" style="padding:0">
+            <div style="padding:0 14px"><div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div></div>
+            <div class="hero-window">
+              <div class="art art-empire"></div>
+              <div class="fade"></div>
+              <div style="position:absolute;right:12px;top:4px;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.8)">&#8801;</div>
+              <div class="hero-copy">
+                <div style="font-size:7.5px;letter-spacing:.18em;text-transform:uppercase;color:rgba(255,255,255,.62)">Foundation &middot; Book 2</div>
+                <div style="font-size:19px;font-weight:600;line-height:1.12;margin-top:3px;letter-spacing:-.01em">Foundation<br>and Empire</div>
+                <div class="hairline"><i style="width:34%"></i></div>
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+                  <div class="resume">&#9654; Resume &middot; ch 9</div>
+                  <span style="font-family:var(--mono);font-size:8px;color:rgba(255,255,255,.6)">6h 12m left</span>
+                </div>
+              </div>
+            </div>
+            <div style="padding:0 14px">
+              <div class="tabs"><span class="on">All<sup>11</sup></span><span>Listening<sup>1</sup></span><span>Not started<sup>10</sup></span></div>
+              <div class="grid2">
+                <div class="card"><div class="art art-dune"></div><div class="scrim-soft"></div>
+                  <div class="meta"><div class="t">Dune</div><div class="a trk">Frank Herbert</div></div>
+                  <div class="playdisc glassy">&#9654;</div></div>
+                <div class="card"><div class="art art-found"></div><div class="scrim-soft"></div>
+                  <div class="meta"><div class="t">Foundation</div><div class="a trk">Isaac Asimov</div></div>
+                  <div class="playdisc glassy">&#9654;</div></div>
+                <div class="card"><div class="art art-empire"></div><div class="scrim-soft"></div>
+                  <div class="meta"><div class="t">&#8776; Foundation and Empire</div><div class="a trk">Isaac Asimov</div></div>
+                  <div class="playdisc glassy">&#10073;&#10073;</div>
+                  <div class="edgeprog"><i style="width:34%"></i></div></div>
+                <div class="card"><div class="art art-long"></div><div class="scrim-soft"></div>
+                  <div class="meta"><div class="t">The Long Way</div><div class="a trk">Becky Chambers</div></div>
+                  <div class="playdisc glassy">&#9654;</div></div>
+              </div>
+            </div>
+          </div>
+          <div class="dock" style="bottom:20px">
+            <div class="glass fused">
+              <div class="minibar"><div class="mc flush" style="width:48px;height:48px"><div class="art art-empire"></div></div>
+                <div class="txt"><b>Foundation and Empire</b><span>Chapter 9 &middot; 41m left</span></div>
+                <div class="mplay">&#10073;&#10073;</div></div>
+              <div class="navpill"><div class="slot on">&#9678;</div><div class="slot">&#9636;</div><div class="slot">&#9707;</div><div class="slot">&#8981;</div><div class="slot">&#9881;</div></div>
+            </div>
+          </div>
+          <div class="gesture"></div>
+        </div>
+      </div>
+
+      <div class="dev" style="flex:1 1 300px; width:auto; min-width:280px">
+        <div class="devcap"><span class="tag">Changes</span></div>
+        <div class="changes">
+          <div class="chg"><div class="k">Hero</div><div class="v">
+            <b>A sharp window into the backdrop</b>
+            <p>250dp of the now-playing cover at full strength, top-anchored so it runs under the status bar, resolving out of the blur behind it. Series eyebrow, title, progress hairline, Resume pill, time left.</p>
+            <p class="was">It parallaxes at 0.5&times; as the grid scrolls over it and cross-fades into the blurred backdrop &mdash; the hero literally becomes the wallpaper. Past ~70% scrolled the title docks into a small glass header pill, so context is never lost.</p></div></div>
+          <div class="chg"><div class="k">Headline</div><div class="v">
+            <b>&ldquo;Library / 11 books&rdquo; is deleted</b>
+            <p>The count moves into the tab row as superscripts; sort moves onto the hero as an unfilled glyph. Nothing announces the screen you are already looking at.</p></div></div>
+          <div class="chg"><div class="k">Tabs</div><div class="v">
+            <b>Chips become a tracked text row</b>
+            <p>Four filled rectangles across the artwork become uppercase 9sp labels with an accent underline on the active one. Law 02.</p></div></div>
+          <div class="chg"><div class="k">Cards</div><div class="v">
+            <b>Cover-only tiles</b>
+            <p>The card background plate goes &mdash; the art fills the tile. The scrim starts at 56% height with three stops instead of a hard 44% band, so a third more artwork survives.</p>
+            <p class="was">Play disc: black-55% &rarr; cover-sampled glass with a hairline edge. The author line drops to 7.5sp uppercase and tracked, so the title owns the tile.</p></div></div>
+          <div class="chg"><div class="k">Now playing</div><div class="v">
+            <b>One signal, not three</b>
+            <p>The 2.5dp border, the badge pill and the inset progress bar collapse into a single accent hairline welded to the card's bottom edge &mdash; which <em>is</em> the progress bar &mdash; plus a small waveform glyph before the title.</p></div></div>
+          <div class="chg"><div class="k">Bottom</div><div class="v">
+            <b>Mini bar and nav pill fuse</b>
+            <p>Two floating pills stacked 12dp apart become one 26dp-radius glass slab with a hairline divider, so the bottom reads as one control surface. Reserved bottom padding drops 184dp &rarr; 156dp.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Screen 02</p>
+      <h2>Player</h2>
+      <p class="lede">The full-bleed cover stays &mdash; it is the theme's signature and the morph target, and changing it would mean re-authoring the mini&rarr;full transition. Everything below it collapses from seven bands to four, returning about 110dp to the artwork.</p>
+    </div>
+
+    <div class="rail">
+      <div class="dev">
+        <div class="devcap"><span class="tag now">Now</span><span class="what">seven bands</span></div>
+        <div class="phone">
+          <div class="layer" style="background:#0A0C12"></div>
+          <div class="art art-empire" style="height:288px;bottom:auto"></div>
+          <div class="reflect" style="top:288px;height:120px;background:linear-gradient(180deg,rgba(107,29,69,.55),rgba(10,12,18,0))"></div>
+          <div class="ui">
+            <div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div>
+            <div class="pbar"><div class="ic">&#8964;</div><div class="ser">Foundation</div><div class="ic">&#8942;</div></div>
+            <div style="flex:1 1 auto"></div>
+            <div style="padding-bottom:18px">
+              <div class="chpill" style="background:rgba(255,255,255,.07)">&#9776; Chapter 9 &middot; The Merchant Princes</div>
+              <div class="ptitle" style="margin-top:6px">Foundation and Empire</div>
+              <div class="pauthor">Isaac Asimov</div>
+              <div style="height:14px"></div>
+              <div class="slider"><div class="trk"></div><div class="fil" style="width:46%"></div><div class="thumb" style="left:calc(46% - 5px)"></div></div>
+              <div class="times"><span>18:42</span><span>-21:55</span></div>
+              <div style="height:5px"></div>
+              <div class="booktrk"><div class="lit" style="left:0;width:34%"></div></div>
+              <div class="times" style="margin-top:3px"><span>3:12:40</span><span>9:24:11</span></div>
+              <div style="height:12px"></div>
+              <div class="transport">
+                <div class="tbtn">&#9198;</div>
+                <div class="tbtn">&#8634;<small>15</small></div>
+                <div class="bigplay">&#10073;&#10073;</div>
+                <div class="tbtn">&#8635;<small>30</small></div>
+                <div class="tbtn">&#9197;</div>
+              </div>
+              <div style="height:14px"></div>
+              <div class="util-loose"><span style="font-size:9px" class="acc">&#8811; Skip silence</span><span>&#9881;</span><span>&#9873;</span><span>&#9790;</span></div>
+            </div>
+          </div>
+          <div class="gesture"></div>
+        </div>
+      </div>
+
+      <div class="dev">
+        <div class="devcap"><span class="tag new">Proposed</span><span class="what">four bands</span></div>
+        <div class="phone">
+          <div class="layer" style="background:#0A0C12"></div>
+          <div class="art art-empire" style="height:330px;bottom:auto"></div>
+          <div style="position:absolute;left:0;right:0;top:250px;height:80px;
+            background:linear-gradient(180deg,rgba(10,12,18,0),rgba(10,12,18,.30) 55%,rgba(10,12,18,.72) 100%)"></div>
+          <div class="reflect" style="top:330px;height:140px;background:linear-gradient(180deg,rgba(107,29,69,.5),rgba(10,12,18,0))"></div>
+          <div class="ui">
+            <div class="statusbar"><span>11:13</span><span>&#9646;&#9646; &#9646;</span></div>
+            <div class="pbar"><div class="ic">&#8964;</div><div class="ser">Foundation &middot; Book 2</div><div class="ic">&#8942;</div></div>
+            <div style="flex:1 1 auto"></div>
+            <div style="padding-bottom:20px">
+              <div class="ptitle" style="font-size:20px">Foundation and Empire</div>
+              <div class="pauthor">Isaac Asimov &middot; read by William Hope</div>
+              <div class="pchapline">&#9776; Chapter 9 &mdash; The Merchant Princes</div>
+              <div style="height:16px"></div>
+              <div class="slider"><div class="trk"></div><div class="fil" style="width:46%"></div><div class="thumb" style="left:calc(46% - 5px)"></div></div>
+              <div style="height:4px"></div>
+              <div class="booktrk">
+                <div class="lit" style="left:28%;width:6%"></div>
+                <div class="tick" style="left:9%"></div><div class="tick" style="left:18%"></div><div class="tick" style="left:28%"></div>
+                <div class="tick" style="left:34%"></div><div class="tick" style="left:47%"></div><div class="tick" style="left:59%"></div>
+                <div class="tick" style="left:71%"></div><div class="tick" style="left:86%"></div>
+              </div>
+              <div class="times" style="margin-top:5px"><span>18:42</span><span style="font-size:7.5px;color:rgba(255,255,255,.45)">6h 12m left in book</span><span>-21:55</span></div>
+              <div style="height:16px"></div>
+              <div class="transport">
+                <div class="tbtn">&#9198;</div>
+                <div class="tbtn">&#8634;<small>15</small></div>
+                <div class="bigplay"><div class="playring"></div>&#10073;&#10073;</div>
+                <div class="tbtn">&#8635;<small>30</small></div>
+                <div class="tbtn">&#9197;</div>
+              </div>
+              <div style="height:16px"></div>
+              <div class="util-rail glass">
+                <div class="u on">&#8811;</div><div class="u">&#9881;</div><div class="u">&#9873;</div><div class="u">&#9790;</div>
+              </div>
+            </div>
+          </div>
+          <div class="gesture"></div>
+        </div>
+      </div>
+
+      <div class="dev" style="flex:1 1 300px; width:auto; min-width:280px">
+        <div class="devcap"><span class="tag">Changes</span></div>
+        <div class="changes">
+          <div class="chg"><div class="k">Cover</div><div class="v">
+            <b>It dissolves instead of ending</b>
+            <p>The progressive blur begins inside the artwork's lower quarter rather than at its bottom edge, so there is no hard horizon between cover and controls. Height grows 288 &rarr; 330dp with the reclaimed space.</p></div></div>
+          <div class="chg"><div class="k">Band 1</div><div class="v">
+            <b>Identity is three lines, no chip</b>
+            <p>Title, then author &middot; narrator, then the chapter as a plain tinted line rather than a pill above the title. The whole line stays the tap target for the chapter list.</p>
+            <p class="was">The series name moves off the top bar into the eyebrow slot where it belongs, and the top bar keeps only the collapse chevron and the overflow.</p></div></div>
+          <div class="chg"><div class="k">Band 2</div><div class="v">
+            <b>One scrubber, two tracks, one time line</b>
+            <p>The chapter slider stays the thing you drag. Beneath it, a 2.5dp whole-book track with a tick per chapter and the current chapter's segment lit &mdash; position in the book becomes a picture, not a second control.</p>
+            <p class="was">Replaces slider + time row + book bar + second time row. Times become one row: elapsed, book-remaining (dim, centred), chapter-remaining.</p></div></div>
+          <div class="chg"><div class="k">Band 3</div><div class="v">
+            <b>Transport unchanged, ring optional</b>
+            <p>Same five controls at the same sizes. Optionally a thin accent ring around the play button carrying chapter progress, so it is glanceable with a thumb over the scrubber. See decision 04.</p></div></div>
+          <div class="chg"><div class="k">Band 4</div><div class="v">
+            <b>Four loose icons become one rail</b>
+            <p>Skip-silence, audio settings, bookmarks and sleep timer sit in a single cover-glass pill with four slots, so they read as one utility set. Active states tint their own slot at accent 24% &mdash; same behaviour, contained.</p>
+            <p class="was">The &ldquo;Skip silence&rdquo; text label is dropped; the slot tint carries the state, and the long-press sheet still explains it.</p></div></div>
+          <div class="chg"><div class="k">Unchanged</div><div class="v">
+            <b>Return / Confirm / jump-restore pills</b>
+            <p>Transient, already correct, already <code>ScrimPill</code>. They keep their position between identity and scrubber.</p></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Screen 03</p>
+      <h2>Mini player</h2>
+      <p class="lede">It is on screen more than either other surface, and it is the one place where a cover-first theme currently shows a 48dp thumbnail. Three moves, one of which this codebase can already draw.</p>
+    </div>
+
+    <div class="rail">
+      <div class="dev" style="width:auto">
+        <div class="devcap"><span class="tag now">Now</span><span class="what">inset thumb, straight line</span></div>
+        <div style="width:288px;padding:22px;border:1px solid var(--edge);border-radius:2px;background:#0F1420">
+          <div class="minibar glass" style="height:52px">
+            <div class="mc" style="width:42px;height:42px"><div class="art art-empire"></div></div>
+            <div class="txt"><b>Foundation and Empire</b><span>Isaac Asimov</span></div>
+            <span class="mut" style="font-size:13px;margin-right:8px">&#187;</span>
+            <div class="mplay">&#10073;&#10073;</div>
+            <div class="mline" style="width:34%"></div>
+          </div>
+          <p class="small" style="margin-top:14px">48dp cover inset 8dp in a 64dp pill &middot; a straight 2dp bar under a fully rounded shape &middot; glass flattened by black 0.30 &middot; text in <code>onSurface</code></p>
+        </div>
+      </div>
+
+      <div class="dev" style="width:auto">
+        <div class="devcap"><span class="tag new">Option A</span><span class="what">flush cover cap</span></div>
+        <div style="width:288px;padding:22px;border:1px solid rgba(240,169,76,.35);border-radius:2px;background:#171122">
+          <div style="position:relative">
+            <div class="minibar glass" style="height:52px;background:rgba(107,29,69,.42);border-color:rgba(255,255,255,.2)">
+              <div class="mc flush" style="width:52px;height:52px"><div class="art art-empire"></div></div>
+              <div class="txt"><b>Foundation and Empire</b><span>Chapter 9 &middot; 41m left</span></div>
+              <div class="mplay">&#10073;&#10073;</div>
+            </div>
+            <svg class="mtrace" viewBox="0 0 244 52" preserveAspectRatio="none" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="241" height="49" rx="24.5" fill="none"
+                    stroke="#F0A94C" stroke-width="3" stroke-linecap="round"
+                    pathLength="100" stroke-dasharray="34 66" stroke-dashoffset="-25"></rect>
+            </svg>
+          </div>
+          <p class="small" style="margin-top:14px">Cover flush-left at full pill height, clipped by the left cap &middot; progress traces the pill's own outline &middot; glass tinted toward the cover's hue</p>
+        </div>
+      </div>
+
+      <div class="dev" style="width:auto">
+        <div class="devcap"><span class="tag">Option B</span><span class="what">circular cap</span></div>
+        <div style="width:288px;padding:22px;border:1px solid var(--edge);border-radius:2px;background:#0F1420">
+          <div style="position:relative">
+            <div class="minibar glass" style="height:52px;background:rgba(107,29,69,.42);border-color:rgba(255,255,255,.2)">
+              <div class="mc" style="width:44px;height:44px;border-radius:50%;margin-left:4px"><div class="art art-empire"></div></div>
+              <div class="txt"><b>Foundation and Empire</b><span>Chapter 9 &middot; 41m left</span></div>
+              <div class="mplay">&#10073;&#10073;</div>
+            </div>
+            <svg class="mtrace" viewBox="0 0 244 52" preserveAspectRatio="none" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="241" height="49" rx="24.5" fill="none"
+                    stroke="#F0A94C" stroke-width="3" stroke-linecap="round"
+                    pathLength="100" stroke-dasharray="34 66" stroke-dashoffset="-25"></rect>
+            </svg>
+          </div>
+          <p class="small" style="margin-top:14px">A &ldquo;vinyl&rdquo; read that could rotate while playing. It costs the morph: the full player's cover is square, so a circular source means animating corner radius as well as bounds.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="changes" style="margin-top:44px">
+      <div class="chg"><div class="k">Cover</div><div class="v">
+        <b>Becomes the pill's left cap</b>
+        <p>64dp square, flush to the edge, clipped by the pill's own left round cap. The cover stops being a thumbnail inside a bar and becomes the bar's leading form &mdash; and since it is already the morph source, the transition starts at the size the eye is following.</p></div></div>
+      <div class="chg"><div class="k">Progress</div><div class="v">
+        <b>Traces the pill &mdash; and you have already written it</b>
+        <p>A straight <code>LinearProgressIndicator</code> under a <code>RoundedCornerShape(50%)</code> is geometrically wrong: it stops short of both caps. Replace it with a stroke that walks the pill's outline.</p>
+        <p class="was"><code>WidgetPainter.drawPerimeterProgressBar</code> already does exactly this with <code>PathMeasure</code> for RING / SQUARE / ROUNDED_SQUARE. Same recipe, Compose <code>drawBehind</code> instead of Canvas.</p></div></div>
+      <div class="chg"><div class="k">Glass</div><div class="v">
+        <b>Keeps the cover's hue</b>
+        <p><code>GlassPillSurface</code>'s flat <code>Color.Black @ 0.30</code> becomes <code>lerp(Black, primary, 0.12) @ 0.34</code> applied as a bottom-weighted gradient rather than a sheet, so the smudge work it already does stops being neutralised. The same change fixes the nav pill.</p></div></div>
+      <div class="chg"><div class="k">Text</div><div class="v">
+        <b>Accent-tinted like everything else</b>
+        <p>Title and author move from <code>onSurface</code> / <code>onSurfaceVariant</code> to <code>ImmersiveStyle.scrimText()</code>. This is currently the only Immersive surface whose text is not cover-tinted, and it is the most-seen one.</p></div></div>
+      <div class="chg"><div class="k">Subtitle</div><div class="v">
+        <b>Author becomes chapter and time left</b>
+        <p>The author is on the cover you are looking at. &ldquo;Chapter 9 &middot; 41m left&rdquo; is what you actually want from a collapsed player. Falls back to the author when a book has no chapters.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Approved 2026-08-19 &mdash; 1A 2A 3A 4B</p>
+      <h2>Four calls, all four settled</h2>
+      <p class="lede">Every recommendation was taken. The approved option in each pair is highlighted; the alternatives are kept on the record so a future change knows what was considered and rejected.</p>
+    </div>
+
+    <div class="cols">
+      <div class="q">
+        <h3>01 &middot; Home hero</h3>
+        <div class="opts">
+          <div class="opt rec"><span class="l">A</span><span><strong>Sharp window into the backdrop.</strong> The blur resolves into focus at the top of the scroll and dissolves back as you scroll. <span class="pick">approved</span></span></div>
+          <div class="opt"><span class="l">B</span><span><strong>Discrete Continue card</strong> floating over the blur &mdash; closer to today's resume card. Safer, less distinctive.</span></div>
+          <div class="opt"><span class="l">C</span><span><strong>No hero.</strong> Straight into the grid with the backdrop simply un-dimmed. Smallest change, keeps the most books above the fold.</span></div>
+        </div>
+      </div>
+
+      <div class="q">
+        <h3>02 &middot; Mini player cover cap</h3>
+        <div class="opts">
+          <div class="opt rec"><span class="l">A</span><span><strong>Flush square, clipped by the left cap.</strong> Morphs cleanly into the full player's square cover. <span class="pick">approved</span></span></div>
+          <div class="opt"><span class="l">B</span><span><strong>Circular vinyl cap,</strong> optionally rotating while playing. Costs a corner-radius animation in the morph.</span></div>
+        </div>
+      </div>
+
+      <div class="q">
+        <h3>03 &middot; Play button on grid cards</h3>
+        <div class="opts">
+          <div class="opt rec"><span class="l">A</span><span><strong>Keep it, restyle as glass.</strong> No behaviour change, far quieter over the art. <span class="pick">approved</span></span></div>
+          <div class="opt"><span class="l">B</span><span><strong>Only on the now-playing card;</strong> elsewhere play moves into the long-press menu. Cleanest tiles, one extra tap for a common action.</span></div>
+        </div>
+      </div>
+
+      <div class="q">
+        <h3>04 &middot; Progress ring on the play button</h3>
+        <div class="opts">
+          <div class="opt"><span class="l">A</span><span><strong>Yes</strong> &mdash; chapter progress stays readable with a thumb over the scrubber.</span></div>
+          <div class="opt rec"><span class="l">B</span><span><strong>No.</strong> Band 2 already says it, twice is noise, and the ring complicates the morph's play-button target. <span class="pick">approved</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow quiet">Found while reading, unrelated to the look</p>
+      <h2>Three small things I would fix in the same pass</h2>
+    </div>
+    <div>
+      <div class="fix"><span class="dot"></span><div>
+        <p><b>The cover morph starts at the wrong corner radius.</b> <code>BookGridCard</code> clips at <code>MaterialTheme.shapes.large</code> = <b>24dp</b>, but publishes <code>ImmersiveHomeStyle.cardCornerRadius</code> = <b>28dp</b> to <code>CoverBoundsRegistry</code>. Every Book Info and player morph therefore begins 4dp rounder than the card it is growing out of. One-line fix, and the first frame lands exactly.</p></div></div>
+      <div class="fix"><span class="dot"></span><div>
+        <p><b>Mini bar text is not accent-tinted.</b> Covered above &mdash; listed separately because it is a correctness gap against the theme's own stated rule (&ldquo;all text accent-tinted&rdquo;), not a design preference.</p></div></div>
+      <div class="fix"><span class="dot"></span><div>
+        <p><b>Immersive hard-codes two grid columns</b> with the comment &ldquo;Immersive has no landscape layout&rdquo;. With a 250dp hero above it, landscape gets tight. Not fixing it in this pass &mdash; flagging that the hero should either become a side panel in landscape or stay portrait-only.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <p class="eyebrow">Next</p>
+  <h2>Approved. Building it now.</h2>
+  <p class="lede" style="max-width:62ch">Implementation runs on the <code>immersive-cover-first</code> branch, cut from <code>beta</code>, in three commits &mdash; backdrop and tokens first (Laws 01&ndash;03, visible immediately), then Home, then the player and mini bar together since they share the morph. Material You is not touched at any point.</p>
+</footer>
+
+<script>
+(function(){
+  var r = document.getElementById('dimRange'),
+      d = document.getElementById('demoDim'),
+      v = document.getElementById('dimVal'),
+      n = document.getElementById('dimNote');
+  if (!r || !d) return;
+  function note(x){
+    if (x >= 0.70) return 'today — cover reads as fog';
+    if (x >= 0.55) return 'still safe, art starts to speak';
+    if (x >= 0.42) return 'proposed midpoint — cover-first';
+    if (x >= 0.30) return 'bold; needs the shaped scrims to hold text';
+    return 'too far — titles fight bright artwork';
+  }
+  function sync(){
+    var x = r.value / 100;
+    d.style.opacity = x;
+    v.textContent = x.toFixed(2);
+    n.textContent = note(x);
+  }
+  r.addEventListener('input', sync);
+  sync();
+})();
+</script>
