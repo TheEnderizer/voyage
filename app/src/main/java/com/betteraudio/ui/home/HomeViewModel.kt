@@ -557,6 +557,10 @@ class HomeViewModel @Inject constructor(
      *  same cheap single-book flow [resumeBook] and [playResumeBook] already use. */
     fun bookWithProgressFlow(bookId: Long): Flow<BookWithProgress?> = repository.getBookWithProgress(bookId)
 
+    /** Pause/resume whatever is loaded, without opening the full player — used by Home's hero
+     *  when the book it features is the live session. */
+    fun togglePlayPause() = playerController.togglePlayPause()
+
     fun playResumeBook(bookId: Long) {
         viewModelScope.launch {
             val bwp = repository.getBookWithProgress(bookId).first() ?: return@launch
