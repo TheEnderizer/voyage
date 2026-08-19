@@ -65,6 +65,7 @@ import com.betteraudio.data.settings.SettingsStore
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.author.AuthorDetailScreen
 import com.betteraudio.ui.bookinfo.BookInfoOverlay
+import com.betteraudio.ui.immersive.components.recordBackdrop
 import com.betteraudio.ui.bookinfo.rememberBookInfoOverlayController
 import com.betteraudio.ui.home.HomeScreen
 import com.betteraudio.ui.immersive.immersiveEnter
@@ -343,6 +344,16 @@ class MainActivity : ComponentActivity() {
                     BackHandler(enabled = sheetController.isExpanded) { sheetController.collapse() }
                 }
 
+                // Immersive Home's "clear window" into the backdrop: Home publishes its scroll
+                // here, the backdrop reads it to decide how much of itself to render sharp.
+                val heroWindow = remember { com.betteraudio.ui.immersive.HeroWindowState() }
+                // Live capture of everything the floating glass sits on. Null unless the user has
+                // Dynamic pills on (and the device can do RenderEffect) — see BackdropGlass.kt.
+                val backdropCapture =
+                    com.betteraudio.ui.immersive.components.rememberBackdropCapture(
+                        enabled = dynamicPills && appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE
+                    )
+
                 Box(Modifier.fillMaxSize()) {
                 androidx.compose.runtime.CompositionLocalProvider(
                     com.betteraudio.ui.player.LocalCoverBoundsRegistry provides coverBoundsRegistry,
@@ -352,8 +363,14 @@ class MainActivity : ComponentActivity() {
                         com.betteraudio.ui.immersive.components.ImmersiveBackdropPaths(
                             coverPath, bakedCoverPath, widgetDefaultCoverPath.ifBlank { null }
                         ),
-                    com.betteraudio.ui.immersive.components.LocalDynamicPillsEnabled provides dynamicPills
+                    com.betteraudio.ui.immersive.components.LocalDynamicPillsEnabled provides dynamicPills,
+                    com.betteraudio.ui.immersive.LocalHeroWindow provides heroWindow,
+                    com.betteraudio.ui.immersive.components.LocalBackdropCapture provides backdropCapture
                 ) {
+                // Everything the floating glass samples goes inside this Box: the backdrop, the
+                // NavHost and the two full-bleed overlays. The nav pill and the player sheet are
+                // deliberately OUTSIDE it — they draw after, so they never sample themselves.
+                Box(Modifier.fillMaxSize().recordBackdrop(backdropCapture)) {
                 // Immersive: the playing/last-played cover under a very heavy blur fills the
                 // app. Material You: a plain opaque background (Home's scaffold is transparent
                 // and relies on this layer).
@@ -468,6 +485,7 @@ class MainActivity : ComponentActivity() {
                     controller = bookInfoOverlayController,
                     onResume = { bookId -> sheetController.open(bookId = bookId, startPlaying = true) }
                 )
+                } // end recordBackdrop Box — everything the floating glass is allowed to sample
 
                 // Floating nav pill (ArchiveTune style) — home route only; the player sheet
                 // draws over it and it slides away in lockstep with the sheet's expansion.

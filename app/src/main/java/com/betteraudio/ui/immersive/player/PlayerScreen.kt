@@ -648,6 +648,9 @@ fun PlayerContent(
                     shape = Pill,
                     contentColor = onScrim,
                     shadowElevation = 0.dp,
+                    // Inside the player sheet, which is outside the backdrop capture — sampling it
+                    // would show the Home grid behind the sheet instead of this book's cover.
+                    sampleBackdrop = false,
                     modifier = Modifier.fillMaxWidth().height(44.dp).expandReveal(expandProgress)
                 ) {
                     Row(

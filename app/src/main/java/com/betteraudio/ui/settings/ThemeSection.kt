@@ -311,9 +311,9 @@ internal fun LazyListScope.themeSection(
                     Column(Modifier.weight(1f)) {
                         Text("Dynamic pills", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "The mini player and nav pill's glass effect samples whichever book " +
-                                "cover is currently scrolled underneath them, instead of the " +
-                                "now-playing cover.",
+                            "The mini player and nav pill blur whatever is actually behind them, " +
+                                "updating live as the library scrolls underneath. Off, they show " +
+                                "a fixed smudge of the now-playing cover instead.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

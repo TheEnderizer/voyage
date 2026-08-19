@@ -49,15 +49,19 @@ import kotlinx.coroutines.withContext
  * app root -- provided once from MainActivity so any Immersive-theme surface (mini player pill,
  * floating nav pill) can render a "liquid glass" look derived from the same cover.
  *
- * There is no real backdrop-filter API in Compose (no way to sample already-rendered content behind
- * a layer), so this draws its OWN copy of the cover art: a directional vertical smear done on the
- * CPU (see [verticalSmudge]) with a smooth GPU `Modifier.blur()` layered on top of the DISPLAYED
- * image (not baked into the bitmap) -- "a vertical smudging effect and a blur over it". This
- * intentionally does NOT try to pixel-align with the real backdrop behind the pill (an earlier
- * version did, by rendering a full-screen-sized copy offset by the pill's own position -- fragile,
- * and abandoned) -- since the result is heavily smudged anyway, and the Home grid behind is built
- * from the same cover art, an approximate (non-aligned) sample reads as "glass over this content"
- * just as well while being far simpler.
+ * **This is now the FALLBACK path.** With Settings → Theme → "Dynamic pills" on (and API 31+) the
+ * pills sample the real rendered content beneath them via a recorded `GraphicsLayer` — see
+ * [BackdropGlass] — which is a genuine backdrop blur that tracks whatever scrolls underneath.
+ * Everything below applies when that is switched off or unavailable.
+ *
+ * Compose has no `backdrop-filter` modifier, so this draws its OWN copy of the cover art: a
+ * directional vertical smear done on the CPU (see [verticalSmudge]) with a smooth GPU
+ * `Modifier.blur()` layered on top of the DISPLAYED image (not baked into the bitmap) -- "a
+ * vertical smudging effect and a blur over it". It intentionally does NOT try to pixel-align with
+ * the real backdrop behind the pill (an earlier version did, by rendering a full-screen-sized copy
+ * offset by the pill's own position -- fragile, and abandoned) -- since the result is heavily
+ * smudged anyway, and the Home grid behind is built from the same cover art, an approximate
+ * (non-aligned) sample reads as "glass over this content" just as well while being far simpler.
  *
  * Two things went wrong before landing on this split: a directional (asymmetric X/Y radius)
  * `BlurEffect` applied via `graphicsLayer { scaleX; scaleY; renderEffect }` in one block rendered
@@ -80,7 +84,12 @@ val LocalImmersiveBackdrop = compositionLocalOf { ImmersiveBackdropPaths(null, n
 
 /** Settings → Theme → "Dynamic pills": when true, the glass samples whichever book cover is
  *  currently scrolled underneath the pill (via [com.betteraudio.ui.player.CoverBoundsRegistry])
- *  instead of the fixed now-playing/last-played backdrop. Provided once from MainActivity. */
+ *  instead of the fixed now-playing/last-played backdrop. Provided once from MainActivity.
+ *
+ *  As of the cover-first pass this ALSO gates the real backdrop blur (see [BackdropGlass]): with
+ *  it on, a capable device samples the actual pixels under each pill rather than any cover file at
+ *  all, and this cover-hit-testing path is what remains for everything else. Turning the toggle
+ *  off is the user's way to switch the whole effect back to a static smudge. */
 val LocalDynamicPillsEnabled = compositionLocalOf { false }
 
 private const val SMUDGE_CACHE_LIMIT = 8
@@ -184,6 +193,15 @@ fun GlassPillSurface(
     modifier: Modifier = Modifier,
     contentColor: Color = Color.White,
     shadowElevation: Dp = 10.dp,
+    /**
+     * Whether this surface may sample the live backdrop capture when Dynamic pills is on.
+     *
+     * True for surfaces that genuinely float over the app (the nav pill, the mini player). False
+     * for glass that lives INSIDE the player sheet — the sheet is drawn outside the recorded
+     * subtree on purpose, so such a surface would sample the Home grid sitting behind the sheet
+     * rather than the player's own cover, and show the wrong thing entirely.
+     */
+    sampleBackdrop: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val backdrop = LocalImmersiveBackdrop.current
@@ -194,15 +212,29 @@ fun GlassPillSurface(
     val registry = LocalCoverBoundsRegistry.current
     var ownCenter by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
-    // Dynamic pills: sample whatever book cover is currently scrolled under this pill's own
-    // center point. derivedStateOf is essential here, not decorative — coverPathUnder reads every
-    // published rect's live State (so this recalculates on every scroll frame across the whole
-    // grid), but recomposition should only actually happen when the RESULT (which book, if any,
-    // is under the pill) changes — otherwise this pill would recompose on every scroll pixel
-    // instead of only when the book underneath actually changes.
-    val imagePath by remember(dynamicPillsEnabled, backdropPath) {
+    // ── Real backdrop sampling ────────────────────────────────────────────────────────────
+    // With "Dynamic pills" on (and API 31+), the pill shows a blurred, vertically-smudged copy of
+    // the pixels ACTUALLY beneath it, re-recorded every frame — so it changes continuously as the
+    // library scrolls under it. See BackdropGlass.kt. Everything below this is the fallback for
+    // when that is switched off or unavailable: a smudge of a cover FILE, picked by hit-testing
+    // card bounds, which only ever approximated what was really behind.
+    val capture = LocalBackdropCapture.current
+    val useRealBackdrop = sampleBackdrop && dynamicPillsEnabled && capture != null
+    var ownTopLeft by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+
+    // Dynamic pills (fallback path): sample whatever book cover is currently scrolled under this
+    // pill's own center point. derivedStateOf is essential here, not decorative — coverPathUnder
+    // reads every published rect's live State (so this recalculates on every scroll frame across
+    // the whole grid), but recomposition should only actually happen when the RESULT (which book,
+    // if any, is under the pill) changes — otherwise this pill would recompose on every scroll
+    // pixel instead of only when the book underneath actually changes.
+    val imagePath by remember(dynamicPillsEnabled, backdropPath, useRealBackdrop) {
         derivedStateOf {
-            if (dynamicPillsEnabled) registry.coverPathUnder(ownCenter) ?: backdropPath else backdropPath
+            when {
+                useRealBackdrop -> null   // nothing to decode; the live capture is the fill
+                dynamicPillsEnabled -> registry.coverPathUnder(ownCenter) ?: backdropPath
+                else -> backdropPath
+            }
         }
     }
 
@@ -221,7 +253,11 @@ fun GlassPillSurface(
         modifier
             .shadow(shadowElevation, shape, clip = false)
             .clip(shape)
-            .onGloballyPositioned { ownCenter = it.boundsInRoot().center }
+            .onGloballyPositioned {
+                val bounds = it.boundsInRoot()
+                ownCenter = bounds.center
+                ownTopLeft = bounds.topLeft
+            }
     ) {
         // Opaque base drawn UNCONDITIONALLY, first — the pill is never see-through even if the
         // smear failed to decode or (as happened on this device) the smudge Image doesn't paint.
@@ -231,8 +267,15 @@ fun GlassPillSurface(
                 .matchParentSize()
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         )
+        if (useRealBackdrop && capture != null) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .backdropGlass(capture, rootOffset = { ownTopLeft })
+            )
+        }
         val currentSmudge = smudged
-        if (currentSmudge != null) {
+        if (!useRealBackdrop && currentSmudge != null) {
             // The tiny smudge bitmap (see verticalSmudge) upscaled to fill the pill: ContentScale.Crop
             // + the default bilinear FilterQuality turns a ~40px source into big soft blobs of the
             // cover's colors — the blur is the upscale itself, no Modifier.blur()/RenderEffect (which

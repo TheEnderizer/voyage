@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -45,6 +47,7 @@ import com.betteraudio.ui.home.HomeStyle
 import com.betteraudio.ui.home.LibraryTab
 import com.betteraudio.ui.home.NowPlayingSignal
 import com.betteraudio.ui.immersive.ImmersiveStyle
+import com.betteraudio.ui.immersive.LocalHeroWindow
 import com.betteraudio.ui.theme.Pill
 import java.io.File
 
@@ -63,11 +66,17 @@ object ImmersiveHomeStyle : HomeStyle {
         counts: Map<LibraryTab, Int>,
         onSelect: (LibraryTab) -> Unit
     ) {
+        val hero = LocalHeroWindow.current
         Row(
             Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(top = 10.dp, bottom = 8.dp),
+                .padding(top = 10.dp, bottom = 8.dp)
+                // The hero darkening ends just below this row and fades out rather than stopping
+                // on a line. Publishing the row's live bottom is what makes the band scroll with
+                // the content it darkens instead of sticking to a fixed screen position — it is
+                // written on every scroll frame and read only inside the backdrop's draw lambda.
+                .onGloballyPositioned { hero.scrimBottomPx.floatValue = it.boundsInRoot().bottom },
             horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             LibraryTab.entries.forEach { tab ->

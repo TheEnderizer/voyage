@@ -8,12 +8,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -24,46 +24,43 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.lazy.grid.LazyGridState
-import coil3.compose.AsyncImage
 import com.betteraudio.ui.home.HomeHeaderData
 import com.betteraudio.ui.home.HomeSection
 import com.betteraudio.ui.home.HomeViewMode
 import com.betteraudio.ui.immersive.ImmersiveStyle
+import com.betteraudio.ui.immersive.LocalHeroWindow
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
-import java.io.File
 
-/** How tall the sharp cover window is before it starts scrolling away. */
+/** How tall the sharp region of the backdrop is before the library grid begins. */
 private val HERO_HEIGHT = 250.dp
 
 /**
- * Immersive Home's header: a sharp window into the app backdrop.
+ * Immersive Home's header.
  *
- * The blurred cover behind every Immersive screen ([com.betteraudio.ui.components.AppBlurredBackdrop])
- * is already the now-playing book's artwork. So rather than stacking a separate "Continue" card
- * on top of it, this simply shows the *same image in focus* at the top of the library, and lets
- * it dissolve back into its own blur as the grid scrolls over it — the wallpaper coming into
- * focus and going out again. See `docs/immersive-redesign.html` (decision 01, option A).
+ * It draws **no artwork of its own**. The cover the user sees at the top of the library is the
+ * app-wide backdrop itself, rendered sharp in this region and blurred everywhere else — see
+ * [com.betteraudio.ui.immersive.HeroWindowState] for why the window is driven from the backdrop
+ * rather than drawn here. This composable contributes only the copy that sits on it (series
+ * eyebrow, title, progress, resume) and the measurements the backdrop needs.
  *
- * Both the parallax and the dissolve read [gridState] **inside deferred lambdas only**
- * (`graphicsLayer`), never in composition: the offset changes every frame of a scroll, and
- * reading it in the composable body would recompose the header — and therefore re-lay-out the
- * first row of the grid — on every one of those frames.
+ * Scrolling ramps the window's blur up to the backdrop's own, so the sharp region dissolves *by
+ * becoming the background* — it never slides, and there is no second image to fade out.
  */
 @Composable
 fun ImmersiveHomeHeader(
@@ -71,82 +68,55 @@ fun ImmersiveHomeHeader(
     gridState: LazyGridState,
     onSort: () -> Unit
 ) {
-    val hero = data.hero
-    if (hero == null) {
-        // Nothing has ever played: no artwork to bring into focus, so fall back to a quiet
-        // library label rather than a 250dp hole. (The backdrop's own gradient wash is what
-        // fills this case — see AppBlurredBackdrop's `hasArt` branch.)
+    val hero = LocalHeroWindow.current
+    val heroData = data.hero
+
+    // The window belongs to Home alone; every other route gets the plain blurred backdrop.
+    DisposableEffect(heroData != null) {
+        hero.active = heroData != null
+        onDispose { hero.reset() }
+    }
+
+    if (heroData == null) {
         EmptyHeroHeader(data, onSort)
         return
     }
 
-    // Scroll fraction 0..1 across the hero's own height, computed inside the draw lambdas below.
-    val heroPx = with(androidx.compose.ui.platform.LocalDensity.current) { HERO_HEIGHT.toPx() }
-    fun scrolledFraction(): Float {
-        // Only item 0 (this header) matters; once the grid has scrolled past it the hero is gone
-        // anyway and the fraction pins at 1.
-        return if (gridState.firstVisibleItemIndex == 0)
-            (gridState.firstVisibleItemScrollOffset / heroPx).coerceIn(0f, 1f)
-        else 1f
+    val density = LocalDensity.current
+    val heroPx = with(density) { HERO_HEIGHT.toPx() }
+
+    // snapshotFlow, not a read in composition: the offset changes every frame of a scroll, and
+    // this needs to reach the backdrop's draw lambdas without recomposing the header (and with it
+    // the whole first row of the grid) on each one.
+    LaunchedEffect(gridState, heroPx) {
+        snapshotFlow {
+            if (gridState.firstVisibleItemIndex == 0)
+                (gridState.firstVisibleItemScrollOffset / heroPx).coerceIn(0f, 1f)
+            else 1f
+        }.collect { hero.scrolledFraction.floatValue = it }
     }
 
     Box(
         Modifier
-            .bleedHorizontally(16.dp)   // out past the grid's contentPadding, so the art is full-bleed
             .fillMaxWidth()
             .height(HERO_HEIGHT)
-    ) {
-        val context = LocalContext.current
-        val coverModel = remember(hero.coverPath, hero.bookId) {
-            hero.coverPath?.let {
-                coil3.request.ImageRequest.Builder(context)
-                    .data(File(it))
-                    // Same "cover-<id>" key the grid cards and the full player use, so featuring a
-                    // book here costs no extra decode.
-                    .memoryCacheKey("cover-${hero.bookId}")
-                    .build()
-            }
-        }
-        AsyncImage(
-            model = coverModel,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    val f = scrolledFraction()
-                    // Half-speed: the art lags the grid, so it reads as a layer behind rather
-                    // than a card travelling with the content.
-                    translationY = f * heroPx * 0.5f
-                    // Dissolve into the blurred backdrop it was cut from. Squared so it stays
-                    // sharp for the first part of the scroll and then goes quickly.
-                    alpha = 1f - (f * f)
+            .onGloballyPositioned {
+                // Captured only at rest, so the sharp region blurs in place rather than also
+                // retracting upward as the header scrolls away.
+                if (gridState.firstVisibleItemIndex == 0 && gridState.firstVisibleItemScrollOffset == 0) {
+                    hero.windowBottomPx.floatValue = it.boundsInRoot().bottom
                 }
-        )
-
-        // Ramp the art down into the backdrop so there is no hard bottom edge to the window.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        0.36f to Color.Transparent,
-                        0.74f to ImmersiveStyle.coverInk().copy(alpha = 0.58f),
-                        1f to ImmersiveStyle.coverInk().copy(alpha = 0.94f)
-                    )
-                )
-                .graphicsLayer { alpha = 1f - (scrolledFraction() * scrolledFraction()) }
-        )
-
-        // Sort — unfilled, so it sits on the art instead of punching a disc through it (Law 02).
+            }
+    ) {
+        // Sort — unfilled, so it sits on the artwork instead of punching a disc through it.
         Box(
             Modifier
                 .align(Alignment.TopEnd)
-                .padding(end = 16.dp, top = 4.dp)
+                .padding(top = 4.dp)
                 .size(40.dp)
                 .clip(CircleShape)
                 .clickable(onClick = onSort)
-                .graphicsLayer { alpha = 1f - scrolledFraction() },
+                .graphicsLayer { alpha = 1f - hero.scrolledFraction.floatValue },
             contentAlignment = Alignment.Center
         ) {
             Icon(
@@ -157,7 +127,7 @@ fun ImmersiveHomeHeader(
 
         if (data.scanning) {
             Row(
-                Modifier.align(Alignment.TopStart).padding(start = 16.dp, top = 12.dp),
+                Modifier.align(Alignment.TopStart).padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 CircularProgressIndicator(
@@ -176,12 +146,14 @@ fun ImmersiveHomeHeader(
         Column(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 16.dp, end = 16.dp, bottom = 10.dp)
-                // The copy leaves faster than the art — by the time the first row of covers
-                // reaches it, the title has already gone.
-                .graphicsLayer { alpha = 1f - (scrolledFraction() * 1.6f).coerceIn(0f, 1f) }
+                .padding(bottom = 10.dp)
+                // The copy leaves faster than the window blurs — by the time the first row of
+                // covers reaches this band, the title has already gone.
+                .graphicsLayer {
+                    alpha = 1f - (hero.scrolledFraction.floatValue * 1.6f).coerceIn(0f, 1f)
+                }
         ) {
-            hero.eyebrow?.let {
+            heroData.eyebrow?.let {
                 Text(
                     it.uppercase(),
                     style = MaterialTheme.typography.labelSmall,
@@ -192,7 +164,7 @@ fun ImmersiveHomeHeader(
                 Spacer(Modifier.height(3.dp))
             }
             Text(
-                hero.title,
+                heroData.title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = ImmersiveStyle.scrimText(),
@@ -201,11 +173,11 @@ fun ImmersiveHomeHeader(
                 modifier = Modifier.clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = hero.onOpen
+                    onClick = heroData.onOpen
                 )
             )
 
-            if (hero.progressFraction > 0f) {
+            if (heroData.progressFraction > 0f) {
                 Spacer(Modifier.height(9.dp))
                 Box(
                     Modifier
@@ -216,7 +188,7 @@ fun ImmersiveHomeHeader(
                 ) {
                     Box(
                         Modifier
-                            .fillMaxWidth(hero.progressFraction)
+                            .fillMaxWidth(heroData.progressFraction)
                             .height(2.dp)
                             .clip(Pill)
                             .background(MaterialTheme.colorScheme.primary)
@@ -235,25 +207,26 @@ fun ImmersiveHomeHeader(
                         .clip(Pill)
                         .background(MaterialTheme.colorScheme.primary)
                         .pressScale()
-                        .clickable(onClick = hero.onResume)
+                        .clickable(onClick = heroData.onResume)
                         .padding(horizontal = 14.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        if (hero.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (heroData.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                         null,
                         Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        if (hero.isPlaying) "Playing" else if (hero.isLive) "Resume" else "Continue",
+                        if (heroData.isPlaying) "Playing"
+                        else if (heroData.isLive) "Resume" else "Continue",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
-                hero.remainingLabel?.let {
+                heroData.remainingLabel?.let {
                     Text(
                         it,
                         style = MaterialTheme.typography.labelSmall,
@@ -265,7 +238,7 @@ fun ImmersiveHomeHeader(
     }
 }
 
-/** Fresh install / nothing ever played: a plain label where the hero would be. */
+/** Fresh install / nothing ever played: no artwork to bring into focus, so a plain label. */
 @Composable
 private fun EmptyHeroHeader(data: HomeHeaderData, onSort: () -> Unit) {
     Row(
@@ -300,24 +273,5 @@ private fun EmptyHeroHeader(data: HomeHeaderData, onSort: () -> Unit) {
                 Modifier.size(20.dp), tint = ImmersiveStyle.scrimText()
             )
         }
-    }
-}
-
-/**
- * Lets a lazy-grid item draw past the grid's horizontal `contentPadding`, so the hero's artwork
- * can be full-bleed while every other item stays inset. The item still *reports* the constrained
- * width, so the grid's own layout is unaffected — only the drawn content is wider and shifted
- * left by [inset].
- */
-private fun Modifier.bleedHorizontally(inset: Dp) = this.layout { measurable, constraints ->
-    val extra = inset.roundToPx() * 2
-    val placeable = measurable.measure(
-        constraints.copy(
-            minWidth = constraints.minWidth + extra,
-            maxWidth = constraints.maxWidth + extra
-        )
-    )
-    layout(constraints.maxWidth, placeable.height) {
-        placeable.place(-inset.roundToPx(), 0)
     }
 }
