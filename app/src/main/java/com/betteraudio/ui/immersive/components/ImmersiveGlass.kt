@@ -32,6 +32,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.betteraudio.ui.immersive.ImmersiveStyle
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -190,8 +191,13 @@ fun GlassPillSurface(
                 )
             }
         }
-        // Darken so pill content stays legible over bright parts of the smudged cover.
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.30f)))
+        // Darken so pill content stays legible over bright parts of the smudged cover. This used
+        // to be a flat `Color.Black @ 0.30`, which threw away the whole point of the smear above:
+        // every pill landed the same neutral grey no matter which book was playing. It is now a
+        // bottom-weighted veil in the cover's OWN dark (ImmersiveStyle.glassVeil), averaging to
+        // roughly the same darkness — so contrast is unchanged while the pill finally keeps the
+        // artwork's hue, and its top edge reads lighter than its base like real glass.
+        Box(Modifier.matchParentSize().background(ImmersiveStyle.glassVeil()))
         // Subtle top-lit edge for the "glass" read.
         Box(
             Modifier

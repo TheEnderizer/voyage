@@ -18,12 +18,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.betteraudio.ui.immersive.ImmersiveStyle
 import java.io.File
 
 /**
  * App-wide background: the currently-playing (or last-played) book cover under a very heavy
- * blur, dimmed toward the theme background so foreground content stays readable. Sits behind
+ * blur, veiled toward the theme background so foreground content stays readable. Sits behind
  * the NavHost; screens that want it visible use a transparent container color.
+ *
+ * Immersive-only in practice — `MainActivity` renders it solely under `AppTheme.IMMERSIVE`, and
+ * this is its only call site — which is why it reads its veil from `ImmersiveStyle` despite
+ * living in the shared `ui/components` package. Material You is unaffected by anything here.
  *
  * Prefers the same pre-baked blurred+reflected composite the player/book-info/series screens use
  * (see CoverEffectBaker / ReflectedProgressiveBlurCover) — same image everywhere the immersive
@@ -91,11 +96,12 @@ fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: 
                 }
             }
         }
-        // Tint back toward the theme background for foreground legibility.
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.78f))
-        )
+        // Veil the cover back toward the theme background for foreground legibility. This used to
+        // be a FLAT sheet at alpha 0.78 — which left the artwork about 22% visible and made the
+        // "immersive" cover read as grey-blue fog on every screen. It is now a top-light,
+        // bottom-heavy gradient (see ImmersiveStyle.backdropVeil): the artwork keeps its strength
+        // where it is the subject, and the veil only gets heavy toward the bottom, where the
+        // library grid and the docked player/nav glass need a dark ground to sit on.
+        Box(Modifier.fillMaxSize().background(ImmersiveStyle.backdropVeil()))
     }
 }

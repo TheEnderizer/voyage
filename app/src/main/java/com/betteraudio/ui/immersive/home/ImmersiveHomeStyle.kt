@@ -7,7 +7,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SelectableChipColors
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.model.HomeGridBook
@@ -33,7 +32,9 @@ object ImmersiveHomeStyle : HomeStyle {
     override val cardCornerRadius: Dp = 28.dp
     @Composable override fun cardBackgroundColor(): Color =
         MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.38f) // frosted placeholder behind cover art
-    @Composable override fun scrimBase(): Color = lerp(Color.Black, MaterialTheme.colorScheme.primary, 0.10f)
+    // Was its own lerp(Black, primary, 0.10) — now the theme-wide token, so card scrims, glass
+    // pills and the app backdrop all darken toward exactly the same cover-derived ink.
+    @Composable override fun scrimBase(): Color = ImmersiveStyle.coverInk()
     @Composable override fun emptyIconBackground(): Color = ImmersiveStyle.cardHighColor()
     @Composable override fun scrimText(muted: Boolean): Color = ImmersiveStyle.scrimText(muted)
     // Immersive has no landscape layout — always today's 2.
