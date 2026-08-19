@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -89,6 +90,10 @@ fun HomeScreenContent(
     var showSortFilter by remember { mutableStateOf(false) }
     var showStructureDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    // Hoisted so the header slot can react to scroll — Immersive's hero parallaxes and dissolves
+    // against it (see ImmersiveHomeHeader); Material You ignores it entirely.
+    val gridState = rememberLazyGridState()
 
     // Only state that genuinely drives top-level structural decisions (which screen state to
     // render) or the onboarding LaunchedEffect below lives here. playbackState and the handful of
@@ -197,6 +202,7 @@ fun HomeScreenContent(
                 ) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(style.gridColumns()),
+                    state = gridState,
                     contentPadding = PaddingValues(
                         // Bottom clears the floating nav pill + mini player stacked above the
                         // nav inset (see FloatingNavPill / PlayerSheet).
@@ -210,22 +216,24 @@ fun HomeScreenContent(
                     // Section (Audio/Ebooks) + view-mode switching moved to the floating nav pill.
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
-                        HomeHeader(
-                            itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
-                            viewMode = homeViewMode,
-                            section = homeSection,
-                            scanning = scan.status == ScanStatus.Running,
-                            style = style,
+                        style.Header(
+                            data = HomeHeaderData(
+                                itemCount = tabCounts[LibraryTab.ALL] ?: gridItems.size,
+                                viewMode = homeViewMode,
+                                section = homeSection,
+                                scanning = scan.status == ScanStatus.Running,
+                                hero = rememberHomeHero(viewModel, onOpenBook)
+                            ),
+                            gridState = gridState,
                             onSort = { showSortFilter = true }
                         )
                     }
 
                     // Library status tabs
                     item(span = { GridItemSpan(maxLineSpan) }) {
-                        LibraryTabRow(
+                        style.StatusTabs(
                             selected = libraryTab,
                             counts = tabCounts,
-                            style = style,
                             onSelect = { viewModel.setLibraryTab(it) }
                         )
                     }
@@ -264,6 +272,8 @@ fun HomeScreenContent(
                                         isSelected = key in selection,
                                         isSelectionMode = isSelectionMode,
                                         isNowPlaying = playbackState.bookId == gridItem.book.id,
+                                        isPlayingNow = playbackState.bookId == gridItem.book.id &&
+                                            playbackState.isPlaying,
                                         style = style,
                                         useReadingProgress = homeSection == HomeSection.EBOOKS,
                                         onClick = {
@@ -279,8 +289,17 @@ fun HomeScreenContent(
                                         // Play in place (mini bar), do NOT open the full player —
                                         // unless this row has no audio, in which case play = read.
                                         onPlayClick = {
-                                            if (ebookOnly) onOpenReader(gridItem.book.id)
-                                            else viewModel.playResumeBook(gridItem.book.id)
+                                            when {
+                                                ebookOnly -> onOpenReader(gridItem.book.id)
+                                                // Already the live book and actually playing: this
+                                                // is a PAUSE. It used to fall through to
+                                                // playResumeBook, which reloads the queue from the
+                                                // saved position — so the button paused and then
+                                                // instantly restarted.
+                                                playbackState.bookId == gridItem.book.id &&
+                                                    playbackState.isPlaying -> viewModel.togglePlayPause()
+                                                else -> viewModel.playResumeBook(gridItem.book.id)
+                                            }
                                         },
                                         onLongClick = { viewModel.toggleSelection(key) }
                                     )
@@ -534,100 +553,61 @@ private fun CollectionCoverSearchSheetHost(viewModel: HomeViewModel) {
 
 // ─── Home header ──────────────────────────────────────────────────────────────
 
+/**
+ * Assembles the one book the header may feature, from the last-played book plus live playback
+ * state. Only Immersive's hero consumes it (Material You keeps its "Library" headline), but it is
+ * built here because this is where the ViewModel is in scope.
+ *
+ * Both flows are collected inside this function rather than at the top of HomeScreenContent, so a
+ * playback tick recomposes the header item alone and not the whole screen — same discipline as
+ * the per-card playbackState reads in the grid.
+ */
 @Composable
-private fun HomeHeader(
-    itemCount: Int,
-    viewMode: HomeViewMode,
-    section: HomeSection,
-    scanning: Boolean,
-    style: HomeStyle,
-    onSort: () -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = 10.dp, bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                if (section == HomeSection.EBOOKS) "Ebooks" else "Library",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold
-            )
-            val noun = if (section == HomeSection.EBOOKS) "ebook" else when (viewMode) {
-                HomeViewMode.BOOKS -> "book"
-                HomeViewMode.SERIES -> "title"
-                HomeViewMode.AUTHORS -> "author"
-            }
-            Text(
-                if (scanning) "Scanning library…"
-                else "$itemCount $noun${if (itemCount != 1) "s" else ""}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (scanning) {
-            CircularProgressIndicator(
-                Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary
-            )
-            Spacer(Modifier.width(10.dp))
-        }
-        // Search + Settings moved to the floating nav pill; only Sort stays contextual here.
-        HeaderIconButton(Icons.AutoMirrored.Filled.Sort, "Sort & filter", style, onSort)
-    }
+private fun rememberHomeHero(viewModel: HomeViewModel, onOpenBook: (Long) -> Unit): HomeHeroData? {
+    val resume by viewModel.heroBook.collectAsStateWithLifecycle()
+    val playback by viewModel.playbackState.collectAsStateWithLifecycle()
+    val bwp = resume ?: return null
+    val book = bwp.book
+    val isLive = playback.bookId == book.id
+    val fraction = bwp.progressFraction
+    val remainingMs = (book.totalDurationMs * (1f - fraction)).toLong()
+
+    return HomeHeroData(
+        bookId = book.id,
+        title = book.displayTitle,
+        eyebrow = book.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
+            book.seriesOrder?.let { "$series · Book ${it.toInt()}" } ?: series
+        } ?: book.displayAuthor.takeIf { it.isNotBlank() },
+        coverPath = book.coverArtPath,
+        progressFraction = fraction,
+        remainingLabel = remainingMs.takeIf { it > 0L && book.totalDurationMs > 0L }
+            ?.let { "${formatRemaining(it)} left" },
+        isPlaying = isLive && playback.isPlaying,
+        isLive = isLive,
+        // Playing → pause in place. Otherwise start it in the mini bar without opening the full
+        // player, exactly like a grid card's play button.
+        onResume = {
+            if (isLive && playback.isPlaying) viewModel.togglePlayPause()
+            else viewModel.playResumeBook(book.id)
+        },
+        onOpen = { onOpenBook(book.id) }
+    )
 }
 
-/** Circular translucent icon button — reads well over the blurred-cover backdrop. */
-@Composable
-private fun HeaderIconButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    cd: String,
-    style: HomeStyle,
-    onClick: () -> Unit
-) {
-    Box(
-        Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(style.headerIconButtonBackground())
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, cd, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurface)
+/** "6h 12m" / "41m" / "50s" — the hero's time-left label. */
+private fun formatRemaining(ms: Long): String {
+    val totalMinutes = ms / 60_000
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 -> "${hours}h ${minutes}m"
+        totalMinutes > 0 -> "${minutes}m"
+        else -> "${ms / 1000}s"
     }
 }
 
 // ─── Selection header ─────────────────────────────────────────────────────────
 
-@Composable
-private fun LibraryTabRow(
-    selected: LibraryTab,
-    counts: Map<LibraryTab, Int>,
-    style: HomeStyle,
-    onSelect: (LibraryTab) -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(top = 4.dp, bottom = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        LibraryTab.entries.forEach { tab ->
-            val count = counts[tab] ?: 0
-            FilterChip(
-                selected = selected == tab,
-                onClick = { onSelect(tab) },
-                label = { Text(if (count > 0) "${tab.label} · $count" else tab.label) },
-                colors = style.filterChipColors(),
-                border = style.filterChipBorder(selected == tab)
-            )
-        }
-    }
-}
 
 @Composable
 private fun SelectionHeader(
@@ -715,16 +695,24 @@ private fun BookGridCard(
     onPlayClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    useReadingProgress: Boolean = false
+    useReadingProgress: Boolean = false,
+    /** [isNowPlaying] only means this is the book the service has loaded — it may well be paused.
+     *  The button's icon needs the stricter "and audio is actually running". */
+    isPlayingNow: Boolean = false
 ) {
+    // Immersive collapses the border + badge + inset bar into one accent hairline on the card's
+    // bottom edge (which is itself the progress bar), so only Material You draws a border for
+    // "now playing". Selection still borders in both themes — it has no other signal.
+    val borderForNowPlaying = isNowPlaying && style.nowPlayingSignal == NowPlayingSignal.BorderAndBadge
     val borderColor by animateColorAsState(
         when {
             isSelected -> MaterialTheme.colorScheme.primary
-            isNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            borderForNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
             else -> Color.Transparent
         },
         tween(150), label = "border"
     )
+    val progressFraction = if (useReadingProgress) book.readingFraction else book.progressFraction
 
     // Published so a cover-morph transition can start from this exact card's on-screen bounds:
     // Book Info's own open/close morph (BookInfoScreen.kt, via morphFrom) always reads this, and
@@ -753,7 +741,7 @@ private fun BookGridCard(
             .pressScale(enabled = !isSelectionMode)
             .clip(cardRadius)
             .border(
-                width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
+                width = if (isSelected || borderForNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
                 shape = cardRadius
             )
@@ -796,27 +784,38 @@ private fun BookGridCard(
                 .graphicsLayer { alpha = if (coverBoundsRegistry.isMorphHidden(book.id)) 0f else 1f }
         )
 
-        // Bottom gradient info
-        val scrimBase = style.scrimBase()
+        // Bottom gradient info. The scrim either hugs its own content (Material You, as before)
+        // or fills a fixed fraction of the card so its ramp can start well above the title
+        // regardless of how long that title is (Immersive) — see HomeStyle.cardScrimFillFraction.
+        val scrimFill = style.cardScrimFillFraction
         Box(
             Modifier
                 .fillMaxWidth()
+                .then(if (scrimFill != null) Modifier.fillMaxHeight(scrimFill) else Modifier)
                 .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, scrimBase.copy(alpha = 0.82f))
-                    )
-                )
-                .padding(12.dp)
+                .background(style.cardScrim()),
+            contentAlignment = Alignment.BottomStart
         ) {
-            Column {
-                Text(
-                    book.displayTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = style.scrimText(),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+            Column(Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Immersive's only other "now playing" mark besides the edge hairline — it
+                    // rides with the title instead of floating in its own badge.
+                    if (isNowPlaying && style.nowPlayingSignal == NowPlayingSignal.EdgeHairline) {
+                        Icon(
+                            Icons.Default.GraphicEq, "Now playing",
+                            Modifier.size(13.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        book.displayTitle,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = style.scrimText(),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (book.displayAuthor.isNotBlank()) {
                     Text(
                         book.displayAuthor,
@@ -825,11 +824,12 @@ private fun BookGridCard(
                         maxLines = 1
                     )
                 }
-                val prog = if (useReadingProgress) book.readingFraction else book.progressFraction
-                if (prog > 0f) {
+                // Immersive shows progress on the card's bottom edge instead (below), so this
+                // inset bar is Material You's alone.
+                if (progressFraction > 0f && style.nowPlayingSignal == NowPlayingSignal.BorderAndBadge) {
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
-                        progress = { prog },
+                        progress = { progressFraction },
                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(Pill),
                         color = MaterialTheme.colorScheme.primary,
                         trackColor = Color.White.copy(alpha = 0.3f)
@@ -838,8 +838,9 @@ private fun BookGridCard(
             }
         }
 
-        // Now-playing badge
-        if (isNowPlaying && !isSelectionMode) {
+        // Now-playing badge (Material You). Immersive's equivalent is the glyph above plus the
+        // edge hairline below — one signal instead of three.
+        if (isNowPlaying && !isSelectionMode && style.nowPlayingSignal == NowPlayingSignal.BorderAndBadge) {
             Box(
                 Modifier
                     .padding(8.dp)
@@ -862,21 +863,33 @@ private fun BookGridCard(
 
         // Play button — bottom-right corner, only visible when not in selection mode
         if (!isSelectionMode) {
+            Box(Modifier.padding(8.dp).align(Alignment.BottomEnd)) {
+                style.CardPlayButton(
+                    isPlaying = isPlayingNow,
+                    contentDescription = if (isPlayingNow) "Pause" else "Play",
+                    onClick = onPlayClick
+                )
+            }
+        }
+
+        // Immersive: progress welded to the card's bottom edge, doubling as the now-playing mark.
+        // Drawn last so it sits over the scrim rather than under it.
+        if (style.nowPlayingSignal == NowPlayingSignal.EdgeHairline && progressFraction > 0f) {
             Box(
                 Modifier
-                    .padding(8.dp)
-                    .size(34.dp)
-                    .clip(CircleShape)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .clickable(onClick = onPlayClick)
-                    .align(Alignment.BottomEnd),
-                contentAlignment = Alignment.Center
+                    .fillMaxWidth()
+                    .height(2.5.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(Color.White.copy(alpha = 0.16f))
             ) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    modifier = Modifier.size(20.dp),
-                    tint = Color.White
+                Box(
+                    Modifier
+                        .fillMaxWidth(progressFraction)
+                        .fillMaxHeight()
+                        .background(
+                            if (isNowPlaying) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
+                        )
                 )
             }
         }
@@ -922,10 +935,11 @@ private fun CollectionGridCard(
     // BookGridCard feeds Book Info's morph.
     seriesId: Long? = null
 ) {
+    val borderForNowPlaying = isNowPlaying && style.nowPlayingSignal == NowPlayingSignal.BorderAndBadge
     val borderColor by animateColorAsState(
         when {
             isSelected -> MaterialTheme.colorScheme.primary
-            isNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+            borderForNowPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
             else -> Color.Transparent
         },
         tween(150), label = "collectionBorder"
@@ -947,7 +961,7 @@ private fun CollectionGridCard(
             .pressScale(enabled = !isSelectionMode)
             .clip(cardRadius)
             .border(
-                width = if (isSelected || isNowPlaying) 2.5.dp else 0.dp,
+                width = if (isSelected || borderForNowPlaying) 2.5.dp else 0.dp,
                 color = borderColor,
                 shape = cardRadius
             )
@@ -964,19 +978,16 @@ private fun CollectionGridCard(
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        val scrimBase = style.scrimBase()
+        val scrimFill = style.cardScrimFillFraction
         Box(
             Modifier
                 .fillMaxWidth()
+                .then(if (scrimFill != null) Modifier.fillMaxHeight(scrimFill) else Modifier)
                 .align(Alignment.BottomCenter)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, scrimBase.copy(alpha = 0.88f))
-                    )
-                )
-                .padding(12.dp)
+                .background(style.cardScrim()),
+            contentAlignment = Alignment.BottomStart
         ) {
-            Column {
+            Column(Modifier.padding(12.dp)) {
                 Text(
                     subtitle,
                     style = MaterialTheme.typography.labelMedium,
@@ -991,6 +1002,9 @@ private fun CollectionGridCard(
                 )
             }
         }
+        // The series/author play affordance stays an accent-filled button in both themes: it is a
+        // deliberate emphasis (play a whole collection), and restyling it would have changed
+        // Material You, which this pass does not touch.
         if (isSelectionMode) {
             SelectionCheck(isSelected, Modifier.padding(8.dp).align(Alignment.TopEnd))
         } else if (onPlayClick != null) {
@@ -1038,12 +1052,18 @@ private fun EmptyLibrary(
     style: HomeStyle
 ) {
     Column(Modifier.fillMaxSize()) {
-        HomeHeader(
-            itemCount = 0,
-            viewMode = HomeViewMode.BOOKS,
-            section = HomeSection.AUDIO,
-            scanning = false,
-            style = style,
+        // No books means nothing has ever played, so there is no hero to feature — Immersive's
+        // header falls through to its plain label. The grid state is a throwaway: there is no
+        // grid on this screen to scroll, so it stays pinned at zero.
+        style.Header(
+            data = HomeHeaderData(
+                itemCount = 0,
+                viewMode = HomeViewMode.BOOKS,
+                section = HomeSection.AUDIO,
+                scanning = false,
+                hero = null
+            ),
+            gridState = rememberLazyGridState(),
             onSort = {}
         )
         Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {

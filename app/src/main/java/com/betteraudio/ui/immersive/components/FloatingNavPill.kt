@@ -57,8 +57,9 @@ import com.betteraudio.ui.theme.pressScale
 import com.betteraudio.util.FeatureFlags
 
 /**
- * ArchiveTune-style floating bottom pill: all-icon slots for the Audio/Ebooks sections (with a
- * sliding selection indicator between those two), a Books→Series→Authors view-cycle button
+ * ArchiveTune-style floating bottom pill: all-icon slots for the Audio/Ebooks sections (selection
+ * shown by an accent tint and a slight scale, not a filled capsule — see the note at the Row
+ * below), a Books→Series→Authors view-cycle button
  * (Audio section only), and Search/Settings actions. Slides off-screen in lockstep with the
  * player sheet's expansion ([expandProgress] read only inside graphicsLayer — no per-frame
  * recomposition).
@@ -89,44 +90,24 @@ fun FloatingNavPill(
             .widthIn(max = 420.dp)
             .height(NAV_PILL_HEIGHT)
     ) {
-        // Slot geometry for the sliding indicator, measured per stateful tab.
-        val slotX = remember { mutableStateMapOf<HomeSection, Dp>() }
-        val slotW = remember { mutableStateMapOf<HomeSection, Dp>() }
-        val indicatorX by animateDpAsState(
-            slotX[section] ?: 0.dp, spring(dampingRatio = 0.8f, stiffness = 380f), label = "pillX"
-        )
-        val indicatorW by animateDpAsState(
-            slotW[section] ?: 0.dp, spring(dampingRatio = 0.8f, stiffness = 380f), label = "pillW"
-        )
-
         Box(Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-            if (indicatorW > 0.dp) {
-                Box(
-                    Modifier
-                        .offset(x = indicatorX)
-                        .width(indicatorW)
-                        .fillMaxHeight()
-                        .background(
-                            MaterialTheme.colorScheme.secondaryContainer,
-                            RoundedCornerShape(24.dp)
-                        )
-                )
-            }
+            // No filled indicator behind the selected slot. A solid secondaryContainer capsule
+            // sitting on the glass was the one opaque plate left on this surface — it read as a
+            // button stuck to the pill rather than as a selection. The accent tint plus the slot's
+            // own scale carry "selected" on their own (Law 02: no plates over the artwork).
             Row(verticalAlignment = Alignment.CenterVertically) {
                 PillSlot(
                     icon = Icons.Default.Headphones,
                     cd = "Audiobooks",
                     selected = section == HomeSection.AUDIO,
-                    onClick = { onSelectSection(HomeSection.AUDIO) },
-                    measure = { x, w -> slotX[HomeSection.AUDIO] = x; slotW[HomeSection.AUDIO] = w }
+                    onClick = { onSelectSection(HomeSection.AUDIO) }
                 )
                 if (FeatureFlags.EBOOKS_UI) {
                     PillSlot(
                         icon = Icons.AutoMirrored.Filled.MenuBook,
                         cd = "Ebooks",
                         selected = section == HomeSection.EBOOKS,
-                        onClick = { onSelectSection(HomeSection.EBOOKS) },
-                        measure = { x, w -> slotX[HomeSection.EBOOKS] = x; slotW[HomeSection.EBOOKS] = w }
+                        onClick = { onSelectSection(HomeSection.EBOOKS) }
                     )
                 }
                 // View-cycle: icon shows the CURRENT view; tap advances Books→Series→Authors.
@@ -151,7 +132,7 @@ fun FloatingNavPill(
                                 },
                                 contentDescription = null,
                                 modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(muted = true)
                             )
                         }
                     }
@@ -180,20 +161,11 @@ private fun PillSlot(
     cd: String,
     selected: Boolean,
     onClick: () -> Unit,
-    measure: ((x: Dp, w: Dp) -> Unit)? = null,
     content: (@Composable () -> Unit)? = null,
 ) {
-    val density = LocalDensity.current
     val scale by animateFloatAsState(if (selected) 1.12f else 1f, label = "slotScale")
     Box(
         Modifier
-            .then(
-                if (measure != null) Modifier.onGloballyPositioned {
-                    with(density) {
-                        measure(it.positionInParent().x.toDp(), it.size.width.toDp())
-                    }
-                } else Modifier
-            )
             .clip(Pill)
             .pressScale()
             .clickable(
@@ -211,8 +183,8 @@ private fun PillSlot(
                 icon,
                 contentDescription = cd,
                 modifier = Modifier.size(24.dp).graphicsLayer { scaleX = scale; scaleY = scale },
-                tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-                       else MaterialTheme.colorScheme.onSurfaceVariant
+                tint = if (selected) MaterialTheme.colorScheme.primary
+                       else com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(muted = true)
             )
         }
     }

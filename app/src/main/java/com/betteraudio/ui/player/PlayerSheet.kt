@@ -137,6 +137,20 @@ class PlayerSheetController {
         expandToken++
     }
 
+    /**
+     * Start a book WITHOUT taking over the screen: playback begins and the mini bar appears, but
+     * the sheet stays collapsed.
+     *
+     * Starting a book is not a request to be moved to another screen — a grid card's play button
+     * has always worked this way, and every other "start listening" affordance should match it.
+     * Unlike [prime] this replaces whatever target is loaded and does start playback; unlike
+     * [open] it never bumps expandToken, so nothing expands.
+     */
+    fun startCollapsed(bookId: Long) {
+        if (bookId == -1L) return
+        target = PlayerTarget(bookId, startPlaying = true)
+    }
+
     fun expandCurrent() { if (target != null) expandToken++ }
     fun collapse() { collapseToken++ }
 
@@ -362,11 +376,16 @@ fun PlayerSheet(
             miniCoverRect
         }
     }
-    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback) {
+    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback, isMaterialYou) {
         if (sourceIsGridCard) {
             coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
+        } else if (isMaterialYou) {
+            12.dp   // matches the mini bar's 48dp thumbnail clip
         } else {
-            12.dp
+            // Immersive's mini cover is a "D": the pill's 32dp left cap on one side, a 6dp
+            // trailing edge on the other. The morph carries a single radius, so this is their
+            // average — close enough that the first frame sits on the cover it grows out of.
+            16.dp
         }
     }
     // Tell the grid card whose cover is currently morphing so it can hide its own copy (prevents
@@ -679,23 +698,49 @@ private fun MiniPlayerBar(
     val barContent: @Composable () -> Unit = {
         Box {
             Row(
-                Modifier.fillMaxSize().padding(start = 8.dp, end = 10.dp),
+                // Immersive's cover is the pill's own left cap, so it starts hard against the
+                // edge with no inset to sit in.
+                Modifier.fillMaxSize().padding(start = if (isImmersive) 0.dp else 8.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // handOff must precede background(): a graphicsLayer only affects what is drawn
                 // by LATER modifiers + content, so placed after background() the fill would
                 // stay visible (a ghost circle/square) while only the content hid.
+                //
+                // Immersive: full-height flush square rather than a 48dp thumbnail inset in a
+                // 64dp bar. In a cover-first theme the cover was the smallest thing on the most
+                // frequently visible surface; now it IS the bar's leading form, clipped into a
+                // "D" by the pill's own left cap (GlassPillSurface clips its children), with just
+                // enough radius on the trailing edge to stop it reading as a cut.
+                // Immersive sizes the cap by the cover's REAL aspect rather than forcing a square.
+                // The full player's artwork keeps that same aspect (the bake does, and the
+                // travelling sharp copy now matches it), so source and destination are the same
+                // shape and the morph between them is one uniform scale — no squash, no re-crop,
+                // nothing to land crooked. Material You is untouched and keeps its square thumb.
+                val miniAspect =
+                    if (isImmersive) com.betteraudio.ui.components.rememberCoverAspect(coverPath) else 1f
                 Box(
                     Modifier
                         .then(handOff)
-                        .size(48.dp).clip(RoundedCornerShape(12.dp))
+                        .then(
+                            if (isImmersive)
+                                Modifier
+                                    .height(MINI_HEIGHT_DP.dp)
+                                    .width(MINI_HEIGHT_DP.dp * miniAspect)
+                                    .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                            else
+                                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                        )
                         .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                         .onGloballyPositioned { onCoverBounds(it.boundsInRoot()) }
                 ) {
                     AsyncImage(
                         model = coverPath?.let { File(it) },
                         contentDescription = null,
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        // FillWidth in Immersive to match the full player and the bake; Crop
+                        // elsewhere, where the slot is a fixed square.
+                        contentScale = if (isImmersive) androidx.compose.ui.layout.ContentScale.FillWidth
+                                       else androidx.compose.ui.layout.ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -718,7 +763,10 @@ private fun MiniPlayerBar(
                         Text(
                             author,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Immersive tints ALL text toward the cover accent; the mini bar was
+                            // the one surface still using the raw theme colours.
+                            color = if (isImmersive) com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(muted = true)
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier
@@ -764,18 +812,28 @@ private fun MiniPlayerBar(
                     )
                 }
             }
-            LinearProgressIndicator(
-                progress = progress,
-                modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = Color.Transparent
-            )
+            if (isImmersive) {
+                // Progress traces the pill's own outline instead of running straight under it —
+                // see PillPerimeterProgress for why the straight bar was wrong on this shape.
+                com.betteraudio.ui.immersive.components.PillPerimeterProgress(
+                    progress = progress,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                LinearProgressIndicator(
+                    progress = progress,
+                    modifier = Modifier.fillMaxWidth().height(2.dp).align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = Color.Transparent
+                )
+            }
         }
     }
     if (isImmersive) {
         com.betteraudio.ui.immersive.components.GlassPillSurface(
             shape = Pill,
-            contentColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(),
             modifier = barModifier,
             content = barContent
         )

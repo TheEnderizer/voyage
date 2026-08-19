@@ -2,10 +2,12 @@ package com.betteraudio.ui.immersive.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,7 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -257,13 +263,18 @@ fun PlayerContent(
                         .build()
                 }
             }
+            // Shape and scaling must match the BAKE exactly, or the morph lands crooked. The bake
+            // keeps the cover's own aspect (CoverEffectBaker: hc = height/width * w, sharp half on
+            // top) and is drawn FillWidth/top-anchored — so a hardcoded square with Crop only ever
+            // agreed with it for perfectly square art. See rememberCoverAspect.
+            val coverAspect = com.betteraudio.ui.components.rememberCoverAspect(coverPath)
             AsyncImage(
                 model = coverImageModel,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillWidth,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(1f)
+                    .aspectRatio(coverAspect)
                     .morphFrom(
                         expand.miniCover, expandProgress,
                         anchorTopLeft = true, byWidth = true,
@@ -368,29 +379,13 @@ fun PlayerContent(
                 // ── Player controls ─────────────────────────────────────────────────
                 Column(Modifier.fillMaxWidth()) {
 
-                // ── Bottom control cluster ──────────────────────────────
-                if (!isLocked && chapterTimeline.hasMultiple && cur != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .expandReveal(expandProgress)
-                            .clip(com.betteraudio.ui.theme.Pill)
-                            .clickable { showChapters = true }
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(15.dp), tint = onScrimMuted)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "Chapter ${cur.index + 1} · ${cur.title}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = onScrimMuted,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-
+                // ── Band 1: identity ────────────────────────────────────
+                // Title, then author · narrator, then the chapter as a plain tinted line.
+                // The chapter used to be a PILL sitting above the title — a container between
+                // the artwork and the book's own name, and one of the seven separate bands this
+                // screen used to stack. It is a piece of "where am I" information, so it now sits
+                // under the identity it describes and stays a full-width tap target for the
+                // chapter list.
                 Text(
                     text = book?.title ?: "",
                     style = MaterialTheme.typography.headlineSmall,
@@ -400,16 +395,42 @@ fun PlayerContent(
                     // Moves/enlarges out of the mini player's title as the sheet opens.
                     modifier = Modifier.fillMaxWidth().morphFrom(expand.miniTitle, expandProgress, anchorTopLeft = true)
                 )
-                if (!effectiveAuthor.isNullOrBlank()) {
+                val credit = listOfNotNull(
+                    effectiveAuthor?.takeIf { it.isNotBlank() },
+                    effectiveNarrator?.takeIf { it.isNotBlank() }?.let { "read by $it" }
+                ).joinToString(" · ")
+                if (credit.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        text = effectiveAuthor,
+                        text = credit,
                         style = MaterialTheme.typography.titleSmall,
                         color = onScrimMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.fillMaxWidth().expandReveal(expandProgress)
                     )
+                }
+                if (!isLocked && chapterTimeline.hasMultiple && cur != null) {
+                    Spacer(Modifier.height(5.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .expandReveal(expandProgress)
+                            .clip(com.betteraudio.ui.theme.Pill)
+                            .clickable { showChapters = true }
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.List, null, Modifier.size(14.dp), tint = onScrimMuted)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Chapter ${cur.index + 1} — ${cur.title}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = onScrimMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 // ── Return / Confirm jump-history pills ─────────────────
@@ -505,13 +526,26 @@ fun PlayerContent(
                         colors = sliderColors,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    TimeRow(formatDuration(chDisplayPos), "-${formatDuration(chDur - chDisplayPos)}", onScrimMuted)
-                    Spacer(Modifier.height(2.dp))
-                    CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor) { target ->
-                        val before = bookPos
-                        viewModel.bookSeekTo(target)
-                        viewModel.onScrubSeek(before, target)
-                    }
+                    // ── Band 2, lower half: the whole book as a PICTURE, not a second control.
+                    // This replaces a stacked time row + "Book 34% ⌄" expander + a second time
+                    // row. One tick per chapter, the current chapter's segment lit, everything
+                    // before it dimmed — so "where am I in the book" is readable at a glance and
+                    // still tappable to seek, without a second slider competing with the first.
+                    Spacer(Modifier.height(4.dp))
+                    BookTickTrack(
+                        bookPos = bookPos,
+                        bookTotal = bookTotal,
+                        timeline = chapterTimeline,
+                        accent = accent,
+                        trackColor = trackColor
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    ThreeUpTimeRow(
+                        left = formatDuration(chDisplayPos),
+                        center = if (bookTotal > 0) "${formatDurationHuman(bookTotal - bookPos)} left in book" else "",
+                        right = "-${formatDuration(chDur - chDisplayPos)}",
+                        color = onScrimMuted
+                    )
                 } else {
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
@@ -603,67 +637,69 @@ fun PlayerContent(
 
                 // ── Secondary actions ───────────────────────────────────
                 if (!isLocked) {
-                Row(
-                    Modifier.fillMaxWidth().expandReveal(expandProgress),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // ── Band 4: one utility rail ────────────────────────────
+                // These four used to float as unrelated glyphs strung across the width, one of
+                // them wearing a text label and its own tint. They are one set of book-level
+                // utilities, so they now live in a single cover-glass pill with four equal
+                // slots; an active slot tints its own ground in accent, which is the same state
+                // signal the "Skip silence" label used to carry in words.
+                val skipSilenceOn = book?.skipSilenceEnabled == true
+                val sleepOn = position.sleepTimerRemainingMs > 0L
+                com.betteraudio.ui.immersive.components.GlassPillSurface(
+                    shape = Pill,
+                    contentColor = onScrim,
+                    shadowElevation = 0.dp,
+                    // Inside the player sheet, which is outside the backdrop capture — sampling it
+                    // would show the Home grid behind the sheet instead of this book's cover.
+                    sampleBackdrop = false,
+                    modifier = Modifier.fillMaxWidth().height(44.dp).expandReveal(expandProgress)
                 ) {
-                    // Skip-silence toggle (replaces the old playback-speed pill — speed lives
-                    // in the audio settings sheet's Speed tab).
-                    run {
-                        val skipSilenceOn = book?.skipSilenceEnabled == true
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .clip(Pill)
-                                .background(if (skipSilenceOn) accent.copy(alpha = 0.22f) else Color.Transparent)
-                                .combinedClickable(
-                                    onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
-                                    onLongClick = { showSkipSilenceSettings = true }
-                                )
-                                .padding(horizontal = 10.dp, vertical = 5.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.FastForward, null, Modifier.size(16.dp),
-                                tint = if (skipSilenceOn) accent else onScrimMuted
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                "Skip silence",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (skipSilenceOn) accent else onScrimMuted
-                            )
-                        }
-                    }
-                    SecondaryIcon(Icons.Default.Tune, "Audio settings", accent) { showAudioSettings = true }
-                    SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim) { showBookmarks = true }
-                    // Tap starts a timer at the slider's set duration (or cancels one already
-                    // running); long-press opens the full options (slider/custom entry/end-of-
-                    // chapter/fade/shake/schedule).
-                    Box(
-                        Modifier
-                            .clip(Pill)
-                            .combinedClickable(
-                                onClick = {
-                                    if (position.sleepTimerRemainingMs > 0L) {
-                                        viewModel.playerController.setSleepTimer(0L)
-                                    } else {
-                                        viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
-                                    }
-                                },
-                                onLongClick = { showSleepTimer = true }
-                            )
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        contentAlignment = Alignment.Center
+                    Row(
+                        Modifier.fillMaxSize().padding(horizontal = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (position.sleepTimerRemainingMs > 0L) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = accent)
-                                Text(formatDuration(position.sleepTimerRemainingMs), style = MaterialTheme.typography.labelSmall, color = accent)
-                            }
-                        } else {
-                            Icon(Icons.Default.Bedtime, "Sleep timer", Modifier.size(22.dp), tint = onScrim)
-                        }
+                        UtilitySlot(
+                            icon = Icons.Default.FastForward,
+                            label = "Skip silence",
+                            active = skipSilenceOn,
+                            accent = accent,
+                            idleTint = onScrimMuted,
+                            onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
+                            onLongClick = { showSkipSilenceSettings = true }
+                        )
+                        UtilitySlot(
+                            icon = Icons.Default.Tune,
+                            label = "Audio settings",
+                            active = false,
+                            accent = accent,
+                            idleTint = onScrim,
+                            onClick = { showAudioSettings = true }
+                        )
+                        UtilitySlot(
+                            icon = Icons.Default.Bookmark,
+                            label = "Bookmarks",
+                            active = false,
+                            accent = accent,
+                            idleTint = onScrim,
+                            onClick = { showBookmarks = true }
+                        )
+                        // Tap starts a timer at the slider's set duration (or cancels one already
+                        // running); long-press opens the full options (slider/custom entry/end-of-
+                        // chapter/fade/shake/schedule).
+                        UtilitySlot(
+                            icon = Icons.Default.Bedtime,
+                            label = "Sleep timer",
+                            active = sleepOn,
+                            accent = accent,
+                            idleTint = onScrim,
+                            trailing = if (sleepOn) formatDuration(position.sleepTimerRemainingMs) else null,
+                            onClick = {
+                                if (sleepOn) viewModel.playerController.setSleepTimer(0L)
+                                else viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                            },
+                            onLongClick = { showSleepTimer = true }
+                        )
                     }
                 }
                 } // end if (!isLocked) (secondary actions)
@@ -893,6 +929,138 @@ private fun CompactBookProgress(
     }
 }
 
+/**
+ * The whole book as one hairline: a tick per chapter, everything already listened dimmed, and the
+ * chapter you are currently in lit. Tappable to seek anywhere in the book.
+ *
+ * This replaces [CompactBookProgress]'s labelled row + expandable second slider. The old control
+ * asked for two taps to reveal a scrubber that duplicated the chapter slider directly above it;
+ * this says the same thing — where you are, how much is left, how the book is divided — without
+ * being a control that competes with the one your thumb is already on.
+ */
+@Composable
+private fun BookTickTrack(
+    bookPos: Long,
+    bookTotal: Long,
+    timeline: com.betteraudio.playback.ChapterTimeline,
+    accent: Color,
+    trackColor: Color
+) {
+    if (bookTotal <= 0L) return
+    val inkTick = Color.Black.copy(alpha = 0.62f)
+    val cur = timeline.chapterAt(bookPos)
+    val curStart = cur?.startMs ?: 0L
+    val curEnd = cur?.endMs ?: bookTotal
+    // Deliberately NOT tappable. This is a picture of where you are in the book, not a second
+    // control — the chapter slider directly above it is the thing your thumb reaches for, and a
+    // 2.5dp line sitting right under it was far too easy to hit by accident and jump the book.
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(10.dp)
+    ) {
+        val h = 2.5.dp.toPx()
+        val y = (size.height - h) / 2f
+        fun x(ms: Long) = (ms.toFloat() / bookTotal).coerceIn(0f, 1f) * size.width
+
+        drawRoundRect(
+            color = trackColor,
+            topLeft = Offset(0f, y),
+            size = Size(size.width, h),
+            cornerRadius = CornerRadius(h / 2f, h / 2f)
+        )
+        // Everything already played, quietly.
+        drawRoundRect(
+            color = accent.copy(alpha = 0.38f),
+            topLeft = Offset(0f, y),
+            size = Size(x(bookPos), h),
+            cornerRadius = CornerRadius(h / 2f, h / 2f)
+        )
+        // The chapter you are in, at full strength — this is what makes position legible.
+        val litStart = x(curStart)
+        val litWidth = (x(curEnd) - litStart).coerceAtLeast(h)
+        drawRoundRect(
+            color = accent,
+            topLeft = Offset(litStart, y),
+            size = Size(litWidth, h),
+            cornerRadius = CornerRadius(h / 2f, h / 2f)
+        )
+        // Chapter boundaries, drawn 2px wide so a split actually reads as a split rather than a
+        // hairline artefact. A book with a lot of chapters counts in 2s, 3s or more instead of
+        // trying to draw every one: past a certain density the ticks stop being information and
+        // become a grey bar. The stride is chosen so roughly TARGET_TICKS marks survive, which
+        // keeps the divisions legible at any chapter count while still showing the book's shape.
+        val tickWidth = 2f
+        val stride = ((timeline.marks.size + TARGET_TICKS - 1) / TARGET_TICKS).coerceAtLeast(1)
+        // Even after striding, refuse to place two ticks closer than their own width plus a gap.
+        val minGap = tickWidth * 3f
+        var lastX = -minGap
+        timeline.marks.forEachIndexed { index, mark ->
+            if (mark.startMs <= 0L) return@forEachIndexed
+            if (index % stride != 0) return@forEachIndexed
+            val tx = x(mark.startMs)
+            if (tx - lastX < minGap) return@forEachIndexed
+            lastX = tx
+            drawRect(color = inkTick, topLeft = Offset(tx, y), size = Size(tickWidth, h))
+        }
+    }
+}
+
+/** How many chapter ticks the book track aims to show before it starts counting in 2s, 3s, … */
+private const val TARGET_TICKS = 24
+
+/** Elapsed, a dim whole-book figure, and time left — one row where there used to be two. */
+@Composable
+private fun ThreeUpTimeRow(left: String, center: String, right: String, color: Color) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(left, style = MaterialTheme.typography.labelMedium, color = color)
+        if (center.isNotEmpty()) {
+            Text(
+                center,
+                style = MaterialTheme.typography.labelSmall,
+                color = color.copy(alpha = 0.68f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(right, style = MaterialTheme.typography.labelMedium, color = color)
+    }
+}
+
+/** One slot of the band-4 utility rail. Active slots tint their own ground rather than
+ *  announcing themselves with a text label. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun UtilitySlot(
+    icon: ImageVector,
+    label: String,
+    active: Boolean,
+    accent: Color,
+    idleTint: Color,
+    onClick: () -> Unit,
+    trailing: String? = null,
+    onLongClick: (() -> Unit)? = null
+) {
+    Row(
+        Modifier
+            .clip(Pill)
+            .background(if (active) accent.copy(alpha = 0.24f) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, label, Modifier.size(20.dp), tint = if (active) accent else idleTint)
+        if (trailing != null) {
+            Spacer(Modifier.width(5.dp))
+            Text(trailing, style = MaterialTheme.typography.labelSmall, color = accent)
+        }
+    }
+}
+
 @Composable
 private fun TimeRow(left: String, right: String, color: Color) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -967,11 +1135,6 @@ private fun SkipValueDialog(
         confirmButton = { TextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
-}
-
-@Composable
-private fun SecondaryIcon(icon: ImageVector, cd: String, tint: Color, onClick: () -> Unit) {
-    IconButton(onClick = onClick) { Icon(icon, cd, Modifier.size(22.dp), tint = tint) }
 }
 
 private fun formatDurationHuman(ms: Long): String {

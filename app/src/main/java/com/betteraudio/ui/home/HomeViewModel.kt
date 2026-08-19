@@ -542,6 +542,23 @@ class HomeViewModel @Inject constructor(
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * The book Home's hero features.
+     *
+     * Keyed on `themeBookId`, deliberately NOT `lastPlayedBookId`: closing a book (a firm downward
+     * fling on the mini bar → `PlayerController.stop()`) clears lastPlayedBookId, which would empty
+     * the hero and leave the top of the library blank. themeBookId survives exactly that and only
+     * changes when a genuinely different book is opened — and it is the same id the app backdrop
+     * is already themed from, so the hero and the artwork behind it can never disagree.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val heroBook: StateFlow<BookWithProgress?> =
+        settings.themeBookId
+            .flatMapLatest { id ->
+                if (id == -1L) flowOf(null) else repository.getBookWithProgress(id)
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     // Last-played book — shown as resume card when nothing is actively playing
     @OptIn(ExperimentalCoroutinesApi::class)
     val resumeBook: StateFlow<BookWithProgress?> =
@@ -556,6 +573,10 @@ class HomeViewModel @Inject constructor(
      *  book options / cover search sheets, which only need it once the user opens them, via the
      *  same cheap single-book flow [resumeBook] and [playResumeBook] already use. */
     fun bookWithProgressFlow(bookId: Long): Flow<BookWithProgress?> = repository.getBookWithProgress(bookId)
+
+    /** Pause/resume whatever is loaded, without opening the full player — used by Home's hero
+     *  when the book it features is the live session. */
+    fun togglePlayPause() = playerController.togglePlayPause()
 
     fun playResumeBook(bookId: Long) {
         viewModelScope.launch {
