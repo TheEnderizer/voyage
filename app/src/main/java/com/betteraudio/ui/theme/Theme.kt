@@ -138,6 +138,11 @@ fun VoyageTheme(
     pureBlack: Boolean = false,
     // When set, the whole app recolours to the playing book's cover art.
     coverArtPath: String? = null,
+    // The accent the user pinned for [coverArtPath] out of that cover's own sampled palette. Set
+    // means "use this instead of whatever the automatic picker would have chosen" — it applies to
+    // Immersive, and to Material You only while its colour source is the book cover, because those
+    // are the two cases where an automatic cover pick is what's on screen to disagree with.
+    coverAccentOverride: Color? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -147,7 +152,10 @@ fun VoyageTheme(
             // Static brand base, recoloured from the playing cover; ALL text tints toward the
             // cover accent (tintText = true) for the full-bleed immersive look.
             val baseScheme = if (darkTheme) DarkColors else LightColors
-            rememberCoverScheme(coverArtPath, baseScheme, darkTheme, tintText = true) ?: baseScheme
+            rememberCoverScheme(
+                coverArtPath, baseScheme, darkTheme,
+                tintText = true, accentOverride = coverAccentOverride
+            ) ?: baseScheme
         }
         AppTheme.MATERIAL_YOU -> {
             val useSystemWallpaper = colorSource == ThemeColorSource.WALLPAPER &&
@@ -176,7 +184,8 @@ fun VoyageTheme(
                     }
                 }
                 colorSource == ThemeColorSource.COVER -> {
-                    val seed = rememberCoverSeedColor(coverArtPath) ?: DefaultThemeColor
+                    val autoSeed = rememberCoverSeedColor(coverArtPath)
+                    val seed = coverAccentOverride ?: autoSeed ?: DefaultThemeColor
                     val style = remember(seed) { paletteStyleFor(seed) }
                     remember(seed, darkTheme, style) {
                         materialKolorDynamicColorScheme(seed, darkTheme, style = style)
@@ -223,7 +232,10 @@ fun VoyageTheme(
         }
     }
 
-    CompositionLocalProvider(LocalAppTheme provides appTheme) {
+    CompositionLocalProvider(
+        LocalAppTheme provides appTheme,
+        LocalThemeCoverPath provides coverArtPath
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

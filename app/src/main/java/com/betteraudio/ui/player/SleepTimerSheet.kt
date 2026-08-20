@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.settings.ClockMinutesPickerDialog
 import com.betteraudio.ui.settings.formatClockMinutes
 import kotlin.math.roundToInt
+import com.betteraudio.ui.haptics.*
 
 /**
  * Fade-out / shake-to-extend / auto-start-schedule controls — shared between Settings → Playback
@@ -50,7 +51,7 @@ fun SleepTimerTuningControls(
                 color = MaterialTheme.colorScheme.primary
             )
         }
-        Slider(
+        HapticSlider(
             value = fadeSlider,
             onValueChange = { fadeSlider = it.toInt().toFloat() },
             onValueChangeFinished = { onSetFadeSeconds(fadeSlider.toInt()) },
@@ -74,7 +75,7 @@ fun SleepTimerTuningControls(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Switch(checked = shakeEnabled, onCheckedChange = onSetShakeEnabled)
+            HapticSwitch(checked = shakeEnabled, onCheckedChange = onSetShakeEnabled)
         }
         if (shakeEnabled) {
             var shakeSlider by remember(shakeResetMinutes) { mutableFloatStateOf(shakeResetMinutes.toFloat()) }
@@ -86,7 +87,7 @@ fun SleepTimerTuningControls(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
             }
-            Slider(
+            HapticSlider(
                 value = shakeSlider,
                 onValueChange = { shakeSlider = it.toInt().toFloat() },
                 onValueChangeFinished = { onSetShakeResetMinutes(shakeSlider.toInt().coerceAtLeast(1)) },
@@ -111,16 +112,16 @@ fun SleepTimerTuningControls(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Switch(checked = scheduleEnabled, onCheckedChange = onSetScheduleEnabled)
+            HapticSwitch(checked = scheduleEnabled, onCheckedChange = onSetScheduleEnabled)
         }
         if (scheduleEnabled) {
             var showStartPicker by remember { mutableStateOf(false) }
             var showEndPicker by remember { mutableStateOf(false) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { showStartPicker = true }, modifier = Modifier.weight(1f)) {
+                HapticOutlinedButton(onClick = { showStartPicker = true }, modifier = Modifier.weight(1f)) {
                     Text("From ${formatClockMinutes(scheduleStartMinutes)}")
                 }
-                OutlinedButton(onClick = { showEndPicker = true }, modifier = Modifier.weight(1f)) {
+                HapticOutlinedButton(onClick = { showEndPicker = true }, modifier = Modifier.weight(1f)) {
                     Text("To ${formatClockMinutes(scheduleEndMinutes)}")
                 }
             }
@@ -148,7 +149,7 @@ fun SleepTimerTuningControls(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
             }
-            Slider(
+            HapticSlider(
                 value = defaultSlider,
                 onValueChange = { defaultSlider = it.toInt().toFloat() },
                 onValueChangeFinished = { onSetScheduleDefaultMinutes(defaultSlider.toInt().coerceAtLeast(1)) },
@@ -220,7 +221,7 @@ fun SleepTimerSheet(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
-                        OutlinedButton(onClick = { onSetTimer(0L); onDismiss() }) {
+                        HapticOutlinedButton(onClick = { onSetTimer(0L); onDismiss() }) {
                             Text("Cancel")
                         }
                     }
@@ -240,7 +241,7 @@ fun SleepTimerSheet(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
             }
-            Slider(
+            HapticSlider(
                 value = minutesSlider,
                 onValueChange = {
                     minutesSlider = it.roundToInt().toFloat()
@@ -268,7 +269,7 @@ fun SleepTimerSheet(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Button(
+            HapticButton(
                 onClick = {
                     onSetTimer(minutesSlider.toInt() * 60_000L)
                     onDismiss()
@@ -277,7 +278,7 @@ fun SleepTimerSheet(
             ) { Text("Start") }
 
             if (hasChapters) {
-                OutlinedButton(
+                HapticOutlinedButton(
                     onClick = { onSetEndOfChapter(); onDismiss() },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("End of chapter") }

@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.betteraudio.ui.haptics.*
 
 /**
  * Shown when creating a NEW widget, before the editor: pick the footprint you'll use. This sets the
@@ -46,7 +47,7 @@ fun SizePickerStep(
             TopAppBar(
                 title = { Text("Pick a size") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    HapticIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 }

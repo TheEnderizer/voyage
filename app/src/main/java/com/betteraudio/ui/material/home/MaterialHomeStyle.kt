@@ -49,6 +49,7 @@ import com.betteraudio.ui.home.NowPlayingSignal
 import com.betteraudio.ui.material.MaterialAdaptive
 import com.betteraudio.ui.material.MaterialStyle
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 /** Home's Material You style knobs — see HomeStyle for what these mean. */
 object MaterialHomeStyle : HomeStyle {
@@ -122,7 +123,7 @@ object MaterialHomeStyle : HomeStyle {
         ) {
             LibraryTab.entries.forEach { tab ->
                 val count = counts[tab] ?: 0
-                FilterChip(
+                HapticFilterChip(
                     selected = selected == tab,
                     onClick = { onSelect(tab) },
                     label = { Text(if (count > 0) "${tab.label} · $count" else tab.label) },

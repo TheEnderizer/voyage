@@ -37,6 +37,7 @@ import com.betteraudio.ui.components.PartItem
 import com.betteraudio.ui.immersive.ImmersiveStyle
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
+import com.betteraudio.ui.haptics.*
 
 /**
  * Info panel displayed on the player backdrop when opened from the book grid.
@@ -188,7 +189,7 @@ fun BookInfoPanel(
             progressFraction <= 0f -> "Start"
             else                   -> "Resume"
         }
-        Button(
+        HapticButton(
             onClick = onResume,
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = Pill

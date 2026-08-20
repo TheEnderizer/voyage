@@ -5,6 +5,88 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.12.0b] - 2026-08-20
+
+Voyage answers your touch now. Every control in the app has a haptic chosen to match what it did:
+a tick for a tap, a different one each way for a switch, detents as you drag a slider or a
+scrubber, a wall when you hit either end, and something fuller when a change actually sticks.
+Look and feel -> Haptics has Off, Light and Full, and your phone's own vibration setting still
+wins over all of it.
+
+Voyage has a new icon. Ten of them, actually: an open book that is also a V, and a book sailing
+under a star, each in five colourways. The V is the new default.
+
+The chapter list is rebuilt around finding things. It has a search box that takes a chapter name
+or just a chapter number, every chapter leads with its number, chapters you have already passed
+fade back, and a drag rail down the right edge takes you across a 300-chapter book in one gesture.
+
+The Immersive player's chapter scrubber is no longer a stock Material slider — and it is no longer
+one design either. Ember hairline, Tape ribs, Aurora and Horizon are all in Look and feel, each
+previewing itself, all four dragging and seeking identically.
+
+When Voyage picks an accent from a cover and you disagree with it, you can now just pick a
+different one, out of the same colours it sampled from that cover.
+
+And "Search online for cover" finally works from the book info and player screens. It had been a
+dead button there since it was added — only the Home screen ever opened the search.
+
+The details:
+
+### Added
+- Haptics, throughout. The vocabulary is deliberate rather than one buzz reused everywhere:
+  taps, choices, switches (on and off feel different), a grab / detent / release trio for anything
+  you drag, a duller thump at a limit, a beat when a panel opens or closes, a fuller confirm when
+  something durable changes, and the platform reject pattern for anything destructive. Play, pause
+  and skip get their own weight. Look and feel -> Haptics picks Off, Light or Full; Light keeps
+  the crisp feels and drops the drag detents. Your phone's own vibration setting still overrides
+  all of it.
+- Four designs for the Immersive chapter scrubber, in Look and feel -> Chapter progress. Ember
+  hairline is what you have. Tape ribs replaces the line with a field of ribs, lit behind the
+  playhead. Aurora drops the track almost entirely and shows progress as a bloom of light. Horizon
+  bows the rail into a curve the playhead rides. Every option previews itself, drawn by the same
+  code the player uses, and all four drag and seek identically.
+- A choice of Immersive mini player cover, in Look and feel. "Cover cap" is what you have: the
+  cover fills the left end of the pill and progress traces the pill outline. "Circle" makes the
+  cover a disc sitting inside the pill with progress drawn as a ring around it. Opening the full
+  player still grows the artwork out of whichever shape you picked.
+- Cover accent, in Look and feel: the colours Voyage sampled out of the cover it is themed from
+  right now, laid out as swatches. Pick one and that cover uses it instead of the automatic
+  choice; leave it on Auto and nothing changes. Pinned per cover, so every other book still
+  themes itself. Shows for the Immersive theme, and for Material You on its Book cover source.
+- Chapter search. Type part of a chapter title, or just a chapter number, and the list narrows to
+  it. In a series, a book heading disappears when nothing under it matches.
+- A "Now playing" button in the chapter list, which appears the moment the chapter you are on
+  scrolls out of sight and takes you back to it.
+- A drag rail down the right of the chapter list on anything longer than 20 chapters — one
+  gesture from the first chapter to the last.
+- Ten new app icons: Vee (default) with Sunset, Orchid, Meadow and Steel, and Voyager with Rose,
+  Indigo, Fern and Pearl. Look and feel -> App icon, now at the bottom of the page.
+- Backdrop darkening, an Immersive-only slider for how dark the blurred cover gets toward the
+  bottom of the screen. All the way off leaves the artwork undimmed; all the way up takes the
+  lower background to solid black. It fades in gradually, the same way the blur does. The
+  midpoint is exactly how it looked before, so nothing changes until you move it.
+
+### Changed
+- The Immersive player's chapter scrubber is drawn for this theme instead of borrowed from
+  Material: a hairline rail, a played side that gains colour as it fills, a lit bead for the
+  playhead, and a spring swell while you drag it.
+- Settings -> Theme is now Settings -> Look and feel.
+- The Immersive player's four utility controls (skip silence, audio, bookmarks, sleep) lost the
+  pill around them and are just the icons now. Skip silence uses the same glyph as Material You.
+- The app icon picker is two steps instead of one long strip: pick a mark (Vee, Voyager or
+  Classic), and its colours open underneath on as many rows as they need. Nothing scrolls
+  sideways any more.
+- App icon previews are drawn at the size the launcher will actually show them, instead of a
+  third too small.
+- Chapter rows now lead with the chapter number, and show where the chapter starts above how long
+  it runs. Chapters behind the playhead recede, so scrolling alone tells you where you are.
+
+### Fixed
+- "Search online for cover" did nothing on the book info screen and in both players. Only Home
+  had the search sheet wired up.
+- Changing the default app icon could leave two Voyage entries in the launcher on an install
+  where an icon had been picked by hand. Any such conflict is now collapsed on launch.
+
 ## [1.11.0b] - 2026-08-19
 
 The Immersive theme is now genuinely cover-first. The book cover used to be painted across the

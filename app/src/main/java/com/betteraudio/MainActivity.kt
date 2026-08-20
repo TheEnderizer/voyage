@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
         // constructed), not a blocking DataStore read.
         val initialThemeRaw = settings.currentAppTheme
         val initialColorSource = settings.currentThemeColorSource
+        val initialCoverAccents = settings.currentCoverAccents
         val initialCustomThemeColor = settings.currentCustomThemeColor
         val initialDarkMode = settings.currentDarkMode
         val initialPureBlack = settings.currentPureBlack
@@ -199,7 +200,30 @@ class MainActivity : ComponentActivity() {
             val darkModeRaw by settings.darkMode.collectAsStateWithLifecycle(initialDarkMode)
             val pureBlack by settings.pureBlack.collectAsStateWithLifecycle(initialPureBlack)
             val dynamicPills by settings.dynamicPills.collectAsStateWithLifecycle(false)
+            val miniCoverStyle = com.betteraudio.ui.player.MiniCoverStyle.from(
+                settings.miniCoverStyle.collectAsStateWithLifecycle(settings.currentMiniCoverStyle).value
+            )
+            val scrubberStyle = com.betteraudio.ui.immersive.components.ScrubberStyle.from(
+                settings.scrubberStyle.collectAsStateWithLifecycle(settings.currentScrubberStyle).value
+            )
+            val haptics = com.betteraudio.ui.haptics.rememberHaptics(
+                com.betteraudio.ui.haptics.HapticStrength.from(
+                    settings.hapticStrength.collectAsStateWithLifecycle(settings.currentHapticStrength).value
+                )
+            )
+            val backdropDim by settings.backdropDim.collectAsStateWithLifecycle(
+                com.betteraudio.data.settings.BACKDROP_DIM_DEFAULT
+            )
             val widgetDefaultCoverPath by settings.widgetDefaultCoverPath.collectAsStateWithLifecycle("")
+            // Seeded from the synchronous snapshot so a pinned accent is in force on the very
+            // first composed frame — otherwise the app would paint the automatic colour and then
+            // visibly cross-fade to the pinned one on every cold start.
+            val coverAccentsRaw by settings.coverAccents.collectAsStateWithLifecycle(initialCoverAccents)
+            val coverAccentOverride = remember(coverAccentsRaw, coverPath) {
+                coverPath?.let { path ->
+                    com.betteraudio.data.settings.CoverAccentCodec.decode(coverAccentsRaw)[path]
+                }?.let { androidx.compose.ui.graphics.Color(it) }
+            }
             val appTheme = com.betteraudio.ui.theme.AppTheme.from(appThemeRaw)
             val colorSource = com.betteraudio.ui.theme.ThemeColorSource.from(colorSourceRaw)
             val darkMode = com.betteraudio.ui.theme.DarkMode.from(darkModeRaw)
@@ -214,7 +238,8 @@ class MainActivity : ComponentActivity() {
                 colorSource = colorSource,
                 customThemeColor = customThemeColor,
                 pureBlack = pureBlack,
-                coverArtPath = coverPath
+                coverArtPath = coverPath,
+                coverAccentOverride = coverAccentOverride
             ) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
@@ -372,6 +397,14 @@ class MainActivity : ComponentActivity() {
                             coverPath, bakedCoverPath, widgetDefaultCoverPath.ifBlank { null }
                         ),
                     com.betteraudio.ui.immersive.components.LocalDynamicPillsEnabled provides dynamicPills,
+                    com.betteraudio.ui.player.LocalMiniCoverStyle provides miniCoverStyle,
+                    com.betteraudio.ui.immersive.components.LocalScrubberStyle provides scrubberStyle,
+                    com.betteraudio.ui.haptics.LocalHaptics provides haptics,
+                    // Every bare Modifier.clickable in the app resolves its press feedback
+                    // from here, so the ripple and the tap arrive together without a single
+                    // call site asking for either. See VoyageIndication.
+                    androidx.compose.foundation.LocalIndication provides
+                        com.betteraudio.ui.haptics.VoyageIndication,
                     com.betteraudio.ui.immersive.LocalHeroWindow provides heroWindow,
                     com.betteraudio.ui.immersive.components.LocalBackdropCapture provides backdropCapture
                 ) {
@@ -383,7 +416,9 @@ class MainActivity : ComponentActivity() {
                 // app. Material You: a plain opaque background (Home's scaffold is transparent
                 // and relies on this layer).
                 if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
-                    com.betteraudio.ui.components.AppBlurredBackdrop(coverPath = coverPath, bakedPath = bakedCoverPath)
+                    com.betteraudio.ui.components.AppBlurredBackdrop(
+                        coverPath = coverPath, bakedPath = bakedCoverPath, dim = backdropDim
+                    )
                 } else {
                     Box(
                         Modifier

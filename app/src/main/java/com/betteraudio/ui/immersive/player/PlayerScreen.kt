@@ -7,6 +7,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -24,18 +27,24 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.betteraudio.R
 import com.betteraudio.ui.components.ReflectedCoverBackdrop
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
@@ -48,6 +57,10 @@ import com.betteraudio.ui.player.AudioSettingsSheet
 import com.betteraudio.ui.player.BookmarkSheet
 import com.betteraudio.ui.player.ChapterOverlay
 import com.betteraudio.ui.player.ChapterRow
+import com.betteraudio.ui.haptics.Feel
+import com.betteraudio.ui.haptics.LocalHaptics
+import com.betteraudio.ui.haptics.PressFeel
+import com.betteraudio.ui.immersive.components.drawScrubber
 import com.betteraudio.ui.player.LocalPlayerExpand
 import com.betteraudio.ui.player.LockOverlay
 import com.betteraudio.ui.player.PlayerViewModel
@@ -56,9 +69,11 @@ import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
+import com.betteraudio.ui.player.morphFromCircle
 import com.betteraudio.ui.theme.Pill
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +121,7 @@ fun PlayerContent(
     var showChapters       by remember { mutableStateOf(false) }
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
+    val coverSearchOpen    by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showSkipSilenceSettings by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
@@ -211,11 +227,6 @@ fun PlayerContent(
         val cur = chapterTimeline.chapterAt(bookPos)
 
         val trackColor = Color.White.copy(alpha = 0.24f)
-        val sliderColors = SliderDefaults.colors(
-            thumbColor = accent,
-            activeTrackColor = accent,
-            inactiveTrackColor = trackColor
-        )
 
         val dimColor = Color.Black
         Box(
@@ -275,10 +286,19 @@ fun PlayerContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(coverAspect)
-                    .morphFrom(
-                        expand.miniCover, expandProgress,
-                        anchorTopLeft = true, byWidth = true,
-                        sourceRadius = expand.coverSourceRadius, destRadius = 0.dp
+                    // A circular mini cover and a full-bleed one are different shapes, so they
+                    // need different morphs — morphFromCircle grows the disc out of its own centre
+                    // crop, morphFrom slides the aspect-matched cap up as a rigid box. Same
+                    // destination either way; only the first half of the travel differs.
+                    .then(
+                        if (expand.coverSourceIsCircle)
+                            Modifier.morphFromCircle(expand.miniCover, expandProgress)
+                        else
+                            Modifier.morphFrom(
+                                expand.miniCover, expandProgress,
+                                anchorTopLeft = true, byWidth = true,
+                                sourceRadius = expand.coverSourceRadius, destRadius = 0.dp
+                            )
                     )
                     .graphicsLayer {
                         val p = expandProgress.value
@@ -314,30 +334,30 @@ fun PlayerContent(
                     Box {
                         ScrimButton(Icons.Default.MoreVert, "More", tonal = false) { showOverflow = true }
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }, containerColor = ImmersiveStyle.menuColor()) {
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Book options") },
                                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                                 onClick = { showOverflow = false; showBookOptions = true }
                             )
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Add bookmark") },
                                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                                 onClick = { showOverflow = false; showAddBookmark = true }
                             )
                             if (inSeries) {
-                                DropdownMenuItem(
+                                HapticDropdownMenuItem(
                                     text = { Text(if (showSeriesCover) "Show book cover" else "Show series cover") },
                                     leadingIcon = { Icon(Icons.Default.Image, null) },
                                     onClick = { showOverflow = false; viewModel.toggleShowSeriesCover() }
                                 )
                             }
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Listening history") },
                                 leadingIcon = { Icon(Icons.Default.History, null) },
                                 onClick = { showOverflow = false; showHistory = true }
                             )
                             if (book?.ebookPath != null && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-                                DropdownMenuItem(
+                                HapticDropdownMenuItem(
                                     text = { Text("Read from here") },
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                                     onClick = {
@@ -346,12 +366,12 @@ fun PlayerContent(
                                     }
                                 )
                             }
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Refresh cover effect") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, null) },
                                 onClick = { showOverflow = false; viewModel.refreshCoverEffect() }
                             )
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Lock screen") },
                                 leadingIcon = { Icon(Icons.Default.Lock, null) },
                                 onClick = {
@@ -453,7 +473,7 @@ fun PlayerContent(
                             DropdownMenu(expanded = showReturnMenu, onDismissRequest = { showReturnMenu = false }, containerColor = ImmersiveStyle.menuColor()) {
                                 positionStack.reversed().forEachIndexed { displayIdx, posMs ->
                                     val stackIdx = positionStack.size - 1 - displayIdx
-                                    DropdownMenuItem(
+                                    HapticDropdownMenuItem(
                                         text = { Text(formatDuration(posMs)) },
                                         onClick = { showReturnMenu = false; viewModel.returnToIndex(stackIdx) }
                                     )
@@ -506,25 +526,20 @@ fun PlayerContent(
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
                     val chDisplayPos = (chDisplayFrac * chDur).toLong()
-                    Slider(
-                        value = chDisplayFrac,
-                        onValueChange = { f ->
-                            if (chapterDragFrac == null) chapterScrubStartMs = bookPos
-                            chapterDragFrac = f
-                        },
-                        onValueChangeFinished = {
-                            val f = chapterDragFrac
-                            if (f != null) {
-                                val target = cur.startMs + (f * chDur).toLong()
-                                viewModel.bookSeekTo(target)
-                                if (chapterScrubStartMs >= 0L)
-                                    viewModel.onScrubSeek(chapterScrubStartMs, target)
-                            }
+                    ImmersiveScrubber(
+                        fraction = chDisplayFrac,
+                        accent = accent,
+                        trackColor = trackColor,
+                        onScrubStart = { chapterScrubStartMs = bookPos },
+                        onScrub = { f -> chapterDragFrac = f },
+                        onScrubEnd = { f ->
+                            val target = cur.startMs + (f * chDur).toLong()
+                            viewModel.bookSeekTo(target)
+                            if (chapterScrubStartMs >= 0L)
+                                viewModel.onScrubSeek(chapterScrubStartMs, target)
                             chapterScrubStartMs = -1L
                             chapterDragFrac = null
-                        },
-                        colors = sliderColors,
-                        modifier = Modifier.fillMaxWidth()
+                        }
                     )
                     // ── Band 2, lower half: the whole book as a PICTURE, not a second control.
                     // This replaces a stacked time row + "Book 34% ⌄" expander + a second time
@@ -550,25 +565,20 @@ fun PlayerContent(
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
                     val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
-                    Slider(
-                        value = bookDisplayFrac,
-                        onValueChange = { f ->
-                            if (bookDragFrac == null) bookScrubStartMs = bookPos
-                            bookDragFrac = f
-                        },
-                        onValueChangeFinished = {
-                            val f = bookDragFrac
-                            if (f != null) {
-                                val target = (f * bookTotal).toLong()
-                                viewModel.bookSeekTo(target)
-                                if (bookScrubStartMs >= 0L)
-                                    viewModel.onScrubSeek(bookScrubStartMs, target)
-                            }
+                    ImmersiveScrubber(
+                        fraction = bookDisplayFrac,
+                        accent = accent,
+                        trackColor = trackColor,
+                        onScrubStart = { bookScrubStartMs = bookPos },
+                        onScrub = { f -> bookDragFrac = f },
+                        onScrubEnd = { f ->
+                            val target = (f * bookTotal).toLong()
+                            viewModel.bookSeekTo(target)
+                            if (bookScrubStartMs >= 0L)
+                                viewModel.onScrubSeek(bookScrubStartMs, target)
                             bookScrubStartMs = -1L
                             bookDragFrac = null
-                        },
-                        colors = sliderColors,
-                        modifier = Modifier.fillMaxWidth()
+                        }
                     )
                     TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
                 }
@@ -587,9 +597,10 @@ fun PlayerContent(
                 ) {
                     if (chapterNav.count > 1) {
                         val enabled = serviceHasBook && chapterNav.hasPrev
-                        IconButton(
+                        HapticIconButton(
                             onClick = { viewModel.prevChapter() },
                             enabled = enabled,
+                            feel = Feel.Transport,
                             modifier = Modifier.expandReveal(expandProgress)
                         ) {
                             Icon(Icons.Default.SkipPrevious, "Previous chapter", Modifier.size(26.dp),
@@ -600,6 +611,9 @@ fun PlayerContent(
                         SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim,
                             onLongPress = { skipEditForward = false }) { viewModel.skipBack() }
                     }
+                    // Transport, not Tap: play/pause is the control this app exists to offer, and
+                    // it is the one press worth giving weight to.
+                    PressFeel(Feel.Transport) {
                     Box(
                         Modifier
                             .morphFrom(expand.miniControls, expandProgress)
@@ -615,15 +629,17 @@ fun PlayerContent(
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
                     }
+                    }
                     Box(Modifier.expandReveal(expandProgress)) {
                         SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim,
                             onLongPress = { skipEditForward = true }) { viewModel.skipForward() }
                     }
                     if (chapterNav.count > 1) {
                         val enabled = serviceHasBook && chapterNav.hasNext
-                        IconButton(
+                        HapticIconButton(
                             onClick = { viewModel.nextChapter() },
                             enabled = enabled,
+                            feel = Feel.Transport,
                             modifier = Modifier.expandReveal(expandProgress)
                         ) {
                             Icon(Icons.Default.SkipNext, "Next chapter", Modifier.size(26.dp),
@@ -637,70 +653,66 @@ fun PlayerContent(
 
                 // ── Secondary actions ───────────────────────────────────
                 if (!isLocked) {
-                // ── Band 4: one utility rail ────────────────────────────
-                // These four used to float as unrelated glyphs strung across the width, one of
-                // them wearing a text label and its own tint. They are one set of book-level
-                // utilities, so they now live in a single cover-glass pill with four equal
-                // slots; an active slot tints its own ground in accent, which is the same state
+                // ── Band 4: one utility rail ────────────────────────
+                // These four are one set of book-level utilities, laid out as four equal slots
+                // across the width. They used to sit inside a cover-glass pill, but that pill drew
+                // a hard edge across an otherwise edgeless sheet; the glyphs alone carry the set,
+                // and an active slot still tints its own ground in accent, which is the same state
                 // signal the "Skip silence" label used to carry in words.
                 val skipSilenceOn = book?.skipSilenceEnabled == true
                 val sleepOn = position.sleepTimerRemainingMs > 0L
-                com.betteraudio.ui.immersive.components.GlassPillSurface(
-                    shape = Pill,
-                    contentColor = onScrim,
-                    shadowElevation = 0.dp,
-                    // Inside the player sheet, which is outside the backdrop capture — sampling it
-                    // would show the Home grid behind the sheet instead of this book's cover.
-                    sampleBackdrop = false,
-                    modifier = Modifier.fillMaxWidth().height(44.dp).expandReveal(expandProgress)
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .padding(horizontal = 6.dp)
+                        .expandReveal(expandProgress),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        Modifier.fillMaxSize().padding(horizontal = 6.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        UtilitySlot(
-                            icon = Icons.Default.FastForward,
-                            label = "Skip silence",
-                            active = skipSilenceOn,
-                            accent = accent,
-                            idleTint = onScrimMuted,
-                            onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
-                            onLongClick = { showSkipSilenceSettings = true }
-                        )
-                        UtilitySlot(
-                            icon = Icons.Default.Tune,
-                            label = "Audio settings",
-                            active = false,
-                            accent = accent,
-                            idleTint = onScrim,
-                            onClick = { showAudioSettings = true }
-                        )
-                        UtilitySlot(
-                            icon = Icons.Default.Bookmark,
-                            label = "Bookmarks",
-                            active = false,
-                            accent = accent,
-                            idleTint = onScrim,
-                            onClick = { showBookmarks = true }
-                        )
-                        // Tap starts a timer at the slider's set duration (or cancels one already
-                        // running); long-press opens the full options (slider/custom entry/end-of-
-                        // chapter/fade/shake/schedule).
-                        UtilitySlot(
-                            icon = Icons.Default.Bedtime,
-                            label = "Sleep timer",
-                            active = sleepOn,
-                            accent = accent,
-                            idleTint = onScrim,
-                            trailing = if (sleepOn) formatDuration(position.sleepTimerRemainingMs) else null,
-                            onClick = {
-                                if (sleepOn) viewModel.playerController.setSleepTimer(0L)
-                                else viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
-                            },
-                            onLongClick = { showSleepTimer = true }
-                        )
-                    }
+                    // The same waveform-with-the-gap-closed glyph the Material You player uses, so
+                    // the control reads identically across themes.
+                    UtilitySlot(
+                        icon = painterResource(R.drawable.ic_skip_silence),
+                        label = "Skip silence",
+                        active = skipSilenceOn,
+                        accent = accent,
+                        idleTint = onScrimMuted,
+                        onClick = { viewModel.setSkipSilenceEnabled(!skipSilenceOn) },
+                        onLongClick = { showSkipSilenceSettings = true }
+                    )
+                    UtilitySlot(
+                        icon = rememberVectorPainter(Icons.Default.Tune),
+                        label = "Audio settings",
+                        active = false,
+                        accent = accent,
+                        idleTint = onScrim,
+                        onClick = { showAudioSettings = true }
+                    )
+                    UtilitySlot(
+                        icon = rememberVectorPainter(Icons.Default.Bookmark),
+                        label = "Bookmarks",
+                        active = false,
+                        accent = accent,
+                        idleTint = onScrim,
+                        onClick = { showBookmarks = true }
+                    )
+                    // Tap starts a timer at the slider's set duration (or cancels one already
+                    // running); long-press opens the full options (slider/custom entry/end-of-
+                    // chapter/fade/shake/schedule).
+                    UtilitySlot(
+                        icon = rememberVectorPainter(Icons.Default.Bedtime),
+                        label = "Sleep timer",
+                        active = sleepOn,
+                        accent = accent,
+                        idleTint = onScrim,
+                        trailing = if (sleepOn) formatDuration(position.sleepTimerRemainingMs) else null,
+                        onClick = {
+                            if (sleepOn) viewModel.playerController.setSleepTimer(0L)
+                            else viewModel.playerController.setSleepTimer(sleepTimerMinutes * 60_000L)
+                        },
+                        onLongClick = { showSleepTimer = true }
+                    )
                 }
                 } // end if (!isLocked) (secondary actions)
 
@@ -739,14 +751,14 @@ fun PlayerContent(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = {
+                    HapticTextButton(onClick = {
                         viewModel.addBookmark(bookmarkComment)
                         bookmarkComment = ""
                         showAddBookmark = false
                     }) { Text("Save") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAddBookmark = false; bookmarkComment = "" }) {
+                    HapticTextButton(onClick = { showAddBookmark = false; bookmarkComment = "" }) {
                         Text("Cancel")
                     }
                 }
@@ -774,7 +786,7 @@ fun PlayerContent(
                 },
                 onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
                 onUpdateStatus = { viewModel.updateBookStatus(it) },
-                onSearchOnlineCover = { showBookOptions = false },
+                onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() },
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
@@ -785,6 +797,17 @@ fun PlayerContent(
                     onBoostChange = { viewModel.setVolumeBoost(it) },
                     onChangeCoverFromGallery = { coverPickerLauncher.launch("image/*") }
                 )
+            )
+        }
+
+        if (coverSearchOpen) {
+            com.betteraudio.ui.home.CoverSearchSheet(
+                initialQuery = bwp?.book?.let {
+                    listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
+                } ?: "",
+                onSearch = { query -> viewModel.searchCovers(query) },
+                onPick = { url -> viewModel.setCoverFromUrl(url) },
+                onDismiss = { viewModel.closeCoverSearch() }
             )
         }
 
@@ -914,7 +937,7 @@ private fun CompactBookProgress(
         if (!readOnly && expanded) {
             var dragFrac by remember { mutableStateOf<Float?>(null) }
             val displayFrac = dragFrac ?: frac
-            Slider(
+            HapticSlider(
                 value = displayFrac,
                 onValueChange = { dragFrac = it },
                 onValueChangeFinished = { dragFrac?.let { onSeek((it * totalMs).toLong()) }; dragFrac = null },
@@ -1009,6 +1032,112 @@ private fun BookTickTrack(
 /** How many chapter ticks the book track aims to show before it starts counting in 2s, 3s, … */
 private const val TARGET_TICKS = 24
 
+/**
+ * The Immersive player's scrubber.
+ *
+ * What it replaces was a stock Material 3 `Slider`: a grey inactive track, a flat accent active
+ * track and the pill thumb every Material app on the phone has. It is a perfectly good control and
+ * it looks like nothing else in this theme — every other surface here is glass over the book's own
+ * artwork, tinted with the book's own colour.
+ *
+ * So this is drawn instead:
+ *
+ *  - **A rail, not a bar.** The unplayed side is a hairline of the same white-at-low-alpha the
+ *    glass edges use, so it belongs to the surface rather than sitting on it.
+ *  - **The played side deepens as it goes.** The fill is a gradient anchored to the *full* width
+ *    and clipped to the current position, so early in a chapter it is a pale wash of the accent and
+ *    by the end it is the accent at full strength. Progress reads as colour gaining weight, which
+ *    is legible from the corner of the eye in a way a bar's length is not.
+ *  - **A bead, not a thumb.** The playhead is a slim vertical capsule standing proud of the rail
+ *    with a soft accent glow behind it — it looks lit from the artwork, and it does not cover the
+ *    track the way a 20dp circle does.
+ *  - **It swells under the thumb.** Touch it and the rail thickens, the bead grows and the glow
+ *    brightens on a spring; let go and it settles back. The control acknowledges the touch instead
+ *    of just following it.
+ *
+ * Touch handling is deliberately not Material's: the whole 28dp height is the target (the rail
+ * itself is 6dp — far too thin to hit), a tap anywhere seeks there, and a drag scrubs
+ * continuously. [onScrubEnd] carries the final fraction, so the caller never has to read back the
+ * drag state it just wrote.
+ */
+@Composable
+private fun ImmersiveScrubber(
+    fraction: Float,
+    accent: Color,
+    trackColor: Color,
+    onScrubStart: () -> Unit,
+    onScrub: (Float) -> Unit,
+    onScrubEnd: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var dragging by remember { mutableStateOf(false) }
+    // 0 at rest, 1 while the thumb is down — drives every dimension below at once, so the swell
+    // reads as one object reacting rather than four properties animating.
+    val swell by animateFloatAsState(
+        targetValue = if (dragging) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+        label = "scrubberSwell"
+    )
+    val haptics = LocalHaptics.current
+    // Detents for a control with no steps of its own. Coarse enough that a slow drag has grain
+    // rather than a hum, fine enough that a fast one still reports distance travelled.
+    val detents = 40
+    var lastDetent by remember { mutableIntStateOf(Int.MIN_VALUE) }
+    val f = fraction.coerceIn(0f, 1f)
+    // The design is a user choice; the gesture, the swell and the hit target are not. Everything
+    // above this line is shared by all four, everything below is one call into ScrubberArt.
+    val style = com.betteraudio.ui.immersive.components.LocalScrubberStyle.current
+
+    Canvas(
+        modifier
+            .fillMaxWidth()
+            // Each design declares the height it needs — Horizon's curve wants room the hairline
+            // does not — and the 28dp floor keeps every one of them a comfortable target.
+            .height(style.height)
+            .pointerInput(Unit) {
+                detectTapGestures { offset ->
+                    val target = (offset.x / size.width).coerceIn(0f, 1f)
+                    haptics.play(Feel.Select)
+                    onScrubStart()
+                    onScrub(target)
+                    onScrubEnd(target)
+                }
+            }
+            .pointerInput(Unit) {
+                // Tracked here rather than in composition: the drag callbacks need the latest
+                // value synchronously on release, and a recomposition may not have run yet.
+                var latest = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { offset ->
+                        latest = (offset.x / size.width).coerceIn(0f, 1f)
+                        dragging = true
+                        lastDetent = (latest * detents).toInt()
+                        haptics.play(Feel.Grab)
+                        onScrubStart()
+                        onScrub(latest)
+                    },
+                    onDragEnd = { dragging = false; haptics.play(Feel.Release); onScrubEnd(latest) },
+                    onDragCancel = { dragging = false; haptics.play(Feel.Release); onScrubEnd(latest) },
+                    onHorizontalDrag = { change, _ ->
+                        change.consume()
+                        latest = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val detent = (latest * detents).toInt()
+                        if (detent != lastDetent) {
+                            lastDetent = detent
+                            // The ends are walls, not notches: running out of chapter should feel
+                            // different from crossing into the next tenth of it.
+                            if (latest <= 0.0005f || latest >= 0.9995f) haptics.play(Feel.Boundary)
+                            else haptics.play(Feel.Step)
+                        }
+                        onScrub(latest)
+                    }
+                )
+            }
+    ) {
+        drawScrubber(style, f, swell, accent, trackColor)
+    }
+}
+
 /** Elapsed, a dim whole-book figure, and time left — one row where there used to be two. */
 @Composable
 private fun ThreeUpTimeRow(left: String, center: String, right: String, color: Color) {
@@ -1036,7 +1165,7 @@ private fun ThreeUpTimeRow(left: String, center: String, right: String, color: C
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun UtilitySlot(
-    icon: ImageVector,
+    icon: Painter,
     label: String,
     active: Boolean,
     accent: Color,
@@ -1080,9 +1209,16 @@ private fun SkipButton(
     onLongPress: () -> Unit = {},
     onClick: () -> Unit
 ) {
+    val haptics = LocalHaptics.current
+    PressFeel(Feel.Transport) {
     Box(
         Modifier.size(56.dp).clip(Pill)
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+            .combinedClickable(
+                onClick = onClick,
+                // combinedClickable does not haptic on its own, and a long press that opens an
+                // editor with no confirmation of the threshold is the classic "did that work?"
+                onLongClick = { haptics.longPress(); onLongPress() }
+            ),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -1101,6 +1237,7 @@ private fun SkipButton(
             fontWeight = FontWeight.Medium,
             modifier = Modifier.offset(x = 0.5.dp, y = 1.5.dp)
         )
+    }
     }
 }
 
@@ -1132,8 +1269,8 @@ private fun SkipValueDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

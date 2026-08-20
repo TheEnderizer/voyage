@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
  * `<activity-alias>` components declared in AndroidManifest.xml (see the comment there) —
  * Android has no API to point the launcher icon at an arbitrary runtime image, so a fixed set of
  * aliases toggled with [PackageManager.setComponentEnabledSetting] is the standard mechanism
- * every app offering icon variants uses. Exactly one alias is enabled at a time, and all six
+ * every app offering icon variants uses. Exactly one alias is enabled at a time, and they all
  * target the same `MainActivity`, so switching never creates a second Activity instance.
  *
  * [PackageManager] is the sole source of truth for which icon is active — deliberately not
@@ -23,28 +23,67 @@ import kotlinx.coroutines.withContext
  */
 object AppIconManager {
 
+    /**
+     * The three marks. Every icon is one of these drawn in one colourway, which is how the picker
+     * presents them: choose a style, then a colour, instead of scrolling one flat strip of sixteen.
+     */
+    enum class IconStyle(val label: String) {
+        VEE("Vee"),
+        VOYAGER("Voyager"),
+        CLASSIC("Classic");
+
+        /** This style's colourways, in [AppIcon] declaration order. */
+        fun icons(): List<AppIcon> = AppIcon.entries.filter { it.style == this }
+
+        /** What the style's own tile shows when the active icon belongs to a different style. */
+        fun defaultIcon(): AppIcon = icons().first()
+    }
+
     enum class AppIcon(
         val id: String,
-        val label: String,
+        val style: IconStyle,
+        /** Colour name alone — the style supplies the rest, so the picker can label a swatch
+         *  "Sunset" rather than repeating "Vee" under all five of them. */
+        val colorLabel: String,
         private val aliasSuffix: String,
+        // The six sailboat variants share one mark and differ only by background gradient. The
+        // VEE family and VOYAGER are whole authored icons — ground included — so each brings
+        // its own foreground, which is why this is a per-entry field rather than a constant.
         val previewForeground: Int,
         // The same two gradient stops as this variant's background vector drawable, duplicated as
         // plain ints so the settings preview paints the gradient directly instead of depending on
         // vector <aapt:attr> gradient rendering. MINIMAL is the deliberate flat variant, so both
-        // stops are equal. Keep in sync with res/drawable/ic_launcher_background*.xml.
+        // stops are equal. Keep in sync with res/drawable/ic_launcher_background*.xml (the
+        // generator prints them).
         val previewTopColor: Long,
         val previewBottomColor: Long,
         // Whether AndroidManifest.xml declares this alias's own android:enabled as true — the
         // value PackageManager falls back to for COMPONENT_ENABLED_STATE_DEFAULT, i.e. before
-        // this class has ever touched it. Only NAVY's is true; keep this in sync with the manifest.
+        // this class has ever touched it. Exactly one entry's is true (VEE, the default a fresh
+        // install starts on); keep this in sync with the manifest.
         private val manifestDefaultEnabled: Boolean,
     ) {
-        NAVY("navy", "Navy", "AppIconNavy", R.mipmap.ic_launcher_fg, 0xFF26426E, 0xFF0D1A33, true),
-        MIDNIGHT("midnight", "Midnight", "AppIconMidnight", R.mipmap.ic_launcher_fg, 0xFF15151C, 0xFF030308, false),
-        OCEAN("ocean", "Ocean", "AppIconOcean", R.mipmap.ic_launcher_fg, 0xFF0E8A8F, 0xFF04393B, false),
-        EMBER("ember", "Ember", "AppIconEmber", R.mipmap.ic_launcher_fg, 0xFFB4432A, 0xFF4A160C, false),
-        PLUM("plum", "Plum", "AppIconPlum", R.mipmap.ic_launcher_fg, 0xFF6E3480, 0xFF2C1236, false),
-        MINIMAL("minimal", "Minimal", "AppIconMinimal", R.mipmap.ic_launcher_fg, 0xFF23262E, 0xFF23262E, false);
+        // Declaration order groups the styles and orders the colourways inside each — see
+        // IconStyle.icons(), which filters this list rather than keeping a second one.
+        VEE("vee", IconStyle.VEE, "Aurora", "AppIconVee", R.mipmap.ic_launcher_fg_vee, 0xFF06102B, 0xFF030614, true),
+        VEE_SUNSET("vee_sunset", IconStyle.VEE, "Sunset", "AppIconVeeSunset", R.mipmap.ic_launcher_fg_vee_sunset, 0xFF2A0710, 0xFF140306, false),
+        VEE_ORCHID("vee_orchid", IconStyle.VEE, "Orchid", "AppIconVeeOrchid", R.mipmap.ic_launcher_fg_vee_orchid, 0xFF1E072A, 0xFF0F0215, false),
+        VEE_MEADOW("vee_meadow", IconStyle.VEE, "Meadow", "AppIconVeeMeadow", R.mipmap.ic_launcher_fg_vee_meadow, 0xFF082A23, 0xFF021513, false),
+        VEE_STEEL("vee_steel", IconStyle.VEE, "Steel", "AppIconVeeSteel", R.mipmap.ic_launcher_fg_vee_steel, 0xFF25262A, 0xFF121315, false),
+        VOYAGER("voyager", IconStyle.VOYAGER, "Tide", "AppIconVoyager", R.mipmap.ic_launcher_fg_voyager, 0xFF0C2549, 0xFF01091E, false),
+        VOYAGER_ROSE("voyager_rose", IconStyle.VOYAGER, "Rose", "AppIconVoyagerRose", R.mipmap.ic_launcher_fg_voyager_rose, 0xFF490C26, 0xFF1E0109, false),
+        VOYAGER_INDIGO("voyager_indigo", IconStyle.VOYAGER, "Indigo", "AppIconVoyagerIndigo", R.mipmap.ic_launcher_fg_voyager_indigo, 0xFF290C49, 0xFF12011E, false),
+        VOYAGER_FERN("voyager_fern", IconStyle.VOYAGER, "Fern", "AppIconVoyagerFern", R.mipmap.ic_launcher_fg_voyager_fern, 0xFF0C4933, 0xFF011E17, false),
+        VOYAGER_PEARL("voyager_pearl", IconStyle.VOYAGER, "Pearl", "AppIconVoyagerPearl", R.mipmap.ic_launcher_fg_voyager_pearl, 0xFF3F4349, 0xFF191A1D, false),
+        NAVY("navy", IconStyle.CLASSIC, "Navy", "AppIconNavy", R.mipmap.ic_launcher_fg, 0xFF26426E, 0xFF0D1A33, false),
+        MIDNIGHT("midnight", IconStyle.CLASSIC, "Midnight", "AppIconMidnight", R.mipmap.ic_launcher_fg, 0xFF15151C, 0xFF030308, false),
+        OCEAN("ocean", IconStyle.CLASSIC, "Ocean", "AppIconOcean", R.mipmap.ic_launcher_fg, 0xFF0E8A8F, 0xFF04393B, false),
+        EMBER("ember", IconStyle.CLASSIC, "Ember", "AppIconEmber", R.mipmap.ic_launcher_fg, 0xFFB4432A, 0xFF4A160C, false),
+        PLUM("plum", IconStyle.CLASSIC, "Plum", "AppIconPlum", R.mipmap.ic_launcher_fg, 0xFF6E3480, 0xFF2C1236, false),
+        MINIMAL("minimal", IconStyle.CLASSIC, "Minimal", "AppIconMinimal", R.mipmap.ic_launcher_fg, 0xFF23262E, 0xFF23262E, false);
+
+        /** Style plus colour — what a confirm dialog needs to name one icon unambiguously. */
+        val label: String get() = "${style.label} ${colorLabel}"
 
         internal fun componentName(context: Context): ComponentName =
             ComponentName(context.packageName, "com.betteraudio.$aliasSuffix")
@@ -63,18 +102,48 @@ object AppIconManager {
         }
     }
 
-    /** The currently active icon, read live from PackageManager. Falls back to [AppIcon.NAVY] in
-     *  the (should-be-impossible) case that none read as enabled — better than crashing a settings
-     *  screen over it. */
+    /** The currently active icon, read live from PackageManager. Prefers an alias the user
+     *  explicitly turned on over one that is merely enabled by manifest default, so a build that
+     *  moves the default never reports over the top of a choice the user already made. Falls back
+     *  to [AppIcon.VEE] if somehow none read as enabled — better than crashing a settings screen
+     *  over it. */
     fun current(context: Context): AppIcon =
-        AppIcon.entries.firstOrNull { isEnabled(context, it) } ?: AppIcon.NAVY
+        AppIcon.entries.firstOrNull { explicitlyEnabled(context, it) }
+            ?: AppIcon.entries.firstOrNull { isEnabled(context, it) }
+            ?: AppIcon.VEE
+
+    private fun explicitlyEnabled(context: Context, icon: AppIcon): Boolean =
+        context.packageManager.getComponentEnabledSetting(icon.componentName(context)) ==
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+
+    /**
+     * Forces exactly one launcher alias on, and does nothing when that is already true.
+     *
+     * Moving the manifest default (NAVY -> VEE) is not a purely additive change: on an install
+     * where the user had explicitly chosen, say, PLUM, that alias is COMPONENT_ENABLED_STATE_ENABLED
+     * while the newly-defaulted VEE is still COMPONENT_ENABLED_STATE_DEFAULT — which now resolves
+     * to true. Both are enabled, and the launcher shows the app twice. Aliases added in a later
+     * version are invisible to the [apply] call that ran before they existed, so this cannot be
+     * fixed at the point the user picks an icon; it has to be reconciled on launch.
+     *
+     * Cheap enough to run every start (a handful of PackageManager reads) and silent unless there
+     * is genuinely a conflict.
+     */
+    suspend fun reconcile(context: Context) {
+        val enabled = AppIcon.entries.filter { isEnabled(context, it) }
+        if (enabled.size <= 1) return
+        val keep = enabled.firstOrNull { explicitlyEnabled(context, it) } ?: enabled.first()
+        AppLog.w(LogCat.UI, "AppIconManager: ${enabled.size} launcher aliases enabled " +
+            "(${enabled.joinToString { it.id }}) — collapsing to ${keep.id}")
+        apply(context, keep)
+    }
 
     /**
      * Switches the launcher icon to [icon].
      *
      * [PackageManager.setComponentEnabledSetting] **kills the calling process** unless
-     * [PackageManager.DONT_KILL_APP] is passed — every call below passes it, and all six
-     * component states are written before this function returns, deliberately never letting the
+     * [PackageManager.DONT_KILL_APP] is passed — every call below passes it, and every
+     * component state is written before this function returns, deliberately never letting the
      * OS end the process mid-sequence. Enable-the-target-then-disable-the-rest (or the reverse)
      * without that flag risks the process dying partway through: enable-first leaves **two**
      * launcher icons if the disables never run; disable-first leaves **zero**, i.e. the app

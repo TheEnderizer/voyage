@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.data.db.entities.AudioPreset
 import kotlin.math.roundToInt
+import com.betteraudio.ui.haptics.*
 
 private val EQ_BAND_LABELS = listOf("60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz")
 private const val EQ_MIN_MB = -1500
@@ -151,7 +152,7 @@ fun AudioSettingsSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    TextButton(onClick = { onResetBook() }, enabled = isOverridden) {
+                    HapticTextButton(onClick = { onResetBook() }, enabled = isOverridden) {
                         Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Reset")
@@ -170,7 +171,7 @@ fun AudioSettingsSheet(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Presets", style = MaterialTheme.typography.labelLarge)
-                    IconButton(onClick = { presetName = ""; showSaveDialog = true }) {
+                    HapticIconButton(onClick = { presetName = ""; showSaveDialog = true }) {
                         Icon(Icons.Default.Add, contentDescription = "Save preset")
                     }
                 }
@@ -226,7 +227,7 @@ fun AudioSettingsSheet(
                 }
             },
             confirmButton = {
-                TextButton(
+                HapticTextButton(
                     onClick = {
                         if (presetName.isNotBlank()) {
                             viewModel.saveAudioPreset(presetName)
@@ -236,7 +237,7 @@ fun AudioSettingsSheet(
                 ) { Text("Save") }
             },
             dismissButton = {
-                TextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
+                HapticTextButton(onClick = { showSaveDialog = false }) { Text("Cancel") }
             }
         )
     }
@@ -267,7 +268,7 @@ private fun SpeedTab(
                 val v = (((speedValue - SPEED_STEP) / SPEED_STEP).roundToInt() * SPEED_STEP).coerceIn(SPEED_MIN, SPEED_MAX)
                 onSpeedChange(v); onSpeedCommit(v)
             }
-            Slider(
+            HapticSlider(
                 value = speedValue,
                 onValueChange = onSpeedChange,
                 onValueChangeFinished = { onSpeedCommit(speedValue) },
@@ -302,7 +303,7 @@ private fun BoostTab(
             AdjustButton(Icons.Default.Remove, "Less boost") {
                 onBoostChange((boostValue - 1).coerceIn(0, 24))
             }
-            Slider(
+            HapticSlider(
                 value = boostValue.toFloat(),
                 onValueChange = { onBoostChange(it.roundToInt()) },
                 valueRange = 0f..24f,
@@ -346,7 +347,7 @@ private fun BalanceTab(
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("L", style = MaterialTheme.typography.labelLarge)
-            Slider(
+            HapticSlider(
                 value = balanceValue,
                 onValueChange = onBalanceChange,
                 onValueChangeFinished = { onBalanceCommit(balanceValue) },
@@ -370,7 +371,7 @@ private fun BalanceTab(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Switch(checked = mono, onCheckedChange = onMonoChange)
+            HapticSwitch(checked = mono, onCheckedChange = onMonoChange)
         }
     }
 }
@@ -400,7 +401,7 @@ private fun EqTab(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Equalizer", style = MaterialTheme.typography.labelLarge)
-            TextButton(onClick = onFlat) { Text("Flat") }
+            HapticTextButton(onClick = onFlat) { Text("Flat") }
         }
         EQ_BAND_LABELS.forEachIndexed { index, label ->
             val levelMb = bands.getOrElse(index) { 0 }
@@ -416,7 +417,7 @@ private fun EqTab(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.width(64.dp)
                 )
-                Slider(
+                HapticSlider(
                     value = levelMb.toFloat(),
                     onValueChange = { onBandChange(index, it.roundToInt()) },
                     valueRange = EQ_MIN_MB.toFloat()..EQ_MAX_MB.toFloat(),
@@ -460,9 +461,9 @@ private fun PresetChip(
             )
         )
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-            DropdownMenuItem(text = { Text("Load") }, onClick = { showMenu = false; onLoad() })
-            DropdownMenuItem(text = { Text("Set as default") }, onClick = { showMenu = false; onSetDefault() })
-            DropdownMenuItem(
+            HapticDropdownMenuItem(text = { Text("Load") }, onClick = { showMenu = false; onLoad() })
+            HapticDropdownMenuItem(text = { Text("Set as default") }, onClick = { showMenu = false; onSetDefault() })
+            HapticDropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 onClick = { showMenu = false; onDelete() }

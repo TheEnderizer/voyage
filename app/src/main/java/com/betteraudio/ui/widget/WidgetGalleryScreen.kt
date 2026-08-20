@@ -51,6 +51,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.betteraudio.data.db.entities.WidgetDesign
 import com.betteraudio.widget.model.WidgetDesignCodec
 import com.betteraudio.widget.render.WidgetPainter
+import com.betteraudio.ui.haptics.*
 
 /** Design library: replaces the old inline Settings widget list. Reachable from Settings and from
  *  the launcher's "Create new widget" configure flow. */
@@ -69,7 +70,7 @@ fun WidgetGalleryScreen(
             TopAppBar(
                 title = { Text("Widget designs") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                    HapticIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                 }
             )
         },
@@ -123,9 +124,9 @@ fun WidgetGalleryScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.deleteDesign(row.design.id); deleteTarget = null }) { Text("Delete") }
+                HapticTextButton(onClick = { viewModel.deleteDesign(row.design.id); deleteTarget = null }) { Text("Delete") }
             },
-            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+            dismissButton = { HapticTextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
         )
     }
 }
@@ -137,8 +138,8 @@ private fun RenameDialog(initial: String, onConfirm: (String) -> Unit, onDismiss
         onDismissRequest = onDismiss,
         title = { Text("Rename widget") },
         text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },
-        confirmButton = { TextButton(onClick = { onConfirm(name) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = { onConfirm(name) }) { Text("Save") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -186,15 +187,15 @@ private fun GalleryCard(
                 }
                 var showMenu by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+                    HapticIconButton(onClick = { showMenu = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
                     DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                        DropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Default.Edit, null) },
+                        HapticDropdownMenuItem(text = { Text("Edit") }, leadingIcon = { Icon(Icons.Default.Edit, null) },
                             onClick = { showMenu = false; onEdit() })
-                        DropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
+                        HapticDropdownMenuItem(text = { Text("Rename") }, leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) },
                             onClick = { showMenu = false; onRename() })
-                        DropdownMenuItem(text = { Text("Duplicate") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                        HapticDropdownMenuItem(text = { Text("Duplicate") }, leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                             onClick = { showMenu = false; onDuplicate() })
-                        DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) },
+                        HapticDropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Default.Delete, null) },
                             onClick = { showMenu = false; onDelete() })
                     }
                 }

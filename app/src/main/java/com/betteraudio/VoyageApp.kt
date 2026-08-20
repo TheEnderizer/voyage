@@ -47,6 +47,11 @@ class VoyageApp : Application(), Configuration.Provider {
         com.betteraudio.util.log.PostMortem.Watchdog.start()
         super.onCreate()
         appScope.launch {
+            // Before anything else in this block: a build that moves the manifest default
+            // icon can leave an upgraded install with two launcher entries, and the sooner
+            // that is collapsed the less likely the user ever sees it (see
+            // AppIconManager.reconcile).
+            com.betteraudio.util.AppIconManager.reconcile(this@VoyageApp)
             cleanupPhantomSeries()
             // After phantom-series cleanup, not concurrent with it — both read/write the series
             // table and there's no reason to race them.

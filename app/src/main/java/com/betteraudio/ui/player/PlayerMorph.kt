@@ -60,6 +60,11 @@ class PlayerExpandTransition(
     /** The mini bar's author line — the full player's author travels out of it, the way the title
      *  travels out of [miniTitle]. Zero when the mini bar has no author to show. */
     val miniAuthor: State<Rect> = stateOfZeroRect,
+    /** True when [miniCover] is the Immersive mini player's *circular* cover (MiniCoverStyle.RING)
+     *  rather than a rectangle. The Immersive player switches to [morphFromCircle] on this: a
+     *  circle and a full-bleed cover don't share an aspect, so the plain rigid-box scale of
+     *  [morphFrom] cannot start inside the circle without either squashing or spilling out of it. */
+    val coverSourceIsCircle: Boolean = false,
 )
 
 private val stateOfOne = mutableStateOf(1f)
@@ -146,6 +151,63 @@ fun Modifier.morphFrom(
                 translationX = (src.center.x - own.center.x) * (1f - p)
                 translationY = (src.center.y - own.center.y) * (1f - p)
             }
+        }
+}
+
+/**
+ * [morphFrom]'s counterpart for a CIRCULAR source — the Immersive mini player's ringed cover.
+ *
+ * [morphFrom] moves an element as a rigid box: it scales the whole thing by one ratio and rounds
+ * its corners. That is right only while source and destination share an aspect ratio, which the
+ * cap-shaped mini cover deliberately does (it is sized by the cover's own aspect). A circle does
+ * not: scale a full-bleed portrait cover to the circle's width and it stands a third taller than
+ * the circle, so rounding its corners gives a capsule spilling above and below — and scaling it to
+ * the circle's height leaves it too narrow to fill.
+ *
+ * So this separates the two jobs. The element is scaled uniformly by its SHORTER side, which is
+ * exactly the scale at which a centre crop fills the circle — no squash, and the same pixels the
+ * mini bar's own `ContentScale.Crop` circle is showing, so the hand-off is seamless. The circle
+ * itself is then a clip *window* — a centred square with a full corner radius, opening out to the
+ * element's whole bounds with square corners as [progress] runs to 1. Centres are matched rather
+ * than top-lefts, because a circle is defined by its centre.
+ *
+ * [fadeIn] behaves as in [morphFrom]. Same deferred-read discipline throughout: everything is read
+ * inside the [graphicsLayer] block, so the morph never recomposes anything.
+ */
+@Composable
+fun Modifier.morphFromCircle(
+    source: State<Rect>,
+    progress: State<Float>,
+    fadeIn: Boolean = false
+): Modifier {
+    var own by remember { mutableStateOf(Rect.Zero) }
+    return this
+        .onGloballyPositioned { own = Rect(it.positionInRoot(), it.size.toSize()) }
+        .graphicsLayer {
+            val p = progress.value
+            alpha = if (fadeIn) (p / 0.5f).coerceIn(0f, 1f) else 1f
+            val src = source.value
+            if (p >= 1f || src == Rect.Zero || own.width <= 0f || own.height <= 0f) {
+                scaleX = 1f; scaleY = 1f; translationX = 0f; translationY = 0f
+                clip = false
+                shape = RectangleShape
+                return@graphicsLayer
+            }
+            // The square the circle inscribes, in the element's own pre-scale space.
+            val side = minOf(own.width, own.height)
+            val diameter = minOf(src.width, src.height)
+            val s = lerp(diameter / side, 1f, p)
+            scaleX = s
+            scaleY = s
+            translationX = (src.center.x - own.center.x) * (1f - p)
+            translationY = (src.center.y - own.center.y) * (1f - p)
+            val insetX = lerp((own.width - side) / 2f, 0f, p)
+            val insetY = lerp((own.height - side) / 2f, 0f, p)
+            shape = RevealWindowShape(
+                Rect(insetX, insetY, own.width - insetX, own.height - insetY),
+                lerp(side / 2f, 0f, p)
+            )
+            clip = true
         }
 }
 

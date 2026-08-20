@@ -32,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.components.ChangelogBodyView
 import com.betteraudio.ui.components.parseChangelogBody
+import com.betteraudio.ui.haptics.*
 
 /**
  * Full-screen "an update is available" prompt shown over the app on launch. Two actions:
@@ -150,12 +151,12 @@ fun UpdateAvailableScreen(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OutlinedButton(
+                HapticOutlinedButton(
                     onClick = onSkip,
                     enabled = !downloading,
                     modifier = Modifier.weight(1f)
                 ) { Text("Skip") }
-                Button(
+                HapticButton(
                     onClick = onInstall,
                     enabled = !downloading,
                     modifier = Modifier.weight(1f),

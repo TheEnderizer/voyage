@@ -65,6 +65,7 @@ import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 /**
  * Shared body for both Home screen variants (Material You / Immersive) — the two `HomeScreen`
@@ -420,19 +421,19 @@ fun HomeScreenContent(
                         Modifier.fillMaxWidth().clickable { deleteFiles = !deleteFiles },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Checkbox(checked = deleteFiles, onCheckedChange = { deleteFiles = it })
+                        HapticCheckbox(checked = deleteFiles, onCheckedChange = { deleteFiles = it })
                         Spacer(Modifier.width(4.dp))
                         Text("Also delete files from storage")
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                HapticTextButton(onClick = {
                     viewModel.deleteSelection(deleteFiles)
                     showDeleteConfirm = false
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
+            dismissButton = { HapticTextButton(onClick = { showDeleteConfirm = false }) { Text("Cancel") } }
         )
     }
 
@@ -443,13 +444,13 @@ fun HomeScreenContent(
             title = { Text("Storage Access Needed") },
             text = { Text("Better Audio needs access to all files. Tap Open Settings, then enable 'Allow access to all files'.") },
             confirmButton = {
-                TextButton(onClick = {
+                HapticTextButton(onClick = {
                     showStorageRationale = false
                     storageSettingsLauncher.launch(allFilesAccessIntent(context))
                 }) { Text("Open Settings") }
             },
             dismissButton = {
-                TextButton(onClick = { showStorageRationale = false }) { Text("Cancel") }
+                HapticTextButton(onClick = { showStorageRationale = false }) { Text("Cancel") }
             }
         )
     }
@@ -479,7 +480,7 @@ private fun EbookErrorDialog(viewModel: HomeViewModel, style: HomeStyle) {
             onDismissRequest = { viewModel.dismissEbookError() },
             title = { Text("Couldn't connect ebook") },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
+            confirmButton = { HapticTextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
         )
     }
 }
@@ -635,7 +636,7 @@ private fun SelectionHeader(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onClear) { Icon(Icons.Default.Close, "Cancel selection") }
+            HapticIconButton(onClick = onClear) { Icon(Icons.Default.Close, "Cancel selection") }
             Text(
                 "$selectedCount selected",
                 style = MaterialTheme.typography.titleMedium,
@@ -643,18 +644,18 @@ private fun SelectionHeader(
             )
             // One series + some books → add those books to the series.
             if (showAddToSeries) {
-                IconButton(onClick = onAddToSeries) {
+                HapticIconButton(onClick = onAddToSeries) {
                     Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to series")
                 }
             }
-            IconButton(onClick = onDelete) {
+            HapticIconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
             }
             // Single selection → overflow (cover search + book options).
             if (single != null) {
                 var showMenu by remember { mutableStateOf(false) }
                 Box {
-                    IconButton(onClick = { showMenu = true }) {
+                    HapticIconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, "More options")
                     }
                     DropdownMenu(
@@ -662,13 +663,13 @@ private fun SelectionHeader(
                         onDismissRequest = { showMenu = false },
                         containerColor = style.menuContainerColor()
                     ) {
-                        DropdownMenuItem(
+                        HapticDropdownMenuItem(
                             text = { Text("Search cover online") },
                             leadingIcon = { Icon(Icons.Default.Search, null) },
                             onClick = { showMenu = false; onCoverSearch() }
                         )
                         if (single is SelKey.BookK) {
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Book options") },
                                 leadingIcon = { Icon(Icons.Default.Tune, null) },
                                 onClick = { showMenu = false; onBookOptions() }
@@ -1090,7 +1091,7 @@ private fun EmptyLibrary(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = onScan, shape = Pill, modifier = Modifier.height(50.dp)) {
+                HapticButton(onClick = onScan, shape = Pill, modifier = Modifier.height(50.dp)) {
                     Icon(Icons.Default.CreateNewFolder, null)
                     Spacer(Modifier.width(8.dp))
                     Text("Scan a folder")

@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 internal fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: SettingsViewModel) {
     item {
@@ -117,7 +118,7 @@ internal fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: S
                         Text("Updates", style = MaterialTheme.typography.titleSmall)
                     }
                     if (!updateState.downloading) {
-                        Button(
+                        HapticButton(
                             onClick = { viewModel.checkForUpdate() },
                             enabled = !updateState.checking,
                             shape = Pill,
@@ -158,7 +159,7 @@ internal fun LazyListScope.aboutSection(updateState: UpdateUiState, viewModel: S
                                             color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f))
                                     }
                                 } else {
-                                    Button(onClick = { viewModel.downloadAndInstall() },
+                                    HapticButton(onClick = { viewModel.downloadAndInstall() },
                                         modifier = Modifier.fillMaxWidth(), shape = Pill) {
                                         Text("Download & Install")
                                     }

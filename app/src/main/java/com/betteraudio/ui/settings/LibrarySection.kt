@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 internal fun LazyListScope.librarySection(
     context: Context,
@@ -117,7 +118,7 @@ internal fun LazyListScope.librarySection(
             subtitle = if (storageGranted) "Voyage can read your files" else "Required to read audiobook files",
             trailing = {
                 if (!storageGranted) {
-                    Button(
+                    HapticButton(
                         onClick = { storageSettingsLauncher.launch(allFilesAccessIntent(context)) },
                         shape = Pill
                     ) { Text("Grant") }
@@ -219,13 +220,13 @@ internal fun LazyListScope.librarySection(
                     )
                 },
                 confirmButton = {
-                    TextButton(
+                    HapticTextButton(
                         onClick = { viewModel.resetLibrary(); showResetConfirm = false },
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) { Text("Reset") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
+                    HapticTextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
                 }
             )
         }
@@ -283,12 +284,12 @@ internal fun LazyListScope.librarySection(
                 confirmButton = {
                     val result = restructure.result
                     if (result != null || restructure.running) {
-                        TextButton(
+                        HapticTextButton(
                             onClick = { showRestructure = false; viewModel.clearRestructure() },
                             enabled = !restructure.running
                         ) { Text("Done") }
                     } else {
-                        TextButton(
+                        HapticTextButton(
                             onClick = { viewModel.runRestructure() },
                             enabled = (restructure.planCount ?: 0) > 0
                         ) { Text("Restructure") }
@@ -296,7 +297,7 @@ internal fun LazyListScope.librarySection(
                 },
                 dismissButton = {
                     if (restructure.result == null && !restructure.running) {
-                        TextButton(onClick = { showRestructure = false; viewModel.clearRestructure() }) { Text("Cancel") }
+                        HapticTextButton(onClick = { showRestructure = false; viewModel.clearRestructure() }) { Text("Cancel") }
                     }
                 }
             )
@@ -352,13 +353,13 @@ internal fun LazyListScope.librarySection(
                     )
                 },
                 confirmButton = {
-                    TextButton(
+                    HapticTextButton(
                         onClick = { viewModel.forgetDiskData(); showForgetConfirm = false },
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) { Text("Forget & rebuild") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showForgetConfirm = false }) { Text("Cancel") }
+                    HapticTextButton(onClick = { showForgetConfirm = false }) { Text("Cancel") }
                 }
             )
         }
@@ -384,7 +385,7 @@ internal fun LazyListScope.librarySection(
                                         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 }
                             }
-                            TextButton(onClick = { viewModel.restoreBook(book.id) }) { Text("Restore") }
+                            HapticTextButton(onClick = { viewModel.restoreBook(book.id) }) { Text("Restore") }
                         }
                     }
                 }

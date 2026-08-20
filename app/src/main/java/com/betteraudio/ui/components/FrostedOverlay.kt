@@ -26,6 +26,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.theme.MotionTokens
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 /**
  * A darkening scrim with floating [content] drawn over whatever page hosts it (player /
@@ -46,6 +49,20 @@ fun FrostedOverlay(
     // over — MainActivity's collapse-player back handling while the overlay is visible. Tracks
     // gesture progress too (not just commit-only), so a slow edge-swipe visibly nudges the panel
     // before committing to onDismiss — same "peek" treatment as the top-level screens.
+    // One place covers the chapter list, listening history and every other frosted panel: the
+    // overlay is a surface arriving over the page, and that is worth a beat of its own. Skips the
+    // first composition so a screen restored with a panel already open does not buzz on arrival.
+    val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
+    var seen by remember { mutableStateOf(visible) }
+    LaunchedEffect(visible) {
+        if (visible != seen) {
+            seen = visible
+            haptics.play(
+                if (visible) com.betteraudio.ui.haptics.Feel.Reveal
+                else com.betteraudio.ui.haptics.Feel.Dismiss
+            )
+        }
+    }
     val backProgress = rememberPredictiveBackProgress(enabled = visible, onCommit = onDismiss)
     AnimatedVisibility(
         visible = visible,

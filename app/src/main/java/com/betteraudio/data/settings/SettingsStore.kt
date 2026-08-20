@@ -24,6 +24,11 @@ import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(name = "better_audio_settings")
 
+/** Midpoint of the backdrop-dim slider, and the value every existing install lands on: it
+ *  reproduces the veil the Immersive backdrop shipped with before the slider existed, so the
+ *  control starts centred on "what this already looked like" rather than at an extreme. */
+const val BACKDROP_DIM_DEFAULT = 0.5f
+
 @Singleton
 class SettingsStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -93,6 +98,21 @@ class SettingsStore @Inject constructor(
         // currently scrolled underneath it in the grid (updating live as the user scrolls) instead
         // of the fixed now-playing/last-played backdrop.
         val DYNAMIC_PILLS                = booleanPreferencesKey("dynamic_pills")
+        // Immersive only: how hard the app-wide blurred-cover backdrop is darkened toward
+        // the bottom of the screen. 0 = the blurred cover shows through undimmed,
+        // BACKDROP_DIM_DEFAULT = the tuned look, 1 = the lower backdrop goes solid black.
+        val BACKDROP_DIM                 = floatPreferencesKey("backdrop_dim")
+        // Manual accent picks, one per cover, as a JSON object of path -> "#AARRGGBB".
+        // Overrides the automatic swatch choice for that cover. See CoverAccentCodec.
+        val COVER_ACCENTS                = stringPreferencesKey("cover_accents")
+        // Immersive only: how the mini player draws the cover. CAP (the pill's own left cap,
+        // progress around the pill) | RING (a circle inset in the pill, progress around it).
+        val MINI_COVER_STYLE             = stringPreferencesKey("mini_cover_style")
+        // Immersive only: which of the four chapter-scrubber designs the player draws.
+        // EMBER (default) | RIBS | AURORA | HORIZON. See ScrubberStyle.
+        val SCRUBBER_STYLE               = stringPreferencesKey("scrubber_style")
+        // How much the app is allowed to vibrate: OFF | LIGHT | FULL. See HapticStrength.
+        val HAPTIC_STRENGTH              = stringPreferencesKey("haptic_strength")
         // Resolved Material You ColorScheme.primary (ARGB Int), kept in sync from VoyageTheme so
         // themeless widget providers (no Compose context) can render an "app color" background.
         val WIDGET_APP_COLOR             = intPreferencesKey("widget_app_color")
@@ -249,6 +269,12 @@ class SettingsStore @Inject constructor(
     // it should be what a user sees without hunting through Settings. The toggle exists to turn it
     // OFF (older/slower devices, or a preference for the static cover smudge).
     val dynamicPills: Flow<Boolean>            = prefsData.map { it[Keys.DYNAMIC_PILLS] ?: true }.distinctUntilChanged()
+    val backdropDim: Flow<Float>               = prefsData.map { it[Keys.BACKDROP_DIM] ?: BACKDROP_DIM_DEFAULT }.distinctUntilChanged()
+    /** Raw JSON — decode with [CoverAccentCodec.decode]. "" = nothing pinned. */
+    val coverAccents: Flow<String>             = prefsData.map { it[Keys.COVER_ACCENTS] ?: "" }.distinctUntilChanged()
+    val miniCoverStyle: Flow<String>           = prefsData.map { it[Keys.MINI_COVER_STYLE] ?: "CAP" }.distinctUntilChanged()
+    val scrubberStyle: Flow<String>            = prefsData.map { it[Keys.SCRUBBER_STYLE] ?: "EMBER" }.distinctUntilChanged()
+    val hapticStrength: Flow<String>           = prefsData.map { it[Keys.HAPTIC_STRENGTH] ?: "FULL" }.distinctUntilChanged()
     val widgetAppColor: Flow<Int>              = prefsData.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }.distinctUntilChanged()
     val widgetHideWhenIdle: Flow<Boolean>      = prefsData.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }.distinctUntilChanged()
     val autoBackupEnabled: Flow<Boolean>       = prefsData.map { it[Keys.AUTO_BACKUP_ENABLED] ?: false }.distinctUntilChanged()
@@ -316,6 +342,10 @@ class SettingsStore @Inject constructor(
     @Volatile var currentAppTheme                   = "";                                       private set
     @Volatile var currentThemeColorSource           = "WALLPAPER";                              private set
     @Volatile var currentCustomThemeColor           = "default";                                private set
+    @Volatile var currentCoverAccents               = "";                                       private set
+    @Volatile var currentMiniCoverStyle             = "CAP";                                    private set
+    @Volatile var currentScrubberStyle              = "EMBER";                                  private set
+    @Volatile var currentHapticStrength             = "FULL";                                   private set
     @Volatile var currentDarkMode                   = "AUTO";                                    private set
     @Volatile var currentPureBlack                  = false;                                    private set
     @Volatile var currentLastOpenBookId             = -1L;                                       private set
@@ -359,6 +389,10 @@ class SettingsStore @Inject constructor(
         scope.launch { appTheme.collect                      { currentAppTheme                       = it } }
         scope.launch { themeColorSource.collect               { currentThemeColorSource              = it } }
         scope.launch { customThemeColor.collect                { currentCustomThemeColor              = it } }
+        scope.launch { coverAccents.collect                    { currentCoverAccents                  = it } }
+        scope.launch { miniCoverStyle.collect                  { currentMiniCoverStyle                = it } }
+        scope.launch { scrubberStyle.collect                   { currentScrubberStyle                 = it } }
+        scope.launch { hapticStrength.collect                  { currentHapticStrength                = it } }
         scope.launch { darkMode.collect                         { currentDarkMode                       = it } }
         scope.launch { pureBlack.collect                        { currentPureBlack                      = it } }
         scope.launch { lastOpenBookId.collect                   { currentLastOpenBookId                 = it } }
@@ -536,6 +570,32 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setDynamicPills(enabled: Boolean) {
         context.dataStore.edit { it[Keys.DYNAMIC_PILLS] = enabled }
+    }
+    suspend fun setBackdropDim(amount: Float) {
+        context.dataStore.edit { it[Keys.BACKDROP_DIM] = amount.coerceIn(0f, 1f) }
+    }
+    /** Pins [argb] as the accent for [coverPath], or clears the pin when [argb] is null. The
+     *  read-modify-write happens inside `edit` so two quick taps can't lose one another. */
+    suspend fun setCoverAccent(coverPath: String, argb: Int?) {
+        context.dataStore.edit {
+            val next = CoverAccentCodec.with(it[Keys.COVER_ACCENTS] ?: "", coverPath, argb)
+            if (next.isBlank()) it.remove(Keys.COVER_ACCENTS) else it[Keys.COVER_ACCENTS] = next
+        }
+    }
+    suspend fun setMiniCoverStyle(name: String) {
+        context.dataStore.edit { it[Keys.MINI_COVER_STYLE] = name }
+    }
+    suspend fun setScrubberStyle(name: String) {
+        context.dataStore.edit { it[Keys.SCRUBBER_STYLE] = name }
+    }
+    suspend fun setHapticStrength(name: String) {
+        context.dataStore.edit { it[Keys.HAPTIC_STRENGTH] = name }
+    }
+    /** Whole-map write, for the settings restore path only. */
+    suspend fun setCoverAccentsRaw(value: String) {
+        context.dataStore.edit {
+            if (value.isBlank()) it.remove(Keys.COVER_ACCENTS) else it[Keys.COVER_ACCENTS] = value
+        }
     }
     suspend fun setWidgetAppColor(argb: Int) {
         context.dataStore.edit { it[Keys.WIDGET_APP_COLOR] = argb }

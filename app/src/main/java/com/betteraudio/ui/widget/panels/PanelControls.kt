@@ -8,6 +8,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import com.betteraudio.ui.haptics.*
 
 /** A labeled slider row shared by every style panel that exposes a numeric range (dim, blur,
  *  corner radius, opacity, text size, etc.). */
@@ -25,7 +26,7 @@ internal fun LabeledSlider(
             Text(label)
             Text("%.0f".format(value))
         }
-        Slider(
+        HapticSlider(
             value = value, onValueChange = onValueChange,
             valueRange = min..max,
             onValueChangeFinished = onValueChangeFinished

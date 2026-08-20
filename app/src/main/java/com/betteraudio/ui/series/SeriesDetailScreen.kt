@@ -58,6 +58,7 @@ import com.betteraudio.ui.theme.pressScale
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import java.io.File
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 /**
  * Series page. The page itself — cover morph out of the tapped grid card, reveal, backdrop, top
@@ -179,17 +180,17 @@ fun SeriesDetailScreen(
                 onDragStopped = { dragStopped(it) }
             ),
             overflowItems = { dismiss ->
-                DropdownMenuItem(
+                HapticDropdownMenuItem(
                     text = { Text("Series options") },
                     leadingIcon = { Icon(Icons.Default.Tune, null) },
                     onClick = { dismiss(); showOptions = true }
                 )
-                DropdownMenuItem(
+                HapticDropdownMenuItem(
                     text = { Text("Rename series") },
                     leadingIcon = { Icon(Icons.Default.Edit, null) },
                     onClick = { dismiss(); showRename = true }
                 )
-                DropdownMenuItem(
+                HapticDropdownMenuItem(
                     text = { Text("Add books") },
                     leadingIcon = { Icon(Icons.Default.Add, null) },
                     onClick = { dismiss(); showAdd = true }
@@ -268,10 +269,10 @@ fun SeriesDetailScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { showAdd = true }) {
+                        HapticIconButton(onClick = { showAdd = true }) {
                             Icon(Icons.Default.Add, "Add books")
                         }
-                        IconButton(onClick = { settlePanel(false) }) {
+                        HapticIconButton(onClick = { settlePanel(false) }) {
                             Icon(Icons.Default.KeyboardArrowDown, "Close book list")
                         }
                     }
@@ -344,9 +345,9 @@ fun SeriesDetailScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { viewModel.rename(name); showRename = false }) { Text("Save") }
+                HapticTextButton(onClick = { viewModel.rename(name); showRename = false }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showRename = false }) { Text("Cancel") } }
+            dismissButton = { HapticTextButton(onClick = { showRename = false }) { Text("Cancel") } }
         )
     }
 }
@@ -439,14 +440,14 @@ private fun SeriesBookRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column {
-                IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
+                HapticIconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(30.dp)) {
                     Icon(Icons.Default.ArrowUpward, "Move up", Modifier.size(18.dp))
                 }
-                IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
+                HapticIconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(30.dp)) {
                     Icon(Icons.Default.ArrowDownward, "Move down", Modifier.size(18.dp))
                 }
             }
-            IconButton(onClick = onRemove) {
+            HapticIconButton(onClick = onRemove) {
                 Icon(Icons.Default.Close, "Remove from series", tint = MaterialTheme.colorScheme.error)
             }
         }
@@ -501,7 +502,7 @@ private fun AddBooksSheet(
                             Text("Added", style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary)
                         } else {
-                            FilledTonalButton(onClick = { onAdd(book.id); added.add(book.id) }) { Text("Add") }
+                            HapticFilledTonalButton(onClick = { onAdd(book.id); added.add(book.id) }) { Text("Add") }
                         }
                     }
                 }

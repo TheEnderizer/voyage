@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import com.betteraudio.ui.haptics.*
 
 /**
  * The three skip-silence tuning sliders (minimum silence length, sensitivity, silence kept) —
@@ -53,7 +54,7 @@ fun SkipSilenceControls(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
         }
-        Slider(
+        HapticSlider(
             value = minSlider,
             onValueChange = { minSlider = (it / 0.1f).roundToInt() * 0.1f },
             onValueChangeFinished = { onSetMinMs((minSlider * 1000).toLong()) },
@@ -72,7 +73,7 @@ fun SkipSilenceControls(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
         }
-        Slider(
+        HapticSlider(
             value = sensSlider,
             onValueChange = { sensSlider = it },
             onValueChangeFinished = { onSetThreshold(sensSlider.toInt()) },
@@ -90,7 +91,7 @@ fun SkipSilenceControls(
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary)
         }
-        Slider(
+        HapticSlider(
             value = keepSlider,
             onValueChange = { keepSlider = (it / 0.1f).roundToInt() * 0.1f },
             onValueChangeFinished = { onSetPaddingMs((keepSlider * 1000).toLong()) },

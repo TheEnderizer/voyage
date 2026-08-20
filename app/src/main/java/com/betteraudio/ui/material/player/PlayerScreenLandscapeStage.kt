@@ -46,6 +46,7 @@ import com.betteraudio.ui.player.PlayerExpandTransition
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.theme.Pill
+import com.betteraudio.ui.haptics.*
 
 /**
  * [LandscapePlayerStyle.STAGE] — the Material You player's two-pane landscape layout, and the
@@ -368,7 +369,7 @@ internal fun PlayerLandscapeStageBody(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             if (chapterNavCount > 1) {
-                                IconButton(
+                                HapticIconButton(
                                     onClick = onPrevChapter,
                                     enabled = serviceHasBook && hasPrevChapter,
                                     modifier = Modifier.expandReveal(expandProgress)
@@ -408,7 +409,7 @@ internal fun PlayerLandscapeStageBody(
                                 )
                             }
                             if (chapterNavCount > 1) {
-                                IconButton(
+                                HapticIconButton(
                                     onClick = onNextChapter,
                                     enabled = serviceHasBook && hasNextChapter,
                                     modifier = Modifier.expandReveal(expandProgress)

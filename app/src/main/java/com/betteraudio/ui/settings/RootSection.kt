@@ -96,7 +96,7 @@ import kotlinx.coroutines.launch
 
 internal fun LazyListScope.rootSection(viewModel: SettingsViewModel) {
     val rows = listOf(
-        Triple(Icons.Default.Palette, "Theme", SettingsSection.Theme),
+        Triple(Icons.Default.Palette, "Look and feel", SettingsSection.Theme),
         Triple(Icons.Default.Folder, "Library", SettingsSection.Library),
         Triple(Icons.Default.Speed, "Playback", SettingsSection.Playback),
         Triple(Icons.Default.Tune, "Audio presets", SettingsSection.Presets),

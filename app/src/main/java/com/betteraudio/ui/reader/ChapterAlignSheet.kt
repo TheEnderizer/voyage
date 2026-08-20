@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.betteraudio.data.ebook.SpineItem
 import com.betteraudio.sync.AudioChapterSpan
 import com.betteraudio.sync.ChapterMap
+import com.betteraudio.ui.haptics.*
 
 /**
  * Manual fallback for aligning audio chapters to epub spine items when auto-match gets it wrong
@@ -35,7 +36,7 @@ fun ChapterAlignSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Align chapters", style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onAutoMatch) { Text("Auto-match") }
+                HapticTextButton(onClick = onAutoMatch) { Text("Auto-match") }
             }
 
             if (audioSpans.isEmpty() || spine.isEmpty()) {
@@ -72,12 +73,12 @@ fun ChapterAlignSheet(
                                 modifier = Modifier.fillMaxWidth().menuAnchor()
                             )
                             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                DropdownMenuItem(
+                                HapticDropdownMenuItem(
                                     text = { Text("Unmapped (interpolated)") },
                                     onClick = { assignments[span.index] = -1; expanded = false }
                                 )
                                 spine.forEach { item ->
-                                    DropdownMenuItem(
+                                    HapticDropdownMenuItem(
                                         text = { Text(item.title ?: "Section ${item.index + 1}") },
                                         onClick = { assignments[span.index] = item.index; expanded = false }
                                     )
@@ -92,9 +93,9 @@ fun ChapterAlignSheet(
                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
                 horizontalArrangement = Arrangement.End
             ) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                HapticTextButton(onClick = onDismiss) { Text("Cancel") }
                 Spacer(Modifier.width(8.dp))
-                Button(onClick = {
+                HapticButton(onClick = {
                     // Enforce monotonic non-decreasing across mapped entries — any pick that goes
                     // "backwards" relative to an earlier chapter's pick is dropped to unmapped.
                     var lastMapped = -1

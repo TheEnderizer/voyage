@@ -385,6 +385,49 @@ class SettingsViewModel @Inject constructor(
     val customThemeColor: StateFlow<String> =
         settings.customThemeColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "default")
 
+    /** Pinned accents by cover path — see CoverAccentCodec. Empty = every cover is on Automatic. */
+    val coverAccents: StateFlow<Map<String, Int>> =
+        settings.coverAccents
+            .map { com.betteraudio.data.settings.CoverAccentCodec.decode(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** [argb] null returns [coverPath] to the automatic pick. */
+    fun setCoverAccent(coverPath: String, argb: Int?) =
+        viewModelScope.launch { settings.setCoverAccent(coverPath, argb) }
+
+    val miniCoverStyle: StateFlow<com.betteraudio.ui.player.MiniCoverStyle> =
+        settings.miniCoverStyle
+            .map { com.betteraudio.ui.player.MiniCoverStyle.from(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.player.MiniCoverStyle.CAP
+            )
+
+    fun setMiniCoverStyle(style: com.betteraudio.ui.player.MiniCoverStyle) =
+        viewModelScope.launch { settings.setMiniCoverStyle(style.name) }
+
+    val scrubberStyle: StateFlow<com.betteraudio.ui.immersive.components.ScrubberStyle> =
+        settings.scrubberStyle
+            .map { com.betteraudio.ui.immersive.components.ScrubberStyle.from(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.immersive.components.ScrubberStyle.EMBER
+            )
+
+    fun setScrubberStyle(style: com.betteraudio.ui.immersive.components.ScrubberStyle) =
+        viewModelScope.launch { settings.setScrubberStyle(style.name) }
+
+    val hapticStrength: StateFlow<com.betteraudio.ui.haptics.HapticStrength> =
+        settings.hapticStrength
+            .map { com.betteraudio.ui.haptics.HapticStrength.from(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.haptics.HapticStrength.FULL
+            )
+
+    fun setHapticStrength(strength: com.betteraudio.ui.haptics.HapticStrength) =
+        viewModelScope.launch { settings.setHapticStrength(strength.name) }
+
     val darkMode: StateFlow<com.betteraudio.ui.theme.DarkMode> =
         settings.darkMode
             .map { com.betteraudio.ui.theme.DarkMode.from(it) }
@@ -396,6 +439,13 @@ class SettingsViewModel @Inject constructor(
 
     val dynamicPills: StateFlow<Boolean> =
         settings.dynamicPills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** Immersive backdrop darkening, 0 (none) → 1 (lower backdrop solid black). */
+    val backdropDim: StateFlow<Float> =
+        settings.backdropDim.stateIn(
+            viewModelScope, SharingStarted.WhileSubscribed(5_000),
+            com.betteraudio.data.settings.BACKDROP_DIM_DEFAULT
+        )
 
     /** Which landscape layout the Material You player uses — see `LandscapePlayerStyle`. */
     val landscapePlayerStyle: StateFlow<com.betteraudio.ui.material.player.LandscapePlayerStyle> =
@@ -420,6 +470,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicPills(enabled: Boolean) =
         viewModelScope.launch { settings.setDynamicPills(enabled) }
+
+    fun setBackdropDim(amount: Float) =
+        viewModelScope.launch { settings.setBackdropDim(amount) }
 
     private val _updateState = MutableStateFlow(UpdateUiState())
     val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()

@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.widget.WidgetEditorViewModel
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.TapAction
+import com.betteraudio.ui.haptics.*
 
 /** Tap-action selector for TEXT/IMAGE/SHAPE elements — the "more interactivity" for those types:
  *  a photo or line of text can behave like a button on the real widget. */
@@ -22,7 +23,7 @@ fun TapActionPicker(element: ElementSpec, viewModel: WidgetEditorViewModel) {
         Text("On tap")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(TapAction.entries) { action ->
-                FilterChip(
+                HapticFilterChip(
                     selected = element.tapAction == action,
                     onClick = { viewModel.updateSelected { it.copy(tapAction = action) } },
                     label = { Text(labelFor(action)) }

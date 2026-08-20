@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import coil3.compose.AsyncImage
 import com.betteraudio.ui.material.MaterialAdaptive
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -77,7 +78,7 @@ fun CoverSearchSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 trailingIcon = {
-                    IconButton(onClick = { runSearch() }) {
+                    HapticIconButton(onClick = { runSearch() }) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
                 },

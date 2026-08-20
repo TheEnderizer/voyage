@@ -25,6 +25,7 @@ import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.ui.widget.ColorPickerRow
 import com.betteraudio.ui.widget.WidgetEditorViewModel
+import com.betteraudio.ui.haptics.*
 
 @Composable
 fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
@@ -69,7 +70,7 @@ fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             Text("Sleep timer duration")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(5, 10, 15, 30, 45, 60).forEach { minutes ->
-                    FilterChip(
+                    HapticFilterChip(
                         selected = element.sleepDurationMs == minutes * 60_000L,
                         onClick = { viewModel.updateSelected { it.copy(sleepDurationMs = minutes * 60_000L) } },
                         label = { Text("${minutes}m") }
@@ -78,7 +79,7 @@ fun IconPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Show countdown label")
-                Switch(
+                HapticSwitch(
                     checked = element.showCountdown,
                     onCheckedChange = { viewModel.updateSelected { s -> s.copy(showCountdown = it) } }
                 )

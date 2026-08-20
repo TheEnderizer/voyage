@@ -62,6 +62,7 @@ import com.betteraudio.ui.widget.panels.LabeledSlider
 import com.betteraudio.ui.widget.panels.ShapePanel
 import com.betteraudio.ui.widget.panels.TextPanel
 import com.betteraudio.widget.model.ElementSpec
+import com.betteraudio.ui.haptics.*
 
 /** Which panel the persistent dock is currently showing. */
 private enum class DockTab { ELEMENTS, LAYERS, OPTIONS }
@@ -132,27 +133,27 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = requestBack) {
+                    HapticIconButton(onClick = requestBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::undo, enabled = state.canUndo) {
+                    HapticIconButton(onClick = viewModel::undo, enabled = state.canUndo) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo")
                     }
-                    IconButton(onClick = viewModel::redo, enabled = state.canRedo) {
+                    HapticIconButton(onClick = viewModel::redo, enabled = state.canRedo) {
                         Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = "Redo")
                     }
                     Box {
-                        IconButton(onClick = { showOverflowMenu = true }) {
+                        HapticIconButton(onClick = { showOverflowMenu = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More")
                         }
                         DropdownMenu(expanded = showOverflowMenu, onDismissRequest = { showOverflowMenu = false }) {
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Change size (re-layout)") },
                                 onClick = { showOverflowMenu = false; showAspectMenu = true }
                             )
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text(if (state.previewMode == PreviewMode.LIVE) "Preview: Sample data" else "Preview: Live playback") },
                                 onClick = {
                                     showOverflowMenu = false
@@ -162,14 +163,14 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
                         }
                         DropdownMenu(expanded = showAspectMenu, onDismissRequest = { showAspectMenu = false }) {
                             WIDGET_SIZE_PRESETS.forEach { preset ->
-                                DropdownMenuItem(
+                                HapticDropdownMenuItem(
                                     text = { Text("${preset.label}  (${preset.cols}×${preset.rows})") },
                                     onClick = { viewModel.setAspectRatio(preset.aspect); showAspectMenu = false }
                                 )
                             }
                         }
                     }
-                    TextButton(onClick = {
+                    HapticTextButton(onClick = {
                         // Stays on the editor (unlike the unsaved-changes dialog's Save, which
                         // exits) so the confirmation is actually visible instead of flashing past
                         // during a navigation — the only signal today that a push to the real
@@ -236,12 +237,12 @@ fun WidgetEditorScreen(onBack: () -> Unit, viewModel: WidgetEditorViewModel = hi
             title = { Text("Unsaved changes") },
             text = { Text("Save your changes to this widget before leaving?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.save(onSaved = onBack) }) { Text("Save") }
+                HapticTextButton(onClick = { viewModel.save(onSaved = onBack) }) { Text("Save") }
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = onBack) { Text("Discard") }
-                    TextButton(onClick = { showUnsavedDialog = false }) { Text("Cancel") }
+                    HapticTextButton(onClick = onBack) { Text("Discard") }
+                    HapticTextButton(onClick = { showUnsavedDialog = false }) { Text("Cancel") }
                 }
             }
         )
@@ -263,7 +264,7 @@ private fun EmptyCanvasHint(onAdd: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            TextButton(onClick = onAdd) {
+            HapticTextButton(onClick = onAdd) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("Add element")
             }
@@ -302,13 +303,13 @@ private fun EditorDock(
                     onTabChange(DockTab.OPTIONS); onExpandedChange(true)
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = onDuplicate, enabled = hasSelection) {
+                HapticIconButton(onClick = onDuplicate, enabled = hasSelection) {
                     Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate")
                 }
-                IconButton(onClick = onDelete, enabled = hasSelection) {
+                HapticIconButton(onClick = onDelete, enabled = hasSelection) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete")
                 }
-                IconButton(onClick = { onExpandedChange(!expanded) }) {
+                HapticIconButton(onClick = { onExpandedChange(!expanded) }) {
                     Icon(
                         if (expanded) Icons.Default.ExpandMore else Icons.Default.ExpandLess,
                         contentDescription = if (expanded) "Collapse panel" else "Expand panel",
@@ -324,7 +325,7 @@ private fun EditorDock(
 
 @Composable
 private fun DockTabButton(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
+    HapticIconButton(onClick = onClick) {
         Icon(
             icon, contentDescription = label,
             tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,

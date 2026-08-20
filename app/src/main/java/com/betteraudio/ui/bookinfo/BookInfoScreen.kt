@@ -29,6 +29,7 @@ import com.betteraudio.ui.components.InfoPageKind
 import com.betteraudio.ui.components.InfoPageScaffold
 import com.betteraudio.ui.components.rememberInfoPageState
 import com.betteraudio.ui.home.BookOptionsSheet
+import com.betteraudio.ui.haptics.*
 
 /**
  * Book Info page. The page itself — cover morph out of the tapped grid card, reveal, backdrop, top
@@ -50,6 +51,7 @@ fun BookInfoScreen(
     val book = bwp?.book
 
     var showBookOptions by remember { mutableStateOf(false) }
+    val coverSearchOpen by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     val pageState = rememberInfoPageState()
 
     val seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
@@ -82,7 +84,7 @@ fun BookInfoScreen(
         // if they overlap.
         onResume = { pageState.closeWithMorph { onResume(viewModel.bookId) } },
         overflowItems = { dismiss ->
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Book options") },
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { dismiss(); showBookOptions = true }
@@ -96,7 +98,19 @@ fun BookInfoScreen(
             onDismiss = { showBookOptions = false },
             onUpdateMetadata = { title, author -> viewModel.updateMetadata(title, author) },
             onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
-            onUpdateStatus = { viewModel.updateStatus(it) }
+            onUpdateStatus = { viewModel.updateStatus(it) },
+            onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() }
+        )
+    }
+
+    if (coverSearchOpen) {
+        com.betteraudio.ui.home.CoverSearchSheet(
+            initialQuery = book?.let {
+                listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
+            } ?: "",
+            onSearch = { query -> viewModel.searchCovers(query) },
+            onPick = { url -> viewModel.setCoverFromUrl(url) },
+            onDismiss = { viewModel.closeCoverSearch() }
         )
     }
 }

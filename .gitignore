@@ -35,3 +35,8 @@ build_out.txt
 # Emulator harness (scripts/emu.sh) scratch output — scripts/baseline/ IS committed (golden files)
 scripts/shots/
 scripts/.testlib/
+
+# Staged release APKs (copied out of app/build for upload)
+dist/
+# Icon contact sheets generated while designing launcher icons
+icon_sheet.png

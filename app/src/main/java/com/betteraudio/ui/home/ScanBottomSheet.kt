@@ -15,6 +15,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.components.FolderBrowser
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,7 +98,7 @@ fun ScanBottomSheet(
                         )
                     }
                     Spacer(Modifier.width(8.dp))
-                    FilledTonalButton(onClick = { showBrowser = true }) {
+                    HapticFilledTonalButton(onClick = { showBrowser = true }) {
                         Icon(Icons.Default.FolderOpen, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text("Browse")
@@ -105,7 +106,7 @@ fun ScanBottomSheet(
                 }
             }
 
-            Button(
+            HapticButton(
                 onClick = { onScan(path) },
                 enabled = File(path).isDirectory && scan.status != ScanStatus.Running,
                 modifier = Modifier.fillMaxWidth()
@@ -177,7 +178,7 @@ private fun ResultCard(
             Text(message, style = MaterialTheme.typography.bodySmall, color = onContainer)
             if (action != null) {
                 Spacer(Modifier.height(4.dp))
-                TextButton(
+                HapticTextButton(
                     onClick = action.second,
                     colors = ButtonDefaults.textButtonColors(contentColor = onContainer)
                 ) { Text(action.first) }

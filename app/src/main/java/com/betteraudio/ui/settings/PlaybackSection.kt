@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 internal fun LazyListScope.playbackSection(
     skipForwardMs: Long,
@@ -137,7 +138,7 @@ internal fun LazyListScope.playbackSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FilledTonalButton(
+                HapticFilledTonalButton(
                     onClick = { viewModel.navigateTo(SettingsSection.Presets) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -174,7 +175,7 @@ internal fun LazyListScope.playbackSection(
                 }
                 Row(verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(
+                    HapticIconButton(
                         onClick = {
                             val v = (thresholdSlider - 1).coerceAtLeast(0f)
                             thresholdSlider = v
@@ -182,7 +183,7 @@ internal fun LazyListScope.playbackSection(
                         },
                         modifier = Modifier.size(32.dp)
                     ) { Text("−", style = MaterialTheme.typography.titleMedium) }
-                    Slider(
+                    HapticSlider(
                         value = thresholdSlider,
                         onValueChange = { thresholdSlider = it.toInt().toFloat() },
                         onValueChangeFinished = { viewModel.setAutoRewindThresholdMinutes(thresholdSlider.toInt()) },
@@ -190,7 +191,7 @@ internal fun LazyListScope.playbackSection(
                         steps = 29,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(
+                    HapticIconButton(
                         onClick = {
                             val v = (thresholdSlider + 1).coerceAtMost(30f)
                             thresholdSlider = v
@@ -215,7 +216,7 @@ internal fun LazyListScope.playbackSection(
                     }
                     Row(verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        IconButton(
+                        HapticIconButton(
                             onClick = {
                                 val v = (rewindSlider - 1).coerceAtLeast(0f)
                                 rewindSlider = v
@@ -223,7 +224,7 @@ internal fun LazyListScope.playbackSection(
                             },
                             modifier = Modifier.size(32.dp)
                         ) { Text("−", style = MaterialTheme.typography.titleMedium) }
-                        Slider(
+                        HapticSlider(
                             value = rewindSlider,
                             onValueChange = { rewindSlider = it.toInt().toFloat() },
                             onValueChangeFinished = { viewModel.setAutoRewindSeconds(rewindSlider.toInt()) },
@@ -231,7 +232,7 @@ internal fun LazyListScope.playbackSection(
                             steps = 89,
                             modifier = Modifier.weight(1f)
                         )
-                        IconButton(
+                        HapticIconButton(
                             onClick = {
                                 val v = (rewindSlider + 1).coerceAtMost(90f)
                                 rewindSlider = v
@@ -296,7 +297,7 @@ internal fun LazyListScope.playbackSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = headsetMultiPressEnabled, onCheckedChange = { viewModel.setHeadsetMultiPressEnabled(it) })
+                    HapticSwitch(checked = headsetMultiPressEnabled, onCheckedChange = { viewModel.setHeadsetMultiPressEnabled(it) })
                 }
                 if (headsetMultiPressEnabled) {
                     HeadsetActionPicker(
@@ -329,7 +330,7 @@ internal fun LazyListScope.playbackSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = btAutoResumeEnabled, onCheckedChange = { viewModel.setBtAutoResumeEnabled(it) })
+                    HapticSwitch(checked = btAutoResumeEnabled, onCheckedChange = { viewModel.setBtAutoResumeEnabled(it) })
                 }
                 if (btAutoResumeEnabled) {
                     var windowSlider by remember(btAutoResumeWindowMinutes) { mutableFloatStateOf(btAutoResumeWindowMinutes.toFloat()) }
@@ -341,7 +342,7 @@ internal fun LazyListScope.playbackSection(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary)
                     }
-                    Slider(
+                    HapticSlider(
                         value = windowSlider,
                         onValueChange = { windowSlider = it.toInt().toFloat() },
                         onValueChangeFinished = { viewModel.setBtAutoResumeWindowMinutes(windowSlider.toInt().coerceAtLeast(1)) },
@@ -385,10 +386,10 @@ private fun HeadsetActionPicker(label: String, selected: String, onSelect: (Stri
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box {
-            OutlinedButton(onClick = { expanded = true }) { Text(selectedLabel) }
+            HapticOutlinedButton(onClick = { expanded = true }) { Text(selectedLabel) }
             DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                 HEADSET_ACTIONS.forEach { (value, actionLabel) ->
-                    DropdownMenuItem(
+                    HapticDropdownMenuItem(
                         text = { Text(actionLabel) },
                         onClick = { onSelect(value); expanded = false }
                     )

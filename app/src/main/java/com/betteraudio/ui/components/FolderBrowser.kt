@@ -23,6 +23,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 private val AUDIO_EXTS = setOf("mp3", "m4a", "m4b", "ogg", "flac", "aac", "opus", "wav")
 
@@ -99,13 +100,13 @@ fun FolderBrowser(
                             }
                         },
                         navigationIcon = {
-                            IconButton(onClick = onCancel) {
+                            HapticIconButton(onClick = onCancel) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Cancel")
                             }
                         },
                         actions = {
                             val parent = current.parentFile
-                            IconButton(
+                            HapticIconButton(
                                 onClick = { parent?.let { current = it } },
                                 enabled = parent != null && parent.canRead()
                             ) {
@@ -124,11 +125,11 @@ fun FolderBrowser(
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             if (fileExtensions == null) {
-                                OutlinedButton(
+                                HapticOutlinedButton(
                                     onClick = onCancel,
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Cancel") }
-                                Button(
+                                HapticButton(
                                     onClick = { onSelect(current.absolutePath) },
                                     modifier = Modifier.weight(1f)
                                 ) {
@@ -139,7 +140,7 @@ fun FolderBrowser(
                             } else {
                                 // File-pick mode: tapping a file selects it, so there's nothing to
                                 // confirm — only Cancel.
-                                OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
+                                HapticOutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) { Text("Cancel") }
                             }
                         }
                     }

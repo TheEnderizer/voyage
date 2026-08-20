@@ -55,6 +55,7 @@ import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.theme.Pill
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +103,7 @@ fun PlayerContent(
     var showChapters       by remember { mutableStateOf(false) }
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
+    val coverSearchOpen    by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showSkipSilenceSettings by remember { mutableStateOf(false) }
     var showBookmarks      by remember { mutableStateOf(false) }
@@ -581,7 +583,7 @@ fun PlayerContent(
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
                     val chDisplayPos = (chDisplayFrac * chDur).toLong()
-                    Slider(
+                    HapticSlider(
                         value = chDisplayFrac,
                         onValueChange = { f ->
                             if (chapterDragFrac == null) chapterScrubStartMs = bookPos
@@ -612,7 +614,7 @@ fun PlayerContent(
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
                     val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
-                    Slider(
+                    HapticSlider(
                         value = bookDisplayFrac,
                         onValueChange = { f ->
                             if (bookDragFrac == null) bookScrubStartMs = bookPos
@@ -661,7 +663,7 @@ fun PlayerContent(
                 ) {
                     if (chapterNav.count > 1) {
                         val enabled = serviceHasBook && chapterNav.hasPrev
-                        IconButton(
+                        HapticIconButton(
                             onClick = { viewModel.prevChapter() },
                             enabled = enabled,
                             modifier = Modifier.elementMotion(
@@ -711,7 +713,7 @@ fun PlayerContent(
                     }
                     if (chapterNav.count > 1) {
                         val enabled = serviceHasBook && chapterNav.hasNext
-                        IconButton(
+                        HapticIconButton(
                             onClick = { viewModel.nextChapter() },
                             enabled = enabled,
                             modifier = Modifier
@@ -788,14 +790,14 @@ fun PlayerContent(
                     )
                 },
                 confirmButton = {
-                    TextButton(onClick = {
+                    HapticTextButton(onClick = {
                         viewModel.addBookmark(bookmarkComment)
                         bookmarkComment = ""
                         showAddBookmark = false
                     }) { Text("Save") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAddBookmark = false; bookmarkComment = "" }) {
+                    HapticTextButton(onClick = { showAddBookmark = false; bookmarkComment = "" }) {
                         Text("Cancel")
                     }
                 }
@@ -843,7 +845,7 @@ fun PlayerContent(
                 },
                 onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
                 onUpdateStatus = { viewModel.updateBookStatus(it) },
-                onSearchOnlineCover = { showBookOptions = false },
+                onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() },
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
@@ -854,6 +856,17 @@ fun PlayerContent(
                     onBoostChange = { viewModel.setVolumeBoost(it) },
                     onChangeCoverFromGallery = { coverPickerLauncher.launch("image/*") }
                 )
+            )
+        }
+
+        if (coverSearchOpen) {
+            com.betteraudio.ui.home.CoverSearchSheet(
+                initialQuery = bwp?.book?.let {
+                    listOf(it.displayTitle, it.displayAuthor).filter(String::isNotBlank).joinToString(" ")
+                } ?: "",
+                onSearch = { query -> viewModel.searchCovers(query) },
+                onPick = { url -> viewModel.setCoverFromUrl(url) },
+                onDismiss = { viewModel.closeCoverSearch() }
             )
         }
 

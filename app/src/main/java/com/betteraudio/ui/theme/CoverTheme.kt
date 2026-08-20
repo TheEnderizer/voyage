@@ -24,6 +24,10 @@ import java.io.File
  * the cover's dominant colours: accents come from the art, while the warm dark/light surfaces
  * are kept and tinted slightly toward the accent so the whole app shifts with the playing book.
  * Returns null until the bitmap is decoded, or if [coverPath] is null/unreadable.
+ *
+ * [accentOverride] is the colour the user pinned for this cover in Settings. When set it replaces
+ * the automatic swatch choice outright; everything derived from the accent (surfaces, containers,
+ * tinted text) still follows, so pinning recolours the whole app the way an automatic pick would.
  */
 @Composable
 fun rememberCoverScheme(
@@ -32,11 +36,14 @@ fun rememberCoverScheme(
     darkTheme: Boolean,
     // Immersive theme tints text (on*) colours toward the cover accent too; Material You keeps
     // the base text colours for stock M3 contrast.
-    tintText: Boolean = true
+    tintText: Boolean = true,
+    accentOverride: Color? = null
 ): ColorScheme? {
-    var scheme by remember(coverPath, darkTheme, base, tintText) { mutableStateOf<ColorScheme?>(null) }
+    var scheme by remember(coverPath, darkTheme, base, tintText, accentOverride) {
+        mutableStateOf<ColorScheme?>(null)
+    }
 
-    LaunchedEffect(coverPath, darkTheme, base, tintText) {
+    LaunchedEffect(coverPath, darkTheme, base, tintText, accentOverride) {
         if (coverPath.isNullOrBlank()) { scheme = null; return@LaunchedEffect }
         val palette = withContext(Dispatchers.IO) {
             try {
@@ -47,16 +54,25 @@ fun rememberCoverScheme(
                 Palette.from(bmp).maximumColorCount(16).generate()
             } catch (_: Exception) { null }
         } ?: run { scheme = null; return@LaunchedEffect }
-        scheme = base.recolouredFrom(palette, darkTheme, tintText)
+        scheme = base.recolouredFrom(palette, darkTheme, tintText, accentOverride)
     }
 
     return scheme
 }
 
-private fun ColorScheme.recolouredFrom(palette: Palette, dark: Boolean, tintText: Boolean): ColorScheme {
+private fun ColorScheme.recolouredFrom(
+    palette: Palette,
+    dark: Boolean,
+    tintText: Boolean,
+    accentOverride: Color? = null
+): ColorScheme {
     val fallback = if (dark) 0xFFFFA552.toInt() else 0xFFE07B3E.toInt()
-    // Prefer light swatches so accents are legible on the dark background
-    val primary = palette.lightVibrantSwatch?.rgb?.let { Color(it) }
+    // A pinned accent short-circuits the chain below. That chain is exactly where the instability
+    // lives — each `?:` is a hard switch to a different swatch category, so a cover that only just
+    // yields a lightVibrant swatch on one decode can land somewhere else entirely on the next.
+    val primary = accentOverride
+        // Prefer light swatches so accents are legible on the dark background
+        ?: palette.lightVibrantSwatch?.rgb?.let { Color(it) }
         ?: palette.vibrantSwatch?.rgb?.let { Color(it) }
         ?: palette.lightMutedSwatch?.rgb?.let { Color(it) }
         ?: Color(palette.getDominantColor(fallback))

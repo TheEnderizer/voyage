@@ -25,6 +25,7 @@ import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.ui.components.FolderBrowser
 import kotlin.math.roundToInt
+import com.betteraudio.ui.haptics.*
 
 /** Playback controls to display when the sheet is opened from a player context. */
 data class PlaybackOptions(
@@ -145,7 +146,7 @@ fun BookOptionsSheet(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(4.dp))
-                    Button(
+                    HapticButton(
                         onClick = {
                             onUpdateMetadata(
                                 titleInput.trim().takeIf { it != book.title }?.ifBlank { null },
@@ -160,7 +161,7 @@ fun BookOptionsSheet(
                 // ── Playback (only when opened from player context) ────────
                 if (playback != null) {
                     OptionsSection("Playback Speed  ${"%.2f".format(speed)}×") {
-                        Slider(
+                        HapticSlider(
                             value = speed,
                             onValueChange = { speed = (it / 0.05f).roundToInt() * 0.05f },
                             onValueChangeFinished = { playback.onSpeedChange(speed) },
@@ -174,7 +175,7 @@ fun BookOptionsSheet(
                         }
                     }
                     OptionsSection("Volume Boost  ${boost} dB") {
-                        Slider(
+                        HapticSlider(
                             value = boost.toFloat(),
                             onValueChange = { boost = it.toInt() },
                             onValueChangeFinished = { playback.onBoostChange(boost) },
@@ -200,7 +201,7 @@ fun BookOptionsSheet(
                 OptionsSection("Status") {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         BookStatus.entries.forEach { s ->
-                            FilterChip(
+                            HapticFilterChip(
                                 selected = status == s,
                                 onClick = { status = s; onUpdateStatus(s) },
                                 label = {
@@ -214,7 +215,7 @@ fun BookOptionsSheet(
 
                 // ── Cover art ──────────────────────────────────────────────
                 OptionsSection("Cover") {
-                    OutlinedButton(
+                    HapticOutlinedButton(
                         onClick = { onSearchOnlineCover() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -224,7 +225,7 @@ fun BookOptionsSheet(
                     }
                     Spacer(Modifier.height(4.dp))
                     if (playback != null) {
-                        OutlinedButton(
+                        HapticOutlinedButton(
                             onClick = { playback.onChangeCoverFromGallery(); onDismiss() },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -234,7 +235,7 @@ fun BookOptionsSheet(
                         }
                         Spacer(Modifier.height(4.dp))
                     }
-                    OutlinedButton(
+                    HapticOutlinedButton(
                         onClick = { onRefreshCoverEffect(); onDismiss() },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -254,7 +255,7 @@ fun BookOptionsSheet(
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
+                            HapticOutlinedButton(
                                 onClick = { onOpenReader(); onDismiss() },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -262,7 +263,7 @@ fun BookOptionsSheet(
                                 Spacer(Modifier.width(8.dp))
                                 Text("Open reader")
                             }
-                            OutlinedButton(onClick = onDisconnectEpub, modifier = Modifier.weight(1f)) {
+                            HapticOutlinedButton(onClick = onDisconnectEpub, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Default.LinkOff, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text("Disconnect")
@@ -270,7 +271,7 @@ fun BookOptionsSheet(
                         }
                     } else {
                         var showEpubPicker by remember { mutableStateOf(false) }
-                        OutlinedButton(
+                        HapticOutlinedButton(
                             onClick = { showEpubPicker = true },
                             modifier = Modifier.fillMaxWidth()
                         ) {
@@ -319,11 +320,11 @@ fun BookOptionsSheet(
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
                         if (book.seriesName != null) {
-                            OutlinedButton(onClick = { onUpdateSeries(null, null); onDismiss() }) {
+                            HapticOutlinedButton(onClick = { onUpdateSeries(null, null); onDismiss() }) {
                                 Text("Remove")
                             }
                         }
-                        Button(onClick = {
+                        HapticButton(onClick = {
                             onUpdateSeries(
                                 seriesName.trim().ifBlank { null },
                                 seriesOrder.trim().toFloatOrNull()
@@ -349,7 +350,7 @@ fun BookOptionsSheet(
 
                 // ── Ignore / Delete ───────────────────────────────────────
                 OptionsSection("Library") {
-                    OutlinedButton(
+                    HapticOutlinedButton(
                         onClick = onPinShortcut,
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -358,7 +359,7 @@ fun BookOptionsSheet(
                         Text("Pin to home screen")
                     }
                     Spacer(Modifier.height(4.dp))
-                    OutlinedButton(
+                    HapticOutlinedButton(
                         onClick = { showIgnoreConfirm = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -367,7 +368,7 @@ fun BookOptionsSheet(
                         Text("Hide from library")
                     }
                     Spacer(Modifier.height(4.dp))
-                    OutlinedButton(
+                    HapticOutlinedButton(
                         onClick = { showDeleteConfirm = true },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.outlinedButtonColors(
@@ -392,19 +393,19 @@ fun BookOptionsSheet(
                 }
 
                 OptionsSection("Playback speed  ${sSpeed?.let { "%.2f×".format(it) } ?: "App default"}") {
-                    Slider(
+                    HapticSlider(
                         value = sSpeed ?: 1.0f,
                         onValueChange = { sSpeed = (Math.round(it * 20f) / 20f) },
                         valueRange = 0.5f..3.0f,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (sSpeed != null) {
-                        TextButton(onClick = { sSpeed = null }) { Text("Use app default") }
+                        HapticTextButton(onClick = { sSpeed = null }) { Text("Use app default") }
                     }
                 }
 
                 OptionsSection("Volume boost  ${sBoost?.let { "$it dB" } ?: "None"}") {
-                    Slider(
+                    HapticSlider(
                         value = (sBoost ?: 0).toFloat(),
                         onValueChange = { sBoost = it.toInt() },
                         valueRange = 0f..12f,
@@ -412,7 +413,7 @@ fun BookOptionsSheet(
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (sBoost != null) {
-                        TextButton(onClick = { sBoost = null }) { Text("Use app default") }
+                        HapticTextButton(onClick = { sBoost = null }) { Text("Use app default") }
                     }
                 }
 
@@ -427,7 +428,7 @@ fun BookOptionsSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(64.dp))
-                                Slider(
+                                HapticSlider(
                                     value = levelMb.toFloat(),
                                     onValueChange = { v ->
                                         val next = bands.copyOf()
@@ -445,9 +446,9 @@ fun BookOptionsSheet(
                                 )
                             }
                         }
-                        TextButton(onClick = { sEq = null }) { Text("Use app default") }
+                        HapticTextButton(onClick = { sEq = null }) { Text("Use app default") }
                     } else {
-                        OutlinedButton(onClick = { sEq = IntArray(5) { 0 } }) {
+                        HapticOutlinedButton(onClick = { sEq = IntArray(5) { 0 } }) {
                             Text("Set custom EQ for this series")
                         }
                     }
@@ -463,7 +464,7 @@ fun BookOptionsSheet(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = sSkipSilence, onCheckedChange = { sSkipSilence = it })
+                        HapticSwitch(checked = sSkipSilence, onCheckedChange = { sSkipSilence = it })
                     }
                 }
 
@@ -485,8 +486,8 @@ fun BookOptionsSheet(
                     Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                    Button(
+                    HapticOutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                    HapticButton(
                         onClick = {
                             seriesOptions.onSave(
                                 series.copy(
@@ -514,12 +515,12 @@ fun BookOptionsSheet(
             title = { Text("Hide \"${book.displayTitle}\"?") },
             text = { Text("The book will be hidden from your library. You can restore it from Settings → Library → Ignored books.") },
             confirmButton = {
-                TextButton(onClick = { showIgnoreConfirm = false; onIgnore(); onDismiss() }) {
+                HapticTextButton(onClick = { showIgnoreConfirm = false; onIgnore(); onDismiss() }) {
                     Text("Hide")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showIgnoreConfirm = false }) { Text("Cancel") }
+                HapticTextButton(onClick = { showIgnoreConfirm = false }) { Text("Cancel") }
             }
         )
     }
@@ -536,20 +537,20 @@ fun BookOptionsSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Checkbox(checked = deleteFiles, onCheckedChange = { deleteFiles = it })
+                        HapticCheckbox(checked = deleteFiles, onCheckedChange = { deleteFiles = it })
                         Spacer(Modifier.width(4.dp))
                         Text("Also delete audio files from storage", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
             confirmButton = {
-                TextButton(
+                HapticTextButton(
                     onClick = { showDeleteConfirm = false; onDeletePermanently(deleteFiles); onDismiss() },
                     colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                 ) { Text("Delete") }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false; deleteFiles = false }) { Text("Cancel") }
+                HapticTextButton(onClick = { showDeleteConfirm = false; deleteFiles = false }) { Text("Cancel") }
             }
         )
     }

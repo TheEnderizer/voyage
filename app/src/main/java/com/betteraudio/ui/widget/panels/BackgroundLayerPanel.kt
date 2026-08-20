@@ -25,6 +25,7 @@ import com.betteraudio.widget.model.BgSource
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ShapeKind
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 /** Style panel for a BACKGROUND_LAYER element — whether it's the design's base layer (full-bleed,
  *  defines the widget's outer shape) or an ordinary decorative layer higher in the stack, its fill
@@ -47,7 +48,7 @@ fun BackgroundLayerPanel(viewModel: WidgetEditorViewModel, element: ElementSpec)
         Text("Background")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(BgSource.entries) { source ->
-                FilterChip(
+                HapticFilterChip(
                     selected = background.source == source,
                     onClick = {
                         if (source == BgSource.CUSTOM_IMAGE) {
@@ -83,7 +84,7 @@ fun BackgroundLayerPanel(viewModel: WidgetEditorViewModel, element: ElementSpec)
         Text("Shape")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(ShapeKind.entries) { kind ->
-                FilterChip(
+                HapticFilterChip(
                     selected = background.shapeKind == kind,
                     onClick = { viewModel.updateBackgroundLayer { it.copy(shapeKind = kind) } },
                     label = { Text(labelForShape(kind)) }

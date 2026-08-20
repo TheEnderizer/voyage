@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.scanner.ImportStructure
+import com.betteraudio.ui.haptics.*
 
 /** User-facing copy for each import structure. */
 private data class StructureOption(
@@ -80,8 +81,8 @@ fun ImportStructureDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(confirmLabel) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = { onConfirm(selected) }) { Text(confirmLabel) } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -99,7 +100,7 @@ private fun StructureRow(opt: StructureOption, selected: Boolean, onSelect: () -
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.Top
         ) {
-            RadioButton(selected = selected, onClick = onSelect)
+            HapticRadioButton(selected = selected, onClick = onSelect)
             Column(Modifier.padding(start = 4.dp)) {
                 Text(opt.title, style = MaterialTheme.typography.titleSmall)
                 Text(

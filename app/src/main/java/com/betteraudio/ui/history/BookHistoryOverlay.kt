@@ -44,6 +44,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import com.betteraudio.ui.haptics.*
 
 /**
  * Per-book listening history shown as an in-player frosted overlay (not a system sheet):
@@ -83,7 +84,7 @@ fun BookHistoryOverlay(
                         color = onScrim
                     )
                     Spacer(Modifier.weight(1f))
-                    IconButton(onClick = onDismiss) {
+                    HapticIconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, "Close", tint = onScrimMuted)
                     }
                 }

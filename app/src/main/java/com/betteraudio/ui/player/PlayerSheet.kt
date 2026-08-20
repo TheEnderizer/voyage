@@ -186,6 +186,12 @@ fun rememberPlayerSheetController(): PlayerSheetController = remember { PlayerSh
 
 private const val MINI_HEIGHT_DP = 64
 
+// MiniCoverStyle.RING geometry. The slot is the ring's outer box; the cover circle sits inside
+// it with a hair of clearance so the ring reads as a border around the art, not a stroke on it.
+private val MINI_RING_SLOT = 52.dp
+private val MINI_RING_COVER = 42.dp
+private val MINI_RING_STROKE = 3.dp
+
 /**
  * Persistent player surface layered over the app. Collapsed = a mini bar docked near the bottom;
  * drag up (or tap) to grow it continuously into the full blurred player; drag down / back to
@@ -219,6 +225,9 @@ fun PlayerSheet(
     // Captured here (composable scope) rather than inside graphicsLayer lambdas below, since
     // CompositionLocal.current isn't safe to read from those deferred draw-phase blocks.
     val isMaterialYou = LocalAppTheme.current == AppTheme.MATERIAL_YOU
+    // Immersive only, and read here as well as in MiniPlayerBar because the morph's source radius
+    // and shape flag depend on which cover the bar actually drew.
+    val miniCoverStyle = LocalMiniCoverStyle.current
 
     // Mirror the playing book into the target so the mini bar is ready to expand.
     LaunchedEffect(playback.bookId) {
@@ -349,7 +358,20 @@ fun PlayerSheet(
 
     // derivedStateOf: recompose only when the threshold flips, not every animation frame.
     val expanded by remember { derivedStateOf { dragProgress.floatValue > 0.5f } }
-    LaunchedEffect(expanded) { controller.setExpanded(expanded) }
+    val sheetHaptics = com.betteraudio.ui.haptics.LocalHaptics.current
+    var sheetSeen by remember { mutableStateOf(expanded) }
+    LaunchedEffect(expanded) {
+        controller.setExpanded(expanded)
+        // The drag is continuous, so the only moment worth marking is the one where it commits to
+        // being open or closed — which is the same threshold the rest of the sheet reacts to.
+        if (expanded != sheetSeen) {
+            sheetSeen = expanded
+            sheetHaptics.play(
+                if (expanded) com.betteraudio.ui.haptics.Feel.Reveal
+                else com.betteraudio.ui.haptics.Feel.Dismiss
+            )
+        }
+    }
 
     // Shared-element morph plumbing: expansion progress + the mini bar's element bounds,
     // all as State so the full player reads them inside graphicsLayer lambdas only.
@@ -376,11 +398,16 @@ fun PlayerSheet(
             miniCoverRect
         }
     }
-    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback, isMaterialYou) {
+    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback, isMaterialYou, miniCoverStyle) {
         if (sourceIsGridCard) {
             coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
         } else if (isMaterialYou) {
             12.dp   // matches the mini bar's 48dp thumbnail clip
+        } else if (miniCoverStyle == MiniCoverStyle.RING) {
+            // A full corner radius on the source, so the one element that still uses the plain
+            // morphFrom here — the blurred backdrop, which is transparent at progress 0 anyway —
+            // starts round rather than square-cornered next to a circular cover.
+            MINI_RING_COVER / 2
         } else {
             // Immersive's mini cover is a "D": the pill's 32dp left cap on one side, a 6dp
             // trailing edge on the other. The morph carries a single radius, so this is their
@@ -396,11 +423,17 @@ fun PlayerSheet(
             progressState
         )
     }
-    val transition = remember(effectiveCoverSource, effectiveCoverRadius, sourceIsGridCard) {
+    val transition = remember(
+        effectiveCoverSource, effectiveCoverRadius, sourceIsGridCard, miniCoverStyle, isMaterialYou
+    ) {
         PlayerExpandTransition(
             progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius,
             miniBar = miniBarRect, miniBarRadius = MINI_BAR_RADIUS, sourceIsGridCard = sourceIsGridCard,
-            miniAuthor = miniAuthorRect
+            miniAuthor = miniAuthorRect,
+            // A grid card is always a rectangle, so the circular morph only applies when the live
+            // mini bar is genuinely the source.
+            coverSourceIsCircle = !isMaterialYou && !sourceIsGridCard &&
+                miniCoverStyle == MiniCoverStyle.RING
         )
     }
 
@@ -657,6 +690,63 @@ fun PlayerSheet(
     }
 }
 
+/**
+ * The circular mini cover and the progress ring around it.
+ *
+ * [onCoverBounds] reports the COVER DISC, not the ring outer box — the full player artwork grows
+ * out of the picture, and starting it a ring-width too large would show as a jump on the first
+ * frame of the drag. [progress] stays a lambda all the way into the draw block, so the 500ms
+ * position tick redraws this ring and recomposes nothing.
+ */
+@Composable
+private fun MiniCoverRing(
+    coverPath: String?,
+    progress: () -> Float,
+    modifier: Modifier = Modifier,
+    onCoverBounds: (Rect) -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val trackColor = com.betteraudio.ui.immersive.ImmersiveStyle.scrimText().copy(alpha = 0.22f)
+    Box(modifier.size(MINI_RING_SLOT), contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+            val stroke = MINI_RING_STROKE.toPx()
+            val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+            val corner = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f)
+            drawArc(
+                color = trackColor, startAngle = -90f, sweepAngle = 360f, useCenter = false,
+                topLeft = corner, size = arcSize,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(stroke)
+            )
+            val p = progress().coerceIn(0f, 1f)
+            if (p > 0f) {
+                drawArc(
+                    color = accent, startAngle = -90f, sweepAngle = 360f * p, useCenter = false,
+                    topLeft = corner, size = arcSize,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        stroke, cap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+                )
+            }
+        }
+        Box(
+            Modifier
+                .size(MINI_RING_COVER)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .onGloballyPositioned { onCoverBounds(it.boundsInRoot()) }
+        ) {
+            AsyncImage(
+                model = coverPath?.let { File(it) },
+                contentDescription = null,
+                // Crop, not FillWidth: the slot is a fixed circle, and the travelling copy the full
+                // player grows is scaled to the same centre crop (see morphFromCircle).
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
 @Composable
 private fun MiniPlayerBar(
     title: String,
@@ -688,6 +778,11 @@ private fun MiniPlayerBar(
     // Settings building blocks — the bar resolves its own fill per theme: "liquid glass" (aligned
     // blurred backdrop + darken) in Immersive, opaque tonal Surface in Material You.
     val isImmersive = LocalAppTheme.current == AppTheme.IMMERSIVE
+    val coverStyle = LocalMiniCoverStyle.current
+    // The circle is a cover-first look too, just a different one: instead of the cover BEING the
+    // pill leading edge, it is a disc inside the pill wearing its own progress. Immersive only —
+    // Material You keeps its inset square thumbnail and its straight bar underneath.
+    val useRing = isImmersive && coverStyle == MiniCoverStyle.RING
     val barModifier = modifier
         .fillMaxWidth()
         .padding(horizontal = 12.dp)
@@ -700,7 +795,9 @@ private fun MiniPlayerBar(
             Row(
                 // Immersive's cover is the pill's own left cap, so it starts hard against the
                 // edge with no inset to sit in.
-                Modifier.fillMaxSize().padding(start = if (isImmersive) 0.dp else 8.dp, end = 10.dp),
+                // The cap has to start hard against the edge because it IS the edge; the ring is
+                // an inset element and needs the same breathing room Material You gives its thumb.
+                Modifier.fillMaxSize().padding(start = if (isImmersive && !useRing) 0.dp else 8.dp, end = 10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // handOff must precede background(): a graphicsLayer only affects what is drawn
@@ -719,30 +816,39 @@ private fun MiniPlayerBar(
                 // nothing to land crooked. Material You is untouched and keeps its square thumb.
                 val miniAspect =
                     if (isImmersive) com.betteraudio.ui.components.rememberCoverAspect(coverPath) else 1f
-                Box(
-                    Modifier
-                        .then(handOff)
-                        .then(
-                            if (isImmersive)
-                                Modifier
-                                    .height(MINI_HEIGHT_DP.dp)
-                                    .width(MINI_HEIGHT_DP.dp * miniAspect)
-                                    .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
-                            else
-                                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
-                        )
-                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                        .onGloballyPositioned { onCoverBounds(it.boundsInRoot()) }
-                ) {
-                    AsyncImage(
-                        model = coverPath?.let { File(it) },
-                        contentDescription = null,
-                        // FillWidth in Immersive to match the full player and the bake; Crop
-                        // elsewhere, where the slot is a fixed square.
-                        contentScale = if (isImmersive) androidx.compose.ui.layout.ContentScale.FillWidth
-                                       else androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+                if (useRing) {
+                    MiniCoverRing(
+                        coverPath = coverPath,
+                        progress = progress,
+                        modifier = Modifier.then(handOff),
+                        onCoverBounds = onCoverBounds
                     )
+                } else {
+                    Box(
+                        Modifier
+                            .then(handOff)
+                            .then(
+                                if (isImmersive)
+                                    Modifier
+                                        .height(MINI_HEIGHT_DP.dp)
+                                        .width(MINI_HEIGHT_DP.dp * miniAspect)
+                                        .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                                else
+                                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                            )
+                            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                            .onGloballyPositioned { onCoverBounds(it.boundsInRoot()) }
+                    ) {
+                        AsyncImage(
+                            model = coverPath?.let { File(it) },
+                            contentDescription = null,
+                            // FillWidth in Immersive to match the full player and the bake; Crop
+                            // elsewhere, where the slot is a fixed square.
+                            contentScale = if (isImmersive) androidx.compose.ui.layout.ContentScale.FillWidth
+                                           else androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(
@@ -777,6 +883,7 @@ private fun MiniPlayerBar(
                 }
                 Spacer(Modifier.width(8.dp))
                 // Skip-forward: a quiet secondary control — reveals into the full transport.
+                com.betteraudio.ui.haptics.PressFeel(com.betteraudio.ui.haptics.Feel.Transport) {
                 Box(
                     Modifier
                         .then(handOff)
@@ -791,9 +898,11 @@ private fun MiniPlayerBar(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                }
                 Spacer(Modifier.width(6.dp))
                 // Round accent play/pause — the SAME visual as the full player's big play
                 // button, so it grows straight into it during the morph.
+                com.betteraudio.ui.haptics.PressFeel(com.betteraudio.ui.haptics.Feel.Transport) {
                 Box(
                     Modifier
                         .then(handOff)
@@ -811,8 +920,12 @@ private fun MiniPlayerBar(
                         tint = MaterialTheme.colorScheme.onPrimary
                     )
                 }
+                }
             }
-            if (isImmersive) {
+            if (useRing) {
+                // Nothing here: the ring around the cover IS this bar progress readout. Drawing
+                // the pill outline as well would state it twice.
+            } else if (isImmersive) {
                 // Progress traces the pill's own outline instead of running straight under it —
                 // see PillPerimeterProgress for why the straight bar was wrong on this shape.
                 com.betteraudio.ui.immersive.components.PillPerimeterProgress(

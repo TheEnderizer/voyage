@@ -62,7 +62,13 @@ private fun windowBlurRadius(hero: HeroWindowState): Dp {
 }
 
 @Composable
-fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: Modifier = Modifier) {
+fun AppBlurredBackdrop(
+    coverPath: String?,
+    bakedPath: String? = null,
+    /** Settings' "Backdrop darkening" slider — see ImmersiveStyle.backdropVeil. */
+    dim: Float = com.betteraudio.data.settings.BACKDROP_DIM_DEFAULT,
+    modifier: Modifier = Modifier
+) {
     val hero = LocalHeroWindow.current
     val density = LocalDensity.current
     // Drives whether the hero band darkens at all — see the scrim below.
@@ -162,7 +168,7 @@ fun AppBlurredBackdrop(coverPath: String?, bakedPath: String? = null, modifier: 
         Box(
             Modifier
                 .fillMaxSize()
-                .background(ImmersiveStyle.backdropVeil())
+                .background(ImmersiveStyle.backdropVeil(dim))
                 .then(
                     // Only over LIGHT artwork. A dark cover already gives near-white text all the
                     // contrast it needs, and darkening it further just muddies a cover that was

@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,7 +39,7 @@ fun SortFilterSheet(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        RadioButton(
+                        HapticRadioButton(
                             selected = selected,
                             onClick = {
                                 onApply(current.copy(option = option))
@@ -58,13 +59,13 @@ fun SortFilterSheet(
                 color = MaterialTheme.colorScheme.primary)
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
+                HapticFilterChip(
                     selected = current.direction == SortDirection.ASC,
                     onClick = { onApply(current.copy(direction = SortDirection.ASC)) },
                     label = { Text("Ascending") },
                     leadingIcon = { Icon(Icons.Default.ArrowUpward, null, Modifier.size(16.dp)) }
                 )
-                FilterChip(
+                HapticFilterChip(
                     selected = current.direction == SortDirection.DESC,
                     onClick = { onApply(current.copy(direction = SortDirection.DESC)) },
                     label = { Text("Descending") },
@@ -73,7 +74,7 @@ fun SortFilterSheet(
             }
 
             // ── Reset ────────────────────────────────────────────────
-            TextButton(onClick = { onApply(SortFilter()); onDismiss() }) {
+            HapticTextButton(onClick = { onApply(SortFilter()); onDismiss() }) {
                 Text("Reset to default")
             }
         }

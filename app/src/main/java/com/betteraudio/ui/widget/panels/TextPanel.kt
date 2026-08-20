@@ -19,6 +19,7 @@ import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.HorizontalTextAlign
 import com.betteraudio.widget.model.TextStyle
+import com.betteraudio.ui.haptics.*
 
 private val WEIGHTS = listOf(400 to "Regular", 500 to "Medium", 600 to "Semibold", 700 to "Bold", 800 to "Black")
 
@@ -47,7 +48,7 @@ fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
         Text("Weight")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             WEIGHTS.forEach { (weight, label) ->
-                FilterChip(
+                HapticFilterChip(
                     selected = style.weight == weight,
                     onClick = { viewModel.updateText { it.copy(weight = weight) } },
                     label = { Text(label) }
@@ -57,7 +58,7 @@ fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Italic")
-            Switch(checked = style.italic, onCheckedChange = { viewModel.updateText { s -> s.copy(italic = it) } })
+            HapticSwitch(checked = style.italic, onCheckedChange = { viewModel.updateText { s -> s.copy(italic = it) } })
         }
 
         Text("Color")
@@ -73,7 +74,7 @@ fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
         Text("Alignment")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             HorizontalTextAlign.entries.forEach { align ->
-                FilterChip(
+                HapticFilterChip(
                     selected = style.align == align,
                     onClick = { viewModel.updateText { it.copy(align = align) } },
                     label = { Text(align.name.lowercase().replaceFirstChar { c -> c.uppercase() }) }
@@ -87,7 +88,7 @@ fun TextPanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Shadow")
-            Switch(checked = style.shadow, onCheckedChange = { viewModel.updateText { s -> s.copy(shadow = it) } })
+            HapticSwitch(checked = style.shadow, onCheckedChange = { viewModel.updateText { s -> s.copy(shadow = it) } })
         }
 
         TapActionPicker(element, viewModel)

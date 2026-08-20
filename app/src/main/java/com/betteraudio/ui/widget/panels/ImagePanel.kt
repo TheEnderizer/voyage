@@ -32,6 +32,7 @@ import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.ImageFit
 import com.betteraudio.widget.model.ImageStyle
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 private data class AspectPreset(val label: String, val ratio: Float)
 private val ASPECT_PRESETS = listOf(
@@ -58,7 +59,7 @@ fun ImagePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
         Text("Image")
 
         if (element.type == ElementType.CUSTOM_IMAGE) {
-            FilledTonalButton(onClick = {
+            HapticFilledTonalButton(onClick = {
                 picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }) { Text(if (element.imagePath == null) "Choose image" else "Replace image") }
         }
@@ -66,7 +67,7 @@ fun ImagePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
         Text("Fit")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ImageFit.entries.forEach { fit ->
-                FilterChip(
+                HapticFilterChip(
                     selected = style.fit == fit,
                     onClick = { viewModel.updateImage { it.copy(fit = fit) } },
                     label = { Text(fit.name.lowercase().replaceFirstChar { c -> c.uppercase() }) }
@@ -94,7 +95,7 @@ fun ImagePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Shadow")
-            Switch(checked = style.shadow, onCheckedChange = { viewModel.updateImage { s -> s.copy(shadow = it) } })
+            HapticSwitch(checked = style.shadow, onCheckedChange = { viewModel.updateImage { s -> s.copy(shadow = it) } })
         }
 
         TapActionPicker(element, viewModel)
@@ -126,7 +127,7 @@ private fun AspectLockSection(viewModel: WidgetEditorViewModel, element: Element
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Lock aspect ratio")
-            Switch(
+            HapticSwitch(
                 checked = locked,
                 onCheckedChange = { on ->
                     if (on) applyRatio(element.w / element.h.coerceAtLeast(1f))
@@ -137,7 +138,7 @@ private fun AspectLockSection(viewModel: WidgetEditorViewModel, element: Element
         if (locked) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ASPECT_PRESETS.forEach { preset ->
-                    FilterChip(
+                    HapticFilterChip(
                         selected = style.lockedAspect?.let { kotlin.math.abs(it - preset.ratio) < 0.01f } == true,
                         onClick = { applyRatio(preset.ratio) },
                         label = { Text(preset.label) }

@@ -25,6 +25,7 @@ import com.betteraudio.ui.isLandscapeWindow
 import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,7 +53,7 @@ fun AuthorDetailScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    HapticIconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },

@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsViewModel) {
     item {
@@ -118,7 +119,7 @@ internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVi
                     shape = MaterialTheme.shapes.medium,
                     trailingIcon = {
                         if (apiKeyInput != geminiApiKey) {
-                            TextButton(onClick = { viewModel.setGeminiApiKey(apiKeyInput) }) {
+                            HapticTextButton(onClick = { viewModel.setGeminiApiKey(apiKeyInput) }) {
                                 Text("Save")
                             }
                         }
@@ -155,7 +156,7 @@ internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVi
                         Text("Downloaded · ${"%.0f".format(s.sizeBytes / 1_000_000.0)} MB",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        OutlinedButton(onClick = { viewModel.deleteVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                        HapticOutlinedButton(onClick = { viewModel.deleteVoskModel() }, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Delete, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Delete model")
@@ -169,12 +170,12 @@ internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVi
                         Text("Preparing…", style = MaterialTheme.typography.bodySmall)
                     is com.betteraudio.data.transcribe.ModelState.Error -> {
                         Text(s.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                        FilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                        HapticFilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
                             Text("Retry download (~45 MB)")
                         }
                     }
                     com.betteraudio.data.transcribe.ModelState.NotDownloaded ->
-                        FilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
+                        HapticFilledTonalButton(onClick = { viewModel.downloadVoskModel() }, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Download, null, Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Download model (~45 MB, English)")

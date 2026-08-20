@@ -40,10 +40,10 @@
         android:name=".VoyageApp"
         android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_vee"
         android:label="@string/app_name"
         android:largeHeap="true"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@mipmap/ic_launcher_vee_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Voyage">
 
@@ -70,7 +70,7 @@
             android:name=".AppIconNavy"
             android:targetActivity=".MainActivity"
             android:exported="true"
-            android:enabled="true"
+            android:enabled="false"
             android:icon="@mipmap/ic_launcher"
             android:roundIcon="@mipmap/ic_launcher_round"
             android:label="@string/app_name">
@@ -138,6 +138,136 @@
             android:enabled="false"
             android:icon="@mipmap/ic_launcher_minimal"
             android:roundIcon="@mipmap/ic_launcher_minimal_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVee"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher_vee"
+            android:roundIcon="@mipmap/ic_launcher_vee_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVeeSunset"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_vee_sunset"
+            android:roundIcon="@mipmap/ic_launcher_vee_sunset_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVeeOrchid"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_vee_orchid"
+            android:roundIcon="@mipmap/ic_launcher_vee_orchid_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVeeMeadow"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_vee_meadow"
+            android:roundIcon="@mipmap/ic_launcher_vee_meadow_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVeeSteel"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_vee_steel"
+            android:roundIcon="@mipmap/ic_launcher_vee_steel_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVoyager"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_voyager"
+            android:roundIcon="@mipmap/ic_launcher_voyager_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVoyagerRose"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_voyager_rose"
+            android:roundIcon="@mipmap/ic_launcher_voyager_rose_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVoyagerIndigo"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_voyager_indigo"
+            android:roundIcon="@mipmap/ic_launcher_voyager_indigo_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVoyagerFern"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_voyager_fern"
+            android:roundIcon="@mipmap/ic_launcher_voyager_fern_round"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".AppIconVoyagerPearl"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_voyager_pearl"
+            android:roundIcon="@mipmap/ic_launcher_voyager_pearl_round"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

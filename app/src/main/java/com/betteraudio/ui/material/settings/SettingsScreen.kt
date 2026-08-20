@@ -61,6 +61,7 @@ import com.betteraudio.ui.settings.rootSection
 import com.betteraudio.ui.settings.themeSection
 import com.betteraudio.ui.settings.updatesSection
 import com.betteraudio.ui.settings.widgetSection
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -163,7 +164,7 @@ fun SettingsScreen(
 
     val sectionTitle = when (currentSection) {
         SettingsSection.Root -> "Settings"
-        SettingsSection.Theme -> "Theme"
+        SettingsSection.Theme -> "Look and feel"
         SettingsSection.Library -> "Library"
         SettingsSection.Playback -> "Playback"
         SettingsSection.Presets -> "Audio presets"
@@ -225,7 +226,7 @@ fun SettingsScreen(
                     Text(if (landscape) "Settings" else sectionTitle, style = MaterialTheme.typography.titleLarge)
                 },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    HapticIconButton(onClick = {
                         // In two-pane mode there's no "collapse to Root" step — the root list
                         // never collapses — so the arrow always exits Settings.
                         if (landscape || currentSection == SettingsSection.Root) onBack()
@@ -316,7 +317,7 @@ fun SettingsScreen(
             onDismissRequest = { viewModel.dismissOperationError() },
             title = { Text("Something went wrong") },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = { viewModel.dismissOperationError() }) { Text("OK") } }
+            confirmButton = { HapticTextButton(onClick = { viewModel.dismissOperationError() }) { Text("OK") } }
         )
     }
 }

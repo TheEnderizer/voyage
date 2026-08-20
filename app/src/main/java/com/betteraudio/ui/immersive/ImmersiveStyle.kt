@@ -39,12 +39,31 @@ object ImmersiveStyle {
      * lives in the shared `ui/components` package.
      */
     @Composable
-    fun backdropVeil(): Brush {
+    fun backdropVeil(dim: Float = com.betteraudio.data.settings.BACKDROP_DIM_DEFAULT): Brush {
         val base = MaterialTheme.colorScheme.background
+        val d = dim.coerceIn(0f, 1f)
+        val mid = com.betteraudio.data.settings.BACKDROP_DIM_DEFAULT
+        // Three anchors, not two, so the slider's midpoint is exactly the veil this theme
+        // shipped with: 0 = the blurred cover with nothing on top of it, mid = that tuned
+        // top-light/bottom-heavy wash, 1 = the lower backdrop taken all the way to solid
+        // black. Interpolating every stop separately (rather than scaling one alpha) keeps
+        // the fall-off gradual down the screen at every setting — the darkening arrives the
+        // same way the blur does, never as a band with an edge.
+        fun stop(off: Float, litAlpha: Float, inkAlpha: Float): Pair<Float, Color> {
+            val color = if (d <= mid) {
+                base.copy(alpha = litAlpha * (if (mid <= 0f) 1f else d / mid))
+            } else {
+                val t = if (mid >= 1f) 1f else (d - mid) / (1f - mid)
+                // Past the midpoint the veil stops being "the background colour" and becomes
+                // ink, so the end of the travel is real black rather than a heavier tint.
+                lerp(base.copy(alpha = litAlpha), Color.Black.copy(alpha = inkAlpha), t)
+            }
+            return off to color
+        }
         return Brush.verticalGradient(
-            0f to base.copy(alpha = 0.30f),
-            0.46f to base.copy(alpha = 0.52f),
-            1f to base.copy(alpha = 0.80f)
+            stop(0f, 0.30f, 0.62f),
+            stop(0.46f, 0.52f, 0.88f),
+            stop(1f, 0.80f, 1f)
         )
     }
 

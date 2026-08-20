@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 // ─── Backup & restore ──────────────────────────────────────────────────────────
 
@@ -140,13 +141,13 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = includeApiKey, onCheckedChange = { viewModel.setBackupIncludeApiKey(it) })
+                        HapticSwitch(checked = includeApiKey, onCheckedChange = { viewModel.setBackupIncludeApiKey(it) })
                     }
                     Row(
                         Modifier.horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        FilledTonalButton(
+                        HapticFilledTonalButton(
                             shape = Pill,
                             enabled = !backupState.exporting,
                             onClick = {
@@ -158,7 +159,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                             Spacer(Modifier.width(6.dp))
                             Text(if (backupState.exporting) "Exporting…" else "Export")
                         }
-                        FilledTonalButton(
+                        HapticFilledTonalButton(
                             shape = Pill,
                             enabled = !backupState.importing,
                             onClick = { importLauncher.launch(arrayOf("application/json")) }
@@ -167,7 +168,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                             Spacer(Modifier.width(6.dp))
                             Text(if (backupState.importing) "Importing…" else "Import")
                         }
-                        FilledTonalButton(shape = Pill, onClick = {
+                        HapticFilledTonalButton(shape = Pill, onClick = {
                             scope.launch {
                                 try {
                                     val file = viewModel.writeShareBackupFile()
@@ -200,7 +201,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(
+                        HapticSwitch(
                             checked = autoEnabled,
                             onCheckedChange = { enabled ->
                                 if (enabled && autoFolderUri.isBlank()) {
@@ -214,7 +215,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                             }
                         )
                     }
-                    OutlinedButton(shape = Pill, onClick = { folderLauncher.launch(null) }) {
+                    HapticOutlinedButton(shape = Pill, onClick = { folderLauncher.launch(null) }) {
                         Icon(Icons.Default.Folder, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(if (autoFolderUri.isBlank()) "Choose folder" else "Change folder")
@@ -231,7 +232,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                             color = if (autoLastStatus != "ok" && autoLastRunMs != 0L)
                                 MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        TextButton(onClick = { viewModel.runAutoBackupNow() }) { Text("Back up now") }
+                        HapticTextButton(onClick = { viewModel.runAutoBackupNow() }) { Text("Back up now") }
                     }
                 }
             }
@@ -242,7 +243,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                 onDismissRequest = { viewModel.clearBackupResult() },
                 title = { Text("Backup error") },
                 text = { Text(error) },
-                confirmButton = { TextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } }
+                confirmButton = { HapticTextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } }
             )
         }
         shareError?.let { error ->
@@ -250,7 +251,7 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                 onDismissRequest = { shareError = null },
                 title = { Text("Share failed") },
                 text = { Text(error) },
-                confirmButton = { TextButton(onClick = { shareError = null }) { Text("OK") } }
+                confirmButton = { HapticTextButton(onClick = { shareError = null }) { Text("OK") } }
             )
         }
         backupState.lastResult?.let { result ->
@@ -278,10 +279,10 @@ internal fun LazyListScope.backupSection(context: Context, viewModel: SettingsVi
                         Text("Settings restored")
                     }
                 },
-                confirmButton = { TextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } },
+                confirmButton = { HapticTextButton(onClick = { viewModel.clearBackupResult() }) { Text("OK") } },
                 dismissButton = if (result.booksSkippedStale > 0 && lastImportUri != null) {
                     {
-                        TextButton(onClick = {
+                        HapticTextButton(onClick = {
                             lastImportUri?.let { viewModel.importBackup(it, forceOverwrite = true) }
                         }) { Text("Overwrite anyway") }
                     }

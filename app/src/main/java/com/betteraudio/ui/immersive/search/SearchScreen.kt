@@ -30,6 +30,7 @@ import com.betteraudio.ui.search.SearchViewModel
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,7 +80,7 @@ fun SearchScreen(
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.onQueryChange("") }) {
+                            HapticIconButton(onClick = { viewModel.onQueryChange("") }) {
                                 Icon(Icons.Default.Clear, "Clear")
                             }
                         }

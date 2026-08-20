@@ -30,6 +30,7 @@ import com.betteraudio.ui.player.elementMotion
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
+import com.betteraudio.ui.haptics.*
 
 /**
  * Leaf composables/formatters shared by the Material You player's portrait and landscape bodies —
@@ -81,7 +82,7 @@ internal fun CompactBookProgress(
         if (!readOnly && expanded) {
             var dragFrac by remember { mutableStateOf<Float?>(null) }
             val displayFrac = dragFrac ?: frac
-            Slider(
+            HapticSlider(
                 value = displayFrac,
                 onValueChange = { dragFrac = it },
                 onValueChangeFinished = { dragFrac?.let { onSeek((it * totalMs).toLong()) }; dragFrac = null },
@@ -124,7 +125,7 @@ internal fun HorizontalSeekBar(
     val displayFrac = dragFrac ?: fraction.coerceIn(0f, 1f)
     val displayMs = (displayFrac * durationMs).toLong()
     Column(modifier) {
-        Slider(
+        HapticSlider(
             value = displayFrac,
             onValueChange = { f ->
                 if (dragFrac == null) onScrubStart()
@@ -216,14 +217,14 @@ internal fun SkipValueDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = { onConfirm(secs) }) { Text("Save") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
 @Composable
 internal fun SecondaryIcon(icon: ImageVector, cd: String, tint: Color, onClick: () -> Unit) {
-    IconButton(onClick = onClick) { Icon(icon, cd, Modifier.size(22.dp), tint = tint) }
+    HapticIconButton(onClick = onClick) { Icon(icon, cd, Modifier.size(22.dp), tint = tint) }
 }
 
 internal fun formatDurationHuman(ms: Long): String {
@@ -268,41 +269,41 @@ internal fun PlayerOverflowMenu(
     Box(modifier) {
         ScrimButton(Icons.Default.MoreVert, "More", tonal = true) { showOverflow = true }
         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Book options") },
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { showOverflow = false; onBookOptions() }
             )
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Add bookmark") },
                 leadingIcon = { Icon(Icons.Default.BookmarkAdd, null) },
                 onClick = { showOverflow = false; onAddBookmark() }
             )
             if (inSeries) {
-                DropdownMenuItem(
+                HapticDropdownMenuItem(
                     text = { Text(if (showSeriesCover) "Show book cover" else "Show series cover") },
                     leadingIcon = { Icon(Icons.Default.Image, null) },
                     onClick = { showOverflow = false; onToggleSeriesCover() }
                 )
             }
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Listening history") },
                 leadingIcon = { Icon(Icons.Default.History, null) },
                 onClick = { showOverflow = false; onHistory() }
             )
             if (hasEbook && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-                DropdownMenuItem(
+                HapticDropdownMenuItem(
                     text = { Text("Read from here") },
                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                     onClick = { showOverflow = false; onReadFromHere() }
                 )
             }
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Refresh cover effect") },
                 leadingIcon = { Icon(Icons.Default.Refresh, null) },
                 onClick = { showOverflow = false; onRefreshCoverEffect() }
             )
-            DropdownMenuItem(
+            HapticDropdownMenuItem(
                 text = { Text("Lock screen") },
                 leadingIcon = { Icon(Icons.Default.Lock, null) },
                 onClick = { showOverflow = false; onLock() }
@@ -403,7 +404,7 @@ internal fun ReturnConfirmPills(
             DropdownMenu(expanded = showReturnMenu, onDismissRequest = { showReturnMenu = false }) {
                 positionStack.reversed().forEachIndexed { displayIdx, posMs ->
                     val stackIdx = positionStack.size - 1 - displayIdx
-                    DropdownMenuItem(
+                    HapticDropdownMenuItem(
                         text = { Text(formatDuration(posMs)) },
                         onClick = { showReturnMenu = false; onReturnToIndex(stackIdx) }
                     )

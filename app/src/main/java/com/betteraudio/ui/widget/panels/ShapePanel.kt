@@ -19,6 +19,7 @@ import com.betteraudio.widget.model.ProgressShape
 import com.betteraudio.widget.model.ProgressSource
 import com.betteraudio.widget.model.ShapeKind
 import com.betteraudio.widget.model.ShapeStyle
+import com.betteraudio.ui.haptics.*
 
 @Composable
 fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
@@ -31,7 +32,7 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
         if (element.type == ElementType.RECT) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShapeKind.entries.forEach { kind ->
-                    FilterChip(
+                    HapticFilterChip(
                         selected = style.kind == kind,
                         onClick = { viewModel.updateShape { it.copy(kind = kind) } },
                         label = { Text(kind.name.lowercase().replaceFirstChar { c -> c.uppercase() }) }
@@ -54,7 +55,7 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             Text("Tracks")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ProgressSource.entries.forEach { source ->
-                    FilterChip(
+                    HapticFilterChip(
                         selected = style.progressSource == source,
                         onClick = { viewModel.updateShape { it.copy(progressSource = source) } },
                         label = { Text(labelForProgressSource(source)) }
@@ -64,7 +65,7 @@ fun ShapePanel(viewModel: WidgetEditorViewModel, element: ElementSpec) {
             Text("Shape")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ProgressShape.entries.forEach { shape ->
-                    FilterChip(
+                    HapticFilterChip(
                         selected = style.progressShape == shape,
                         onClick = { viewModel.updateShape { it.copy(progressShape = shape) } },
                         label = { Text(labelForProgressShape(shape)) }

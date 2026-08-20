@@ -53,6 +53,7 @@ import com.betteraudio.ui.settings.rootSection
 import com.betteraudio.ui.settings.themeSection
 import com.betteraudio.ui.settings.updatesSection
 import com.betteraudio.ui.settings.widgetSection
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -149,7 +150,7 @@ fun SettingsScreen(
 
     val sectionTitle = when (currentSection) {
         SettingsSection.Root -> "Settings"
-        SettingsSection.Theme -> "Theme"
+        SettingsSection.Theme -> "Look and feel"
         SettingsSection.Library -> "Library"
         SettingsSection.Playback -> "Playback"
         SettingsSection.Presets -> "Audio presets"
@@ -168,7 +169,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text(sectionTitle, style = MaterialTheme.typography.titleLarge) },
                 navigationIcon = {
-                    IconButton(onClick = {
+                    HapticIconButton(onClick = {
                         if (currentSection == SettingsSection.Root) onBack()
                         else viewModel.navigateTo(SettingsSection.Root)
                     }) {
@@ -243,7 +244,7 @@ fun SettingsScreen(
             onDismissRequest = { viewModel.dismissOperationError() },
             title = { Text("Something went wrong") },
             text = { Text(message) },
-            confirmButton = { TextButton(onClick = { viewModel.dismissOperationError() }) { Text("OK") } }
+            confirmButton = { HapticTextButton(onClick = { viewModel.dismissOperationError() }) { Text("OK") } }
         )
     }
 }

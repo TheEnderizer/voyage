@@ -65,6 +65,7 @@ fun SelectionOverlay(
     val rotatable = element.type.canRotate
 
     var mode by remember { mutableStateOf<DragMode?>(null) }
+    val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
 
     Box(
         Modifier
@@ -73,9 +74,14 @@ fun SelectionOverlay(
             // restarts the in-flight gesture. Fresh element bounds are read from the VM at drag
             // start instead.
             .pointerInput(element.id, box, scale) {
+                // The editor is the one place in the app where a finger is moving a real
+                // object, so it gets the full grab / release pair.
                 detectDragGestures(
                     onDragStart = { p ->
                         mode = classifyStart(p, viewModel, box, scale, handleOut, rotOut, hitR)
+                        // Only when a handle or the body was actually caught — a stray touch on
+                        // empty canvas classifies to null and should stay silent.
+                        if (mode != null) haptics.play(com.betteraudio.ui.haptics.Feel.Grab)
                     },
                     onDrag = { change, amount ->
                         val drag = mode ?: return@detectDragGestures
@@ -89,8 +95,20 @@ fun SelectionOverlay(
                             DragMode.RESIZE_BR -> viewModel.resizeSelected(ResizeCorner.BOTTOM_RIGHT, amount.x / scale, amount.y / scale)
                         }
                     },
-                    onDragEnd = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
-                    onDragCancel = { if (mode != null) viewModel.endContinuousEdit(); mode = null },
+                    onDragEnd = {
+                        if (mode != null) {
+                            viewModel.endContinuousEdit()
+                            haptics.play(com.betteraudio.ui.haptics.Feel.Release)
+                        }
+                        mode = null
+                    },
+                    onDragCancel = {
+                        if (mode != null) {
+                            viewModel.endContinuousEdit()
+                            haptics.play(com.betteraudio.ui.haptics.Feel.Release)
+                        }
+                        mode = null
+                    },
                 )
             }
     ) {

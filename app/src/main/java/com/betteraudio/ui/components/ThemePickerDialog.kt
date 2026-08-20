@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.theme.AppTheme
+import com.betteraudio.ui.haptics.*
 
 /** User-facing copy for each app theme. */
 data class ThemeOption(val theme: AppTheme, val title: String, val detail: String)
@@ -70,7 +71,7 @@ fun ThemePickerDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(selected) }) { Text(confirmLabel) } }
+        confirmButton = { HapticTextButton(onClick = { onConfirm(selected) }) { Text(confirmLabel) } }
     )
 }
 
@@ -88,7 +89,7 @@ fun ThemeOptionRow(opt: ThemeOption, selected: Boolean, onSelect: () -> Unit) {
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.Top
         ) {
-            RadioButton(selected = selected, onClick = onSelect)
+            HapticRadioButton(selected = selected, onClick = onSelect)
             Column(Modifier.padding(start = 4.dp)) {
                 Text(opt.title, style = MaterialTheme.typography.titleSmall)
                 Text(

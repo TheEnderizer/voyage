@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
@@ -66,8 +67,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -91,6 +94,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
 
@@ -124,59 +128,6 @@ internal fun LazyListScope.themeSection(
                     )
                 }
             }
-        }
-    }
-
-    // ── App icon (see util/AppIconManager.kt) ───────────────────────────────
-    item {
-        var pendingIcon by remember { mutableStateOf<com.betteraudio.util.AppIconManager.AppIcon?>(null) }
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("App icon", style = MaterialTheme.typography.titleSmall)
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    com.betteraudio.util.AppIconManager.AppIcon.entries.forEach { candidate ->
-                        AppIconPreview(
-                            icon = candidate,
-                            selected = candidate == appIcon,
-                            onClick = { if (candidate != appIcon) pendingIcon = candidate }
-                        )
-                    }
-                }
-                // Always visible, not just inside the confirm dialog — the user should know what
-                // tapping a variant commits to before they even tap one.
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Icon(
-                        Icons.Filled.Warning, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp).padding(top = 2.dp)
-                    )
-                    Text(
-                        "Changing the icon closes Voyage. Your place in the current book is " +
-                            "saved first. On some phones the new icon only appears after " +
-                            "restarting the phone.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-        pendingIcon?.let { target ->
-            AppIconConfirmDialog(
-                target = target,
-                isPlaying = viewModel.isPlaying(),
-                onConfirm = {
-                    pendingIcon = null
-                    viewModel.changeAppIcon(target)
-                },
-                onDismiss = { pendingIcon = null }
-            )
         }
     }
 
@@ -218,7 +169,7 @@ internal fun LazyListScope.themeSection(
                         }
                     )
                     if (colorSource == com.betteraudio.ui.theme.ThemeColorSource.CUSTOM) {
-                        TextButton(onClick = { showColorPicker = true }) { Text("Change custom color") }
+                        HapticTextButton(onClick = { showColorPicker = true }) { Text("Change custom color") }
                     }
                 }
             }
@@ -229,6 +180,18 @@ internal fun LazyListScope.themeSection(
                     onDismiss = { showColorPicker = false }
                 )
             }
+        }
+    }
+
+    // The manual accent pin. Only meaningful where an automatic cover pick is what's on screen:
+    // Immersive always themes from the cover, and Material You does so on its "Book cover" source.
+    // On wallpaper or a custom colour there is no cover-derived accent to disagree with.
+    item {
+        val coverAccentVisible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE ||
+            (appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU &&
+                colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER)
+        AnimatedVisibility(visible = coverAccentVisible) {
+            CoverAccentCard(viewModel)
         }
     }
 
@@ -271,7 +234,7 @@ internal fun LazyListScope.themeSection(
                         com.betteraudio.ui.theme.DarkMode.ON to "On",
                         com.betteraudio.ui.theme.DarkMode.OFF to "Off",
                     ).forEach { (mode, label) ->
-                        FilterChip(
+                        HapticFilterChip(
                             selected = darkMode == mode,
                             onClick = { viewModel.setDarkMode(mode) },
                             label = { Text(label) }
@@ -292,7 +255,84 @@ internal fun LazyListScope.themeSection(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Switch(checked = pureBlack, onCheckedChange = { viewModel.setPureBlack(it) })
+                        HapticSwitch(checked = pureBlack, onCheckedChange = { viewModel.setPureBlack(it) })
+                    }
+                }
+            }
+        }
+    }
+
+    // Haptics apply to both looks, so this card never hides.
+    item {
+        val hapticStrength by viewModel.hapticStrength.collectAsStateWithLifecycle()
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Haptics", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Voyage answers a touch with a short vibration chosen to match what happened " +
+                        "\u2014 a tick for a tap, a different one each way for a switch, detents " +
+                        "while you drag, and something fuller when a change actually sticks.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                com.betteraudio.ui.haptics.HapticStrength.entries.forEach { opt ->
+                    ThemeRadioRow(
+                        title = opt.label,
+                        detail = opt.blurb,
+                        selected = hapticStrength == opt,
+                        onSelect = { viewModel.setHapticStrength(opt) }
+                    )
+                }
+                Text(
+                    "Your phone's own haptics setting still wins: with vibration off in Android, " +
+                        "Voyage stays quiet whatever is chosen here.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    // Immersive only: which chapter scrubber the player draws. Each option previews itself with
+    // the player's own drawing code (ScrubberArt.drawScrubber), so the picture cannot go stale.
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+            val scrubberStyle by viewModel.scrubberStyle.collectAsStateWithLifecycle()
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Chapter progress", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "How the player draws the chapter scrubber. All four drag and seek the " +
+                            "same way \u2014 they differ only in how loudly they state themselves.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    com.betteraudio.ui.immersive.components.ScrubberStyle.entries.forEach { opt ->
+                        ScrubberOptionRow(
+                            style = opt,
+                            selected = scrubberStyle == opt,
+                            onSelect = { viewModel.setScrubberStyle(opt) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    // Immersive only: the mini player cover, and therefore where its progress goes.
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+            val miniCoverStyle by viewModel.miniCoverStyle.collectAsStateWithLifecycle()
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Mini player cover", style = MaterialTheme.typography.titleSmall)
+                    com.betteraudio.ui.player.MiniCoverStyle.entries.forEach { opt ->
+                        ThemeRadioRow(
+                            title = opt.label,
+                            detail = opt.blurb,
+                            selected = miniCoverStyle == opt,
+                            onSelect = { viewModel.setMiniCoverStyle(opt) }
+                        )
                     }
                 }
             }
@@ -318,11 +358,147 @@ internal fun LazyListScope.themeSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Switch(checked = dynamicPills, onCheckedChange = { viewModel.setDynamicPills(it) })
+                    HapticSwitch(checked = dynamicPills, onCheckedChange = { viewModel.setDynamicPills(it) })
                 }
             }
         }
     }
+
+    // Immersive only — this darkens the app-wide blurred-cover backdrop, which Material You
+    // does not draw at all.
+    item {
+        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+            val backdropDim by viewModel.backdropDim.collectAsStateWithLifecycle()
+            // Dragging writes on every frame; DataStore is a suspending write, so the slider
+            // tracks the thumb locally and only the committed value goes to disk (on release).
+            var dragDim by remember { mutableStateOf<Float?>(null) }
+            val shown = dragDim ?: backdropDim
+            CardContainer {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Backdrop darkening", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "${(shown * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Text(
+                        "How dark the blurred cover behind the app gets toward the bottom of "  +
+                            "the screen. It fades in gradually, the same way the blur does — "  +
+                            "all the way off leaves the artwork undimmed, all the way up takes "  +
+                            "the lower background to solid black.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HapticSlider(
+                        value = shown,
+                        onValueChange = { dragDim = it },
+                        onValueChangeFinished = {
+                            dragDim?.let { viewModel.setBackdropDim(it) }
+                            dragDim = null
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+    }
+
+    // ── App icon (see util/AppIconManager.kt) ───────────────────────────────
+    item {
+        var pendingIcon by remember { mutableStateOf<com.betteraudio.util.AppIconManager.AppIcon?>(null) }
+        val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("App icon", style = MaterialTheme.typography.titleSmall)
+                // Which style's colours are showing. Follows the active icon, so opening the
+                // page always lands on the family you are actually using.
+                var openStyle by remember(appIcon) {
+                    mutableStateOf(appIcon.style)
+                }
+                // Three marks across the width — not scrollable, and never more than three, so
+                // the whole first choice is visible at once.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    com.betteraudio.util.AppIconManager.IconStyle.entries.forEach { style ->
+                        IconStyleTile(
+                            style = style,
+                            // The style's tile previews the icon you actually have when it owns
+                            // it, and its first colourway otherwise — so the tile is always a
+                            // real picture of what choosing it gives you.
+                            preview = if (appIcon.style == style) appIcon else style.defaultIcon(),
+                            open = openStyle == style,
+                            inUse = appIcon.style == style,
+                            onClick = { openStyle = style },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+                // The chosen style's colourways, wrapping onto as many rows as they need.
+                // AnimatedContent's default SizeTransform is what makes the card grow and shrink
+                // as you move between styles with different colour counts.
+                AnimatedContent(
+                    targetState = openStyle,
+                    transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(90)) },
+                    label = "appIconColors"
+                ) { style ->
+                    FlowRow(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        style.icons().forEach { candidate ->
+                            AppIconPreview(
+                                icon = candidate,
+                                selected = candidate == appIcon,
+                                onClick = { if (candidate != appIcon) pendingIcon = candidate }
+                            )
+                        }
+                    }
+                }
+                // Always visible, not just inside the confirm dialog — the user should know what
+                // tapping a variant commits to before they even tap one.
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Filled.Warning, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp).padding(top = 2.dp)
+                    )
+                    Text(
+                        "Changing the icon closes Voyage. Your place in the current book is " +
+                            "saved first. On some phones the new icon only appears after " +
+                            "restarting the phone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        pendingIcon?.let { target ->
+            AppIconConfirmDialog(
+                target = target,
+                isPlaying = viewModel.isPlaying(),
+                onConfirm = {
+                    pendingIcon = null
+                    haptics.commit()
+                    viewModel.changeAppIcon(target)
+                },
+                onDismiss = { pendingIcon = null }
+            )
+        }
+    }
+
 }
 
 @Composable
@@ -351,7 +527,7 @@ private fun CustomThemeColorDialog(current: String, onSelect: (String) -> Unit, 
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            HapticTextButton(onClick = {
                 val normalized = hexInput.trim().let { if (it.startsWith("#")) it else "#$it" }
                 if (runCatching { android.graphics.Color.parseColor(normalized) }.isSuccess) {
                     onSelect(normalized)
@@ -359,7 +535,7 @@ private fun CustomThemeColorDialog(current: String, onSelect: (String) -> Unit, 
                 }
             }) { Text("Apply") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -389,6 +565,230 @@ private fun FlowRowSwatches(current: String, onPick: (androidx.compose.ui.graphi
     }
 }
 
+
+/**
+ * Lets you overrule the automatic accent with one of the colours Voyage actually sampled out of
+ * the cover it is themed from right now. Scoped to that one cover: another book's art has its own
+ * sixteen colours, and a choice made against this one would mean nothing there.
+ */
+/** One scrubber design: what it is called, what it is for, and what it actually looks like. The
+ *  preview sits on its own dark strip because the real thing is always drawn white-on-scrim over
+ *  the blurred cover \u2014 on a pale settings card its track and bead would read wrongly. */
+@Composable
+private fun ScrubberOptionRow(
+    style: com.betteraudio.ui.immersive.components.ScrubberStyle,
+    selected: Boolean,
+    onSelect: () -> Unit
+) {
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                else Color.Transparent
+            )
+            .border(
+                width = if (selected) 1.5.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+            .clickable(onClick = onSelect)
+            .padding(start = 4.dp, end = 12.dp, top = 4.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HapticRadioButton(selected = selected, onClick = onSelect)
+            Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                Text(style.label, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    style.blurb,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 12.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color.Black.copy(alpha = 0.42f))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            com.betteraudio.ui.immersive.components.ScrubberPreview(
+                style = style,
+                accent = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoverAccentCard(viewModel: SettingsViewModel) {
+    val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
+    val coverPath = com.betteraudio.ui.theme.LocalThemeCoverPath.current
+    val accents by viewModel.coverAccents.collectAsStateWithLifecycle()
+    val swatches = com.betteraudio.ui.theme.rememberCoverSwatches(coverPath)
+    val pinned = coverPath?.let { accents[it] }
+
+    CardContainer {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Cover accent", style = MaterialTheme.typography.titleSmall)
+            Text(
+                when {
+                    coverPath == null ->
+                        "Start a book and the colours Voyage found in its cover will show up here."
+                    swatches.isEmpty() ->
+                        "Reading the colours out of the current cover…"
+                    pinned == null ->
+                        "Voyage is choosing the accent from the current cover on its own. Pick one " +
+                            "of its colours to use that instead — useful when the automatic " +
+                            "choice keeps landing somewhere you did not want."
+                    else ->
+                        "Pinned. This cover keeps the colour you picked; every other cover is still " +
+                            "chosen automatically."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (coverPath != null && swatches.isNotEmpty()) {
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    AccentSwatch(
+                        color = null,
+                        selected = pinned == null,
+                        onClick = { haptics.select(); viewModel.setCoverAccent(coverPath, null) }
+                    )
+                    swatches.forEach { swatch ->
+                        val argb = swatch.toArgb()
+                        AccentSwatch(
+                            color = swatch,
+                            selected = pinned == argb,
+                            onClick = {
+                                // Tapping the pinned colour again releases it, so the row never
+                                // needs a separate "clear" affordance beyond Auto.
+                                if (pinned == argb) haptics.select() else haptics.commit()
+                                viewModel.setCoverAccent(coverPath, if (pinned == argb) null else argb)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One tile in the accent row. A null [color] is the Automatic tile. */
+@Composable
+private fun AccentSwatch(color: Color?, selected: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(14.dp)
+    // The tick has to sit on the swatch itself, so it takes its colour from that swatch rather
+    // than from the scheme — which is mid-transition to this very colour while you tap.
+    val markColor = when {
+        color == null -> MaterialTheme.colorScheme.onSurfaceVariant
+        color.luminance() > 0.5f -> Color.Black
+        else -> Color.White
+    }
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(shape)
+            .background(color ?: MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                width = if (selected) 3.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.outlineVariant,
+                shape = shape
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        when {
+            color == null -> Icon(
+                Icons.Default.AutoAwesome,
+                contentDescription = "Automatic",
+                modifier = Modifier.size(20.dp),
+                tint = markColor
+            )
+            selected -> Icon(
+                Icons.Default.Check,
+                contentDescription = "Selected",
+                modifier = Modifier.size(22.dp),
+                tint = markColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun IconArt(
+    icon: com.betteraudio.util.AppIconManager.AppIcon,
+    size: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier.size(size).clip(RoundedCornerShape(size * 0.28f))) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    androidx.compose.ui.graphics.Brush.verticalGradient(
+                        listOf(Color(icon.previewTopColor), Color(icon.previewBottomColor))
+                    )
+                )
+        )
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(icon.previewForeground),
+            contentDescription = null,
+            // An adaptive foreground is a 108dp canvas of which the launcher shows only the
+            // middle 72dp. Drawing the whole thing previewed every mark a third smaller than it
+            // actually lands on the home screen; the Box above already clips.
+            modifier = Modifier.fillMaxSize().scale(108f / 72f)
+        )
+    }
+}
+
+/** One of the three marks. [open] is whose colours are on screen; [inUse] is whose icon is
+ *  actually installed — they are usually the same but come apart the moment you browse another
+ *  style without committing to it. */
+@Composable
+private fun IconStyleTile(
+    style: com.betteraudio.util.AppIconManager.IconStyle,
+    preview: com.betteraudio.util.AppIconManager.AppIcon,
+    open: Boolean,
+    inUse: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = if (open) MaterialTheme.colorScheme.secondaryContainer
+        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        modifier = modifier.clickable(onClick = onClick)
+    ) {
+        Column(
+            Modifier.padding(vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            IconArt(preview, 48.dp)
+            Text(
+                style.label,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = if (inUse) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
 @Composable
 private fun AppIconPreview(
     icon: com.betteraudio.util.AppIconManager.AppIcon,
@@ -400,33 +800,18 @@ private fun AppIconPreview(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.width(64.dp)
     ) {
-        Box(
-            Modifier
-                .size(56.dp)
-                .clip(RoundedCornerShape(16.dp))
+        IconArt(
+            icon = icon,
+            size = 56.dp,
+            modifier = Modifier
                 .clickable(onClick = onClick)
                 .then(
                     if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
                     else Modifier
                 )
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        androidx.compose.ui.graphics.Brush.verticalGradient(
-                            listOf(Color(icon.previewTopColor), Color(icon.previewBottomColor))
-                        )
-                    )
-            )
-            androidx.compose.foundation.Image(
-                painter = androidx.compose.ui.res.painterResource(icon.previewForeground),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize()
-            )
-        }
+        )
         Text(
-            icon.label,
+            icon.colorLabel,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -461,8 +846,8 @@ private fun AppIconConfirmDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Change icon") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = onConfirm) { Text("Change icon") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -478,7 +863,7 @@ private fun ThemeRadioRow(title: String, detail: String, selected: Boolean, onSe
             Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.Top
         ) {
-            RadioButton(selected = selected, onClick = onSelect)
+            HapticRadioButton(selected = selected, onClick = onSelect)
             Column(Modifier.padding(start = 4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleSmall)
                 Text(

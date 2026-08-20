@@ -92,6 +92,7 @@ import com.betteraudio.util.log.LogEngine
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 // ─── Diagnostics (in-app log) ─────────────────────────────────────────────────
 
@@ -139,8 +140,8 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 supportingText = { Text("Recommended: 2 · max 20") },
                 trailingIcon = if (liveInput != null) {
-                    { TextButton(onClick = {
-                        val mb = text.toFloatOrNull() ?: return@TextButton
+                    { HapticTextButton(onClick = {
+                        val mb = text.toFloatOrNull() ?: return@HapticTextButton
                         viewModel.commitLogBudgetMb(mb)
                     }) { Text("Set") } }
                 } else null
@@ -174,7 +175,7 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                FilledTonalButton(
+                HapticFilledTonalButton(
                     shape = Pill,
                     onClick = {
                         val intent = Intent(
@@ -206,7 +207,7 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Switch(checked = rawMode, onCheckedChange = { rawMode = it })
+                HapticSwitch(checked = rawMode, onCheckedChange = { rawMode = it })
                 Spacer(Modifier.width(8.dp))
                 Column {
                     Text("Include full folder/file names", style = MaterialTheme.typography.bodySmall)
@@ -222,24 +223,24 @@ internal fun LazyListScope.diagnosticsSection(context: Context, viewModel: Setti
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilledTonalButton(shape = Pill, onClick = {
+                HapticFilledTonalButton(shape = Pill, onClick = {
                     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     cm.setPrimaryClip(ClipData.newPlainText("Voyage log", logText))
                 }) {
                     Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Copy")
                 }
-                FilledTonalButton(shape = Pill, onClick = {
+                HapticFilledTonalButton(shape = Pill, onClick = {
                     scope.launch { shareLogBundle(context, viewModel, redactPaths = !rawMode) }
                 }) {
                     Icon(Icons.Default.Share, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Share")
                 }
-                FilledTonalButton(shape = Pill, onClick = { viewModel.clearLog() }) {
+                HapticFilledTonalButton(shape = Pill, onClick = { viewModel.clearLog() }) {
                     Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp)); Text("Clear")
                 }
-                IconButton(onClick = { viewModel.refreshLog(redactPaths = !rawMode) }) {
+                HapticIconButton(onClick = { viewModel.refreshLog(redactPaths = !rawMode) }) {
                     Icon(Icons.Default.Refresh, "Refresh")
                 }
             }

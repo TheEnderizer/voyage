@@ -32,10 +32,42 @@ class BookInfoViewModel @Inject constructor(
     private val repository: AudiobookRepository,
     private val synopsisService: SynopsisService,
     private val settings: SettingsStore,
-    private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer
+    private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
+    private val coverSearchService: com.betteraudio.data.covers.CoverSearchService,
+    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
+    private val widgetUpdater: com.betteraudio.widget.WidgetUpdater
 ) : ViewModel() {
 
     val bookId: Long = checkNotNull(savedStateHandle["bookId"])
+
+    // ── Online cover search ─────────────────────────────────────────────────
+    // Same behaviour as HomeViewModel's, scoped to this screen's one book: the picked image is
+    // written into the book's own data/ folder tagged "user", which is what makes the choice
+    // outrank a folder cover.png on the next scan and survive a reinstall (see
+    // AudioFileScanner's cover-priority chain).
+
+    private val _coverSearchOpen = MutableStateFlow(false)
+    val coverSearchOpen: StateFlow<Boolean> = _coverSearchOpen.asStateFlow()
+
+    fun openCoverSearch() { _coverSearchOpen.value = true }
+    fun closeCoverSearch() { _coverSearchOpen.value = false }
+
+    suspend fun searchCovers(query: String): List<String> = coverSearchService.search(query)
+
+    fun setCoverFromUrl(imageUrl: String) {
+        if (bookId == -1L) return
+        viewModelScope.launch {
+            val book = repository.getBookOnce(bookId)
+            val bytes = coverSearchService.downloadBytes(imageUrl)
+            val path = if (book != null && bytes != null)
+                bookDataStore.writeCoverBytes(book.folderPath, "user", "jpg", bytes) else null
+            if (path != null) {
+                repository.updateCoverArt(bookId, path)
+                widgetUpdater.refreshCoverIfCurrent(bookId, path)
+            }
+            closeCoverSearch()
+        }
+    }
 
     val bookWithProgress: StateFlow<BookWithProgress?> =
         repository.getBookWithProgress(bookId)

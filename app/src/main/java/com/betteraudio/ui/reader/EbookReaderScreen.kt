@@ -38,6 +38,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,7 +81,7 @@ private fun ReaderErrorContent(error: ReaderError, onBack: () -> Unit) {
     ) {
         Text(error.message, style = MaterialTheme.typography.bodyLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onBack) { Text("Back") }
+        HapticTextButton(onClick = onBack) { Text("Back") }
     }
 }
 
@@ -163,29 +164,29 @@ private fun BoxScope.ReaderContent(
                 }
             },
             navigationIcon = {
-                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                HapticIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             },
             actions = {
-                IconButton(onClick = { showOverflow = true }) { Icon(Icons.Default.MoreVert, "More") }
+                HapticIconButton(onClick = { showOverflow = true }) { Icon(Icons.Default.MoreVert, "More") }
                 DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                    DropdownMenuItem(
+                    HapticDropdownMenuItem(
                         text = { Text("Chapters") },
                         leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null) },
                         onClick = { showOverflow = false; showToc = true }
                     )
-                    DropdownMenuItem(
+                    HapticDropdownMenuItem(
                         text = { Text("Font size") },
                         leadingIcon = { Icon(Icons.Default.TextFields, null) },
                         onClick = { showOverflow = false; showFontSize = true }
                     )
                     if (state.hasAudio) {
-                        DropdownMenuItem(
+                        HapticDropdownMenuItem(
                             text = { Text("Align chapters") },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.Rule, null) },
                             onClick = { showOverflow = false; showAlign = true }
                         )
                         val aligning = state.alignProgress?.running == true
-                        DropdownMenuItem(
+                        HapticDropdownMenuItem(
                             text = { Text(if (state.anchorCount > 0) "Re-align sync" else "Improve sync (on device)") },
                             leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
                             enabled = !aligning,
@@ -199,7 +200,7 @@ private fun BoxScope.ReaderContent(
                         // to the audio — lets the user pull in a mapping obtained elsewhere (or
                         // restore one a rescan missed) without re-running on-device alignment.
                         if (state.mappingFileAvailable) {
-                            DropdownMenuItem(
+                            HapticDropdownMenuItem(
                                 text = { Text("Import Mapping Data") },
                                 leadingIcon = { Icon(Icons.Default.FileDownload, null) },
                                 enabled = !aligning,
@@ -226,13 +227,13 @@ private fun BoxScope.ReaderContent(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(
+                HapticIconButton(
                     onClick = { viewModel.prevChapter() },
                     enabled = state.currentSpineIndex > 0
                 ) { Icon(Icons.AutoMirrored.Filled.NavigateBefore, "Previous chapter") }
 
                 if (state.hasAudio) {
-                    FilledTonalButton(onClick = {
+                    HapticFilledTonalButton(onClick = {
                         scope.launch { viewModel.listenFromHere()?.let(onListenFromHere) }
                     }) {
                         Icon(Icons.Default.Headphones, null, Modifier.size(18.dp))
@@ -243,7 +244,7 @@ private fun BoxScope.ReaderContent(
                     Spacer(Modifier.width(1.dp))
                 }
 
-                IconButton(
+                HapticIconButton(
                     onClick = { viewModel.nextChapter() },
                     enabled = state.currentSpineIndex < state.spine.size - 1
                 ) { Icon(Icons.AutoMirrored.Filled.NavigateNext, "Next chapter") }
@@ -268,7 +269,7 @@ private fun BoxScope.ReaderContent(
                                 modifier = Modifier.width(180.dp).padding(top = 2.dp)
                             )
                         }
-                        IconButton(onClick = { viewModel.cancelSync() }) { Icon(Icons.Default.Close, "Cancel") }
+                        HapticIconButton(onClick = { viewModel.cancelSync() }) { Icon(Icons.Default.Close, "Cancel") }
                     }
                 }
             }
@@ -303,11 +304,11 @@ private fun BoxScope.ReaderContent(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { showSyncDialog = false; viewModel.improveSync() }) {
+                HapticTextButton(onClick = { showSyncDialog = false; viewModel.improveSync() }) {
                     Text(if (state.modelState is com.betteraudio.data.transcribe.ModelState.Ready) "Start" else "Download & start")
                 }
             },
-            dismissButton = { TextButton(onClick = { showSyncDialog = false }) { Text("Cancel") } }
+            dismissButton = { HapticTextButton(onClick = { showSyncDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -317,7 +318,7 @@ private fun BoxScope.ReaderContent(
             title = { Text("Import Mapping Data") },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = { viewModel.clearMappingImportMessage() }) { Text("OK") }
+                HapticTextButton(onClick = { viewModel.clearMappingImportMessage() }) { Text("OK") }
             }
         )
     }
@@ -400,8 +401,8 @@ private fun FontSizeDialog(current: Int, onChange: (Int) -> Unit, onDismiss: () 
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onChange(pct); onDismiss() }) { Text("Apply") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { HapticTextButton(onClick = { onChange(pct); onDismiss() }) { Text("Apply") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

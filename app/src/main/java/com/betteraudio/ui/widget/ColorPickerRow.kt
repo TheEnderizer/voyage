@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
+import com.betteraudio.ui.haptics.*
 
 private val PRESET_SWATCHES = listOf(
     0xFFFFFFFF, 0xFF000000, 0xFFFFA552, 0xFFEF5350, 0xFFAB47BC,
@@ -73,7 +74,7 @@ fun ColorPickerRow(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (usesAccent != null && onAccentToggle != null) {
-                FilterChip(
+                HapticFilterChip(
                     selected = usesAccent,
                     onClick = { onAccentToggle(!usesAccent) },
                     label = { Text("Accent") }
@@ -171,7 +172,7 @@ private fun CustomColorEditor(
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Alpha", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(48.dp))
-            Slider(
+            HapticSlider(
                 value = alpha / 255f,
                 onValueChange = { alpha = (it * 255).roundToInt(); applyLive(a = alpha) },
                 onValueChangeFinished = { onCommit(composeColor()) },

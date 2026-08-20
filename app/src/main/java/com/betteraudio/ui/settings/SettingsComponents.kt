@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 internal fun formatClockMinutes(totalMinutes: Int): String {
     val h = totalMinutes / 60
@@ -110,9 +111,9 @@ internal fun ClockMinutesPickerDialog(initialMinutes: Int, onDismiss: () -> Unit
         onDismissRequest = onDismiss,
         text = { TimePicker(state = state) },
         confirmButton = {
-            TextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) { Text("OK") }
+            HapticTextButton(onClick = { onConfirm(state.hour * 60 + state.minute) }) { Text("OK") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
@@ -270,7 +271,7 @@ internal fun IntervalChips(
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { ms ->
-            FilterChip(
+            HapticFilterChip(
                 selected = selected == ms,
                 onClick = { onSelect(ms) },
                 label = { Text("${ms / 1000}s") },

@@ -30,6 +30,7 @@ import coil3.compose.AsyncImage
 import com.betteraudio.widget.model.ElementSpec
 import com.betteraudio.widget.model.ElementType
 import com.betteraudio.widget.model.WidgetSnapshot
+import com.betteraudio.ui.haptics.*
 
 /** Layer stack, topmost (last-drawn, last-tapped) element first — the Layers panel, docked inline
  *  in the editor (not a modal sheet). Reorder via up/down — this is the ONLY place to reorder
@@ -104,14 +105,14 @@ private fun LayerRow(
                 Text(labelFor(element.type))
             }
             Row {
-                IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+                HapticIconButton(onClick = onMoveUp, enabled = canMoveUp) {
                     Icon(Icons.Default.ArrowUpward, contentDescription = "Bring forward")
                 }
-                IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+                HapticIconButton(onClick = onMoveDown, enabled = canMoveDown) {
                     Icon(Icons.Default.ArrowDownward, contentDescription = "Send backward")
                 }
                 androidx.compose.foundation.layout.Spacer(Modifier.width(2.dp))
-                IconButton(onClick = onDelete) {
+                HapticIconButton(onClick = onDelete) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete")
                 }
             }

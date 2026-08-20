@@ -21,6 +21,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.betteraudio.ui.haptics.*
 
 /**
  * The landscape player's seek control: a vertical slider (see [rotateVertical] — Material3 1.4.0
@@ -85,7 +86,7 @@ internal fun VerticalSeekTrack(
             style = MaterialTheme.typography.labelMedium,
             color = labelColor
         )
-        Slider(
+        HapticSlider(
             value = displayFrac,
             onValueChange = { f ->
                 if (dragFrac == null) onScrubStart()

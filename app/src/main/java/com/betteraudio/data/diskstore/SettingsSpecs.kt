@@ -71,12 +71,18 @@ object SettingsSpecs {
         spec("app_theme", "string", { it.appTheme.first().takeIf(String::isNotBlank) }, { s, v -> s.setAppTheme(v) }),
         spec("theme_color_source", "string", { it.themeColorSource.first() }, { s, v -> s.setThemeColorSource(v) }),
         spec("custom_theme_color", "string", { it.customThemeColor.first() }, { s, v -> s.setCustomThemeColor(v) }),
+        // Manual per-cover accent picks. Omitted when empty so a settings.json from a user who
+        // never pinned one stays free of an empty object.
+        spec("cover_accents", "string", { it.coverAccents.first().takeIf(String::isNotBlank) }, { s, v -> s.setCoverAccentsRaw(v) }),
         spec("dark_mode", "string", { it.darkMode.first() }, { s, v -> s.setDarkMode(v) }),
         spec("pure_black", "boolean", { it.pureBlack.first().toString() }, { s, v -> s.setPureBlack(v.toBoolean()) }),
         spec("reader_font_size", "int", { it.readerFontSize.first().toString() }, { s, v -> s.setReaderFontSize(v.toInt()) }),
         spec("home_section", "string", { it.homeSection.first() }, { s, v -> s.setHomeSection(v) }),
         spec("widget_hide_when_idle", "boolean", { it.widgetHideWhenIdle.first().toString() }, { s, v -> s.setWidgetHideWhenIdle(v.toBoolean()) }),
         spec("dynamic_pills", "boolean", { it.dynamicPills.first().toString() }, { s, v -> s.setDynamicPills(v.toBoolean()) }),
+        spec("mini_cover_style", "string", { it.miniCoverStyle.first() }, { s, v -> s.setMiniCoverStyle(v) }),
+        spec("scrubber_style", "string", { it.scrubberStyle.first() }, { s, v -> s.setScrubberStyle(v) }),
+        spec("haptic_strength", "string", { it.hapticStrength.first() }, { s, v -> s.setHapticStrength(v) }),
         spec("sleep_fade_seconds", "int", { it.sleepFadeSeconds.first().toString() }, { s, v -> s.setSleepFadeSeconds(v.toInt()) }),
         spec("sleep_shake_enabled", "boolean", { it.sleepShakeEnabled.first().toString() }, { s, v -> s.setSleepShakeEnabled(v.toBoolean()) }),
         spec("sleep_shake_reset_minutes", "int", { it.sleepShakeResetMinutes.first().toString() }, { s, v -> s.setSleepShakeResetMinutes(v.toInt()) }),

@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 // ─── Audio presets (unified bundles + global default) ──────────────────────────
 
@@ -137,7 +138,7 @@ internal fun LazyListScope.presetsSection(
                 }
             }
 
-            FilledTonalButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) {
+            HapticFilledTonalButton(onClick = { creating = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Add, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("New preset")
@@ -183,7 +184,7 @@ private fun PresetRow(
                 Text(preset.summary(), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onToggleDefault) {
+            HapticIconButton(onClick = onToggleDefault) {
                 Icon(
                     if (preset.isDefault) Icons.Default.Star else Icons.Default.StarBorder,
                     if (preset.isDefault) "Default preset" else "Set as default",
@@ -191,8 +192,8 @@ private fun PresetRow(
                            else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit", Modifier.size(20.dp)) }
-            IconButton(onClick = { confirmDelete = true }) {
+            HapticIconButton(onClick = onEdit) { Icon(Icons.Default.Edit, "Edit", Modifier.size(20.dp)) }
+            HapticIconButton(onClick = { confirmDelete = true }) {
                 Icon(Icons.Default.Delete, "Delete", Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.error)
             }
@@ -205,11 +206,11 @@ private fun PresetRow(
             title = { Text("Delete preset?") },
             text = { Text("\"${preset.name}\" will be removed.") },
             confirmButton = {
-                TextButton(onClick = { confirmDelete = false; onDelete() }) {
+                HapticTextButton(onClick = { confirmDelete = false; onDelete() }) {
                     Text("Delete", color = MaterialTheme.colorScheme.error)
                 }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
+            dismissButton = { HapticTextButton(onClick = { confirmDelete = false }) { Text("Cancel") } }
         )
     }
 }
@@ -257,7 +258,7 @@ private fun PresetEditorDialog(
                     Text("${"%.2f".format(speed)}×", color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge)
                 }
-                Slider(
+                HapticSlider(
                     value = speed,
                     onValueChange = { speed = (it / 0.05f).roundToInt() * 0.05f },
                     valueRange = 0.5f..3.0f, steps = 49
@@ -268,7 +269,7 @@ private fun PresetEditorDialog(
                     Text("+$boost dB", color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.labelLarge)
                 }
-                Slider(
+                HapticSlider(
                     value = boost.toFloat(),
                     onValueChange = { boost = it.roundToInt() },
                     valueRange = 0f..24f, steps = 23
@@ -278,7 +279,7 @@ private fun PresetEditorDialog(
                 PRESET_EQ_LABELS.forEachIndexed { i, label ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(56.dp))
-                        Slider(
+                        HapticSlider(
                             value = eq[i].toFloat(),
                             onValueChange = { eq[i] = it.roundToInt() },
                             valueRange = -1500f..1500f,
@@ -289,11 +290,11 @@ private fun PresetEditorDialog(
                             textAlign = androidx.compose.ui.text.style.TextAlign.End)
                     }
                 }
-                TextButton(onClick = { for (i in 0 until 5) eq[i] = 0 }) { Text("Flat EQ") }
+                HapticTextButton(onClick = { for (i in 0 until 5) eq[i] = 0 }) { Text("Flat EQ") }
             }
         },
         confirmButton = {
-            TextButton(
+            HapticTextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
                     val hasEq = eq.any { it != 0 }
@@ -310,7 +311,7 @@ private fun PresetEditorDialog(
                 }
             ) { Text("Save") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

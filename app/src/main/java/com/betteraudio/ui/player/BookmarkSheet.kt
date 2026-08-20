@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.db.entities.Bookmark
+import com.betteraudio.ui.haptics.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +40,7 @@ fun BookmarkSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("Bookmarks", style = MaterialTheme.typography.titleLarge)
-                Button(
+                HapticButton(
                     onClick = { onAddHere(); onDismiss() },
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                 ) {
@@ -156,14 +157,14 @@ private fun BookmarkRow(
                     )
                 }
             }
-            IconButton(onClick = onJump) {
+            HapticIconButton(onClick = onJump) {
                 Icon(
                     Icons.Default.PlayArrow,
                     "Jump to bookmark",
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
-            IconButton(onClick = onDelete) {
+            HapticIconButton(onClick = onDelete) {
                 Icon(
                     Icons.Default.Delete,
                     "Delete bookmark",

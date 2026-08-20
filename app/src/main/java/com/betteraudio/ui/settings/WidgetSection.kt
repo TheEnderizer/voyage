@@ -91,6 +91,7 @@ import com.betteraudio.util.AppLog
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+import com.betteraudio.ui.haptics.*
 
 // ─── Widget ─────────────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ internal fun LazyListScope.widgetSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(checked = hideWhenIdle, onCheckedChange = viewModel::setWidgetHideWhenIdle)
+                HapticSwitch(checked = hideWhenIdle, onCheckedChange = viewModel::setWidgetHideWhenIdle)
             }
         }
     }
@@ -159,7 +160,7 @@ internal fun LazyListScope.widgetSection(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    FilledTonalButton(onClick = {
+                    HapticFilledTonalButton(onClick = {
                         picker.launch(
                             androidx.activity.result.PickVisualMediaRequest(
                                 ActivityResultContracts.PickVisualMedia.ImageOnly
@@ -167,7 +168,7 @@ internal fun LazyListScope.widgetSection(
                         )
                     }) { Text(if (currentCoverPath.isBlank()) "Choose image" else "Change") }
                     if (currentCoverPath.isNotBlank()) {
-                        TextButton(onClick = { viewModel.clearWidgetDefaultCover() }) { Text("Remove") }
+                        HapticTextButton(onClick = { viewModel.clearWidgetDefaultCover() }) { Text("Remove") }
                     }
                 }
             }

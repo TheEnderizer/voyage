@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.betteraudio.ui.haptics.*
 
 @HiltViewModel
 class WidgetConfigureViewModel @Inject constructor(
@@ -140,7 +141,7 @@ private fun ConfigureScreen(
         topBar = { TopAppBar(title = { Text("Choose a widget") }) }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
-            Button(onClick = onCreateNew, modifier = Modifier.fillMaxWidth()) {
+            HapticButton(onClick = onCreateNew, modifier = Modifier.fillMaxWidth()) {
                 Text("Create new widget")
             }
             if (designs.isEmpty()) {
