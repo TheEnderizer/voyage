@@ -64,17 +64,29 @@ object AppIconManager {
         private val manifestDefaultEnabled: Boolean,
     ) {
         // Declaration order groups the styles and orders the colourways inside each — see
-        // IconStyle.icons(), which filters this list rather than keeping a second one.
+        // IconStyle.icons(), which filters this list rather than keeping a second one. Within
+        // a style the authored gradient colourways come first and the flat ones after, so the
+        // picker's wrapping grid reads as two rows of one treatment each.
         VEE("vee", IconStyle.VEE, "Aurora", "AppIconVee", R.mipmap.ic_launcher_fg_vee, 0xFF06102B, 0xFF030614, true),
         VEE_SUNSET("vee_sunset", IconStyle.VEE, "Sunset", "AppIconVeeSunset", R.mipmap.ic_launcher_fg_vee_sunset, 0xFF2A0710, 0xFF140306, false),
         VEE_ORCHID("vee_orchid", IconStyle.VEE, "Orchid", "AppIconVeeOrchid", R.mipmap.ic_launcher_fg_vee_orchid, 0xFF1E072A, 0xFF0F0215, false),
         VEE_MEADOW("vee_meadow", IconStyle.VEE, "Meadow", "AppIconVeeMeadow", R.mipmap.ic_launcher_fg_vee_meadow, 0xFF082A23, 0xFF021513, false),
         VEE_STEEL("vee_steel", IconStyle.VEE, "Steel", "AppIconVeeSteel", R.mipmap.ic_launcher_fg_vee_steel, 0xFF25262A, 0xFF121315, false),
+        VEE_FLAT_AURORA("vee_flat_aurora", IconStyle.VEE, "Flat aurora", "AppIconVeeFlatAurora", R.mipmap.ic_launcher_fg_vee_flat_aurora, 0xFF2A46C8, 0xFF2A46C8, false),
+        VEE_FLAT_SUNSET("vee_flat_sunset", IconStyle.VEE, "Flat sunset", "AppIconVeeFlatSunset", R.mipmap.ic_launcher_fg_vee_flat_sunset, 0xFFD8452C, 0xFFD8452C, false),
+        VEE_FLAT_ORCHID("vee_flat_orchid", IconStyle.VEE, "Flat orchid", "AppIconVeeFlatOrchid", R.mipmap.ic_launcher_fg_vee_flat_orchid, 0xFF7A34C0, 0xFF7A34C0, false),
+        VEE_FLAT_MEADOW("vee_flat_meadow", IconStyle.VEE, "Flat meadow", "AppIconVeeFlatMeadow", R.mipmap.ic_launcher_fg_vee_flat_meadow, 0xFF158A5C, 0xFF158A5C, false),
+        VEE_FLAT_PAPER("vee_flat_paper", IconStyle.VEE, "Flat paper", "AppIconVeeFlatPaper", R.mipmap.ic_launcher_fg_vee_flat_paper, 0xFFECEEF2, 0xFFECEEF2, false),
         VOYAGER("voyager", IconStyle.VOYAGER, "Tide", "AppIconVoyager", R.mipmap.ic_launcher_fg_voyager, 0xFF0C2549, 0xFF01091E, false),
         VOYAGER_ROSE("voyager_rose", IconStyle.VOYAGER, "Rose", "AppIconVoyagerRose", R.mipmap.ic_launcher_fg_voyager_rose, 0xFF490C26, 0xFF1E0109, false),
         VOYAGER_INDIGO("voyager_indigo", IconStyle.VOYAGER, "Indigo", "AppIconVoyagerIndigo", R.mipmap.ic_launcher_fg_voyager_indigo, 0xFF290C49, 0xFF12011E, false),
         VOYAGER_FERN("voyager_fern", IconStyle.VOYAGER, "Fern", "AppIconVoyagerFern", R.mipmap.ic_launcher_fg_voyager_fern, 0xFF0C4933, 0xFF011E17, false),
         VOYAGER_PEARL("voyager_pearl", IconStyle.VOYAGER, "Pearl", "AppIconVoyagerPearl", R.mipmap.ic_launcher_fg_voyager_pearl, 0xFF3F4349, 0xFF191A1D, false),
+        VOYAGER_FLAT_AURORA("voyager_flat_aurora", IconStyle.VOYAGER, "Flat tide", "AppIconVoyagerFlatAurora", R.mipmap.ic_launcher_fg_voyager_flat_aurora, 0xFF2A46C8, 0xFF2A46C8, false),
+        VOYAGER_FLAT_SUNSET("voyager_flat_sunset", IconStyle.VOYAGER, "Flat rose", "AppIconVoyagerFlatSunset", R.mipmap.ic_launcher_fg_voyager_flat_sunset, 0xFFD8452C, 0xFFD8452C, false),
+        VOYAGER_FLAT_ORCHID("voyager_flat_orchid", IconStyle.VOYAGER, "Flat indigo", "AppIconVoyagerFlatOrchid", R.mipmap.ic_launcher_fg_voyager_flat_orchid, 0xFF7A34C0, 0xFF7A34C0, false),
+        VOYAGER_FLAT_MEADOW("voyager_flat_meadow", IconStyle.VOYAGER, "Flat fern", "AppIconVoyagerFlatMeadow", R.mipmap.ic_launcher_fg_voyager_flat_meadow, 0xFF158A5C, 0xFF158A5C, false),
+        VOYAGER_FLAT_PAPER("voyager_flat_paper", IconStyle.VOYAGER, "Flat pearl", "AppIconVoyagerFlatPaper", R.mipmap.ic_launcher_fg_voyager_flat_paper, 0xFFECEEF2, 0xFFECEEF2, false),
         NAVY("navy", IconStyle.CLASSIC, "Navy", "AppIconNavy", R.mipmap.ic_launcher_fg, 0xFF26426E, 0xFF0D1A33, false),
         MIDNIGHT("midnight", IconStyle.CLASSIC, "Midnight", "AppIconMidnight", R.mipmap.ic_launcher_fg, 0xFF15151C, 0xFF030308, false),
         OCEAN("ocean", IconStyle.CLASSIC, "Ocean", "AppIconOcean", R.mipmap.ic_launcher_fg, 0xFF0E8A8F, 0xFF04393B, false),

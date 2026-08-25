@@ -5,6 +5,25 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.12.1b] - 2026-08-25
+
+Fixes the Immersive chapter scrubber sending you back to a chapter you had left.
+
+Pick a chapter from the list, then drag or tap the scrubber, and playback would jump into
+whichever chapter you happened to be in earlier — even though the scrubber, the chapter pill
+and the times all showed the new chapter. Only the Immersive theme was affected.
+
+### Fixed
+
+- **Immersive chapter scrubber seeked into the wrong chapter.** The scrubber's drag and tap
+  gestures are installed once and kept running for the life of the player, but they were
+  holding on to the chapter that was playing at the moment they started. Every later drag or
+  tap was measured against that stale chapter instead of the one actually playing, so seeking
+  threw you back into it — and it stayed wrong until the player was rebuilt, not just for a
+  moment after switching chapters. The gestures now read the current chapter each time they
+  fire. The Material You sliders were never affected.
+
+
 ## [1.12.0b] - 2026-08-20
 
 Voyage answers your touch now. Every control in the app has a haptic chosen to match what it did:

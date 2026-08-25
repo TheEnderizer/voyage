@@ -1087,6 +1087,18 @@ private fun ImmersiveScrubber(
     // The design is a user choice; the gesture, the swell and the hit target are not. Everything
     // above this line is shared by all four, everything below is one call into ScrubberArt.
     val style = com.betteraudio.ui.immersive.components.LocalScrubberStyle.current
+    // Both gesture blocks below are keyed on `Unit`, so they are started ONCE and keep running
+    // across every later recomposition — which means whatever they captured directly, they keep.
+    // These callbacks close over the CURRENT CHAPTER (`cur`/`chDur` at the call site), so a
+    // directly-captured `onScrubEnd` kept mapping the drag into whichever chapter happened to be
+    // playing when the block started: pick a new chapter from the list, drag this scrubber, and
+    // playback jumped back into the old one — the scrubber, the pill and the time row all showing
+    // the new chapter the whole time. Reading them through `rememberUpdatedState` keeps the
+    // gesture coroutine alive (re-keying it would cancel an in-flight drag) while still calling
+    // the latest lambda. The Material sliders never had this: `Slider` does the same internally.
+    val latestScrubStart = rememberUpdatedState(onScrubStart)
+    val latestScrub = rememberUpdatedState(onScrub)
+    val latestScrubEnd = rememberUpdatedState(onScrubEnd)
 
     Canvas(
         modifier
@@ -1098,9 +1110,9 @@ private fun ImmersiveScrubber(
                 detectTapGestures { offset ->
                     val target = (offset.x / size.width).coerceIn(0f, 1f)
                     haptics.play(Feel.Select)
-                    onScrubStart()
-                    onScrub(target)
-                    onScrubEnd(target)
+                    latestScrubStart.value()
+                    latestScrub.value(target)
+                    latestScrubEnd.value(target)
                 }
             }
             .pointerInput(Unit) {
@@ -1113,11 +1125,11 @@ private fun ImmersiveScrubber(
                         dragging = true
                         lastDetent = (latest * detents).toInt()
                         haptics.play(Feel.Grab)
-                        onScrubStart()
-                        onScrub(latest)
+                        latestScrubStart.value()
+                        latestScrub.value(latest)
                     },
-                    onDragEnd = { dragging = false; haptics.play(Feel.Release); onScrubEnd(latest) },
-                    onDragCancel = { dragging = false; haptics.play(Feel.Release); onScrubEnd(latest) },
+                    onDragEnd = { dragging = false; haptics.play(Feel.Release); latestScrubEnd.value(latest) },
+                    onDragCancel = { dragging = false; haptics.play(Feel.Release); latestScrubEnd.value(latest) },
                     onHorizontalDrag = { change, _ ->
                         change.consume()
                         latest = (change.position.x / size.width).coerceIn(0f, 1f)
@@ -1129,7 +1141,7 @@ private fun ImmersiveScrubber(
                             if (latest <= 0.0005f || latest >= 0.9995f) haptics.play(Feel.Boundary)
                             else haptics.play(Feel.Step)
                         }
-                        onScrub(latest)
+                        latestScrub.value(latest)
                     }
                 )
             }
