@@ -252,7 +252,7 @@ internal fun PlayerLandscapeStageBody(
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(
-                        book?.title ?: "",
+                        book?.displayTitle ?: "",
                         style = MaterialTheme.typography.headlineSmall,
                         color = onScrim,
                         maxLines = 2,

@@ -407,7 +407,7 @@ fun PlayerContent(
                 // under the identity it describes and stays a full-width tap target for the
                 // chapter list.
                 Text(
-                    text = book?.title ?: "",
+                    text = book?.displayTitle ?: "",
                     style = MaterialTheme.typography.headlineSmall,
                     color = onScrim,
                     maxLines = 2,

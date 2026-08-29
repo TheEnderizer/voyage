@@ -503,8 +503,8 @@ class PlayerController @Inject constructor(
                 buildMediaItem(
                     file = file,
                     memberBookId = book.id,
-                    albumTitle = book.title,
-                    artist = book.author,
+                    albumTitle = book.displayTitle,
+                    artist = book.displayAuthor,
                     artworkPath = book.coverArtPath
                 )
             },

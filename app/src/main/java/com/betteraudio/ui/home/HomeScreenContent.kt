@@ -778,7 +778,7 @@ private fun BookGridCard(
             // cover (BookInfoScreen.kt) shares this same "cover-<id>" key too, so its grid →
             // Book Info morph also reuses the decoded bitmap instead of redecoding.
             model = coverModel,
-            contentDescription = book.title,
+            contentDescription = book.displayTitle,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()

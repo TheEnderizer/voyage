@@ -505,7 +505,7 @@ class HomeViewModel @Inject constructor(
                     val o = item.book.seriesOrder ?: Float.MAX_VALUE
                     "$s${o.toString().padStart(10, '0')}"
                 }
-                else -> item.book.title.lowercase()
+                else -> item.book.displayTitle.lowercase()
             }
             is HomeGridItem.SeriesItem -> item.series.name.lowercase()
             is HomeGridItem.AuthorItem -> item.name.lowercase()
