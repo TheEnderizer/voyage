@@ -84,11 +84,112 @@ class SeriesRepository @Inject constructor(
     }
 
     suspend fun removeBookFromSeries(bookId: Long) {
+        val vacated = bookDao.getBookOnce(bookId)?.seriesId
         bookDao.setSeriesMembership(bookId, null, null, null)
+        // pruneSeriesIfEmpty first (it also deletes the row's cover files), then the global sweep
+        // as the cheap catch-all it has always been.
+        vacated?.let { pruneSeriesIfEmpty(it) }
         seriesDao.deleteEmpty()
-        AppLog.i(LogCat.DB, "removeBookFromSeries: book=$bookId detached")
+        AppLog.i(LogCat.DB, "removeBookFromSeries: book=$bookId detached from series=$vacated")
         diskMirror.flushLibrary()
         diskMirror.flushBook(bookId)
+    }
+
+    /**
+     * Set a book's series from a free-text name — the write behind Book Options' / Book Info's /
+     * the player's "Series" field.
+     *
+     * [Book.seriesId] is the source of truth for membership, so this always resolves (or creates)
+     * a real [Series] row and writes it alongside the seriesName/seriesOrder cache. Writing only
+     * the cache is what used to leave a book labelled with a series that Series view never
+     * grouped, no Series page existed for, and the cascade defaults could never reach.
+     *
+     * Name resolution, in order:
+     *  - blank/null → detach ([removeBookFromSeries]); a series keeping other members survives.
+     *  - a name that already resolves to a series (case-insensitively) → JOIN that series rather
+     *    than creating a second row for the same name; the book adopts the series' own spelling.
+     *  - a new name, and this book is its current series' only member → RENAME that series in
+     *    place, so its cover, description, author/narrator and cascade defaults survive what is
+     *    almost always a typo fix.
+     *  - a new name otherwise → create the series and move only this book into it; the other
+     *    members of the old series stay where they are.
+     *
+     * [order] of null means "no explicit position": a book joining a series it wasn't in lands at
+     * the end (as [addBookToSeries] does), while a book already in the series has its position
+     * cleared — the field was pre-filled, so an emptied one is a deliberate clear.
+     *
+     * Callers restructure the book's folder afterwards where that applies: the series name is part
+     * of the AUTHOR_SERIES_BOOK / AUTHOR_DASH_SERIES_BOOK layouts, and LibraryRestructurer reads
+     * the name through seriesId — which is exactly what this write is finally setting.
+     *
+     * @return the resolved series id, or null when the book ended up in no series.
+     */
+    suspend fun setBookSeriesByName(bookId: Long, name: String?, order: Float? = null): Long? {
+        val book = bookDao.getBookOnce(bookId) ?: return null
+        val trimmed = name?.trim().orEmpty()
+        if (trimmed.isEmpty()) {
+            removeBookFromSeries(bookId)
+            return null
+        }
+
+        // Ignore a dangling seriesId (row deleted underneath the book) so it can't send us down
+        // the rename branch against a series that no longer exists.
+        val currentId = book.seriesId?.takeIf { seriesDao.getByIdOnce(it) != null }
+        val existing = seriesDao.getByName(trimmed)
+
+        // Sole member of its current series, renaming to a name nothing else uses: keep the row.
+        if (existing == null && currentId != null && bookDao.countSeriesMembers(currentId) == 1) {
+            renameSeries(currentId, trimmed)                 // also refreshes this book's cache name
+            bookDao.setSeriesOrder(bookId, order)
+            AppLog.i(LogCat.DB, "setBookSeriesByName: book=$bookId renamed sole series=$currentId to '$trimmed'")
+            diskMirror.flushLibrary()
+            diskMirror.flushBook(bookId)
+            return currentId
+        }
+
+        val targetId = existing?.id
+            ?: getOrCreateSeriesByName(trimmed, book.displayAuthor.takeIf { it.isNotBlank() })
+        val targetName = existing?.name ?: trimmed
+        val resolvedOrder = if (targetId == currentId) order else order ?: nextOrder(targetId)
+        bookDao.setSeriesMembership(bookId, targetId, targetName, resolvedOrder)
+        if (currentId != null && currentId != targetId) pruneSeriesIfEmpty(currentId)
+        AppLog.i(LogCat.DB, "setBookSeriesByName: book=$bookId -> series=$targetId '$targetName' order=$resolvedOrder")
+        diskMirror.flushLibrary()
+        diskMirror.flushBook(bookId)
+        return targetId
+    }
+
+    /**
+     * One-shot repair for installs carrying books whose seriesName was written without a seriesId
+     * (see [setBookSeriesByName]) — they show a series label everywhere the cache is read while
+     * being invisible to Series view, series playback and the cascade defaults.
+     *
+     * Groups the orphans by cached name so books naming the same series land in one row, reuses an
+     * existing series when the name already resolves, and keeps each book's stored seriesOrder
+     * rather than inventing positions the user never set.
+     *
+     * @return how many books were re-attached.
+     */
+    suspend fun repairOrphanedMembership(): Int {
+        val orphans = bookDao.getBooksWithOrphanedSeriesNameOnce()
+        if (orphans.isEmpty()) return 0
+        orphans.groupBy { it.seriesName!!.trim() }.forEach { (seriesName, members) ->
+            val author = members.firstOrNull { it.displayAuthor.isNotBlank() }?.displayAuthor
+            val series = seriesDao.getByName(seriesName)
+            val seriesId = series?.id ?: getOrCreateSeriesByName(seriesName, author)
+            val canonicalName = series?.name ?: seriesName
+            members.forEach { bookDao.setSeriesMembership(it.id, seriesId, canonicalName, it.seriesOrder) }
+        }
+        AppLog.i(LogCat.DB, "repairOrphanedMembership: re-attached ${orphans.size} book(s) to their series")
+        diskMirror.flushLibrary()
+        orphans.forEach { diskMirror.flushBook(it.id) }
+        return orphans.size
+    }
+
+    /** Delete [seriesId] once nothing points at it any more — counting ignored books too, so
+     *  hiding every member doesn't quietly destroy the series and its cover files. */
+    private suspend fun pruneSeriesIfEmpty(seriesId: Long) {
+        if (bookDao.countSeriesMembers(seriesId) == 0) deleteSeries(seriesId)
     }
 
     /** Detach all members, then delete the series row. */

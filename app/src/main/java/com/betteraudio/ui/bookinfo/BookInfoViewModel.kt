@@ -30,6 +30,7 @@ import javax.inject.Inject
 class BookInfoViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val repository: AudiobookRepository,
+    private val seriesRepository: com.betteraudio.data.repository.SeriesRepository,
     private val synopsisService: SynopsisService,
     private val settings: SettingsStore,
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
@@ -110,7 +111,9 @@ class BookInfoViewModel @Inject constructor(
     }
 
     fun updateSeriesInfo(seriesName: String?, seriesOrder: Float?) = viewModelScope.launch {
-        repository.updateSeriesInfo(bookId, seriesName, seriesOrder)
+        seriesRepository.setBookSeriesByName(bookId, seriesName, seriesOrder)
+        // Series name is part of the folder scheme, same as the author above.
+        libraryRestructurer.restructureBooks(listOf(bookId))
     }
 
     fun updateStatus(status: BookStatus) = viewModelScope.launch {

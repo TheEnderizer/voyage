@@ -52,15 +52,28 @@ interface BookDao {
     @Query("UPDATE books SET coverFxPath = :path WHERE id = :id")
     suspend fun updateCoverFx(id: Long, path: String?)
 
-    @Query("UPDATE books SET seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
-    suspend fun updateSeriesInfo(id: Long, seriesName: String?, seriesOrder: Float?)
-
     // ── First-class series membership (seriesId is authoritative) ─────────────
+    // There is deliberately no cache-only "UPDATE books SET seriesName/seriesOrder" writer
+    // here: one existed, and it was what Book Options' series field called — it set the label
+    // without ever resolving a Series row, so the book never actually joined anything.
+    // Membership always goes through setSeriesMembership, which writes seriesId and its cache
+    // together. See SeriesRepository.setBookSeriesByName.
     @Query("UPDATE books SET seriesId = :seriesId, seriesName = :seriesName, seriesOrder = :seriesOrder WHERE id = :id")
     suspend fun setSeriesMembership(id: Long, seriesId: Long?, seriesName: String?, seriesOrder: Float?)
 
     @Query("UPDATE books SET seriesOrder = :order WHERE id = :id")
     suspend fun setSeriesOrder(id: Long, order: Float?)
+
+    /** Members regardless of [Book.isIgnored] — the "is this series still in use?" test, which a
+     *  hidden book must still pass (unlike getBooksInSeriesByIdOnce, which filters them out). */
+    @Query("SELECT COUNT(*) FROM books WHERE seriesId = :seriesId")
+    suspend fun countSeriesMembers(seriesId: Long): Int
+
+    /** Books carrying a cached series name that resolves to no Series row — the wreckage left by
+     *  the cache-only writer described above. Ignored books included: they keep their series when
+     *  unhidden. */
+    @Query("SELECT * FROM books WHERE seriesId IS NULL AND seriesName IS NOT NULL AND TRIM(seriesName) <> '' ORDER BY id ASC")
+    suspend fun getBooksWithOrphanedSeriesNameOnce(): List<Book>
 
     @Query("SELECT * FROM books WHERE seriesId = :seriesId AND isIgnored = 0 ORDER BY seriesOrder ASC, title ASC")
     fun getBooksInSeriesById(seriesId: Long): Flow<List<Book>>

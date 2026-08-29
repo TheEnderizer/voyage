@@ -204,10 +204,9 @@ class AudiobookRepository @Inject constructor(
         bookDao.updateStatus(bookId, status)
         diskMirror.flushBook(bookId)
     }
-    suspend fun updateSeriesInfo(bookId: Long, seriesName: String?, seriesOrder: Float?) {
-        bookDao.updateSeriesInfo(bookId, seriesName, seriesOrder)
-        diskMirror.flushBook(bookId)
-    }
+    // Series membership deliberately does NOT live here: it needs a resolved Series row, not just
+    // the cached columns on the book. See SeriesRepository.setBookSeriesByName, which every caller
+    // of the old updateSeriesInfo now uses.
 
     // Six read-then-write "upserts" (this one plus updateSpeed/updateBoostDb/updateEqBands/
     // updateLastPausedAt/touchLastPlayed below) each wrap their check-then-write in a single
