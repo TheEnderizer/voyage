@@ -83,6 +83,9 @@ class SettingsStore @Inject constructor(
         val EBOOK_FOLDER                 = stringPreferencesKey("ebook_folder")
         // One-shot: VoyageApp's phantom-series cleanup (see cleanupPhantomSeries) has run.
         val PHANTOM_SERIES_CLEANUP_DONE  = booleanPreferencesKey("phantom_series_cleanup_done")
+        // One-shot: VoyageApp's repair of books left with a seriesName but no seriesId has run
+        // (see SeriesRepository.repairOrphanedMembership).
+        val SERIES_MEMBERSHIP_REPAIR_DONE = booleanPreferencesKey("series_membership_repair_done")
         // Top-level home section: AUDIO (default) | EBOOKS.
         val HOME_SECTION                 = stringPreferencesKey("home_section")
         // Reader text size, as a percentage (100 = default CSS font-size).
@@ -271,6 +274,7 @@ class SettingsStore @Inject constructor(
     val widgetDefaultCoverPath: Flow<String>  = prefsData.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }.distinctUntilChanged()
     val ebookFolder: Flow<String>              = prefsData.map { it[Keys.EBOOK_FOLDER] ?: "" }.distinctUntilChanged()
     val phantomSeriesCleanupDone: Flow<Boolean> = prefsData.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }.distinctUntilChanged()
+    val seriesMembershipRepairDone: Flow<Boolean> = prefsData.map { it[Keys.SERIES_MEMBERSHIP_REPAIR_DONE] ?: false }.distinctUntilChanged()
     val readerFontSize: Flow<Int>              = prefsData.map { it[Keys.READER_FONT_SIZE] ?: 100 }.distinctUntilChanged()
     val readerTheme: Flow<String>               = prefsData.map { it[Keys.READER_THEME] ?: "PAPER" }.distinctUntilChanged()
     val readerFontFamily: Flow<String>          = prefsData.map { it[Keys.READER_FONT_FAMILY] ?: "SERIF" }.distinctUntilChanged()
@@ -502,6 +506,9 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setPhantomSeriesCleanupDone(done: Boolean) {
         context.dataStore.edit { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] = done }
+    }
+    suspend fun setSeriesMembershipRepairDone(done: Boolean) {
+        context.dataStore.edit { it[Keys.SERIES_MEMBERSHIP_REPAIR_DONE] = done }
     }
     suspend fun setReaderFontSize(pct: Int) {
         context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }

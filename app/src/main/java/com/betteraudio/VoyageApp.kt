@@ -53,7 +53,10 @@ class VoyageApp : Application(), Configuration.Provider {
             // AppIconManager.reconcile).
             com.betteraudio.util.AppIconManager.reconcile(this@VoyageApp)
             cleanupPhantomSeries()
-            // After phantom-series cleanup, not concurrent with it — both read/write the series
+            // Strictly after cleanupPhantomSeries: that one identifies a phantom by it holding
+            // *every* non-ignored book, which re-attaching orphans could push a real series into.
+            repairOrphanedSeriesMembership()
+            // After the series work above, not concurrent with it — both read/write the series
             // table and there's no reason to race them.
             diskExportMigration.runIfNeeded()
         }
@@ -145,6 +148,23 @@ class VoyageApp : Application(), Configuration.Provider {
                 }
         }
         settings.setPhantomSeriesCleanupDone(true)
+    }
+
+    /**
+     * One-shot: re-attach books that carry a series name but no [com.betteraudio.data.db.entities.Book.seriesId].
+     * Book Options' series field used to write only the denormalized seriesName/seriesOrder cache,
+     * so a book set that way displayed its series everywhere the cache is read while Series view
+     * never grouped it, no Series page existed for it, and the series cascade defaults could not
+     * reach it (fixed in [com.betteraudio.data.repository.SeriesRepository.setBookSeriesByName]).
+     * Runs here rather than as a Room migration so the re-attach goes through the repo — which
+     * resolves/creates the Series rows and flushes the disk mirror — and so it also reaches
+     * installs already sitting on the current schema version.
+     */
+    private suspend fun repairOrphanedSeriesMembership() {
+        if (settings.seriesMembershipRepairDone.first()) return
+        val repaired = seriesRepository.repairOrphanedMembership()
+        if (repaired > 0) AppLog.i(LogCat.DB, "repaired series membership for $repaired book(s)")
+        settings.setSeriesMembershipRepairDone(true)
     }
 
     override val workManagerConfiguration: Configuration

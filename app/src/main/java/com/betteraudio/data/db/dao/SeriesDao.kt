@@ -24,7 +24,11 @@ interface SeriesDao {
     @Query("SELECT * FROM series WHERE id = :id")
     suspend fun getByIdOnce(id: Long): Series?
 
-    @Query("SELECT * FROM series WHERE name = :name LIMIT 1")
+    /** Case-insensitive so re-typing an existing series' name with different capitalisation joins
+     *  it instead of creating a near-duplicate row. NOCASE is ASCII-only, which is the same
+     *  tradeoff getAll()'s ordering already makes; the exact-match index on `name` isn't usable
+     *  for a NOCASE comparison, but the series table is tiny. */
+    @Query("SELECT * FROM series WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun getByName(name: String): Series?
 
     @Query("SELECT * FROM series ORDER BY name COLLATE NOCASE ASC")

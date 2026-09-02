@@ -1025,7 +1025,15 @@ class PlayerViewModel @Inject constructor(
 
     fun updateSeriesInfo(seriesName: String?, seriesOrder: Float?) {
         if (bookId == -1L) return
-        viewModelScope.launch { repository.updateSeriesInfo(bookId, seriesName, seriesOrder) }
+        viewModelScope.launch {
+            seriesRepository.setBookSeriesByName(bookId, seriesName, seriesOrder)
+            // Series name is part of the folder scheme, so this moves the book on disk too — with
+            // updateBookMetadata's guard, for the same reason: not while this book is the one live
+            // in ExoPlayer, whose queue still references the old paths.
+            if (playbackState.value.bookId != bookId) {
+                libraryRestructurer.restructureBooks(listOf(bookId))
+            }
+        }
     }
 
     fun updateCoverArt(context: Context, uri: Uri) {

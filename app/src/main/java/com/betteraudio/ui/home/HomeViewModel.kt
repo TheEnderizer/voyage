@@ -173,7 +173,13 @@ class HomeViewModel @Inject constructor(
     }
 
     fun updateBookSeries(bookId: Long, seriesName: String?, seriesOrder: Float?) {
-        viewModelScope.launch { repository.updateSeriesInfo(bookId, seriesName, seriesOrder) }
+        viewModelScope.launch {
+            seriesRepository.setBookSeriesByName(bookId, seriesName, seriesOrder)
+            // The series name is part of the AUTHOR_SERIES_BOOK / AUTHOR_DASH_SERIES_BOOK folder
+            // scheme, so joining/leaving one moves the book on disk the same way an author edit
+            // does — a no-op in AUTO import mode or without a real single folder.
+            libraryRestructurer.restructureBooks(listOf(bookId))
+        }
     }
 
     fun updateBookStatus(bookId: Long, status: BookStatus) {
