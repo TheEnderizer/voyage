@@ -5,6 +5,48 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.13.0b] - 2026-09-02
+
+The EPUB reader is back — rebuilt natively, no WebView, no bottom sheets.
+
+Open an ebook and the whole page turns, from underneath, into a real reading surface Voyage
+renders itself: proper pagination, justified and hyphenated text, real text selection, and
+theming that's actually its own (paper, sepia, grey, dark, black — independent of your app
+theme). Chapters and search live in a real screen now, one tap away from the book title; text
+size, font, line spacing, margins, and the reading theme all live in another, with a live
+preview so you can see exactly what you're choosing before you commit to it. Nothing pops up
+from the bottom of the screen anymore.
+
+### Added
+
+- **Native EPUB rendering.** The reader no longer goes through a WebView — pages are laid out
+  and drawn by Voyage's own renderer, which is what makes real positions, real text selection,
+  and real search possible for the first time.
+- **A whole-book scrubber with chapter ticks** in the reader's bottom bar, alongside page count
+  and pages remaining in the chapter.
+- **Contents screen** (tap the chapter title): a real chapter list showing what you've read,
+  where you are, and what's ahead, plus full-text search across the whole book with match
+  highlighting and tap-to-jump.
+- **Reading settings screen** (tap "Aa"): five reading themes, three font families shown in
+  their own type, a size stepper, line spacing and margin presets, and justify/hyphenate
+  toggles — all previewed live before you apply anything.
+- **Text selection** — press and hold to select, with the system's own Copy / Select all
+  toolbar.
+
+### Fixed
+
+- **Turning back a page across a chapter boundary** now lands you on the previous chapter's
+  last page, the way turning back a physical page would — it used to drop you at the chapter's
+  start instead.
+
+### Known limitations
+
+- Bookmarks and highlights aren't in this build — the underlying storage for ebook annotations
+  doesn't exist yet, and it seemed worse to fake it with an empty tab.
+- Very long paragraphs that don't fit on one page get their own page rather than splitting
+  cleanly; a proper split-and-continue is still to come.
+- Text selection doesn't yet span a page break.
+
 ## [1.12.1b] - 2026-08-25
 
 Fixes the Immersive chapter scrubber sending you back to a chapter you had left.
