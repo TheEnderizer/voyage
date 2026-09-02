@@ -5,6 +5,18 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.13.1b] - 2026-09-02
+
+Fixes 1.13.0b crashing on launch for anyone who'd had an early debug build of an unrelated,
+unfinished feature installed at some point — it left the database on a schema version this
+build didn't know how to open. No data was ever at risk: Room refuses to touch a database it
+doesn't recognize rather than guessing, so it crashed instead of writing anything. This release
+adds the missing migration path.
+
+### Fixed
+
+- **App crashing on launch after updating to 1.13.0b**, for the specific case above.
+
 ## [1.13.0b] - 2026-09-02
 
 The EPUB reader is back — rebuilt natively, no WebView, no bottom sheets.

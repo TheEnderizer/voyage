@@ -78,9 +78,18 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             textSpineIndex/textFraction rows: the epub reading position has no preserved value
 //             across this migration (by design — see PlaybackProgress.textCharOffset); audio
 //             columns on the same row are untouched, since ALTER TABLE ADD COLUMN only adds.
+// Version 25: reconciles a real-world version collision, not a new column of its own. An
+//             unrelated in-progress branch (a "companion" pack-import feature, never merged)
+//             had independently bumped the DB to its OWN version 24 — playback_progress gained
+//             its `revealedMs` column and a `companion_packs` table — and a debug build of that
+//             branch had been installed on the dev phone. Shipping this reader work at version
+//             23 (built with no knowledge of that branch) was therefore a *downgrade* on that
+//             phone: Room has no downgrade path, so it refused to open the database at all
+//             (caught before any write — see MIGRATION_24_25, which starts from that exact
+//             on-disk schema). 25 is picked to sit safely above both branches' version numbers.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 23,
+    version = 25,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -491,6 +500,95 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 AppLog.i(LogCat.DB, "migrating 22 → 23 (playback_progress.textCharOffset)")
                 db.execSQL("ALTER TABLE playback_progress ADD COLUMN textCharOffset INTEGER")
+            }
+        }
+
+        // A device that already reached exactly this app's own version 23 (vanishingly unlikely —
+        // no build before this one ever shipped it) already has the correct schema; nothing to do
+        // beyond the version bump, which Room records once migrate() returns.
+        val MIGRATION_23_25 = object : Migration(23, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 23 → 25 (schema unchanged; see version 25 doc comment)")
+            }
+        }
+
+        // See the version-25 doc comment above @Database: reconciles the unrelated "companion"
+        // branch's own version 24 with this app's version 23 shape. Verified against that
+        // branch's actual exported schema (app/schemas/.../24.json, stashed — never merged),
+        // not assumed: TWO tables differ, not one — playback_progress (its own `revealedMs` vs.
+        // this app's `textCharOffset`) and audio_files (an extra `fileKey` column this app has
+        // no use for). Every other table is identical. SQLite's ALTER TABLE can't drop a column
+        // on every Android version this app supports (DROP COLUMN needs SQLite 3.35+, not
+        // guaranteed at minSdk 26), so both are rebuilt via the standard SQLite recipe: create
+        // the correct shape under a temp name, copy every row with an explicit column list
+        // (never `SELECT *`, so a stray extra column is silently left behind rather than copied
+        // into a table with no place for it), drop the old table, rename, recreate the indices
+        // (dropped along with the old table). The companion branch's own extra table
+        // (companion_packs) is left completely alone — Room only validates tables it knows about
+        // via @Database's entity list, so an unrelated extra table is harmless, and this app has
+        // no reason to touch data that belongs to a feature it doesn't implement.
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 24 → 25 (reconciling a companion-branch schema collision, see version 25 doc comment)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `audio_files_v25` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bookId` INTEGER NOT NULL,
+                        `filePath` TEXT NOT NULL, `fileName` TEXT NOT NULL, `trackNumber` INTEGER NOT NULL,
+                        `title` TEXT, `durationMs` INTEGER NOT NULL, `fileSizeBytes` INTEGER NOT NULL,
+                        `chapterTitle` TEXT, `damageRangesJson` TEXT,
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `audio_files_v25`
+                        (id, bookId, filePath, fileName, trackNumber, title, durationMs, fileSizeBytes,
+                         chapterTitle, damageRangesJson)
+                    SELECT
+                        id, bookId, filePath, fileName, trackNumber, title, durationMs, fileSizeBytes,
+                        chapterTitle, damageRangesJson
+                    FROM `audio_files`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `audio_files`")
+                db.execSQL("ALTER TABLE `audio_files_v25` RENAME TO `audio_files`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_audio_files_bookId` ON `audio_files` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_audio_files_filePath` ON `audio_files` (`filePath`)")
+
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `playback_progress_v25` (
+                        `bookId` INTEGER NOT NULL, `currentFileId` INTEGER, `positionMs` INTEGER NOT NULL,
+                        `lastPlayedMs` INTEGER NOT NULL, `playbackSpeed` REAL NOT NULL, `boostDb` INTEGER NOT NULL,
+                        `eqBandsJson` TEXT, `isCompleted` INTEGER NOT NULL, `completedDateMs` INTEGER,
+                        `lastPausedAt` INTEGER NOT NULL, `textSpineIndex` INTEGER, `textFraction` REAL,
+                        `textCharOffset` INTEGER, `textOverallFraction` REAL NOT NULL, `lastMode` TEXT NOT NULL,
+                        `filesBeforeCurrentMs` INTEGER NOT NULL, PRIMARY KEY(`bookId`),
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE,
+                        FOREIGN KEY(`currentFileId`) REFERENCES `audio_files`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `playback_progress_v25`
+                        (bookId, currentFileId, positionMs, lastPlayedMs, playbackSpeed, boostDb, eqBandsJson,
+                         isCompleted, completedDateMs, lastPausedAt, textSpineIndex, textFraction, textCharOffset,
+                         textOverallFraction, lastMode, filesBeforeCurrentMs)
+                    SELECT
+                        bookId, currentFileId, positionMs, lastPlayedMs, playbackSpeed, boostDb, eqBandsJson,
+                        isCompleted, completedDateMs, lastPausedAt, textSpineIndex, textFraction, NULL,
+                        textOverallFraction, lastMode, filesBeforeCurrentMs
+                    FROM `playback_progress`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `playback_progress`")
+                db.execSQL("ALTER TABLE `playback_progress_v25` RENAME TO `playback_progress`")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_playback_progress_bookId` ON `playback_progress` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_progress_currentFileId` ON `playback_progress` (`currentFileId`)")
             }
         }
     }
