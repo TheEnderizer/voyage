@@ -286,7 +286,7 @@ internal fun PlayerLandscapeBody(
                     }
 
                     Text(
-                        book?.title ?: "",
+                        book?.displayTitle ?: "",
                         style = MaterialTheme.typography.titleLarge,
                         color = onScrim,
                         maxLines = 2,

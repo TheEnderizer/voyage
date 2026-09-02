@@ -521,7 +521,7 @@ fun PlayerContent(
                 }
 
                 Text(
-                    text = book?.title ?: "",
+                    text = book?.displayTitle ?: "",
                     style = MaterialTheme.typography.headlineSmall,
                     color = onScrim,
                     maxLines = 2,

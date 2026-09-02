@@ -957,8 +957,8 @@ class PlaybackService : MediaSessionService() {
                     )
                     .setMediaMetadata(
                         MediaMetadata.Builder()
-                            .setAlbumTitle(book.title)
-                            .setArtist(book.author)
+                            .setAlbumTitle(book.displayTitle)
+                            .setArtist(book.displayAuthor)
                             .setTitle(file.chapterTitle ?: file.fileName)
                             .setArtworkUri(book.coverArtPath?.let { Uri.parse("file://$it") })
                             .setExtras(Bundle().apply {
