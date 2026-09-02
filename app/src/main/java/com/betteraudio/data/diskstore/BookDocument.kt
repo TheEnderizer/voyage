@@ -103,6 +103,10 @@ data class BookDocument(
         val lastPausedAt: Long,
         val textSpineIndex: Int?,
         val textFraction: Float?,
+        /** PlaybackProgress.textCharOffset (Room v23) — render-stream position for the native
+         *  reader. Absent on a doc written by an older build; decodes to null, same as a fresh
+         *  row, so an older doc's epub position just falls back to textFraction. */
+        val textCharOffset: Int? = null,
         val textOverallFraction: Float,
         val lastMode: String,
         val unknown: Map<String, Any?> = emptyMap()
@@ -147,6 +151,7 @@ data class BookDocument(
     )
 
     companion object {
-        const val CURRENT_VERSION = 1
+        // v2: ProgressEntry.textCharOffset (Room v23) — additive, decodes to null on an older doc.
+        const val CURRENT_VERSION = 2
     }
 }

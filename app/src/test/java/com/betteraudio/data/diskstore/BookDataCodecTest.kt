@@ -32,7 +32,7 @@ class BookDataCodecTest {
             currentFile = BookDocument.CurrentFileRef("05.mp3", 3_600_000L),
             playbackSpeed = 1.25f, boostDb = 3, eqBandsJson = "[0,2,0,0,-1]",
             isCompleted = false, completedDateMs = null, lastPausedAt = 1_754_469_000_000L,
-            textSpineIndex = 12, textFraction = 0.4f, textOverallFraction = 0.19f, lastMode = "AUDIO"
+            textSpineIndex = 12, textFraction = 0.4f, textCharOffset = 8_842, textOverallFraction = 0.19f, lastMode = "AUDIO"
         ),
         bookmarks = listOf(BookDocument.BookmarkEntry("05.mp3", 1000, 2000, "", 1_754_000_000_000L)),
         sessions = listOf(BookDocument.SessionEntry(1, 2, 0, "", 0, "", 0, 0, 0, 0)),
@@ -90,6 +90,17 @@ class BookDataCodecTest {
         assertEquals("AUDIO", decoded.kind)
         assertTrue(decoded.files.isEmpty())
         assertNull(decoded.progress)
+    }
+
+    @Test
+    fun `a v1 doc written before textCharOffset existed decodes it as null`() {
+        val json = JSONObject(BookDataCodec.encodeToString(sample()))
+        json.getJSONObject("progress").remove("textCharOffset")
+        json.put("version", 1)
+        val decoded = BookDataCodec.decodeOrNull(json.toString())
+        assertNull(decoded!!.progress!!.textCharOffset)
+        // The rest of progress is untouched by the missing field.
+        assertEquals(0.4f, decoded.progress!!.textFraction)
     }
 
     @Test

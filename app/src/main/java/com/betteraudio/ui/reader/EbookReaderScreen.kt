@@ -6,13 +6,17 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.GraphicEq
@@ -26,30 +30,43 @@ import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import com.betteraudio.ui.haptics.*
+
+/** Which full-screen pane the reader shows. Contents and Reading settings used to be a
+ *  `ModalBottomSheet` and an `AlertDialog` — both deleted. Neither is a separate nav destination:
+ *  both need the same [EbookReaderViewModel] instance the reading pane already holds, and Hilt
+ *  scopes a route's `hiltViewModel()` to that route's own back-stack entry, so a real second
+ *  destination would mean either a fresh (wrong) ViewModel or plumbing the instance through nav
+ *  args. A `BackHandler` on this local pane state gives the same "real screen, real back arrow,
+ *  system back returns you to reading" behavior the redesign calls for. */
+private enum class ReaderPane { READING, CONTENTS, SETTINGS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EbookReaderScreen(
     onBack: () -> Unit,
     onListenFromHere: (Long) -> Unit,
+    onOpenSpike: (Long) -> Unit = {},
     viewModel: EbookReaderViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    var pane by rememberSaveable { mutableStateOf(ReaderPane.READING) }
+
+    androidx.activity.compose.BackHandler(enabled = pane != ReaderPane.READING) { pane = ReaderPane.READING }
 
     // Keep the screen on while reading — matches the expectation of a dedicated reading mode.
     DisposableEffect(Unit) {
@@ -67,7 +84,22 @@ fun EbookReaderScreen(
                 CircularProgressIndicator()
             }
             state.error != null -> ReaderErrorContent(state.error!!, onBack)
-            else -> with(this) { ReaderContent(state, viewModel, onBack, onListenFromHere, scope) }
+            pane == ReaderPane.CONTENTS -> com.betteraudio.ui.reader.contents.ContentsScreen(
+                state = state, viewModel = viewModel,
+                onBack = { pane = ReaderPane.READING },
+                onSelectSpine = { index -> viewModel.openSpine(index); pane = ReaderPane.READING }
+            )
+            pane == ReaderPane.SETTINGS -> com.betteraudio.ui.reader.contents.ReadingSettingsScreen(
+                state = state, viewModel = viewModel,
+                onBack = { pane = ReaderPane.READING }
+            )
+            else -> with(this) {
+                ReaderContent(
+                    state, viewModel, onBack, onListenFromHere, onOpenSpike, scope,
+                    onOpenContents = { pane = ReaderPane.CONTENTS },
+                    onOpenSettings = { pane = ReaderPane.SETTINGS }
+                )
+            }
         }
     }
 }
@@ -92,58 +124,18 @@ private fun BoxScope.ReaderContent(
     viewModel: EbookReaderViewModel,
     onBack: () -> Unit,
     onListenFromHere: (Long) -> Unit,
-    scope: kotlinx.coroutines.CoroutineScope
+    onOpenSpike: (Long) -> Unit,
+    scope: kotlinx.coroutines.CoroutineScope,
+    onOpenContents: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
-    var showToc by remember { mutableStateOf(false) }
-    var showFontSize by remember { mutableStateOf(false) }
-    var showAlign by remember { mutableStateOf(false) }
-    var showOverflow by remember { mutableStateOf(false) }
-    var showSyncDialog by remember { mutableStateOf(false) }
-
-    val bg = MaterialTheme.colorScheme.background
-    val fg = MaterialTheme.colorScheme.onBackground
-    val accent = MaterialTheme.colorScheme.primary
-
-    // The WebView is created once; `update` pushes new state into it (spine/theme/font changes)
-    // without recreating the view (which would lose in-flight page rendering).
-    var lastLoadedIndex by remember { mutableIntStateOf(-1) }
-    var lastRestoreToken by remember { mutableIntStateOf(-1) }
-
-    AndroidView(
-        modifier = Modifier.fillMaxSize(),
-        factory = { ctx ->
-            ReaderWebView(
-                context = ctx,
-                readEntry = viewModel::readEntry,
-                mimeTypeFor = viewModel::mimeTypeFor,
-                onFractionChanged = { f -> viewModel.onScrollFraction(state.currentSpineIndex, f) },
-                onTap = { viewModel.toggleChrome() },
-                onPageReady = {}
-            )
-        },
-        update = { webView ->
-            webView.bgHex = bg.toHex()
-            webView.fgHex = fg.toHex()
-            webView.accentHex = accent.toHex()
-            webView.fontSizePct = state.fontSizePct
-
-            val href = state.spine.getOrNull(state.currentSpineIndex)?.href
-            if (href != null) {
-                val spineChanged = state.currentSpineIndex != lastLoadedIndex
-                val tokenChanged = state.restoreToken != lastRestoreToken
-                if (spineChanged) {
-                    webView.loadSpine(href, state.restoreFraction)
-                    lastLoadedIndex = state.currentSpineIndex
-                    lastRestoreToken = state.restoreToken
-                } else if (tokenChanged) {
-                    webView.reloadPreservingPosition(state.restoreFraction)
-                    lastRestoreToken = state.restoreToken
-                }
-            }
-        }
-    )
+    NativeReaderPager(state = state, viewModel = viewModel, onToggleChrome = { viewModel.toggleChrome() })
 
     // ── Top chrome ──────────────────────────────────────────────────────────
+    // The chapter title IS the button that opens Contents (with a trailing chevron saying so),
+    // and Aa opens Reading settings — the redesign's replacement for the old ⋮ overflow, which
+    // buried both behind an extra tap and a menu label. ⚠️ THROWAWAY "Native render spike" entry
+    // point (Phase 0 item 3) moved here too, unlabelled by a menu — see its own doc comment.
     AnimatedVisibility(
         visible = state.chromeVisible,
         enter = slideInVertically { -it } + fadeIn(),
@@ -152,14 +144,27 @@ private fun BoxScope.ReaderContent(
     ) {
         TopAppBar(
             title = {
-                Column {
+                Column(
+                    Modifier.clickable(onClick = onOpenContents),
+                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
                     Text(
                         state.book?.displayTitle ?: "",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
-                    state.currentSpineTitle?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            state.currentSpineTitle ?: "Contents",
+                            style = MaterialTheme.typography.titleMedium,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Icon(
+                            Icons.AutoMirrored.Filled.KeyboardArrowRight, null,
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)
+                        )
                     }
                 }
             },
@@ -167,47 +172,15 @@ private fun BoxScope.ReaderContent(
                 HapticIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             },
             actions = {
-                HapticIconButton(onClick = { showOverflow = true }) { Icon(Icons.Default.MoreVert, "More") }
-                DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                    HapticDropdownMenuItem(
-                        text = { Text("Chapters") },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, null) },
-                        onClick = { showOverflow = false; showToc = true }
-                    )
-                    HapticDropdownMenuItem(
-                        text = { Text("Font size") },
-                        leadingIcon = { Icon(Icons.Default.TextFields, null) },
-                        onClick = { showOverflow = false; showFontSize = true }
-                    )
-                    if (state.hasAudio) {
-                        HapticDropdownMenuItem(
-                            text = { Text("Align chapters") },
-                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.Rule, null) },
-                            onClick = { showOverflow = false; showAlign = true }
-                        )
-                        val aligning = state.alignProgress?.running == true
-                        HapticDropdownMenuItem(
-                            text = { Text(if (state.anchorCount > 0) "Re-align sync" else "Improve sync (on device)") },
-                            leadingIcon = { Icon(Icons.Default.GraphicEq, null) },
-                            enabled = !aligning,
-                            onClick = {
-                                showOverflow = false
-                                if (state.modelState is com.betteraudio.data.transcribe.ModelState.Ready) viewModel.improveSync()
-                                else showSyncDialog = true
-                            }
-                        )
-                        // Prominent when a bundled mapping.json (see MappingFileIO) was found next
-                        // to the audio — lets the user pull in a mapping obtained elsewhere (or
-                        // restore one a rescan missed) without re-running on-device alignment.
-                        if (state.mappingFileAvailable) {
-                            HapticDropdownMenuItem(
-                                text = { Text("Import Mapping Data") },
-                                leadingIcon = { Icon(Icons.Default.FileDownload, null) },
-                                enabled = !aligning,
-                                onClick = { showOverflow = false; viewModel.importMappingFile() }
-                            )
-                        }
-                    }
+                // ⚠️ THROWAWAY — Phase 0 item 3. Not gated on BuildConfig.DEBUG: this app is only
+                // ever deployed as a release-signed build, so a DEBUG-only gate would make the
+                // spike unreachable on the build actually installed on the test device. Delete
+                // this button along with ui/reader/spike/ when Phase 0 ends.
+                state.book?.id?.let { bookId ->
+                    HapticIconButton(onClick = { onOpenSpike(bookId) }) { Text("🔬") }
+                }
+                HapticTextButton(onClick = onOpenSettings) {
+                    Text("Aa", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
@@ -222,153 +195,153 @@ private fun BoxScope.ReaderContent(
         modifier = Modifier.align(Alignment.BottomCenter)
     ) {
         Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 3.dp) {
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HapticIconButton(
-                    onClick = { viewModel.prevChapter() },
-                    enabled = state.currentSpineIndex > 0
-                ) { Icon(Icons.AutoMirrored.Filled.NavigateBefore, "Previous chapter") }
-
-                if (state.hasAudio) {
-                    HapticFilledTonalButton(onClick = {
-                        scope.launch { viewModel.listenFromHere()?.let(onListenFromHere) }
-                    }) {
-                        Icon(Icons.Default.Headphones, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Listen from here")
-                    }
-                } else {
-                    Spacer(Modifier.width(1.dp))
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp)) {
+                BookScrubber(
+                    spineCount = state.spine.size,
+                    currentSpineIndex = state.currentSpineIndex,
+                    currentPageIndex = state.currentPageIndex,
+                    pageCount = state.pages.size,
+                    onScrub = { viewModel.jumpToOverallFraction(it) }
+                )
+                Spacer(Modifier.height(2.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        if (state.pages.isNotEmpty()) "Page ${state.currentPageIndex + 1} of ${state.pages.size}" else "",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    val pagesLeft = (state.pages.size - state.currentPageIndex - 1).coerceAtLeast(0)
+                    Text(
+                        if (state.pages.isNotEmpty()) "$pagesLeft page${if (pagesLeft == 1) "" else "s"} left in chapter" else "",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HapticIconButton(
+                        onClick = { viewModel.prevChapter() },
+                        enabled = state.currentSpineIndex > 0
+                    ) { Icon(Icons.AutoMirrored.Filled.NavigateBefore, "Previous chapter") }
 
-                HapticIconButton(
-                    onClick = { viewModel.nextChapter() },
-                    enabled = state.currentSpineIndex < state.spine.size - 1
-                ) { Icon(Icons.AutoMirrored.Filled.NavigateNext, "Next chapter") }
+                    if (state.hasAudio) {
+                        HapticFilledTonalButton(onClick = {
+                            scope.launch { viewModel.listenFromHere()?.let(onListenFromHere) }
+                        }) {
+                            Icon(Icons.Default.Headphones, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Listen from here")
+                        }
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
+
+                    HapticIconButton(
+                        onClick = { viewModel.nextChapter() },
+                        enabled = state.currentSpineIndex < state.spine.size - 1
+                    ) { Icon(Icons.AutoMirrored.Filled.NavigateNext, "Next chapter") }
+                }
             }
         }
     }
 
     // ── Sync status (priority: aligning → model downloading → synced → approximate) ──
-    val align = state.alignProgress
-    val model = state.modelState
-    Box(Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 12.dp, end = 12.dp)) {
-        when {
-            align?.running == true -> {
-                val total = align.chaptersTotal.coerceAtLeast(1)
-                Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer, tonalElevation = 2.dp) {
-                    Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Column {
-                            Text("Improving sync… ${align.chaptersDone}/$total · ${align.anchorsFound} anchors",
-                                style = MaterialTheme.typography.labelMedium)
-                            LinearProgressIndicator(
-                                progress = { align.chaptersDone.toFloat() / total },
-                                modifier = Modifier.width(180.dp).padding(top = 2.dp)
-                            )
+    // Gated behind EBOOK_SYNC_UI: the whole listen↔read sync surface ships frozen (Phase 0).
+    // Its controls now live in the Contents screen's own overflow, not here.
+    if (com.betteraudio.util.FeatureFlags.EBOOK_SYNC_UI) {
+        val align = state.alignProgress
+        val model = state.modelState
+        Box(Modifier.align(Alignment.TopCenter).padding(top = 72.dp, start = 12.dp, end = 12.dp)) {
+            when {
+                align?.running == true -> {
+                    val total = align.chaptersTotal.coerceAtLeast(1)
+                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer, tonalElevation = 2.dp) {
+                        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text("Improving sync… ${align.chaptersDone}/$total · ${align.anchorsFound} anchors",
+                                    style = MaterialTheme.typography.labelMedium)
+                                LinearProgressIndicator(
+                                    progress = { align.chaptersDone.toFloat() / total },
+                                    modifier = Modifier.width(180.dp).padding(top = 2.dp)
+                                )
+                            }
+                            HapticIconButton(onClick = { viewModel.cancelSync() }) { Icon(Icons.Default.Close, "Cancel") }
                         }
-                        HapticIconButton(onClick = { viewModel.cancelSync() }) { Icon(Icons.Default.Close, "Cancel") }
                     }
                 }
+                model is com.betteraudio.data.transcribe.ModelState.Downloading ->
+                    StatusChip("Downloading speech model… ${model.pct}%", MaterialTheme.colorScheme.secondaryContainer)
+                model is com.betteraudio.data.transcribe.ModelState.Unzipping ->
+                    StatusChip("Preparing speech model…", MaterialTheme.colorScheme.secondaryContainer)
+                state.hasAudio && state.anchorCount > 0 ->
+                    StatusChip("Synced · ${state.anchorCount} anchors", MaterialTheme.colorScheme.tertiaryContainer)
+                state.chapterMapApproximate && state.hasAudio ->
+                    StatusChip("Approximate alignment — see Contents to align or improve sync", MaterialTheme.colorScheme.tertiaryContainer)
             }
-            model is com.betteraudio.data.transcribe.ModelState.Downloading ->
-                StatusChip("Downloading speech model… ${model.pct}%", MaterialTheme.colorScheme.secondaryContainer)
-            model is com.betteraudio.data.transcribe.ModelState.Unzipping ->
-                StatusChip("Preparing speech model…", MaterialTheme.colorScheme.secondaryContainer)
-            state.hasAudio && state.anchorCount > 0 ->
-                StatusChip("Synced · ${state.anchorCount} anchors", MaterialTheme.colorScheme.tertiaryContainer)
-            state.chapterMapApproximate && state.hasAudio ->
-                StatusChip("Approximate alignment — ⋮ to align chapters or improve sync", MaterialTheme.colorScheme.tertiaryContainer)
         }
-    }
-
-    if (showSyncDialog) {
-        AlertDialog(
-            onDismissRequest = { showSyncDialog = false },
-            title = { Text("Improve listen ↔ read sync") },
-            text = {
-                val modelReady = state.modelState is com.betteraudio.data.transcribe.ModelState.Ready
-                Text(
-                    "This transcribes short snippets of the audiobook on your device and matches them " +
-                        "to the ebook text, pinning exact reference points so switching between reading and " +
-                        "listening lands on the right paragraph.\n\n" +
-                        if (modelReady) {
-                            "Runs in the background — you can keep reading."
-                        } else {
-                            "It needs a one-time ~45 MB English speech model (works with English audiobooks " +
-                                "for now) and runs in the background — you can keep reading. Wi-Fi " +
-                                "recommended for the download."
-                        }
-                )
-            },
-            confirmButton = {
-                HapticTextButton(onClick = { showSyncDialog = false; viewModel.improveSync() }) {
-                    Text(if (state.modelState is com.betteraudio.data.transcribe.ModelState.Ready) "Start" else "Download & start")
-                }
-            },
-            dismissButton = { HapticTextButton(onClick = { showSyncDialog = false }) { Text("Cancel") } }
-        )
-    }
-
-    state.mappingImportMessage?.let { message ->
-        AlertDialog(
-            onDismissRequest = { viewModel.clearMappingImportMessage() },
-            title = { Text("Import Mapping Data") },
-            text = { Text(message) },
-            confirmButton = {
-                HapticTextButton(onClick = { viewModel.clearMappingImportMessage() }) { Text("OK") }
-            }
-        )
-    }
-
-    if (showToc) {
-        TocSheet(
-            spine = state.spine,
-            currentIndex = state.currentSpineIndex,
-            onSelect = { viewModel.openSpine(it); showToc = false },
-            onDismiss = { showToc = false }
-        )
-    }
-    if (showFontSize) {
-        FontSizeDialog(
-            current = state.fontSizePct,
-            onChange = { viewModel.setFontSize(it) },
-            onDismiss = { showFontSize = false }
-        )
-    }
-    if (showAlign) {
-        ChapterAlignSheet(
-            audioSpans = viewModel.audioSpansForAlign(),
-            spine = state.spine,
-            onAutoMatch = { viewModel.autoMatchChapters() },
-            onSave = { viewModel.saveManualChapterMap(it) },
-            onDismiss = { showAlign = false }
-        )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** A draggable whole-book scrubber with a tick per chapter boundary, replacing the plain prev/
+ *  next-only chrome. Dragging previews the target chapter; releasing calls [onScrub] with the
+ *  whole-book fraction (same coarse "every spine item is equal length" model `persist()`'s
+ *  `textOverallFraction` already uses). */
 @Composable
-private fun TocSheet(
-    spine: List<com.betteraudio.data.ebook.SpineItem>,
-    currentIndex: Int,
-    onSelect: (Int) -> Unit,
-    onDismiss: () -> Unit
+private fun BookScrubber(
+    spineCount: Int,
+    currentSpineIndex: Int,
+    currentPageIndex: Int,
+    pageCount: Int,
+    onScrub: (Float) -> Unit,
 ) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            items(spine, key = { it.index }) { item ->
-                ListItem(
-                    headlineContent = { Text(item.title ?: "Section ${item.index + 1}") },
-                    modifier = Modifier.clickable { onSelect(item.index) },
-                    colors = ListItemDefaults.colors(
-                        containerColor = if (item.index == currentIndex)
-                            MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                    )
+    val settledFraction = remember(spineCount, currentSpineIndex, currentPageIndex, pageCount) {
+        if (spineCount <= 0) 0f
+        else {
+            val withinSpine = if (pageCount > 0) currentPageIndex.toFloat() / pageCount else 0f
+            ((currentSpineIndex + withinSpine) / spineCount).coerceIn(0f, 1f)
+        }
+    }
+    var dragFraction by remember { mutableStateOf<Float?>(null) }
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    val fillColor = MaterialTheme.colorScheme.primary
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .pointerInput(spineCount) {
+                if (spineCount <= 0) return@pointerInput
+                detectDragGestures(
+                    onDragStart = { offset -> dragFraction = (offset.x / size.width).coerceIn(0f, 1f) },
+                    onDrag = { change, _ -> dragFraction = (change.position.x / size.width).coerceIn(0f, 1f) },
+                    onDragEnd = { dragFraction?.let(onScrub); dragFraction = null },
+                    onDragCancel = { dragFraction = null }
                 )
             }
+    ) {
+        val shownFraction = dragFraction ?: settledFraction
+        Canvas(Modifier.fillMaxSize()) {
+            val midY = size.height / 2f
+            drawLine(trackColor, androidx.compose.ui.geometry.Offset(0f, midY), androidx.compose.ui.geometry.Offset(size.width, midY), strokeWidth = 3f)
+            drawLine(
+                fillColor, androidx.compose.ui.geometry.Offset(0f, midY),
+                androidx.compose.ui.geometry.Offset(size.width * shownFraction, midY), strokeWidth = 3f
+            )
+            if (spineCount > 1) {
+                for (i in 1 until spineCount) {
+                    val x = size.width * (i.toFloat() / spineCount)
+                    drawLine(
+                        trackColor, androidx.compose.ui.geometry.Offset(x, midY - 4f),
+                        androidx.compose.ui.geometry.Offset(x, midY + 4f), strokeWidth = 2f
+                    )
+                }
+            }
+            drawCircle(fillColor, radius = 6f, center = androidx.compose.ui.geometry.Offset(size.width * shownFraction, midY))
         }
     }
 }
@@ -384,29 +357,86 @@ private fun StatusChip(text: String, color: Color) {
     }
 }
 
+/**
+ * The native page renderer (docs/reader-features-and-plan.md Phase 1) that replaced the old
+ * WebView-based reader (`ReaderWebView.kt`, deleted). Owns the tap-zone page-turn gestures;
+ * left/right thirds turn pages (falling
+ * through to chapter navigation at a spine item's first/last page), the center toggles chrome.
+ *
+ * Known, documented gap: this tap-zone gesture layer and [ReaderPageView]'s `SelectionContainer`
+ * both want the same long-press — confirmed on-device (Phase 0 spike testing) to currently favor
+ * page-turn over starting a selection. Real gesture arbitration between the two is Phase 4 scope
+ * (plan C.4/A5), not fixed here.
+ */
 @Composable
-private fun FontSizeDialog(current: Int, onChange: (Int) -> Unit, onDismiss: () -> Unit) {
-    var pct by remember { mutableIntStateOf(current) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Font size") },
-        text = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalIconButton(onClick = { pct = (pct - 10).coerceAtLeast(70) }) {
-                    Icon(Icons.Default.Remove, "Smaller")
-                }
-                Text("$pct%", style = MaterialTheme.typography.headlineSmall)
-                FilledTonalIconButton(onClick = { pct = (pct + 10).coerceAtMost(200) }) {
-                    Icon(Icons.Default.TextFields, "Larger")
-                }
-            }
-        },
-        confirmButton = { HapticTextButton(onClick = { onChange(pct); onDismiss() }) { Text("Apply") } },
-        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
+private fun NativeReaderPager(state: ReaderUiState, viewModel: EbookReaderViewModel, onToggleChrome: () -> Unit) {
+    val fontScale = state.fontSizePct / 100f
+    val readerTheme = com.betteraudio.ui.reader.render.ReaderTheme.fromName(state.readerTheme)
+    val fontFamily = com.betteraudio.ui.reader.render.ReaderFontFamilyChoice.fromName(state.readerFontFamily)
+    val lineSpacing = com.betteraudio.ui.reader.render.ReaderLineSpacing.fromName(state.readerLineSpacing)
+    val margins = com.betteraudio.ui.reader.render.ReaderMargins.fromName(state.readerMargins)
+    val typography = remember(fontScale, readerTheme, fontFamily, lineSpacing, state.readerJustify, state.readerHyphenate) {
+        com.betteraudio.ui.reader.render.ReaderTypography(
+            baseSizeSp = 18f * fontScale,
+            fontFamily = fontFamily.family,
+            lineHeightMultiplier = lineSpacing.multiplier,
+            justify = state.readerJustify,
+            hyphenate = state.readerHyphenate,
+            color = readerTheme.fg
+        )
+    }
+    val measurer = com.betteraudio.ui.reader.render.rememberBlockMeasurer(typography)
 
-private fun Color.toHex(): String {
-    val argb = this.toArgb()
-    return String.format("#%06X", 0xFFFFFF and argb)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        // Reserve top/bottom chrome space UNCONDITIONALLY — found on-device: computing pagination
+        // against the full viewport, then only padding the rendered content when chrome happened
+        // to be visible, meant a page laid out while chrome was hidden would overflow its box (and
+        // get clipped) the moment chrome was toggled back on for the same page. Reserving the same
+        // margin always means toggling chrome only fades the bars in/out over that margin — the
+        // text itself never reflows or shifts, which is also just the correct reader behavior.
+        val topPad = androidx.compose.foundation.layout.WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 20.dp
+        val bottomPad = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 20.dp
+        val widthPx = with(density) { (maxWidth - margins.horizontal * 2).toPx() }.toInt()
+        val heightPx = with(density) { (maxHeight - topPad - bottomPad).toPx() }.toInt()
+
+        androidx.compose.runtime.LaunchedEffect(
+            state.currentSpineIndex, state.fontSizePct, state.readerFontFamily,
+            state.readerLineSpacing, state.readerMargins, state.readerJustify, state.readerHyphenate,
+            widthPx, heightPx
+        ) {
+            if (widthPx > 0 && heightPx > 0) viewModel.preparePages(measurer, widthPx, heightPx)
+        }
+
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(readerTheme.bg)
+                .pointerInput(state.pages.size, state.currentPageIndex, state.currentSpineIndex) {
+                    detectTapGestures(
+                        onTap = { offset ->
+                            when {
+                                offset.x < size.width * 0.3f -> {
+                                    if (state.currentPageIndex > 0) viewModel.onPageChanged(state.currentPageIndex - 1)
+                                    else viewModel.prevChapter()
+                                }
+                                offset.x > size.width * 0.7f -> {
+                                    if (state.currentPageIndex < state.pages.lastIndex) viewModel.onPageChanged(state.currentPageIndex + 1)
+                                    else viewModel.nextChapter()
+                                }
+                                else -> onToggleChrome()
+                            }
+                        }
+                    )
+                }
+        ) {
+            state.pages.getOrNull(state.currentPageIndex)?.let { page ->
+                com.betteraudio.ui.reader.render.ReaderPageView(
+                    page = page,
+                    typography = typography,
+                    modifier = Modifier.fillMaxSize().padding(start = margins.horizontal, end = margins.horizontal, top = topPad, bottom = bottomPad)
+                )
+            }
+        }
+    }
 }

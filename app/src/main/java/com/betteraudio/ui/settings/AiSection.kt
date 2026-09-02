@@ -134,8 +134,9 @@ internal fun LazyListScope.aiSection(geminiApiKey: String, viewModel: SettingsVi
             }
         }
     }
-    // Listen ↔ read sync model — ebook-only, so it travels with FeatureFlags.EBOOKS_UI.
-    if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) item {
+    // Listen ↔ read sync model — gated by FeatureFlags.EBOOK_SYNC_UI, not EBOOKS_UI: the reader
+    // is back but sync is explicitly out of scope.
+    if (com.betteraudio.util.FeatureFlags.EBOOK_SYNC_UI) item {
         val modelState by viewModel.voskModelState.collectAsStateWithLifecycle()
         CardContainer {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

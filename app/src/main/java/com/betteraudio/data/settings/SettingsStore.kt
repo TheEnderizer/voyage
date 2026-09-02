@@ -87,6 +87,17 @@ class SettingsStore @Inject constructor(
         val HOME_SECTION                 = stringPreferencesKey("home_section")
         // Reader text size, as a percentage (100 = default CSS font-size).
         val READER_FONT_SIZE             = intPreferencesKey("reader_font_size")
+        // Reading-page colour theme, independent of the app's own Material You/Immersive theme:
+        // PAPER (default) | SEPIA | GREY | DARK | BLACK. See ReaderTheme.
+        val READER_THEME                 = stringPreferencesKey("reader_theme")
+        // SERIF (default) | SANS | MONO. See ReaderTypography.fontFamily.
+        val READER_FONT_FAMILY           = stringPreferencesKey("reader_font_family")
+        // TIGHT | NORMAL (default) | LOOSE. See ReaderTypography.lineHeightMultiplier.
+        val READER_LINE_SPACING          = stringPreferencesKey("reader_line_spacing")
+        // NARROW | NORMAL (default) | WIDE. See ReaderMargins.
+        val READER_MARGINS               = stringPreferencesKey("reader_margins")
+        val READER_JUSTIFY               = booleanPreferencesKey("reader_justify")
+        val READER_HYPHENATE             = booleanPreferencesKey("reader_hyphenate")
         // Material You seed: "default" (system/cover per THEME_COLOR_SOURCE) | "#AARRGGBB" |
         // a built-in preset id | "seedPalette:<base64>" (custom 4-role palette).
         val CUSTOM_THEME_COLOR           = stringPreferencesKey("custom_theme_color")
@@ -261,6 +272,12 @@ class SettingsStore @Inject constructor(
     val ebookFolder: Flow<String>              = prefsData.map { it[Keys.EBOOK_FOLDER] ?: "" }.distinctUntilChanged()
     val phantomSeriesCleanupDone: Flow<Boolean> = prefsData.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }.distinctUntilChanged()
     val readerFontSize: Flow<Int>              = prefsData.map { it[Keys.READER_FONT_SIZE] ?: 100 }.distinctUntilChanged()
+    val readerTheme: Flow<String>               = prefsData.map { it[Keys.READER_THEME] ?: "PAPER" }.distinctUntilChanged()
+    val readerFontFamily: Flow<String>          = prefsData.map { it[Keys.READER_FONT_FAMILY] ?: "SERIF" }.distinctUntilChanged()
+    val readerLineSpacing: Flow<String>         = prefsData.map { it[Keys.READER_LINE_SPACING] ?: "NORMAL" }.distinctUntilChanged()
+    val readerMargins: Flow<String>             = prefsData.map { it[Keys.READER_MARGINS] ?: "NORMAL" }.distinctUntilChanged()
+    val readerJustify: Flow<Boolean>            = prefsData.map { it[Keys.READER_JUSTIFY] ?: true }.distinctUntilChanged()
+    val readerHyphenate: Flow<Boolean>          = prefsData.map { it[Keys.READER_HYPHENATE] ?: true }.distinctUntilChanged()
     val homeSection: Flow<String>              = prefsData.map { it[Keys.HOME_SECTION] ?: "AUDIO" }.distinctUntilChanged()
     val customThemeColor: Flow<String>         = prefsData.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }.distinctUntilChanged()
     val darkMode: Flow<String>                 = prefsData.map { it[Keys.DARK_MODE] ?: "AUTO" }.distinctUntilChanged()
@@ -488,6 +505,24 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setReaderFontSize(pct: Int) {
         context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }
+    }
+    suspend fun setReaderTheme(name: String) {
+        context.dataStore.edit { it[Keys.READER_THEME] = name }
+    }
+    suspend fun setReaderFontFamily(name: String) {
+        context.dataStore.edit { it[Keys.READER_FONT_FAMILY] = name }
+    }
+    suspend fun setReaderLineSpacing(name: String) {
+        context.dataStore.edit { it[Keys.READER_LINE_SPACING] = name }
+    }
+    suspend fun setReaderMargins(name: String) {
+        context.dataStore.edit { it[Keys.READER_MARGINS] = name }
+    }
+    suspend fun setReaderJustify(on: Boolean) {
+        context.dataStore.edit { it[Keys.READER_JUSTIFY] = on }
+    }
+    suspend fun setReaderHyphenate(on: Boolean) {
+        context.dataStore.edit { it[Keys.READER_HYPHENATE] = on }
     }
     suspend fun setHomeSection(name: String) {
         context.dataStore.edit { it[Keys.HOME_SECTION] = name }

@@ -73,9 +73,14 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             The obvious gate (disk doc's mtime vs. the book's own lastPlayedMs) doesn't
 //             actually gate anything, since the disk mirror is written AFTER every DB write —
 //             see AudioFileScanner.importBook and BookDataStore.
+// Version 23: playback_progress.textCharOffset — the native reader's render-stream position
+//             (docs/reader-features-and-plan.md Phase 1 item 11). Not back-filled from existing
+//             textSpineIndex/textFraction rows: the epub reading position has no preserved value
+//             across this migration (by design — see PlaybackProgress.textCharOffset); audio
+//             columns on the same row are untouched, since ALTER TABLE ADD COLUMN only adds.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -479,6 +484,13 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 AppLog.i(LogCat.DB, "migrating 21 → 22 (books.dataAppliedAtMs)")
                 db.execSQL("ALTER TABLE books ADD COLUMN dataAppliedAtMs INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        val MIGRATION_22_23 = object : Migration(22, 23) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 22 → 23 (playback_progress.textCharOffset)")
+                db.execSQL("ALTER TABLE playback_progress ADD COLUMN textCharOffset INTEGER")
             }
         }
     }

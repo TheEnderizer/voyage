@@ -8,7 +8,10 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.File
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.zip.ZipFile
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /** EPUB metadata pulled from the OPF `<metadata>` block. */
 data class EpubMeta(val title: String?, val author: String?, val coverHref: String?)
@@ -31,8 +34,17 @@ class EpubParser(private val epubFile: File) : Closeable {
     private val zip = ZipFile(epubFile)
     private var opfDir: String = ""
 
+    // `ZipFile` is not documented safe for concurrent use, and nothing serialized `readEntry`
+    // (background layout, lazy image decode) against `close()` (called from
+    // `EbookReaderViewModel.onCleared`, off the composition that's still reading). A read lock
+    // around every zip access plus a write lock in `close()` makes both safe: readers already in
+    // flight finish before close proceeds, and a read started after close sees [closed] under the
+    // same lock and returns null instead of racing a closed `ZipFile` into a `ZipException`.
+    private val lock = ReentrantReadWriteLock()
+    @Volatile private var closed = false
+
     fun parse(): EpubInfo {
-        val encrypted = zip.getEntry("META-INF/encryption.xml") != null
+        val encrypted = lock.read { !closed && zip.getEntry("META-INF/encryption.xml") != null }
 
         val opfPath = readOpfPath()
         opfDir = opfPath.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
@@ -132,7 +144,11 @@ class EpubParser(private val epubFile: File) : Closeable {
     }
 
     override fun close() {
-        runCatching { zip.close() }
+        lock.write {
+            if (closed) return@write
+            closed = true
+            runCatching { zip.close() }
+        }
     }
 
     // ── internals ────────────────────────────────────────────────────────────
@@ -256,8 +272,11 @@ class EpubParser(private val epubFile: File) : Closeable {
 
     private fun readZipEntry(path: String): ByteArray? {
         if (path.isEmpty()) return null
-        val entry = zip.getEntry(path) ?: zip.getEntry(path.removePrefix("/")) ?: return null
-        return runCatching { zip.getInputStream(entry).use { it.readBytes() } }.getOrNull()
+        return lock.read {
+            if (closed) return@read null
+            val entry = zip.getEntry(path) ?: zip.getEntry(path.removePrefix("/")) ?: return@read null
+            runCatching { zip.getInputStream(entry).use { it.readBytes() } }.getOrNull()
+        }
     }
 
     /** Single-pass START_TAG walker — good enough for flat structures (OPF metadata/manifest/spine,

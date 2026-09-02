@@ -11,11 +11,20 @@ package com.betteraudio.util
 object FeatureFlags {
     /**
      * Ebook (EPUB) UI: the Ebooks section in the nav pill, Settings → Library → Ebook folder,
-     * Book options → Ebook (connect/open/disconnect), the player's "Read from here" overflow item,
-     * and the Settings → AI listen↔read sync model card.
+     * Book options → Ebook (connect/open/disconnect), and the player's "Read from here" overflow
+     * item.
      *
-     * Off for now — the reader and the listen↔read sync aren't ready to ship. The reader screen and
-     * its nav route still exist; with this off nothing in the app navigates to them.
+     * On: the reading experience is being brought back (see docs/reader-revival.md).
      */
-    const val EBOOKS_UI = false
+    const val EBOOKS_UI = true
+
+    /**
+     * The listen ↔ read sync surface: Settings → AI's on-device speech-model card, and the
+     * reader's own "Improve sync" / "Align chapters" / "Import mapping" affordances.
+     *
+     * Deliberately a *separate* switch from [EBOOKS_UI] — the reader ships without sync. The
+     * alignment code (`data/transcribe/`, `sync/PositionBridge`, `SyncAligner`) stays live and
+     * untouched behind it.
+     */
+    const val EBOOK_SYNC_UI = false
 }

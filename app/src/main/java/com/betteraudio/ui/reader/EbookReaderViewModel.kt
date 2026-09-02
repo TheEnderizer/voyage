@@ -9,6 +9,12 @@ import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.ebook.EpubParser
 import com.betteraudio.data.ebook.SpineItem
+import com.betteraudio.data.ebook.render.BlockMeasurer
+import com.betteraudio.data.ebook.render.EpubDocumentParser
+import com.betteraudio.data.ebook.render.Page
+import com.betteraudio.data.ebook.render.Paginator
+import com.betteraudio.data.ebook.render.RenderDocument
+import com.betteraudio.data.ebook.render.RenderProjection
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -50,13 +56,22 @@ data class ReaderUiState(
     val book: Book? = null,
     val spine: List<SpineItem> = emptyList(),
     val currentSpineIndex: Int = 0,
-    // Scroll fraction (0..1) the WebView should restore to when it loads currentSpineIndex.
-    // Consumed once per spine change — bumping [restoreToken] forces a re-apply (e.g. after a
-    // font-size change reloads the same chapter).
-    val restoreFraction: Float = 0f,
-    val restoreToken: Int = 0,
+    // The native renderer's paginated output for currentSpineIndex (docs/reader-features-and-plan.md
+    // Phase 1) — empty until [EbookReaderViewModel.preparePages] has run at least once for the
+    // current spine item + viewport + font size (it needs a real TextMeasurer/Density, which only
+    // exist in composition, so the screen drives it rather than `load()`).
+    val pages: List<Page> = emptyList(),
+    val currentPageIndex: Int = 0,
     val chromeVisible: Boolean = true,
     val fontSizePct: Int = 100,
+    // Reading-page typography/theme — raw setting names (not Compose types) so this state stays
+    // usable outside composition; the screen converts via ReaderTheme.fromName() etc.
+    val readerTheme: String = "PAPER",
+    val readerFontFamily: String = "SERIF",
+    val readerLineSpacing: String = "NORMAL",
+    val readerMargins: String = "NORMAL",
+    val readerJustify: Boolean = true,
+    val readerHyphenate: Boolean = true,
     val hasAudio: Boolean = false,
     val chapterMapApproximate: Boolean = false,
     // Tier-2 sync state: number of verified anchors, live alignment progress, and the model status.
@@ -97,12 +112,19 @@ class EbookReaderViewModel @Inject constructor(
     private var cachedAnchors: List<com.betteraudio.sync.AnchorPoint> = emptyList()
     private var spineList: List<SpineItem> = emptyList()
     private var saveJob: Job? = null
-    // Live top-of-viewport scroll fraction for the current spine — updated immediately on every
-    // scroll event (unlike `state.restoreFraction`, which is a one-shot "restore to on load" value
-    // that's only set when a chapter loads/jumps and is never touched by scrolling). "Listen from
-    // here" must read this, not restoreFraction, or it always seeks to wherever the chapter was
-    // last opened at rather than where the reader is actually scrolled to.
-    private var liveScrollFraction: Float = 0f
+    // Live reading position for the current spine, as an EXTRACTOR-stream fraction (0..1) — the
+    // same coordinate `PositionBridge`/the frozen sync path already speak, and the same role
+    // `liveScrollFraction` played before the native renderer (updated on every page turn, unlike
+    // `preparePages`'s one-shot "restore to on load" read, which only happens on a spine/font-size
+    // change). "Listen from here" must read this, or it always seeks to wherever the chapter was
+    // last opened rather than where the reader actually is.
+    private var liveTextFraction: Float = 0f
+    // Render-stream offset of the current page's first block — persisted as PlaybackProgress.
+    // textCharOffset (Room v23) purely for the native renderer's own future use; the sync path
+    // above never reads it, only [liveTextFraction].
+    private var liveRenderOffset: Int = 0
+    private var currentRenderDoc: RenderDocument? = null
+    private var currentProjection: RenderProjection? = null
 
     /** Parsed paragraphs for a spine item (cached across the session); null if unreadable. */
     private fun paragraphsFor(spineIndex: Int): com.betteraudio.data.ebook.SpineParagraphs? {
@@ -118,18 +140,23 @@ class EbookReaderViewModel @Inject constructor(
             viewModelScope.launch { load() }
             // Live sync state → UI. The aligner is a singleton, so a run started here keeps going
             // (and stays observable) even after the reader is closed and re-opened.
-            repository.syncAnchorCount(bookId)
-                .onEach { count -> _state.update { it.copy(anchorCount = count) } }
-                .launchIn(viewModelScope)
-            syncAligner.progress
-                .onEach { m -> _state.update { it.copy(alignProgress = m[bookId]) } }
-                .launchIn(viewModelScope)
-            // Re-probe the filesystem on open so a model already on disk (or restored/pushed
-            // outside the app) is detected without a process restart.
-            modelManager.refreshState()
-            modelManager.state
-                .onEach { s -> _state.update { it.copy(modelState = s) } }
-                .launchIn(viewModelScope)
+            // The whole sync surface ships frozen behind EBOOK_SYNC_UI (Phase 0) — don't subscribe
+            // to the aligner or the on-device model manager (which would otherwise probe the
+            // filesystem for a Vosk model on every reader open) while it's off.
+            if (com.betteraudio.util.FeatureFlags.EBOOK_SYNC_UI) {
+                repository.syncAnchorCount(bookId)
+                    .onEach { count -> _state.update { it.copy(anchorCount = count) } }
+                    .launchIn(viewModelScope)
+                syncAligner.progress
+                    .onEach { m -> _state.update { it.copy(alignProgress = m[bookId]) } }
+                    .launchIn(viewModelScope)
+                // Re-probe the filesystem on open so a model already on disk (or restored/pushed
+                // outside the app) is detected without a process restart.
+                modelManager.refreshState()
+                modelManager.state
+                    .onEach { s -> _state.update { it.copy(modelState = s) } }
+                    .launchIn(viewModelScope)
+            }
         }
     }
 
@@ -200,9 +227,16 @@ class EbookReaderViewModel @Inject constructor(
 
         val mappingAvailable = hasAudio && com.betteraudio.data.sync.MappingFileIO.exists(book.folderPath)
 
-        liveScrollFraction = initialFraction
+        liveTextFraction = initialFraction
+        liveRenderOffset = 0
 
         val fontSizePct = settings.readerFontSize.first()
+        val readerTheme = settings.readerTheme.first()
+        val readerFontFamily = settings.readerFontFamily.first()
+        val readerLineSpacing = settings.readerLineSpacing.first()
+        val readerMargins = settings.readerMargins.first()
+        val readerJustify = settings.readerJustify.first()
+        val readerHyphenate = settings.readerHyphenate.first()
         // copy(), not a fresh ReaderUiState: the init mirrors already wrote modelState /
         // anchorCount / alignProgress into _state, and their StateFlows won't re-emit an
         // unchanged value — a wholesale reset here would clobber modelState back to
@@ -214,12 +248,85 @@ class EbookReaderViewModel @Inject constructor(
                 book = book,
                 spine = info.spine,
                 currentSpineIndex = initialSpine,
-                restoreFraction = initialFraction,
                 hasAudio = hasAudio,
                 chapterMapApproximate = approximate,
                 mappingFileAvailable = mappingAvailable,
-                fontSizePct = fontSizePct
+                fontSizePct = fontSizePct,
+                readerTheme = readerTheme,
+                readerFontFamily = readerFontFamily,
+                readerLineSpacing = readerLineSpacing,
+                readerMargins = readerMargins,
+                readerJustify = readerJustify,
+                readerHyphenate = readerHyphenate
             )
+        }
+    }
+
+    /**
+     * (Re)paginates the current spine item against a real measurer/viewport — called from the
+     * reader screen (which owns the `TextMeasurer`/`Density` this needs) whenever the spine, font
+     * size, or viewport size changes. Builds the [RenderProjection] against the frozen
+     * [com.betteraudio.data.ebook.ParagraphExtractor] output for this same spine item (C.3) so the
+     * initial page can be resolved from [liveTextFraction] — the same extractor-stream coordinate
+     * every stored position and the sync path already use — rather than a render-stream fraction
+     * that would drift from what's on disk.
+     */
+    fun preparePages(measurer: BlockMeasurer, viewportWidthPx: Int, viewportHeightPx: Int) {
+        val spineIndex = _state.value.currentSpineIndex
+        val href = spineList.getOrNull(spineIndex)?.href ?: return
+        val p = parser ?: return
+        viewModelScope.launch {
+            val bytes = withContext(Dispatchers.IO) { p.readEntry(href) }
+            if (bytes == null || _state.value.currentSpineIndex != spineIndex) return@launch
+            val doc = withContext(Dispatchers.Default) { EpubDocumentParser.parse(bytes) }
+            if (_state.value.currentSpineIndex != spineIndex) return@launch
+            val extractor = paragraphsFor(spineIndex)
+            val projection = extractor?.let { RenderProjection.buildFor(doc, it) }
+            val pages = if (doc.blocks.isEmpty()) emptyList()
+                else withContext(Dispatchers.Default) { Paginator.paginate(doc.blocks, measurer, viewportWidthPx, viewportHeightPx) }
+            if (_state.value.currentSpineIndex != spineIndex) return@launch
+
+            currentRenderDoc = doc
+            currentProjection = projection
+
+            val targetRenderOffset = if (extractor != null && extractor.totalChars > 0) {
+                val extractorOffset = extractor.charOffsetForFraction(liveTextFraction)
+                projection?.toRenderOffset(extractorOffset)
+                    ?: (liveTextFraction.coerceIn(0f, 1f) * doc.text.length).toInt()
+            } else (liveTextFraction.coerceIn(0f, 1f) * doc.text.length).toInt()
+
+            val pageIndex = pages.indexOfFirst { page ->
+                page.blocks.any { targetRenderOffset >= it.renderStart && targetRenderOffset < it.renderEnd }
+            }.let { if (it < 0) 0 else it }
+
+            _state.update { it.copy(pages = pages, currentPageIndex = pageIndex) }
+        }
+    }
+
+    /** Called by the reader screen on every page turn. Persists (debounced) and updates
+     *  [liveTextFraction]/[liveRenderOffset] so chapter navigation and "Listen from here" read the
+     *  reader's true current position. */
+    fun onPageChanged(pageIndex: Int) {
+        val s = _state.value
+        val clamped = pageIndex.coerceIn(0, (s.pages.size - 1).coerceAtLeast(0))
+        if (clamped == s.currentPageIndex) return
+        _state.value = s.copy(currentPageIndex = clamped)
+
+        val page = s.pages.getOrNull(clamped) ?: return
+        val renderOffset = page.blocks.firstOrNull()?.renderStart ?: 0
+        liveRenderOffset = renderOffset
+        val extractor = paragraphsFor(s.currentSpineIndex)
+        liveTextFraction = if (extractor != null && extractor.totalChars > 0) {
+            val docLen = currentRenderDoc?.text?.length?.coerceAtLeast(1) ?: 1
+            val extractorOffset = currentProjection?.toExtractorOffset(renderOffset)
+                ?: ((renderOffset.toFloat() / docLen) * extractor.totalChars).toInt()
+            extractor.fractionForCharOffset(extractorOffset)
+        } else 0f
+
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            delay(1_000)
+            persist(s.currentSpineIndex, liveTextFraction, liveRenderOffset)
         }
     }
 
@@ -260,7 +367,7 @@ class EbookReaderViewModel @Inject constructor(
         val next = (s.currentSpineIndex + 1).coerceAtMost(s.spine.size - 1)
         if (next == s.currentSpineIndex) return
         flushNow(s.currentSpineIndex, 1f)
-        recordTextSkip(s.currentSpineIndex, liveScrollFraction, next, 0f)
+        recordTextSkip(s.currentSpineIndex, liveTextFraction, next, 0f)
         jumpToSpine(next, 0f)
     }
 
@@ -269,67 +376,106 @@ class EbookReaderViewModel @Inject constructor(
         val prev = (s.currentSpineIndex - 1).coerceAtLeast(0)
         if (prev == s.currentSpineIndex) return
         flushNow(s.currentSpineIndex, 0f)
-        recordTextSkip(s.currentSpineIndex, liveScrollFraction, prev, 0f)
-        jumpToSpine(prev, 0f)
+        recordTextSkip(s.currentSpineIndex, liveTextFraction, prev, 1f)
+        // Land on the previous chapter's LAST page, not its first — going backward across a
+        // chapter boundary should feel like "the page before this one", the way turning back a
+        // physical page never dumps you back at a chapter's start. 1f resolves (via preparePages'
+        // fraction→render-offset path) to the end of the render stream, which the paginator's
+        // last page always contains.
+        jumpToSpine(prev, 1f)
     }
 
     fun openSpine(index: Int) {
         val s = _state.value
         val clamped = index.coerceIn(0, s.spine.size - 1)
-        flushNow(s.currentSpineIndex, liveScrollFraction)
-        if (clamped != s.currentSpineIndex) recordTextSkip(s.currentSpineIndex, liveScrollFraction, clamped, 0f)
+        flushNow(s.currentSpineIndex, liveTextFraction, liveRenderOffset)
+        if (clamped != s.currentSpineIndex) recordTextSkip(s.currentSpineIndex, liveTextFraction, clamped, 0f)
         jumpToSpine(clamped, 0f)
     }
 
+    /** Scrubber drag end: [overall] is a whole-book fraction (0..1), treating every spine item as
+     *  equal-length — the same coarse model `persist()`'s own `textOverallFraction` already uses,
+     *  so the scrubber and the home-grid progress bar agree on what "40% through the book" means. */
+    fun jumpToOverallFraction(overall: Float) {
+        val s = _state.value
+        val spineCount = s.spine.size.coerceAtLeast(1)
+        val target = (overall.coerceIn(0f, 1f) * spineCount)
+        val spineIndex = target.toInt().coerceIn(0, spineCount - 1)
+        val fraction = (target - spineIndex).coerceIn(0f, 1f)
+        flushNow(s.currentSpineIndex, liveTextFraction, liveRenderOffset)
+        if (spineIndex != s.currentSpineIndex) recordTextSkip(s.currentSpineIndex, liveTextFraction, spineIndex, fraction)
+        jumpToSpine(spineIndex, fraction)
+    }
+
+    /** Jumps to a new spine item, restoring to [fraction] (an EXTRACTOR-stream fraction — 0f for
+     *  "start of chapter", 1f for "end of chapter"). Clears the previous spine's cached render
+     *  document/projection and pages; the reader screen's `preparePages` call (keyed on
+     *  `currentSpineIndex`) rebuilds them for the new spine. */
     private fun jumpToSpine(index: Int, fraction: Float) {
-        liveScrollFraction = fraction
-        _state.value = _state.value.copy(
-            currentSpineIndex = index, restoreFraction = fraction,
-            restoreToken = _state.value.restoreToken + 1
-        )
+        liveTextFraction = fraction
+        liveRenderOffset = 0
+        currentRenderDoc = null
+        currentProjection = null
+        _state.value = _state.value.copy(currentSpineIndex = index, pages = emptyList(), currentPageIndex = 0)
     }
 
     fun setFontSize(pct: Int) {
         val clamped = pct.coerceIn(70, 200)
         viewModelScope.launch { settings.setReaderFontSize(clamped) }
-        val s = _state.value
-        _state.value = s.copy(fontSizePct = clamped, restoreToken = s.restoreToken + 1)
+        _state.value = _state.value.copy(fontSizePct = clamped)
+    }
+
+    fun setReaderTheme(name: String) {
+        viewModelScope.launch { settings.setReaderTheme(name) }
+        _state.value = _state.value.copy(readerTheme = name)
+    }
+
+    fun setReaderFontFamily(name: String) {
+        viewModelScope.launch { settings.setReaderFontFamily(name) }
+        _state.value = _state.value.copy(readerFontFamily = name)
+    }
+
+    fun setReaderLineSpacing(name: String) {
+        viewModelScope.launch { settings.setReaderLineSpacing(name) }
+        _state.value = _state.value.copy(readerLineSpacing = name)
+    }
+
+    fun setReaderMargins(name: String) {
+        viewModelScope.launch { settings.setReaderMargins(name) }
+        _state.value = _state.value.copy(readerMargins = name)
+    }
+
+    fun setReaderJustify(on: Boolean) {
+        viewModelScope.launch { settings.setReaderJustify(on) }
+        _state.value = _state.value.copy(readerJustify = on)
+    }
+
+    fun setReaderHyphenate(on: Boolean) {
+        viewModelScope.launch { settings.setReaderHyphenate(on) }
+        _state.value = _state.value.copy(readerHyphenate = on)
     }
 
     // ── Position persistence ────────────────────────────────────────────────────
 
-    /** Called by the WebView as the user scrolls. The DB write is debounced ~1s, but
-     *  [liveScrollFraction] updates immediately so "Listen from here" always reads the reader's
-     *  true current position, not a stale/unsaved one. */
-    fun onScrollFraction(spineIndex: Int, fraction: Float) {
-        liveScrollFraction = fraction
-        saveJob?.cancel()
-        saveJob = viewModelScope.launch {
-            delay(1_000)
-            persist(spineIndex, fraction)
-        }
-    }
-
     /** Immediate save — used on chapter change and screen dispose, where a debounced write could
      *  be lost. NonCancellable: may run right as viewModelScope is about to be torn down. */
-    fun flushNow(spineIndex: Int, fraction: Float) {
+    fun flushNow(spineIndex: Int, fraction: Float, charOffset: Int? = null) {
         saveJob?.cancel()
-        viewModelScope.launch(NonCancellable) { persist(spineIndex, fraction) }
+        viewModelScope.launch(NonCancellable) { persist(spineIndex, fraction, charOffset) }
     }
 
-    /** Immediate save of the current spine + the live scroll position — this is what "closing the
-     *  book" should call. Using `state.restoreFraction` there instead would save the wrong spot:
-     *  it's a one-shot "restore to on load" value that scrolling never updates, so closing shortly
-     *  after scrolling (before the ~1s debounced auto-save in [onScrollFraction] fires) would
-     *  silently overwrite a good pending save with a stale one. */
+    /** Immediate save of the current spine + the live reading position — this is what "closing the
+     *  book" should call. A stale one-shot "restore to on load" value would save the wrong spot,
+     *  which is exactly why [liveTextFraction]/[liveRenderOffset] are updated on every page turn
+     *  ([onPageChanged]) rather than only read back from disk. */
     fun flushCurrent() {
-        flushNow(_state.value.currentSpineIndex, liveScrollFraction)
+        flushNow(_state.value.currentSpineIndex, liveTextFraction, liveRenderOffset)
     }
 
-    private suspend fun persist(spineIndex: Int, fraction: Float) {
+    private suspend fun persist(spineIndex: Int, fraction: Float, charOffset: Int?) {
         val spineCount = _state.value.spine.size.coerceAtLeast(1)
         val overall = ((spineIndex + fraction.coerceIn(0f, 1f)) / spineCount).coerceIn(0f, 1f)
-        repository.updateTextPosition(bookId, spineIndex, fraction.coerceIn(0f, 1f), overall)
+        repository.updateTextPosition(bookId, spineIndex, fraction.coerceIn(0f, 1f), overall, charOffset)
         val book = _state.value.book ?: return
         if (book.status == BookStatus.NOT_STARTED && overall > 0f) {
             repository.updateBookStatus(bookId, BookStatus.IN_PROGRESS)
@@ -338,11 +484,6 @@ class EbookReaderViewModel @Inject constructor(
             repository.updateBookStatus(bookId, BookStatus.FINISHED)
         }
     }
-
-    // ── WebView content access (synchronous — safe off the main thread) ────────
-
-    fun readEntry(href: String): ByteArray? = parser?.readEntry(href)
-    fun mimeTypeFor(href: String): String = parser?.mimeTypeFor(href) ?: "application/octet-stream"
 
     // ── Listen from here (text -> audio) ───────────────────────────────────────
 
@@ -362,7 +503,7 @@ class EbookReaderViewModel @Inject constructor(
             cachedMap = ensureChapterMap(book, cachedSpans, s.spine)
         }
 
-        val targetMs = locatorToAudio(s.currentSpineIndex, liveScrollFraction)
+        val targetMs = locatorToAudio(s.currentSpineIndex, liveTextFraction)
 
         val progress = repository.getProgressForBookOnce(book.id)
         val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
@@ -382,7 +523,7 @@ class EbookReaderViewModel @Inject constructor(
         settings.setLastPlayedBookId(book.id)
         settings.setThemeBookId(book.id)
         repository.setLastModeAudio(book.id)
-        AppLog.i(LogCat.UI, "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveScrollFraction -> ${targetMs}ms")
+        AppLog.i(LogCat.UI, "listenFromHere book=${book.id} spine=${s.currentSpineIndex} frac=$liveTextFraction -> ${targetMs}ms")
         return book.id
     }
 
@@ -528,6 +669,75 @@ class EbookReaderViewModel @Inject constructor(
         cachedMap = map
         _state.value = _state.value.copy(chapterMapApproximate = isApproximate(map))
         viewModelScope.launch { repository.setChapterMap(book.id, map.toJson()) }
+    }
+
+    // ── Contents screen: search ──────────────────────────────────────────────
+
+    /** One match: [spineIndex] + a coarse render-fraction hint (position within that spine
+     *  item's render text). Deliberately not run through [RenderProjection] — that only exists
+     *  for the current spine's cached document, and building one per search hit across a whole
+     *  book would mean re-running `ParagraphExtractor` on every spine item just to jump. The same
+     *  render-fraction approximation [jumpToSpine] already uses as a fallback everywhere else. */
+    data class SearchResult(val spineIndex: Int, val spineTitle: String?, val snippet: String, val matchStart: Int, val matchEnd: Int, val renderFraction: Float)
+
+    private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
+    val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
+    private val _searching = MutableStateFlow(false)
+    val searching: StateFlow<Boolean> = _searching.asStateFlow()
+    private var searchJob: Job? = null
+
+    fun search(query: String) {
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            _searchResults.value = emptyList()
+            _searching.value = false
+            return
+        }
+        _searching.value = true
+        searchJob = viewModelScope.launch {
+            delay(300) // debounce — avoid re-scanning the whole book on every keystroke
+            val p = parser
+            if (p == null) { _searching.value = false; return@launch }
+            val results = withContext(Dispatchers.Default) {
+                val out = mutableListOf<SearchResult>()
+                val needle = query.lowercase()
+                for (item in spineList) {
+                    if (out.size >= 200) break // sanity cap for a very long book
+                    val bytes = p.readEntry(item.href) ?: continue
+                    val doc = EpubDocumentParser.parse(bytes)
+                    if (doc.text.isEmpty()) continue
+                    val haystack = doc.text.lowercase()
+                    var idx = haystack.indexOf(needle)
+                    var perChapter = 0
+                    while (idx >= 0 && perChapter < 5) {
+                        val start = (idx - 40).coerceAtLeast(0)
+                        val end = (idx + needle.length + 40).coerceAtMost(doc.text.length)
+                        out.add(
+                            SearchResult(
+                                spineIndex = item.index, spineTitle = item.title,
+                                snippet = doc.text.substring(start, end),
+                                matchStart = idx - start, matchEnd = idx - start + needle.length,
+                                renderFraction = idx.toFloat() / doc.text.length
+                            )
+                        )
+                        idx = haystack.indexOf(needle, idx + needle.length)
+                        perChapter++
+                    }
+                }
+                out
+            }
+            _searchResults.value = results
+            _searching.value = false
+        }
+    }
+
+    fun jumpToSearchResult(result: SearchResult) {
+        val s = _state.value
+        flushNow(s.currentSpineIndex, liveTextFraction, liveRenderOffset)
+        if (result.spineIndex != s.currentSpineIndex) {
+            recordTextSkip(s.currentSpineIndex, liveTextFraction, result.spineIndex, result.renderFraction)
+        }
+        jumpToSpine(result.spineIndex, result.renderFraction)
     }
 
     override fun onCleared() {

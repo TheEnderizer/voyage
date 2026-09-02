@@ -507,7 +507,21 @@ class MainActivity : ComponentActivity() {
                             onBack = { navController.popBackStack() },
                             // The reader VM already started playback (readFromHere's cascade); just
                             // expand the sheet over the reader — it stays on the back stack beneath it.
-                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) }
+                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) },
+                            onOpenSpike = { bookId -> navController.navigate("reader_spike/$bookId") }
+                        )
+                    }
+
+                    // ⚠️ THROWAWAY — Phase 0 item 3 of docs/reader-features-and-plan.md. Reachable
+                    // only via the "🔬 Native render spike" overflow item on the reader screen;
+                    // deleted along with ui/reader/spike/ once the native-render decision gate is
+                    // passed or the approach is reconsidered.
+                    composable(
+                        route = "reader_spike/{bookId}",
+                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                    ) {
+                        com.betteraudio.ui.reader.spike.ReaderSpikeScreen(
+                            onBack = { navController.popBackStack() }
                         )
                     }
                 }

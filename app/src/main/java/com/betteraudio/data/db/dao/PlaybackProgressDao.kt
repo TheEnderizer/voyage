@@ -48,11 +48,11 @@ interface PlaybackProgressDao {
     // fall back to an upsert, mirroring the existing touchLastPlayed pattern.
     @Query("""
         UPDATE playback_progress
-        SET textSpineIndex = :spineIndex, textFraction = :fraction,
+        SET textSpineIndex = :spineIndex, textFraction = :fraction, textCharOffset = :charOffset,
             textOverallFraction = :overallFraction, lastMode = 'TEXT', lastPlayedMs = :ts
         WHERE bookId = :bookId
     """)
-    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float, ts: Long): Int
+    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, charOffset: Int?, overallFraction: Float, ts: Long): Int
 
     @Query("UPDATE playback_progress SET lastMode = 'AUDIO' WHERE bookId = :bookId")
     suspend fun setLastModeAudio(bookId: Long): Int

@@ -97,6 +97,7 @@ class RestoreOps @Inject constructor(
                         lastPausedAt = p.lastPausedAt,
                         textSpineIndex = p.textSpineIndex,
                         textFraction = p.textFraction,
+                        textCharOffset = p.textCharOffset,
                         textOverallFraction = p.textOverallFraction,
                         lastMode = p.lastMode
                     )

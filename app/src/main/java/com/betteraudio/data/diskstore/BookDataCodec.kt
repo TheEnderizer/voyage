@@ -26,7 +26,7 @@ object BookDataCodec {
     private val PROGRESS_KEYS = setOf(
         "positionMs", "lastPlayedMs", "currentFile", "playbackSpeed", "boostDb", "eqBandsJson",
         "isCompleted", "completedDateMs", "lastPausedAt", "textSpineIndex", "textFraction",
-        "textOverallFraction", "lastMode"
+        "textCharOffset", "textOverallFraction", "lastMode"
     )
 
     fun encode(doc: BookDocument): JSONObject = JSONObject().apply {
@@ -98,6 +98,7 @@ object BookDataCodec {
                 put("lastPausedAt", p.lastPausedAt)
                 p.textSpineIndex?.let { put("textSpineIndex", it) }
                 p.textFraction?.let { put("textFraction", it) }
+                p.textCharOffset?.let { put("textCharOffset", it) }
                 put("textOverallFraction", p.textOverallFraction)
                 put("lastMode", p.lastMode)
                 putUnknown(p.unknown)
@@ -207,6 +208,7 @@ object BookDataCodec {
                 lastPausedAt = p.optLong("lastPausedAt"),
                 textSpineIndex = if (p.has("textSpineIndex")) p.optInt("textSpineIndex") else null,
                 textFraction = if (p.has("textFraction")) p.optDouble("textFraction").toFloat() else null,
+                textCharOffset = if (p.has("textCharOffset")) p.optInt("textCharOffset") else null,
                 textOverallFraction = p.optDouble("textOverallFraction", 0.0).toFloat(),
                 lastMode = p.optString("lastMode", "AUDIO"),
                 unknown = p.captureUnknown(PROGRESS_KEYS)

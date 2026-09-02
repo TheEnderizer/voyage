@@ -430,12 +430,13 @@ class AudiobookRepository @Inject constructor(
 
     /** Persist the reader's scroll position and mark text as the freshest mode. Creates the
      *  progress row on first read, mirroring [touchLastPlayed]'s upsert-if-missing pattern. */
-    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float) {
+    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float, charOffset: Int? = null) {
         val now = System.currentTimeMillis()
-        if (progressDao.updateTextPosition(bookId, spineIndex, fraction, overallFraction, now) == 0) {
+        if (progressDao.updateTextPosition(bookId, spineIndex, fraction, charOffset, overallFraction, now) == 0) {
             progressDao.upsert(
                 PlaybackProgress(
                     bookId = bookId, textSpineIndex = spineIndex, textFraction = fraction,
+                    textCharOffset = charOffset,
                     textOverallFraction = overallFraction, lastMode = "TEXT", lastPlayedMs = now
                 )
             )

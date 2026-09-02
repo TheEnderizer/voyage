@@ -37,6 +37,14 @@ data class PlaybackProgress(
     // ── Ebook reading position ───────────────────────────────────────────────
     val textSpineIndex: Int? = null,      // epub spine item last read; null = never read
     val textFraction: Float? = null,      // scroll fraction (0..1) within that spine item
+    // Render-stream char offset (com.betteraudio.data.ebook.render.RenderDocument coordinates) of
+    // the reading position within textSpineIndex — the real position for the native renderer.
+    // Null until the native renderer has actually written one; textFraction stays the fallback
+    // (charOffsetForFraction) until then. Deliberately NOT back-filled from existing textFraction
+    // rows on migration — the epub reading position has no user-facing value worth preserving
+    // across this migration, unlike audio position, which this column is added beside but does
+    // not touch.
+    val textCharOffset: Int? = null,
     // Whole-book reading fraction, denormalized so grid progress bars never need to parse the
     // epub or its chapter map. Written by the reader as (spineIndex + fraction) / spineCount.
     val textOverallFraction: Float = 0f,
