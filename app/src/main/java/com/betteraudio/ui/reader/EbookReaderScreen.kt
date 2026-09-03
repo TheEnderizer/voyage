@@ -1,5 +1,7 @@
 package com.betteraudio.ui.reader
 
+import android.app.Activity
+import android.os.BatteryManager
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -9,40 +11,48 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.automirrored.filled.Rule
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
+import com.betteraudio.data.settings.ReaderPrefs
 import com.betteraudio.ui.haptics.*
+import com.betteraudio.ui.reader.render.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Calendar
 
 /** Which full-screen pane the reader shows. Contents and Reading settings used to be a
  *  `ModalBottomSheet` and an `AlertDialog` — both deleted. Neither is a separate nav destination:
@@ -63,20 +73,11 @@ fun EbookReaderScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val view = LocalView.current
     var pane by rememberSaveable { mutableStateOf(ReaderPane.READING) }
 
     androidx.activity.compose.BackHandler(enabled = pane != ReaderPane.READING) { pane = ReaderPane.READING }
 
-    // Keep the screen on while reading — matches the expectation of a dedicated reading mode.
-    DisposableEffect(Unit) {
-        val window = (view.context as? android.app.Activity)?.window
-        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            viewModel.flushCurrent()
-        }
-    }
+    ReaderWindowEffects(state.prefs) { viewModel.flushCurrent() }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         when {
@@ -100,6 +101,53 @@ fun EbookReaderScreen(
                     onOpenSettings = { pane = ReaderPane.SETTINGS }
                 )
             }
+        }
+    }
+}
+
+/**
+ * The settings that act on the window rather than on the page: keep-awake (#134), immersive
+ * fullscreen (#136), orientation lock (#135) and forced brightness (#46/#48).
+ *
+ * All four are applied in one `DisposableEffect` keyed on the values themselves and, crucially,
+ * **undone on dispose** — every one of them outlives this screen if left set, which would mean
+ * leaving the reader locked to portrait or the whole app pinned at 10% brightness.
+ */
+@Composable
+private fun ReaderWindowEffects(prefs: ReaderPrefs, onLeave: () -> Unit) {
+    val view = LocalView.current
+    DisposableEffect(prefs.keepScreenOn, prefs.fullscreen, prefs.orientation, prefs.brightness) {
+        val activity = view.context as? Activity
+        val window = activity?.window
+        val previousOrientation = activity?.requestedOrientation
+        val controller = window?.let { WindowInsetsControllerCompat(it, view) }
+
+        if (prefs.keepScreenOn) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        if (prefs.fullscreen) {
+            controller?.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            controller?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+
+        activity?.requestedOrientation = ReaderOrientation.fromName(prefs.orientation).activityInfoValue
+
+        // -1 (BRIGHTNESS_OVERRIDE_NONE) hands control back to the system setting.
+        window?.let { w ->
+            w.attributes = w.attributes.apply {
+                screenBrightness = if (prefs.brightness < 0f) -1f else prefs.brightness.coerceIn(0.01f, 1f)
+            }
+        }
+
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            controller?.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            previousOrientation?.let { activity?.requestedOrientation = it }
+            window?.let { w -> w.attributes = w.attributes.apply { screenBrightness = -1f } }
+            onLeave()
         }
     }
 }
@@ -129,15 +177,75 @@ private fun BoxScope.ReaderContent(
     onOpenContents: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    NativeReaderPager(state = state, viewModel = viewModel, onToggleChrome = { viewModel.toggleChrome() })
+    val prefs = state.prefs
+    val palette = prefs.palette(isSystemInDarkTheme())
+    val typography = remember(prefs, palette) { typographyFrom(prefs, palette.fg) }
+    val measurer = rememberBlockMeasurer(typography)
 
-    // ── Top chrome ──────────────────────────────────────────────────────────
+    // Whether the configured reading aid is currently running. Deliberately screen state, not a
+    // setting: "auto-scroll at 1.2 lines/s" is a preference, "auto-scroll is running right now" is
+    // not, and persisting the latter would mean reopening a book straight into a moving page.
+    var aidsRunning by remember { mutableStateOf(false) }
+    val hasAid = prefs.autoPageTurnSeconds > 0 || (prefs.scrolled && prefs.autoScrollSpeed > 0f)
+    LaunchedEffect(hasAid) { if (!hasAid) aidsRunning = false }
+
+    val chromeTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+        (if (prefs.showHeader) 64.dp else 8.dp) + 20.dp
+    val chromeBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+        (if (prefs.showFooter) 96.dp else 8.dp) + 12.dp
+
+    fun turnRelative(delta: Int) {
+        val target = state.currentPageIndex + delta
+        when {
+            target < 0 -> viewModel.prevChapter()
+            target > state.pages.lastIndex -> viewModel.nextChapter()
+            else -> viewModel.onPageChanged(target)
+        }
+    }
+
+    // Volume keys turn pages (#70). Consuming the event is what stops the volume UI appearing;
+    // when the setting is off the event falls through untouched and volume works normally.
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(prefs.volumeKeysTurn) { if (prefs.volumeKeysTurn) focusRequester.requestFocus() }
+
+    ReaderSurface(
+        pages = state.pages,
+        pageIndex = state.currentPageIndex,
+        prefs = prefs,
+        palette = palette,
+        typography = typography,
+        chromeTop = chromeTop,
+        chromeBottom = chromeBottom,
+        onPageIndexChange = { viewModel.onPageChanged(it) },
+        onPrevChapter = { viewModel.prevChapter() },
+        onNextChapter = { viewModel.nextChapter() },
+        onToggleChrome = { viewModel.toggleChrome() },
+        onBrightnessDrag = { delta ->
+            val current = if (prefs.brightness < 0f) 0.5f else prefs.brightness
+            viewModel.updatePrefs { it.copy(brightness = (current + delta).coerceIn(0.01f, 1f)) }
+        },
+        onViewportMeasured = { w, h, _ -> viewModel.preparePages(measurer, w, h) },
+        paginationKey = remember(state.currentSpineIndex, typography) { state.currentSpineIndex to typography },
+        aidsRunning = aidsRunning,
+        modifier = Modifier
+            .focusRequester(focusRequester)
+            .focusable()
+            .onKeyEvent { event ->
+                if (!prefs.volumeKeysTurn || event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.VolumeDown -> { turnRelative(1); true }
+                    Key.VolumeUp -> { turnRelative(-1); true }
+                    else -> false
+                }
+            },
+    )
+
+    // ── Top chrome (#151) ───────────────────────────────────────────────────
     // The chapter title IS the button that opens Contents (with a trailing chevron saying so),
     // and Aa opens Reading settings — the redesign's replacement for the old ⋮ overflow, which
-    // buried both behind an extra tap and a menu label. ⚠️ THROWAWAY "Native render spike" entry
-    // point (Phase 0 item 3) moved here too, unlabelled by a menu — see its own doc comment.
+    // buried both behind an extra tap and a menu label.
     AnimatedVisibility(
-        visible = state.chromeVisible,
+        visible = state.chromeVisible && prefs.showHeader,
         enter = slideInVertically { -it } + fadeIn(),
         exit = slideOutVertically { -it } + fadeOut(),
         modifier = Modifier.align(Alignment.TopCenter)
@@ -172,6 +280,14 @@ private fun BoxScope.ReaderContent(
                 HapticIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             },
             actions = {
+                if (hasAid) {
+                    HapticIconButton(onClick = { aidsRunning = !aidsRunning }) {
+                        Icon(
+                            if (aidsRunning) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            if (aidsRunning) "Stop auto-advance" else "Start auto-advance"
+                        )
+                    }
+                }
                 // ⚠️ THROWAWAY — Phase 0 item 3. Not gated on BuildConfig.DEBUG: this app is only
                 // ever deployed as a release-signed build, so a DEBUG-only gate would make the
                 // spike unreachable on the build actually installed on the test device. Delete
@@ -187,9 +303,9 @@ private fun BoxScope.ReaderContent(
         )
     }
 
-    // ── Bottom chrome ───────────────────────────────────────────────────────
+    // ── Bottom chrome (#152–156) ────────────────────────────────────────────
     AnimatedVisibility(
-        visible = state.chromeVisible,
+        visible = state.chromeVisible && prefs.showFooter,
         enter = slideInVertically { it } + fadeIn(),
         exit = slideOutVertically { it } + fadeOut(),
         modifier = Modifier.align(Alignment.BottomCenter)
@@ -204,20 +320,7 @@ private fun BoxScope.ReaderContent(
                     onScrub = { viewModel.jumpToOverallFraction(it) }
                 )
                 Spacer(Modifier.height(2.dp))
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        if (state.pages.isNotEmpty()) "Page ${state.currentPageIndex + 1} of ${state.pages.size}" else "",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    val pagesLeft = (state.pages.size - state.currentPageIndex - 1).coerceAtLeast(0)
-                    Text(
-                        if (state.pages.isNotEmpty()) "$pagesLeft page${if (pagesLeft == 1) "" else "s"} left in chapter" else "",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                StatusLine(state, prefs)
                 Spacer(Modifier.height(6.dp))
                 Row(
                     Modifier.fillMaxWidth(),
@@ -287,10 +390,98 @@ private fun BoxScope.ReaderContent(
     }
 }
 
-/** A draggable whole-book scrubber with a tick per chapter boundary, replacing the plain prev/
- *  next-only chrome. Dragging previews the target chapter; releasing calls [onScrub] with the
- *  whole-book fraction (same coarse "every spine item is equal length" model `persist()`'s
- *  `textOverallFraction` already uses). */
+/**
+ * The footer's information row (#81–84, #153–155): position on the left in whichever style the
+ * user picked, and whatever optional readouts they turned on — remaining pages, remaining time,
+ * clock, battery — on the right.
+ */
+@Composable
+private fun StatusLine(state: ReaderUiState, prefs: ReaderPrefs) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val pageCount = state.pages.size
+    val position = when (ReaderProgressStyle.fromName(prefs.progressStyle)) {
+        ReaderProgressStyle.PAGE -> if (pageCount > 0) "Page ${state.currentPageIndex + 1} of $pageCount" else ""
+        ReaderProgressStyle.PERCENT -> "${(bookFraction(state) * 100).toInt()}%"
+        ReaderProgressStyle.BOTH ->
+            if (pageCount > 0) "Page ${state.currentPageIndex + 1} of $pageCount · ${(bookFraction(state) * 100).toInt()}%" else ""
+    }
+
+    val right = buildList {
+        val pagesLeft = (pageCount - state.currentPageIndex - 1).coerceAtLeast(0)
+        if (prefs.showRemainingPages && pageCount > 0) {
+            add("$pagesLeft page${if (pagesLeft == 1) "" else "s"} left")
+        }
+        if (prefs.showRemainingTime && pageCount > 0) {
+            // Words are counted from the pages actually left in this chapter — the only text we
+            // have measured. Presented as "in chapter" so it can't read as a whole-book estimate
+            // it isn't.
+            val wordsLeft = state.pages.drop(state.currentPageIndex + 1)
+                .sumOf { page -> page.blocks.sumOf { it.text.count(Char::isWhitespace) + 1 } }
+            val minutes = (wordsLeft.toFloat() / prefs.wordsPerMinute.coerceAtLeast(60)).toInt()
+            add(if (minutes < 1) "<1 min left in chapter" else "$minutes min left in chapter")
+        }
+        if (prefs.showClock) add(currentClock(prefs.clock24h))
+        if (prefs.showBattery) add("${batteryPercent()}%")
+    }
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(position, style = MaterialTheme.typography.labelSmall, color = muted, maxLines = 1)
+        Text(
+            right.joinToString(" · "),
+            style = MaterialTheme.typography.labelSmall, color = muted,
+            maxLines = 1, overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+/** Whole-book fraction on the same coarse "every spine item is equal length" model the scrubber
+ *  and the stored position already use, so the percentage and the scrubber agree. */
+private fun bookFraction(state: ReaderUiState): Float {
+    if (state.spine.isEmpty()) return 0f
+    val withinSpine = if (state.pages.isNotEmpty()) state.currentPageIndex.toFloat() / state.pages.size else 0f
+    return ((state.currentSpineIndex + withinSpine) / state.spine.size).coerceIn(0f, 1f)
+}
+
+/** Re-reads the wall clock once a minute — no more often, since the footer only shows minutes. */
+@Composable
+private fun currentClock(use24h: Boolean): String {
+    var now by remember { mutableStateOf(Calendar.getInstance()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L - System.currentTimeMillis() % 60_000L)
+            now = Calendar.getInstance()
+        }
+    }
+    val minute = now.get(Calendar.MINUTE)
+    return if (use24h) {
+        "%02d:%02d".format(now.get(Calendar.HOUR_OF_DAY), minute)
+    } else {
+        val hour = now.get(Calendar.HOUR).let { if (it == 0) 12 else it }
+        "%d:%02d %s".format(hour, minute, if (now.get(Calendar.AM_PM) == Calendar.AM) "AM" else "PM")
+    }
+}
+
+/** Polled rather than broadcast-registered: the footer is glanced at, not watched, and a
+ *  `BroadcastReceiver` for `ACTION_BATTERY_CHANGED` fires far more often than once a minute. */
+@Composable
+private fun batteryPercent(): Int {
+    val context = LocalContext.current
+    var level by remember { mutableStateOf(readBatteryPercent(context)) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            level = readBatteryPercent(context)
+        }
+    }
+    return level
+}
+
+private fun readBatteryPercent(context: android.content.Context): Int =
+    (context.getSystemService(android.content.Context.BATTERY_SERVICE) as? BatteryManager)
+        ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: 0
+
+/** A draggable whole-book scrubber with a tick per chapter boundary. Dragging previews the target
+ *  chapter; releasing calls [onScrub] with the whole-book fraction. */
 @Composable
 private fun BookScrubber(
     spineCount: Int,
@@ -354,89 +545,5 @@ private fun StatusChip(text: String, color: Color) {
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
         )
-    }
-}
-
-/**
- * The native page renderer (docs/reader-features-and-plan.md Phase 1) that replaced the old
- * WebView-based reader (`ReaderWebView.kt`, deleted). Owns the tap-zone page-turn gestures;
- * left/right thirds turn pages (falling
- * through to chapter navigation at a spine item's first/last page), the center toggles chrome.
- *
- * Known, documented gap: this tap-zone gesture layer and [ReaderPageView]'s `SelectionContainer`
- * both want the same long-press — confirmed on-device (Phase 0 spike testing) to currently favor
- * page-turn over starting a selection. Real gesture arbitration between the two is Phase 4 scope
- * (plan C.4/A5), not fixed here.
- */
-@Composable
-private fun NativeReaderPager(state: ReaderUiState, viewModel: EbookReaderViewModel, onToggleChrome: () -> Unit) {
-    val fontScale = state.fontSizePct / 100f
-    val readerTheme = com.betteraudio.ui.reader.render.ReaderTheme.fromName(state.readerTheme)
-    val fontFamily = com.betteraudio.ui.reader.render.ReaderFontFamilyChoice.fromName(state.readerFontFamily)
-    val lineSpacing = com.betteraudio.ui.reader.render.ReaderLineSpacing.fromName(state.readerLineSpacing)
-    val margins = com.betteraudio.ui.reader.render.ReaderMargins.fromName(state.readerMargins)
-    val typography = remember(fontScale, readerTheme, fontFamily, lineSpacing, state.readerJustify, state.readerHyphenate) {
-        com.betteraudio.ui.reader.render.ReaderTypography(
-            baseSizeSp = 18f * fontScale,
-            fontFamily = fontFamily.family,
-            lineHeightMultiplier = lineSpacing.multiplier,
-            justify = state.readerJustify,
-            hyphenate = state.readerHyphenate,
-            color = readerTheme.fg
-        )
-    }
-    val measurer = com.betteraudio.ui.reader.render.rememberBlockMeasurer(typography)
-
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        // Reserve top/bottom chrome space UNCONDITIONALLY — found on-device: computing pagination
-        // against the full viewport, then only padding the rendered content when chrome happened
-        // to be visible, meant a page laid out while chrome was hidden would overflow its box (and
-        // get clipped) the moment chrome was toggled back on for the same page. Reserving the same
-        // margin always means toggling chrome only fades the bars in/out over that margin — the
-        // text itself never reflows or shifts, which is also just the correct reader behavior.
-        val topPad = androidx.compose.foundation.layout.WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp + 20.dp
-        val bottomPad = androidx.compose.foundation.layout.WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 64.dp + 20.dp
-        val widthPx = with(density) { (maxWidth - margins.horizontal * 2).toPx() }.toInt()
-        val heightPx = with(density) { (maxHeight - topPad - bottomPad).toPx() }.toInt()
-
-        androidx.compose.runtime.LaunchedEffect(
-            state.currentSpineIndex, state.fontSizePct, state.readerFontFamily,
-            state.readerLineSpacing, state.readerMargins, state.readerJustify, state.readerHyphenate,
-            widthPx, heightPx
-        ) {
-            if (widthPx > 0 && heightPx > 0) viewModel.preparePages(measurer, widthPx, heightPx)
-        }
-
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(readerTheme.bg)
-                .pointerInput(state.pages.size, state.currentPageIndex, state.currentSpineIndex) {
-                    detectTapGestures(
-                        onTap = { offset ->
-                            when {
-                                offset.x < size.width * 0.3f -> {
-                                    if (state.currentPageIndex > 0) viewModel.onPageChanged(state.currentPageIndex - 1)
-                                    else viewModel.prevChapter()
-                                }
-                                offset.x > size.width * 0.7f -> {
-                                    if (state.currentPageIndex < state.pages.lastIndex) viewModel.onPageChanged(state.currentPageIndex + 1)
-                                    else viewModel.nextChapter()
-                                }
-                                else -> onToggleChrome()
-                            }
-                        }
-                    )
-                }
-        ) {
-            state.pages.getOrNull(state.currentPageIndex)?.let { page ->
-                com.betteraudio.ui.reader.render.ReaderPageView(
-                    page = page,
-                    typography = typography,
-                    modifier = Modifier.fillMaxSize().padding(start = margins.horizontal, end = margins.horizontal, top = topPad, bottom = bottomPad)
-                )
-            }
-        }
     }
 }

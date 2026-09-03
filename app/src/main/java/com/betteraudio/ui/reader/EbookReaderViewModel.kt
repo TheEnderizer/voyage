@@ -63,15 +63,11 @@ data class ReaderUiState(
     val pages: List<Page> = emptyList(),
     val currentPageIndex: Int = 0,
     val chromeVisible: Boolean = true,
-    val fontSizePct: Int = 100,
-    // Reading-page typography/theme — raw setting names (not Compose types) so this state stays
-    // usable outside composition; the screen converts via ReaderTheme.fromName() etc.
-    val readerTheme: String = "PAPER",
-    val readerFontFamily: String = "SERIF",
-    val readerLineSpacing: String = "NORMAL",
-    val readerMargins: String = "NORMAL",
-    val readerJustify: Boolean = true,
-    val readerHyphenate: Boolean = true,
+    /** Every reading setting the renderer and chrome read (see [com.betteraudio.data.settings.
+     *  ReaderPrefs]) — the book's own copy when [prefsArePerBook], else the global document. */
+    val prefs: com.betteraudio.data.settings.ReaderPrefs = com.betteraudio.data.settings.ReaderPrefs(),
+    /** True once this book has been detached from the global settings (inventory #160). */
+    val prefsArePerBook: Boolean = false,
     val hasAudio: Boolean = false,
     val chapterMapApproximate: Boolean = false,
     // Tier-2 sync state: number of verified anchors, live alignment progress, and the model status.
@@ -230,13 +226,8 @@ class EbookReaderViewModel @Inject constructor(
         liveTextFraction = initialFraction
         liveRenderOffset = 0
 
-        val fontSizePct = settings.readerFontSize.first()
-        val readerTheme = settings.readerTheme.first()
-        val readerFontFamily = settings.readerFontFamily.first()
-        val readerLineSpacing = settings.readerLineSpacing.first()
-        val readerMargins = settings.readerMargins.first()
-        val readerJustify = settings.readerJustify.first()
-        val readerHyphenate = settings.readerHyphenate.first()
+        val perBook = settings.readerPrefsForBook(bookId).first()
+        val prefs = perBook ?: settings.readerPrefs.first()
         // copy(), not a fresh ReaderUiState: the init mirrors already wrote modelState /
         // anchorCount / alignProgress into _state, and their StateFlows won't re-emit an
         // unchanged value — a wholesale reset here would clobber modelState back to
@@ -251,13 +242,8 @@ class EbookReaderViewModel @Inject constructor(
                 hasAudio = hasAudio,
                 chapterMapApproximate = approximate,
                 mappingFileAvailable = mappingAvailable,
-                fontSizePct = fontSizePct,
-                readerTheme = readerTheme,
-                readerFontFamily = readerFontFamily,
-                readerLineSpacing = readerLineSpacing,
-                readerMargins = readerMargins,
-                readerJustify = readerJustify,
-                readerHyphenate = readerHyphenate
+                prefs = prefs,
+                prefsArePerBook = perBook != null,
             )
         }
     }
@@ -419,41 +405,52 @@ class EbookReaderViewModel @Inject constructor(
         _state.value = _state.value.copy(currentSpineIndex = index, pages = emptyList(), currentPageIndex = 0)
     }
 
-    fun setFontSize(pct: Int) {
-        val clamped = pct.coerceIn(70, 200)
-        viewModelScope.launch { settings.setReaderFontSize(clamped) }
-        _state.value = _state.value.copy(fontSizePct = clamped)
+    // ── Reading settings ────────────────────────────────────────────────────────
+    // One entry point for all ~45 of them. The settings screen calls `updatePrefs { it.copy(…) }`
+    // rather than getting a setter each, which is what keeps adding a new setting to a single
+    // field on ReaderPrefs plus its control — no ViewModel, state or store change needed.
+
+    /** Applies [transform] to the live settings and persists them to whichever scope this book is
+     *  currently on (its own override, or global). */
+    fun updatePrefs(transform: (com.betteraudio.data.settings.ReaderPrefs) -> com.betteraudio.data.settings.ReaderPrefs) {
+        val s = _state.value
+        val next = transform(s.prefs)
+        if (next == s.prefs) return
+        _state.value = s.copy(prefs = next)
+        viewModelScope.launch {
+            if (s.prefsArePerBook) settings.setReaderPrefsForBook(bookId, next)
+            else settings.setReaderPrefs(next)
+        }
     }
 
-    fun setReaderTheme(name: String) {
-        viewModelScope.launch { settings.setReaderTheme(name) }
-        _state.value = _state.value.copy(readerTheme = name)
+    /** Detach this book from the global settings, or reattach it (inventory #160/#161). Detaching
+     *  seeds the override from what's on screen, so it starts as a copy rather than a reset. */
+    fun setPrefsScopePerBook(perBook: Boolean) {
+        val s = _state.value
+        if (perBook == s.prefsArePerBook) return
+        viewModelScope.launch {
+            if (perBook) {
+                settings.setReaderPrefsForBook(bookId, s.prefs)
+                _state.value = _state.value.copy(prefsArePerBook = true)
+            } else {
+                settings.clearReaderPrefsForBook(bookId)
+                val global = settings.readerPrefs.first()
+                _state.value = _state.value.copy(prefsArePerBook = false, prefs = global)
+            }
+        }
     }
 
-    fun setReaderFontFamily(name: String) {
-        viewModelScope.launch { settings.setReaderFontFamily(name) }
-        _state.value = _state.value.copy(readerFontFamily = name)
+    /** "Apply to all books": promote this book's settings to global and drop its override. */
+    fun applyPrefsToAllBooks() {
+        val s = _state.value
+        viewModelScope.launch {
+            settings.promoteReaderPrefsToGlobal(bookId, s.prefs)
+            _state.value = _state.value.copy(prefsArePerBook = false)
+        }
     }
 
-    fun setReaderLineSpacing(name: String) {
-        viewModelScope.launch { settings.setReaderLineSpacing(name) }
-        _state.value = _state.value.copy(readerLineSpacing = name)
-    }
-
-    fun setReaderMargins(name: String) {
-        viewModelScope.launch { settings.setReaderMargins(name) }
-        _state.value = _state.value.copy(readerMargins = name)
-    }
-
-    fun setReaderJustify(on: Boolean) {
-        viewModelScope.launch { settings.setReaderJustify(on) }
-        _state.value = _state.value.copy(readerJustify = on)
-    }
-
-    fun setReaderHyphenate(on: Boolean) {
-        viewModelScope.launch { settings.setReaderHyphenate(on) }
-        _state.value = _state.value.copy(readerHyphenate = on)
-    }
+    /** Back to the shipped defaults, in whichever scope is active. */
+    fun resetPrefs() = updatePrefs { com.betteraudio.data.settings.ReaderPrefs() }
 
     // ── Position persistence ────────────────────────────────────────────────────
 
