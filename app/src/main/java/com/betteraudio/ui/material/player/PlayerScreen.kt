@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.betteraudio.ui.companion.companionMorphSource
 import com.betteraudio.ui.components.frostedWhenVisible
 import com.betteraudio.ui.history.BookHistoryOverlay
 import com.betteraudio.ui.isLandscapeWindow
@@ -103,6 +104,20 @@ fun PlayerContent(
     var showChapters       by remember { mutableStateOf(false) }
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
+    // rememberSaveable, unlike the other overlay flags on this screen: those are sheets and
+    // dialogs a rotation can reasonably dismiss, while the deck is a full screen the user
+    // was reading. Rotating a phone to get a wider cast grid should give them the wider grid,
+    // not throw them back to the player.
+    var showCompanion      by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // The companion deck's morph driver, owned here rather than inside the deck: the deck travels
+    // FROM this screen's transport row, so both ends of the animation have to read one number.
+    // Spatial spring, not a tween — it is the same class of movement as the mini-bar morph.
+    val deckProgress = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (showCompanion) 1f else 0f,
+        animationSpec = com.betteraudio.ui.theme.MotionTokens.floatSpatial,
+        label = "companionDeck"
+    )
+    val deckMorph = com.betteraudio.ui.companion.rememberCompanionMorphAnchors()
     val coverSearchOpen    by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showSkipSilenceSettings by remember { mutableStateOf(false) }
@@ -261,7 +276,7 @@ fun PlayerContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .frostedWhenVisible(showHistory || showChapters)
+                .frostedWhenVisible(showHistory || showChapters || showCompanion)
         ) {
             if (isLandscapeWindow()) {
                 // Two landscape layouts, one portrait — the user picks in Settings → Theme.
@@ -308,6 +323,7 @@ fun PlayerContent(
                         onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
                         onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                         onLock = onLockPlayer,
+                        onOpenCompanion = { showCompanion = true },
                         onOpenChapters = { showChapters = true },
                         onPlayPause = { if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause() },
                         onSkipForward = { viewModel.skipForward() },
@@ -376,6 +392,7 @@ fun PlayerContent(
                     onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
                     onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                     onLock = onLockPlayer,
+                    onOpenCompanion = { showCompanion = true },
                     onOpenChapters = { showChapters = true },
                     onPlayPause = { if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause() },
                     onSkipForward = { viewModel.skipForward() },
@@ -657,7 +674,10 @@ fun PlayerContent(
                 // ── Transport — the play button GROWS out of the mini player's accent play
                 // button (same round accent visual); the skip controls reveal around it. ──
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        // Where the companion deck's dock comes from, and what hands off to it.
+                        .companionMorphSource(deckMorph, deckProgress),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -744,6 +764,7 @@ fun PlayerContent(
                     onSkipSilenceLongPress = { showSkipSilenceSettings = true },
                     onAudioSettings = { showAudioSettings = true },
                     onBookmarks = { showBookmarks = true },
+                    onOpenCompanion = { showCompanion = true },
                     onSleepTap = {
                         if (position.sleepTimerRemainingMs > 0L) {
                             viewModel.playerController.setSleepTimer(0L)
@@ -833,6 +854,26 @@ fun PlayerContent(
                 onUnlock = { isLocked = false },
                 contentPadding = PaddingValues(bottom = 90.dp),
                 contentColor = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        if (viewModel.bookId != -1L) {
+            val deckTransport = com.betteraudio.ui.companion.rememberCompanionTransport(
+                title = book?.displayTitle.orEmpty(),
+                coverPath = coverPath,
+                isPlaying = state.isPlaying,
+                position = position,
+                revealedMs = bwp?.progress?.revealedMs ?: 0L,
+                onPlayPause = { viewModel.playerController.togglePlayPause() },
+                onSkipBack = { viewModel.playerController.skipBack() },
+                onSkipForward = { viewModel.playerController.skipForward() }
+            )
+            com.betteraudio.ui.companion.CompanionDeck(
+                progress = deckProgress,
+                bookId = viewModel.bookId,
+                transport = deckTransport,
+                onDismiss = { showCompanion = false },
+                morph = deckMorph
             )
         }
 

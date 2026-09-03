@@ -58,7 +58,31 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize">
+            <!-- Companion pack ingest (docs/companion-packs.md §10.3, P4): a `.voyagepack` shared
+                 from Gmail/Drive/Telegram/etc. arrives as ACTION_SEND with an opaque content:// URI
+                 and, per §10.3 step 1, usually application/octet-stream rather than a recognised
+                 pack MIME type — filtering only on a `.voyagepack` extension pattern would miss
+                 most real deliveries, so this filters broadly and CompanionImportService sniffs the
+                 archive for manifest.json/pack.json after ingest, rejecting quietly if absent. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
+            <!-- A file manager / "open with" tap on a .voyagepack delivers ACTION_VIEW instead. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:host="*" android:pathPattern=".*\\.voyagepack" />
+            </intent-filter>
+        </activity>
 
         <!-- Custom app icon picker (Settings -> Theme -> App icon, see util/AppIconManager.kt).
              Exactly one of these six is ever enabled at a time; all target the same MainActivity,

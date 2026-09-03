@@ -56,4 +56,24 @@ interface PlaybackProgressDao {
 
     @Query("UPDATE playback_progress SET lastMode = 'AUDIO' WHERE bookId = :bookId")
     suspend fun setLastModeAudio(bookId: Long): Int
+
+    // ── Companion packs (docs/companion-packs.md §6) ─────────────────────────
+    @Query("SELECT revealedMs FROM playback_progress WHERE bookId = :bookId")
+    suspend fun getRevealedMs(bookId: Long): Long?
+
+    @Query("UPDATE playback_progress SET revealedMs = :revealedMs WHERE bookId = :bookId")
+    suspend fun updateRevealedMs(bookId: Long, revealedMs: Long)
+
+    /** Zeroes both position and reveal together — deliberately the ONLY reset path for this
+     *  table (there was none before companion packs; see PlaybackProgress.revealedMs doc). Used
+     *  by the "start fresh" option on companion-pack import (§10.1) and available to any future
+     *  user-facing progress reset. Does not touch playbackSpeed/boostDb/eqBandsJson (audio
+     *  settings survive a progress reset) or the ebook-reading columns. */
+    @Query("""
+        UPDATE playback_progress
+        SET currentFileId = NULL, positionMs = 0, filesBeforeCurrentMs = 0, revealedMs = 0,
+            isCompleted = 0, completedDateMs = NULL
+        WHERE bookId = :bookId
+    """)
+    suspend fun resetProgress(bookId: Long)
 }

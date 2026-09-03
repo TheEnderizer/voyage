@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
@@ -134,6 +135,26 @@ internal fun LazyListScope.librarySection(
             subtitle = libraryFolder.ifBlank { "Not set — tap to choose" },
             subtitleMono = true,
             onClick = onBrowse
+        )
+    }
+    item {
+        var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+        val importPackLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri -> uri?.let { pendingImportUri = it } }
+        SettingsCard(
+            icon = Icons.Default.Groups,
+            iconTint = MaterialTheme.colorScheme.primary,
+            title = "Import companion pack…",
+            subtitle = "Attach a companion pack a friend sent you (docs/companion-packs.md §10.3)",
+            // A real delivery is usually application/octet-stream (Gmail/Drive/Telegram strip the
+            // extension), so this filters broadly rather than on a .voyagepack MIME type that
+            // mostly doesn't exist in the wild — see CompanionImportService's own kdoc.
+            onClick = { importPackLauncher.launch(arrayOf("*/*")) }
+        )
+        com.betteraudio.ui.companion.CompanionImportDialog(
+            pendingUri = pendingImportUri,
+            onConsumed = { pendingImportUri = null }
         )
     }
     if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) {

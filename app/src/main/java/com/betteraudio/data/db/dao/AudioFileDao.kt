@@ -42,4 +42,8 @@ interface AudioFileDao {
     /** Caches the result of a damage scan. Empty string = scanned and clean; see [AudioFile.damageRangesJson]. */
     @Query("UPDATE audio_files SET damageRangesJson = :ranges WHERE id = :id")
     suspend fun updateDamageRanges(id: Long, ranges: String)
+
+    /** Caches a [com.betteraudio.companion.model.FileKey.compute] result; see [AudioFile.fileKey]. */
+    @Query("UPDATE audio_files SET fileKey = :fileKey WHERE id = :id")
+    suspend fun updateFileKey(id: Long, fileKey: String)
 }

@@ -58,5 +58,13 @@ data class PlaybackProgress(
     // that per-book join, done for every book in the library on every recomposition, was the
     // dominant cost this column exists to remove. Recomputed by AudiobookRepository.updatePosition
     // whenever currentFileId actually changes.
-    val filesBeforeCurrentMs: Long = 0L
+    val filesBeforeCurrentMs: Long = 0L,
+    // ── Companion packs (docs/companion-packs.md §6) ─────────────────────────
+    // How far the companion is allowed to reveal, in BOOK-GLOBAL milliseconds — NOT the same
+    // coordinate space as positionMs above, which is file-relative (global position is
+    // filesBeforeCurrentMs + positionMs). Never compare the two directly. Moves in exactly three
+    // ways (see playback/RevealCursor.kt): continuous listening advances it; a raw seek never
+    // moves it; a user-confirmed seek moves it either direction. Cleared to 0 by
+    // PlaybackProgressDao.resetProgress — there is no other reset path in this table.
+    val revealedMs: Long = 0L
 )

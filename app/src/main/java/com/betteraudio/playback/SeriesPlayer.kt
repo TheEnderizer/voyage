@@ -1,6 +1,5 @@
 package com.betteraudio.playback
 
-import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -67,26 +66,24 @@ class SeriesPlayer @Inject constructor(
             return -1L
         }
         val orderedIds = books.map { it.id }
-        val progressMap = books.associateWith { repository.getProgressForBookOnce(it.id) }
-        val mostRecent = progressMap.entries
-            .filter { (_, p) -> (p?.lastPlayedMs ?: 0L) > 0L }
-            .maxByOrNull { (_, p) -> p?.lastPlayedMs ?: 0L }?.key
-        val startBook: com.betteraudio.data.db.entities.Book
-        val reason: String
-        when {
-            startBookId != null && books.any { it.id == startBookId } -> {
-                startBook = books.first { it.id == startBookId }; reason = "explicit"
-            }
-            mostRecent != null -> { startBook = mostRecent; reason = "most-recently-played" }
-            books.any { it.status != BookStatus.FINISHED } -> {
-                startBook = books.first { it.status != BookStatus.FINISHED }; reason = "first-unfinished"
-            }
-            else -> { startBook = books.first(); reason = "first (all finished)" }
-        }
-        AppLog.i(LogCat.PLAYBACK, "playSeries: series=$seriesId starting book=${startBook.id} reason=$reason")
-        playBookInSeries(startBook.id, seriesId, orderedIds, resume = true)
-        return startBook.id
+        val pick = SeriesResume.pick(books, progressFor(books), startBookId) ?: return -1L
+        AppLog.i(LogCat.PLAYBACK, "playSeries: series=$seriesId starting book=${pick.book.id} reason=${pick.reason}")
+        playBookInSeries(pick.book.id, seriesId, orderedIds, resume = true)
+        return pick.book.id
     }
+
+    /**
+     * The member [playSeries] *would* resume, resolved without touching the player — for callers
+     * that need to name a book rather than play one (the Series page's Companion entry). Returns
+     * -1 for an empty series.
+     */
+    suspend fun resumeBookId(seriesId: Long): Long {
+        val books = seriesRepository.getBooksInSeriesOnce(seriesId)
+        return SeriesResume.pick(books, progressFor(books))?.book?.id ?: -1L
+    }
+
+    private suspend fun progressFor(books: List<com.betteraudio.data.db.entities.Book>) =
+        books.associate { it.id to repository.getProgressForBookOnce(it.id) }
 
     /** Play a specific member [bookId] of [seriesId] at [positionMs] within that book (used when
      *  a chapter from another book is picked in the chapter list); the series continues from there. */

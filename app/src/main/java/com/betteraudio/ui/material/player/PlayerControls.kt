@@ -436,9 +436,13 @@ internal fun JumpRestorePill(
     }
 }
 
-/** Skip-silence pill, audio-settings/bookmarks icons, and the sleep-timer pill (with countdown) —
- *  the portrait player's secondary action row. Landscape stacks the same four controls with
- *  [PlayerSecondaryActionsColumn]; the individual leaves below are shared by both. */
+/** Skip-silence pill, audio-settings/bookmarks/companion icons, and the sleep-timer pill (with
+ *  countdown) — the portrait player's secondary action row. Landscape stacks the same five
+ *  controls with [PlayerSecondaryActionsColumn]; the individual leaves below are shared by both.
+ *
+ *  Companion sits here rather than in the ⋮ menu because it is reached for *while listening*
+ *  ("who is this again?"), which is what this row is for; the overflow is for things done to a
+ *  book rather than during it. */
 @Composable
 internal fun PlayerSecondaryActionsRow(
     skipSilenceOn: Boolean,
@@ -451,6 +455,7 @@ internal fun PlayerSecondaryActionsRow(
     onSkipSilenceLongPress: () -> Unit,
     onAudioSettings: () -> Unit,
     onBookmarks: () -> Unit,
+    onOpenCompanion: () -> Unit,
     onSleepTap: () -> Unit,
     onSleepLongPress: () -> Unit,
     modifier: Modifier = Modifier,
@@ -472,6 +477,7 @@ internal fun PlayerSecondaryActionsRow(
         )
         SecondaryIcon(Icons.Default.Tune, "Audio settings", accent, onAudioSettings)
         SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim, onBookmarks)
+        SecondaryIcon(Icons.Default.Groups, "Companion", onScrim, onOpenCompanion)
         SleepTimerButton(sleepRemainingMs, accent, onScrim, onSleepTap, onSleepLongPress)
     }
 }
@@ -492,6 +498,7 @@ internal fun PlayerSecondaryActionsColumn(
     onSkipSilenceLongPress: () -> Unit,
     onAudioSettings: () -> Unit,
     onBookmarks: () -> Unit,
+    onOpenCompanion: () -> Unit,
     onSleepTap: () -> Unit,
     onSleepLongPress: () -> Unit,
     modifier: Modifier = Modifier,
@@ -507,6 +514,7 @@ internal fun PlayerSecondaryActionsColumn(
         )
         SecondaryIcon(Icons.Default.Tune, "Audio settings", accent, onAudioSettings)
         SecondaryIcon(Icons.Default.Bookmark, "Bookmarks", onScrim, onBookmarks)
+        SecondaryIcon(Icons.Default.Groups, "Companion", onScrim, onOpenCompanion)
         SleepTimerButton(sleepRemainingMs, accent, onScrim, onSleepTap, onSleepLongPress)
     }
 }

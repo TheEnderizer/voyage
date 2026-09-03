@@ -127,6 +127,22 @@ class SeriesDetailViewModel @Inject constructor(
         _synopsisGenerating.value = false
     }
 
+    /**
+     * Which member the Companion sheet should open on. A reveal cursor is per-book
+     * (docs/companion-packs.md §6), so a series has no cursor of its own — the honest answer is
+     * "the book you are actually in", i.e. exactly the member Play series would resume, resolved
+     * by [com.betteraudio.playback.SeriesResume] without starting playback. -1 while the series is
+     * empty or still loading; the caller must not open the sheet on that.
+     */
+    private val _companionBookId = MutableStateFlow(-1L)
+    val companionBookId: StateFlow<Long> = _companionBookId.asStateFlow()
+
+    fun openCompanion() = viewModelScope.launch {
+        _companionBookId.value = seriesPlayer.resumeBookId(seriesId)
+    }
+
+    fun closeCompanion() { _companionBookId.value = -1L }
+
     fun playSeries() = viewModelScope.launch {
         val id = seriesPlayer.playSeries(seriesId)
         if (id != -1L) _openPlayer.emit(id)

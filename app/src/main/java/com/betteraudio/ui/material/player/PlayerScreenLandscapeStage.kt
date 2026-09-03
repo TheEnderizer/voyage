@@ -119,6 +119,7 @@ internal fun PlayerLandscapeStageBody(
     onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
+    onOpenCompanion: () -> Unit,
     onOpenChapters: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipForward: () -> Unit,
@@ -237,6 +238,7 @@ internal fun PlayerLandscapeStageBody(
                             onSkipSilenceLongPress = onSkipSilenceLongPress,
                             onAudioSettings = onAudioSettings,
                             onBookmarks = onBookmarksClick,
+                            onOpenCompanion = onOpenCompanion,
                             onSleepTap = onSleepTap,
                             onSleepLongPress = onSleepLongPress,
                             modifier = Modifier.width(coverSide).padding(top = 10.dp)

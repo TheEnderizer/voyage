@@ -71,6 +71,7 @@ import androidx.navigation.navArgument
 import coil3.compose.AsyncImage
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.ui.immersive.IMMERSIVE_MINI_BAR_FADE_RATE
+import com.betteraudio.ui.immersive.components.fadeTrailingEdge
 import com.betteraudio.ui.material.motion.morphingContainer
 import com.betteraudio.ui.theme.AppTheme
 import com.betteraudio.ui.theme.LocalAppTheme
@@ -188,6 +189,10 @@ private const val MINI_HEIGHT_DP = 64
 
 // MiniCoverStyle.RING geometry. The slot is the ring's outer box; the cover circle sits inside
 // it with a hair of clearance so the ring reads as a border around the art, not a stroke on it.
+/** How far the Immersive cover cap dissolves into the pill's glass at its trailing edge. Wide
+ *  enough to read as a material transition, narrow enough that the artwork still reads full-width. */
+private val MINI_COVER_FADE = 18.dp
+
 private val MINI_RING_SLOT = 52.dp
 private val MINI_RING_COVER = 42.dp
 private val MINI_RING_STROKE = 3.dp
@@ -832,7 +837,11 @@ private fun MiniPlayerBar(
                                     Modifier
                                         .height(MINI_HEIGHT_DP.dp)
                                         .width(MINI_HEIGHT_DP.dp * miniAspect)
-                                        .clip(RoundedCornerShape(topEnd = 6.dp, bottomEnd = 6.dp))
+                                        // Was a 6dp trailing radius, which only ever softened the
+                                        // corners of a cut that still ran straight down the middle
+                                        // of the pill. The cover now runs out into the glass
+                                        // instead — see fadeTrailingEdge.
+                                        .fadeTrailingEdge(MINI_COVER_FADE)
                                 else
                                     Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
                             )
@@ -894,8 +903,13 @@ private fun MiniPlayerBar(
                 ) {
                     Icon(
                         Icons.Default.FastForward, "Skip forward",
-                        Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        Modifier.size(19.dp),
+                        // Immersive tints every glyph toward the cover accent (Law 03); this one
+                        // was the last raw-M3 colour left on the pill, and read as a foreign grey
+                        // sitting between accent-tinted text and an accent play button.
+                        tint = if (isImmersive)
+                            com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(muted = true)
+                        else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 }
@@ -931,6 +945,10 @@ private fun MiniPlayerBar(
                 com.betteraudio.ui.immersive.components.PillPerimeterProgress(
                     progress = progress,
                     color = MaterialTheme.colorScheme.primary,
+                    // Finer than the 2.5dp default: with the rim gone (edgeLight = false below)
+                    // this is the ONLY line on the pill, so it no longer has to out-weigh a
+                    // competing outline to be seen as the meaningful one.
+                    strokeWidth = 2.dp,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
@@ -947,6 +965,13 @@ private fun MiniPlayerBar(
         com.betteraudio.ui.immersive.components.GlassPillSurface(
             shape = Pill,
             contentColor = com.betteraudio.ui.immersive.ImmersiveStyle.scrimText(),
+            // Borderless: at 64dp tall and full-bleed wide this is the biggest floating surface in
+            // the app, and the 1dp rim that flatters the small nav pill reads here as an outline
+            // drawn around a card. What separates it from the backdrop instead is depth — a
+            // wider, softer shadow than the nav pill's, so the pill sits *above* the artwork
+            // rather than being *cut out* of it.
+            edgeLight = false,
+            shadowElevation = 18.dp,
             modifier = barModifier,
             content = barContent
         )

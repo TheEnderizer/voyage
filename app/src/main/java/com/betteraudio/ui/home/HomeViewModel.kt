@@ -25,12 +25,14 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import com.betteraudio.playback.ChapterTimeline
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -563,6 +565,40 @@ class HomeViewModel @Inject constructor(
             .flatMapLatest { id ->
                 if (id == -1L) flowOf(null) else repository.getBookWithProgress(id)
             }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * The title of the chapter the hero book is sitting in — the one line that turns the hero from
+     * "this is your book" into "this is where you are in it".
+     *
+     * Two positions feed it: the **live** one when the hero happens to be the playing book (so the
+     * banner tracks the player in real time), and the **saved** one otherwise. Saved position is
+     * global, i.e. `filesBeforeCurrentMs + positionMs` — never `positionMs` on its own, which is
+     * file-relative and would name a chapter from the wrong file in any multi-file book.
+     *
+     * `distinctUntilChanged` after the mapping is what makes this cheap: the live source ticks
+     * twice a second, but a chapter title changes a few times an hour, so the StateFlow emits only
+     * on a genuine chapter change and the header recomposes with it.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val heroChapter: StateFlow<String?> =
+        heroBook.flatMapLatest { bwp ->
+            if (bwp == null) flowOf(null)
+            else repository.getChaptersForBook(bwp.book.id).flatMapLatest { chapters ->
+                val timeline = ChapterTimeline.build(bwp.audioFiles, chapters, bwp.book.id)
+                if (!timeline.hasMultiple) flowOf(null)
+                else combine(
+                    playerController.playbackState,
+                    playerController.positionState
+                ) { playback, position ->
+                    val globalMs =
+                        if (playback.bookId == bwp.book.id) position.bookPositionMs
+                        else (bwp.progress?.filesBeforeCurrentMs ?: 0L) + (bwp.progress?.positionMs ?: 0L)
+                    timeline.chapterAt(globalMs)?.title?.takeIf { it.isNotBlank() }
+                }
+            }
+        }
+            .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // Last-played book — shown as resume card when nothing is actively playing

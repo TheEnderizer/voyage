@@ -7,6 +7,7 @@ import com.betteraudio.data.ebook.SpineParagraphs
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.sync.AudioChapterSpan
 import com.betteraudio.sync.AudioSpanBuilder
+import com.betteraudio.sync.ChapterTitleMatcher
 import com.betteraudio.sync.TextSimilarity
 import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
@@ -144,24 +145,77 @@ class SyncAligner @Inject constructor(
         val tokenIndex = HashMap<String, MutableList<Int>>()
         bookToks.forEachIndexed { i, tp -> tokenIndex.getOrPut(tp.token) { ArrayList() }.add(i) }
 
+        // Paragraph slices over the same token stream — what the title matcher scans instead of
+        // every token position, since a chapter heading is always a paragraph of its own.
+        val slices = paragraphSlices(bookToks)
+
         val raw = ArrayList<SyncAnchor>()
         try {
-            // Pass 1: probe the START of every audio span (chapter/"Part" file) with a whole-book
-            // search, to find where each one begins in the text. Audiobooks are frequently split
-            // into narration parts with no 1:1 correspondence to epub chapters, so doing this first
-            // establishes a real per-span text range — pass 2 then only has to search that (small)
-            // range instead of the whole book on every single probe, which is what makes it fast.
+            // Pass 1: find where each audio span (chapter/"Part" file) begins in the text.
+            // Audiobooks are frequently split into narration parts with no 1:1 correspondence to
+            // epub chapters, so establishing a real per-span text range first is what lets pass 2
+            // search that (small) range instead of the whole book on every probe.
+            //
+            // Two ways to get that start, cheapest first:
+            //  1a. Match the span's own chapter TITLE against the epub's headings
+            //      ([ChapterTitleMatcher]) — no audio decode, no Vosk. Hits on the common
+            //      one-xhtml-per-chapter layout, which is most of the time.
+            //  1b. Otherwise decode the span's first snippet and transcribe it, as before.
+            // 1b still searches the WHOLE book rather than trusting the chapter map, for the
+            // reason above: an approximate map must not be able to prevent a match. 1a is not that
+            // — it is a verified hit on the actual heading text, or it does not fire at all.
             val startBookTokIdx = arrayOfNulls<Int>(spans.size)
+            val totalAudioMs = spans.lastOrNull()?.endMs ?: 0L
+            val maxDrift = (bookToks.size * TITLE_MAX_DRIFT_FRACTION).toInt().coerceAtLeast(1)
+            var titleFrom = 0          // monotonicity floor for title matching only
+            var titleHits = 0
             spans.forEachIndexed { i, span ->
                 coroutineContext.ensureActive()
                 setProgress(bookId) { it.copy(chaptersDone = i, currentChapter = span.title, anchorsFound = raw.size) }
+
+                // 1a — title first.
+                val expected = if (totalAudioMs > 0L && bookToks.isNotEmpty()) {
+                    ((span.absStartMs.toDouble() / totalAudioMs) * bookToks.size).toInt()
+                } else null
+                val titleMatch = ChapterTitleMatcher.find(
+                    title = span.title,
+                    tokenAt = { k -> bookToks[k].token },
+                    slices = slices,
+                    searchFromToken = titleFrom,
+                    expectedToken = expected,
+                    maxDriftTokens = maxDrift
+                )
+                if (titleMatch != null) {
+                    val tp = bookToks[titleMatch.tokenIndex]
+                    startBookTokIdx[i] = titleMatch.tokenIndex
+                    titleFrom = titleMatch.tokenIndex + 1
+                    titleHits++
+                    raw.add(
+                        SyncAnchor(
+                            bookId = bookId, audioMs = span.absStartMs, spineIndex = tp.spineIndex,
+                            paragraphIndex = tp.paragraphIndex, charOffset = tp.charOffset,
+                            confidence = titleMatch.score
+                        )
+                    )
+                    AppLog.i(
+                        LogCat.SYNC,
+                        "TITLE @${span.absStartMs}ms '${span.title}' -> spine=${tp.spineIndex} char=${tp.charOffset} " +
+                            "score=${"%.2f".format(titleMatch.score)} (skipped transcription)"
+                    )
+                    setProgress(bookId) { it.copy(anchorsFound = raw.size) }
+                    return@forEachIndexed
+                }
+
+                // 1b — fall back to decode + transcribe.
                 val startMs = probeOffsets(span).firstOrNull() ?: return@forEachIndexed
                 probe(files, cumStart, startMs, bookToks, tokenIndex, model)?.let { r ->
                     startBookTokIdx[i] = r.windowStart
+                    if (r.windowStart >= titleFrom) titleFrom = r.windowStart + 1
                     raw.add(r.anchor.copy(bookId = bookId))
                     setProgress(bookId) { it.copy(anchorsFound = raw.size) }
                 }
             }
+            AppLog.i(LogCat.SYNC, "pass 1: ${titleHits}/${spans.size} spans located by chapter title, ${spans.size - titleHits} by transcription")
             val ranges = SyncAlignerMath.spanSearchRanges(spans.size, startBookTokIdx, bookToks.size)
 
             // Pass 2: the remaining probes per span, restricted to that span's range.
@@ -284,6 +338,26 @@ class SyncAligner @Inject constructor(
 
     private data class TokenPos(val token: String, val charOffset: Int, val paragraphIndex: Int, val spineIndex: Int)
 
+    /** Collapses the token stream into one [ChapterTitleMatcher.ChapterSlice] per paragraph. A new
+     *  paragraph starts wherever the (spineIndex, paragraphIndex) pair changes — the stream is
+     *  built spine by spine and paragraph by paragraph, so that transition is the boundary. */
+    private fun paragraphSlices(bookToks: List<TokenPos>): List<ChapterTitleMatcher.ChapterSlice> {
+        if (bookToks.isEmpty()) return emptyList()
+        val out = ArrayList<ChapterTitleMatcher.ChapterSlice>()
+        var start = 0
+        var indexInSpine = 0
+        for (k in 1..bookToks.size) {
+            val prev = bookToks[k - 1]
+            val cur = bookToks.getOrNull(k)
+            val boundary = cur == null || cur.spineIndex != prev.spineIndex || cur.paragraphIndex != prev.paragraphIndex
+            if (!boundary) continue
+            out.add(ChapterTitleMatcher.ChapterSlice(start, k, prev.spineIndex, indexInSpine))
+            indexInSpine = if (cur != null && cur.spineIndex != prev.spineIndex) 0 else indexInSpine + 1
+            start = k
+        }
+        return out
+    }
+
     private fun spineTokens(paras: SpineParagraphs, spineIndex: Int): List<TokenPos> {
         val out = ArrayList<TokenPos>()
         for (p in paras.paragraphs) {
@@ -375,5 +449,10 @@ class SyncAligner @Inject constructor(
         private const val MIN_WORDS = 12
         private const val MIN_MEAN_CONF = 0.5
         private const val ACCEPT_SCORE = 0.55f
+        /** How far from its proportionally-expected text position a title match may land, as a
+         *  fraction of the book. Loose on purpose — front/back matter shifts the audio:text ratio
+         *  for every chapter — it only rejects a grossly misplaced match, which left unchecked
+         *  would cascade through the monotonic search into every later chapter. */
+        private const val TITLE_MAX_DRIFT_FRACTION = 0.30
     }
 }

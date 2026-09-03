@@ -48,6 +48,7 @@ import com.betteraudio.R
 import com.betteraudio.ui.components.ReflectedCoverBackdrop
 import com.betteraudio.ui.components.ScrimButton
 import com.betteraudio.ui.components.ScrimPill
+import com.betteraudio.ui.companion.companionMorphSource
 import com.betteraudio.ui.components.frostedWhenVisible
 import com.betteraudio.ui.history.BookHistoryOverlay
 import com.betteraudio.ui.home.BookOptionsSheet
@@ -121,6 +122,20 @@ fun PlayerContent(
     var showChapters       by remember { mutableStateOf(false) }
     var isLocked           by remember { mutableStateOf(false) }
     var showBookOptions    by remember { mutableStateOf(false) }
+    // rememberSaveable, unlike the other overlay flags on this screen: those are sheets and
+    // dialogs a rotation can reasonably dismiss, while the deck is a full screen the user
+    // was reading. Rotating a phone to get a wider cast grid should give them the wider grid,
+    // not throw them back to the player.
+    var showCompanion      by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // The companion deck's morph driver, owned here rather than inside the deck: the deck travels
+    // FROM this screen's transport row, so both ends of the animation have to read one number.
+    // Spatial spring, not a tween — it is the same class of movement as the mini-bar morph.
+    val deckProgress = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (showCompanion) 1f else 0f,
+        animationSpec = com.betteraudio.ui.theme.MotionTokens.floatSpatial,
+        label = "companionDeck"
+    )
+    val deckMorph = com.betteraudio.ui.companion.rememberCompanionMorphAnchors()
     val coverSearchOpen    by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     var showSleepTimer     by remember { mutableStateOf(false) }
     var showSkipSilenceSettings by remember { mutableStateOf(false) }
@@ -237,7 +252,7 @@ fun PlayerContent(
                     val p = expandProgress.value.coerceIn(0f, 1f)
                     drawRect(dimColor.copy(alpha = p * p))
                 }
-                .frostedWhenVisible(showHistory || showChapters)
+                .frostedWhenVisible(showHistory || showChapters || showCompanion)
         ) {
             // ── Cover + reflection + progressive scrim — grows out of the mini cover. The clip
             // mask itself is animated (rounded like the mini cover → square, full-bleed) so it
@@ -591,7 +606,10 @@ fun PlayerContent(
                 // button (same round accent visual); the skip controls reveal around it. ──
                 if (!isLocked) {
                 Row(
-                    Modifier.fillMaxWidth(),
+                    Modifier
+                        .fillMaxWidth()
+                        // Where the companion deck's dock comes from, and what hands off to it.
+                        .companionMorphSource(deckMorph, deckProgress),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -654,11 +672,15 @@ fun PlayerContent(
                 // ── Secondary actions ───────────────────────────────────
                 if (!isLocked) {
                 // ── Band 4: one utility rail ────────────────────────
-                // These four are one set of book-level utilities, laid out as four equal slots
-                // across the width. They used to sit inside a cover-glass pill, but that pill drew
-                // a hard edge across an otherwise edgeless sheet; the glyphs alone carry the set,
-                // and an active slot still tints its own ground in accent, which is the same state
-                // signal the "Skip silence" label used to carry in words.
+                // These five are one set of book-level utilities, laid out as equal slots across
+                // the width. They used to sit inside a cover-glass pill, but that pill drew a hard
+                // edge across an otherwise edgeless sheet; the glyphs alone carry the set, and an
+                // active slot still tints its own ground in accent, which is the same state signal
+                // the "Skip silence" label used to carry in words.
+                //
+                // Companion joined the rail rather than staying in the ⋮ menu: it is a thing you
+                // reach for *while listening* ("who is this again?"), which is what this rail is
+                // for, and the overflow is for things you do to a book rather than during it.
                 val skipSilenceOn = book?.skipSilenceEnabled == true
                 val sleepOn = position.sleepTimerRemainingMs > 0L
                 Row(
@@ -696,6 +718,14 @@ fun PlayerContent(
                         accent = accent,
                         idleTint = onScrim,
                         onClick = { showBookmarks = true }
+                    )
+                    UtilitySlot(
+                        icon = rememberVectorPainter(Icons.Default.Groups),
+                        label = "Companion",
+                        active = false,
+                        accent = accent,
+                        idleTint = onScrim,
+                        onClick = { showCompanion = true }
                     )
                     // Tap starts a timer at the slider's set duration (or cancels one already
                     // running); long-press opens the full options (slider/custom entry/end-of-
@@ -774,6 +804,26 @@ fun PlayerContent(
             onSelect = { viewModel.onChapterSelected(it) },
             onDismiss = { showChapters = false }
         )
+
+        if (viewModel.bookId != -1L) {
+            val deckTransport = com.betteraudio.ui.companion.rememberCompanionTransport(
+                title = book?.displayTitle.orEmpty(),
+                coverPath = coverPath,
+                isPlaying = state.isPlaying,
+                position = position,
+                revealedMs = bwp?.progress?.revealedMs ?: 0L,
+                onPlayPause = { viewModel.playerController.togglePlayPause() },
+                onSkipBack = { viewModel.playerController.skipBack() },
+                onSkipForward = { viewModel.playerController.skipForward() }
+            )
+            com.betteraudio.ui.companion.CompanionDeck(
+                progress = deckProgress,
+                bookId = viewModel.bookId,
+                transport = deckTransport,
+                onDismiss = { showCompanion = false },
+                morph = deckMorph
+            )
+        }
 
         LockOverlay(locked = isLocked, onUnlock = { isLocked = false })
 

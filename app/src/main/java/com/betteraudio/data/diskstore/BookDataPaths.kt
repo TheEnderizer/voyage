@@ -59,6 +59,24 @@ object BookDataPaths {
     }
 
     /**
+     * Companion-pack root for a BOOK-scoped pack (docs/companion-packs.md §7.1) —
+     * `data/companion/` for a real single-book folder, `data/companion_<slug>/` for one member of
+     * an AUTO cluster. Same slug-namespacing rule as [docFileName]/[coverBaseName]/
+     * [mappingFileName]: [dataDir] collapses every cluster sibling onto one `data/` dir (it peels
+     * off the `::` suffix), so a bare `companion/` here would let two books in one folder fight
+     * over the same pack directory the way an un-slugged doc file would. One book can have several
+     * packs, each in its own `<packId>` subdirectory.
+     */
+    fun companionRootDir(folderKey: String): File {
+        val s = stem(folderKey)
+        val name = if (s == null) "companion" else "companion_${slug(s)}"
+        return File(dataDir(folderKey), name)
+    }
+
+    /** `data/companion[_<slug>]/<packId>/` for a BOOK-scoped pack. */
+    fun bookPackDir(folderKey: String, packId: String): File = File(companionRootDir(folderKey), packId)
+
+    /**
      * Deterministic, collision-resistant filename fragment for a cluster/epub stem: a readable
      * prefix plus a short hash tail. The existing `safeFileName()` used elsewhere for cover
      * naming (AudioFileScanner) collapses e.g. "A B" and "A-B" to the same string — two cluster

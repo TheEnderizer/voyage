@@ -1,0 +1,3530 @@
+{
+  "schemaVersion": 1,
+  "packId": "5f2b7c10-9a4d-4c8e-b3a1-7d6e0f13c245",
+  "revision": 3,
+  "scope": "BOOK",
+  "title": "Shadow Slave - Companion",
+  "authorHandle": "hajmo",
+  "payload": "DATA_ONLY",
+  "members": [
+    {
+      "bookRef": "m1",
+      "title": "Shadow Slave",
+      "author": "guiltythree",
+      "durationMs": 923408236,
+      "fileCount": 8,
+      "fileKeys": [
+        "beba1abb32c6cb794580a53beceeb2274bf37749",
+        "b9b53e4490a279a772d2e81e07a4e240bc20b2b1",
+        "228d5f24346d119f7f5682c97d2e119b0a4ba824",
+        "16ae920d5b8dc0bc4cda9261da638b79ef412478",
+        "240218e058b8a46f8868845a7735c863602c016f",
+        "ef1447e88b3be8d377ce06bf944ac3aa79c51100",
+        "1780fcdda746843b6ee8c81cd5661f3680e8ca7a",
+        "76d7f1633edc31de345e16981bd12bfb43da65a1"
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "entityId": "e-sunny",
+      "kind": "CHARACTER",
+      "name": "Sunny"
+    },
+    {
+      "entityId": "e-nephis",
+      "kind": "CHARACTER",
+      "name": "Nephis"
+    },
+    {
+      "entityId": "e-cassie",
+      "kind": "CHARACTER",
+      "name": "Cassie"
+    },
+    {
+      "entityId": "e-jet",
+      "kind": "CHARACTER",
+      "name": "Jet"
+    },
+    {
+      "entityId": "e-kai",
+      "kind": "CHARACTER",
+      "name": "Kai"
+    },
+    {
+      "entityId": "e-effie",
+      "kind": "CHARACTER",
+      "name": "Effie"
+    },
+    {
+      "entityId": "e-rain",
+      "kind": "CHARACTER",
+      "name": "Rain"
+    },
+    {
+      "entityId": "e-mordret",
+      "kind": "CHARACTER",
+      "name": "Mordret"
+    },
+    {
+      "entityId": "e-morgan",
+      "kind": "CHARACTER",
+      "name": "Morgan"
+    },
+    {
+      "entityId": "e-the-outskirts",
+      "kind": "PLACE",
+      "name": "The Outskirts"
+    },
+    {
+      "entityId": "e-the-forgotten-shore",
+      "kind": "PLACE",
+      "name": "The Forgotten Shore"
+    },
+    {
+      "entityId": "e-the-bastion",
+      "kind": "PLACE",
+      "name": "The Bastion"
+    },
+    {
+      "entityId": "e-sanctuary",
+      "kind": "PLACE",
+      "name": "Sanctuary"
+    },
+    {
+      "entityId": "e-antarctica",
+      "kind": "PLACE",
+      "name": "Antarctica"
+    },
+    {
+      "entityId": "e-the-tomb-of-ariel",
+      "kind": "PLACE",
+      "name": "The Tomb of Ariel"
+    },
+    {
+      "entityId": "e-clan-valor",
+      "kind": "FACTION",
+      "name": "Clan Valor"
+    },
+    {
+      "entityId": "e-clan-song",
+      "kind": "FACTION",
+      "name": "Clan Song"
+    },
+    {
+      "entityId": "e-the-nightmare-spell",
+      "kind": "CONCEPT",
+      "name": "The Nightmare Spell"
+    },
+    {
+      "entityId": "e-the-dream-realm",
+      "kind": "CONCEPT",
+      "name": "The Dream Realm"
+    },
+    {
+      "entityId": "e-nightmare-creatures",
+      "kind": "CONCEPT",
+      "name": "Nightmare Creatures"
+    },
+    {
+      "entityId": "e-aspects",
+      "kind": "CONCEPT",
+      "name": "Aspects"
+    },
+    {
+      "entityId": "e-attributes",
+      "kind": "CONCEPT",
+      "name": "Attributes"
+    },
+    {
+      "entityId": "e-flaws",
+      "kind": "CONCEPT",
+      "name": "Flaws"
+    },
+    {
+      "entityId": "e-memories",
+      "kind": "CONCEPT",
+      "name": "Memories"
+    },
+    {
+      "entityId": "e-echoes",
+      "kind": "CONCEPT",
+      "name": "Echoes"
+    },
+    {
+      "entityId": "e-soul-cores",
+      "kind": "CONCEPT",
+      "name": "Soul Cores"
+    },
+    {
+      "entityId": "e-ranks",
+      "kind": "CONCEPT",
+      "name": "Ranks"
+    },
+    {
+      "entityId": "e-titans",
+      "kind": "CONCEPT",
+      "name": "Titans"
+    },
+    {
+      "entityId": "e-weaver",
+      "kind": "CONCEPT",
+      "name": "Weaver"
+    },
+    {
+      "entityId": "e-midnight-shard",
+      "kind": "ITEM",
+      "name": "Midnight Shard"
+    },
+    {
+      "entityId": "e-puppeteer-s-shroud",
+      "kind": "ITEM",
+      "name": "Puppeteer's Shroud"
+    },
+    {
+      "entityId": "e-weaver-s-mask",
+      "kind": "ITEM",
+      "name": "Weaver's Mask"
+    },
+    {
+      "entityId": "e-cruel-sight",
+      "kind": "ITEM",
+      "name": "Cruel Sight"
+    },
+    {
+      "entityId": "e-nameless-sun",
+      "kind": "ITEM",
+      "name": "Nameless Sun"
+    },
+    {
+      "entityId": "e-dying-wish",
+      "kind": "ITEM",
+      "name": "Dying Wish"
+    },
+    {
+      "entityId": "e-sin-of-solace",
+      "kind": "ITEM",
+      "name": "Sin of Solace"
+    },
+    {
+      "entityId": "e-dark-shaper",
+      "kind": "ITEM",
+      "name": "Dark Shaper"
+    },
+    {
+      "entityId": "e-crown-of-twilight",
+      "kind": "ITEM",
+      "name": "Crown of Twilight"
+    }
+  ],
+  "facts": [
+    {
+      "factId": "f-vol-1",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 1 Child of Shadows",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1,
+        "ratio": 0.0
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-desc",
+      "entityId": "e-sunny",
+      "field": "description",
+      "value": "Born a temple slave in the Outskirts. Survives on preparation, deceit and an absolute refusal to fight fair.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 30384,
+        "ratio": 3.3e-05
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-intro",
+      "entityId": "e-sunny",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 30384,
+        "ratio": 3.3e-05
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-nightmare-spell-desc",
+      "entityId": "e-the-nightmare-spell",
+      "field": "description",
+      "value": "Everyone dreams. Not everyone wakes up.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 160382,
+        "ratio": 0.000174
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-nightmare-spell-intro",
+      "entityId": "e-the-nightmare-spell",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 160382,
+        "ratio": 0.000174
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-dream-realm-desc",
+      "entityId": "e-the-dream-realm",
+      "field": "description",
+      "value": "Where the Spell takes you, and where most of the dying gets done.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 299336,
+        "ratio": 0.000324
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-dream-realm-intro",
+      "entityId": "e-the-dream-realm",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 299336,
+        "ratio": 0.000324
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-loc-e-the-outskirts",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "200,780",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 397790,
+        "ratio": 0.000431
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-outskirts-desc",
+      "entityId": "e-the-outskirts",
+      "field": "description",
+      "value": "Where Sunny grew up. Poor, cold, and a long way from anything safe.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 397790,
+        "ratio": 0.000431
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-outskirts-intro",
+      "entityId": "e-the-outskirts",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 397790,
+        "ratio": 0.000431
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-outskirts-loc",
+      "entityId": "e-the-outskirts",
+      "field": "location",
+      "value": "200,820",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 397790,
+        "ratio": 0.000431
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-aspects-desc",
+      "entityId": "e-aspects",
+      "field": "description",
+      "value": "What an Awakened gains. Never quite what they would have chosen.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 632565,
+        "ratio": 0.000685
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-aspects-intro",
+      "entityId": "e-aspects",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 632565,
+        "ratio": 0.000685
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-attributes-desc",
+      "entityId": "e-attributes",
+      "field": "description",
+      "value": "The measurable part of what surviving does to a person.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 643089,
+        "ratio": 0.000696
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-attributes-intro",
+      "entityId": "e-attributes",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 643089,
+        "ratio": 0.000696
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-nightmare-creatures-desc",
+      "entityId": "e-nightmare-creatures",
+      "field": "description",
+      "value": "The things waiting on the other side of sleep.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 681734,
+        "ratio": 0.000738
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nightmare-creatures-intro",
+      "entityId": "e-nightmare-creatures",
+      "field": "introduced",
+      "value": "Chapter 1",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 681734,
+        "ratio": 0.000738
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-alsoknownas-2",
+      "entityId": "e-sunny",
+      "field": "identity:Also known as",
+      "value": "Sunless",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 733329,
+        "ratio": 0.000794
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-rank-2",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Aspirant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1035119,
+        "ratio": 0.001121
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-soulcore-2",
+      "entityId": "e-sunny",
+      "field": "identity:Soul core",
+      "value": "Dormant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1035119,
+        "ratio": 0.001121
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-aspect-2",
+      "entityId": "e-sunny",
+      "field": "power:Aspect",
+      "value": "Temple Slave",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1035119,
+        "ratio": 0.001121
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-attributes-2",
+      "entityId": "e-sunny",
+      "field": "power:Attributes",
+      "value": "Fated, Mark of Divinity, Child of Shadows",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1035119,
+        "ratio": 0.001121
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-soul-cores-desc",
+      "entityId": "e-soul-cores",
+      "field": "description",
+      "value": "Seven of them, filled one at a time. The engine underneath an Awakened's strength.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1039279,
+        "ratio": 0.001125
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-soul-cores-intro",
+      "entityId": "e-soul-cores",
+      "field": "introduced",
+      "value": "Chapter 2",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 1039279,
+        "ratio": 0.001125
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-memories-desc",
+      "entityId": "e-memories",
+      "field": "description",
+      "value": "Fragments left behind by things that died badly. Rank, Type and Tier are all the Spell will tell you.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 3017683,
+        "ratio": 0.003268
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-memories-intro",
+      "entityId": "e-memories",
+      "field": "introduced",
+      "value": "Chapter 5",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 3017683,
+        "ratio": 0.003268
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-8",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 5241566,
+        "ratio": 0.005676
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-flaws-desc",
+      "entityId": "e-flaws",
+      "field": "description",
+      "value": "The price attached to an Aspect. Always paid, eventually.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 5924358,
+        "ratio": 0.006416
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-flaws-intro",
+      "entityId": "e-flaws",
+      "field": "introduced",
+      "value": "Chapter 9",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 5924358,
+        "ratio": 0.006416
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-ranks-desc",
+      "entityId": "e-ranks",
+      "field": "description",
+      "value": "Dormant, Awakened, Ascended, Transcendent, Supreme, Sacred, Divine. The gaps are not small.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 5972849,
+        "ratio": 0.006468
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-ranks-intro",
+      "entityId": "e-ranks",
+      "field": "introduced",
+      "value": "Chapter 9",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 5972849,
+        "ratio": 0.006468
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-aspect-15-2",
+      "entityId": "e-sunny",
+      "field": "power:Aspect",
+      "value": "Shadow Slave — Divine rank",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 9640839,
+        "ratio": 0.01044
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-innateability-15",
+      "entityId": "e-sunny",
+      "field": "power:Innate ability",
+      "value": "Shadow Bond — tell someone your True Name and you belong to them",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 9640839,
+        "ratio": 0.01044
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-sunny-memories-15",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 9755636,
+        "ratio": 0.010565
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-abilities-16",
+      "entityId": "e-sunny",
+      "field": "power:Abilities",
+      "value": "Shadow Control",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10340316,
+        "ratio": 0.011198
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-echoes-desc",
+      "entityId": "e-echoes",
+      "field": "description",
+      "value": "What a defeated enemy becomes once it belongs to you.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10661756,
+        "ratio": 0.011546
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-echoes-intro",
+      "entityId": "e-echoes",
+      "field": "introduced",
+      "value": "Chapter 16",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10661756,
+        "ratio": 0.011546
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-rank-16",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Dreamer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10791837,
+        "ratio": 0.011687
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcore-16",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow core",
+      "value": "Dormant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10791837,
+        "ratio": 0.011687
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-16",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "12/1000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10791837,
+        "ratio": 0.011687
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-truename-16",
+      "entityId": "e-sunny",
+      "field": "identity:True name",
+      "value": "Lost from Light",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 10791837,
+        "ratio": 0.011687
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-jet-bond-e-sunny-17",
+      "entityId": "e-jet",
+      "field": "bond:Sunny",
+      "value": "A Sleeper she expects to be dead within the month",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 11014657,
+        "ratio": 0.011928
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-jet-17",
+      "entityId": "e-sunny",
+      "field": "bond:Jet",
+      "value": "Master Jet. Her advice is why he survives the first Nightmare",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 11014657,
+        "ratio": 0.011928
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-flaw-17",
+      "entityId": "e-sunny",
+      "field": "power:Flaw",
+      "value": "Clear Conscience — you cannot lie",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 11035010,
+        "ratio": 0.01195
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-jet-desc",
+      "entityId": "e-jet",
+      "field": "description",
+      "value": "The instructor who teaches Sunny how to survive his first Nightmare. Feared for good reason.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 11599749,
+        "ratio": 0.012562
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-jet-intro",
+      "entityId": "e-jet",
+      "field": "introduced",
+      "value": "Chapter 17",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 11599749,
+        "ratio": 0.012562
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-titans-desc",
+      "entityId": "e-titans",
+      "field": "description",
+      "value": "Large enough that the word is doing very little work.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15216032,
+        "ratio": 0.016478
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-titans-intro",
+      "entityId": "e-titans",
+      "field": "introduced",
+      "value": "Chapter 23",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15216032,
+        "ratio": 0.016478
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-jet-bond-e-sunny-24",
+      "entityId": "e-jet",
+      "field": "bond:Sunny",
+      "value": "Still alive. She has started paying attention",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-jet-role-24",
+      "entityId": "e-jet",
+      "field": "identity:Role",
+      "value": "Master — instructor to Sleepers before their first Nightmare",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-bond-e-sunny-24",
+      "entityId": "e-nephis",
+      "field": "bond:Sunny",
+      "value": "The strange, wary boy who refuses to be discounted",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-puppeteer-s-shroud-desc",
+      "entityId": "e-puppeteer-s-shroud",
+      "field": "description",
+      "value": "Black silk spun inside a king who was eaten from within.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-puppeteer-s-shroud-rank",
+      "entityId": "e-puppeteer-s-shroud",
+      "field": "identity:Rank",
+      "value": "Awakened",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-puppeteer-s-shroud-tier",
+      "entityId": "e-puppeteer-s-shroud",
+      "field": "identity:Tier",
+      "value": "V",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-puppeteer-s-shroud-type",
+      "entityId": "e-puppeteer-s-shroud",
+      "field": "identity:Type",
+      "value": "Armor",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-puppeteer-s-shroud-intro",
+      "entityId": "e-puppeteer-s-shroud",
+      "field": "introduced",
+      "value": "Chapter 24",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-nephis-24",
+      "entityId": "e-sunny",
+      "field": "bond:Nephis",
+      "value": "A stranger he is quietly measuring for a fight he would lose",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 15405700,
+        "ratio": 0.016684
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-desc",
+      "entityId": "e-nephis",
+      "field": "description",
+      "value": "Relentless, disciplined, impossible to discourage. Whatever room she is in organises itself around her.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 16033394,
+        "ratio": 0.017363
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-intro",
+      "entityId": "e-nephis",
+      "field": "introduced",
+      "value": "Chapter 24",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 16033394,
+        "ratio": 0.017363
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cassie-bond-e-sunny-36",
+      "entityId": "e-cassie",
+      "field": "bond:Sunny",
+      "value": "Kinder to her than he intends anyone to notice",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 23018791,
+        "ratio": 0.024928
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-bond-e-cassie-36",
+      "entityId": "e-nephis",
+      "field": "bond:Cassie",
+      "value": "Talked her onto a ship she should never have boarded",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 23018791,
+        "ratio": 0.024928
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-cassie-36",
+      "entityId": "e-sunny",
+      "field": "bond:Cassie",
+      "value": "The blind girl he assumed was a liability",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 23018791,
+        "ratio": 0.024928
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-cassie-desc",
+      "entityId": "e-cassie",
+      "field": "description",
+      "value": "Blind, and sees further than anyone else alive. Her sight is not the kind eyes provide.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 23644409,
+        "ratio": 0.025606
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-cassie-intro",
+      "entityId": "e-cassie",
+      "field": "introduced",
+      "value": "Chapter 36",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 23644409,
+        "ratio": 0.025606
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-loc-e-the-forgotten-shore",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "790,430",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 35720344,
+        "ratio": 0.038683
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-forgotten-shore-desc",
+      "entityId": "e-the-forgotten-shore",
+      "field": "description",
+      "value": "A shore that should not exist, under a sky that should not either.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 35720344,
+        "ratio": 0.038683
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-forgotten-shore-intro",
+      "entityId": "e-the-forgotten-shore",
+      "field": "introduced",
+      "value": "Chapter 56",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 35720344,
+        "ratio": 0.038683
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-forgotten-shore-loc",
+      "entityId": "e-the-forgotten-shore",
+      "field": "location",
+      "value": "830,400",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 35720344,
+        "ratio": 0.038683
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-midnight-shard-desc",
+      "entityId": "e-midnight-shard",
+      "field": "description",
+      "value": "A blade forged from a fallen star. Favours whoever refuses to surrender.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45752823,
+        "ratio": 0.049548
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-midnight-shard-rank",
+      "entityId": "e-midnight-shard",
+      "field": "identity:Rank",
+      "value": "Awakened",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45752823,
+        "ratio": 0.049548
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-midnight-shard-tier",
+      "entityId": "e-midnight-shard",
+      "field": "identity:Tier",
+      "value": "III",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45752823,
+        "ratio": 0.049548
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-midnight-shard-type",
+      "entityId": "e-midnight-shard",
+      "field": "identity:Type",
+      "value": "Weapon",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45752823,
+        "ratio": 0.049548
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-midnight-shard-intro",
+      "entityId": "e-midnight-shard",
+      "field": "introduced",
+      "value": "Chapter 74",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45752823,
+        "ratio": 0.049548
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-74",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 45889887,
+        "ratio": 0.049696
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-weaver-desc",
+      "entityId": "e-weaver",
+      "field": "description",
+      "value": "Hid behind so many lies that not even gods could see the face underneath.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 49596119,
+        "ratio": 0.05371
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-weaver-intro",
+      "entityId": "e-weaver",
+      "field": "introduced",
+      "value": "Chapter 81",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 49596119,
+        "ratio": 0.05371
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cassie-abilities-86",
+      "entityId": "e-cassie",
+      "field": "power:Abilities",
+      "value": "Reads the Attributes of others, high affinity to revelation and fate",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 52365372,
+        "ratio": 0.056709
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-cassie-aspect-86",
+      "entityId": "e-cassie",
+      "field": "power:Aspect",
+      "value": "Sight that does not come from eyes",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 52365372,
+        "ratio": 0.056709
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-cassie-86",
+      "entityId": "e-sunny",
+      "field": "bond:Cassie",
+      "value": "The one he brings his impossible questions to",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 52365372,
+        "ratio": 0.056709
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-cassie-bond-e-nephis-91",
+      "entityId": "e-cassie",
+      "field": "bond:Nephis",
+      "value": "Follows her, knowing exactly what it will cost",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 54883779,
+        "ratio": 0.059436
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-nephis-91",
+      "entityId": "e-sunny",
+      "field": "bond:Nephis",
+      "value": "Fights beside her. Still would not tell her his Flaw",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 54883779,
+        "ratio": 0.059436
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-104",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57661889,
+        "ratio": 0.062445
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-104-2",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57662299,
+        "ratio": 0.062445
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-vol-2",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 2 Demon of Change",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57682585,
+        "ratio": 0.062467
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-kai-bond-e-sunny-115",
+      "entityId": "e-kai",
+      "field": "bond:Sunny",
+      "value": "Reads him faster than Sunny would like",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57682899,
+        "ratio": 0.062467
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-bond-e-kai-115",
+      "entityId": "e-nephis",
+      "field": "bond:Kai",
+      "value": "Useful, well-connected, and reads her better than most",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57682899,
+        "ratio": 0.062467
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-kai-115",
+      "entityId": "e-sunny",
+      "field": "bond:Kai",
+      "value": "Resents how easy everything looks for him",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57682899,
+        "ratio": 0.062467
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-kai-desc",
+      "entityId": "e-kai",
+      "field": "description",
+      "value": "Charming, beautiful, well-connected, and considerably less useless than he prefers to look.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57684733,
+        "ratio": 0.062469
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-kai-intro",
+      "entityId": "e-kai",
+      "field": "introduced",
+      "value": "Chapter 115",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57684733,
+        "ratio": 0.062469
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-kai-flaw-118",
+      "entityId": "e-kai",
+      "field": "power:Flaw",
+      "value": "A Flaw so convenient the others call it a blessing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 57688966,
+        "ratio": 0.062474
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-effie-desc",
+      "entityId": "e-effie",
+      "field": "description",
+      "value": "Enormous strength and no patience for subtlety. Cheerfully open about the one thing everyone else hides.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 59757717,
+        "ratio": 0.064714
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-effie-intro",
+      "entityId": "e-effie",
+      "field": "introduced",
+      "value": "Chapter 126",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 59757717,
+        "ratio": 0.064714
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-effie-bond-e-nephis-126",
+      "entityId": "e-effie",
+      "field": "bond:Nephis",
+      "value": "Would walk into anything if Neph pointed at it",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 59758248,
+        "ratio": 0.064715
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-bond-e-effie-126",
+      "entityId": "e-nephis",
+      "field": "bond:Effie",
+      "value": "Her strongest sword, and entirely willing to be pointed",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 59758248,
+        "ratio": 0.064715
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-effie-126",
+      "entityId": "e-sunny",
+      "field": "bond:Effie",
+      "value": "Loud, enormous, and much better company than expected",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 59758248,
+        "ratio": 0.064715
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-loc-e-the-bastion",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "520,610",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60403919,
+        "ratio": 0.065414
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-bastion-desc",
+      "entityId": "e-the-bastion",
+      "field": "description",
+      "value": "The greatest of the three Citadels, ruled by the noble scions of Clan Valor.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60403919,
+        "ratio": 0.065414
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-bastion-intro",
+      "entityId": "e-the-bastion",
+      "field": "introduced",
+      "value": "Chapter 127",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60403919,
+        "ratio": 0.065414
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-bastion-loc",
+      "entityId": "e-the-bastion",
+      "field": "location",
+      "value": "520,650",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60403919,
+        "ratio": 0.065414
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cassie-bond-e-effie-128",
+      "entityId": "e-cassie",
+      "field": "bond:Effie",
+      "value": "The loudest possible protection, and welcome",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60817961,
+        "ratio": 0.065862
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-cassie-note-128",
+      "entityId": "e-cassie",
+      "field": "power:Note",
+      "value": "Prophetic enough that Sunny stops needing to ask what she saw",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 60817961,
+        "ratio": 0.065862
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-effie-bond-e-sunny-130",
+      "entityId": "e-effie",
+      "field": "bond:Sunny",
+      "value": "Finds him funny, which he finds alarming",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 61865556,
+        "ratio": 0.066997
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-effie-aspect-130",
+      "entityId": "e-effie",
+      "field": "power:Aspect",
+      "value": "Strength, speed, agility, endurance and resilience, all raised at once",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 61865556,
+        "ratio": 0.066997
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-effie-note-130",
+      "entityId": "e-effie",
+      "field": "power:Note",
+      "value": "Not flashy. Effectively the ultimate warrior Ability",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 61865556,
+        "ratio": 0.066997
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-effie-flaw-152",
+      "entityId": "e-effie",
+      "field": "power:Flaw",
+      "value": "Tells anyone who asks — the only one in the group who does",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 73010078,
+        "ratio": 0.079066
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-bond-e-sunny-163",
+      "entityId": "e-rain",
+      "field": "bond:Sunny",
+      "value": "Her big brother, who is always somehow exhausted",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 79621977,
+        "ratio": 0.086226
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-role-163",
+      "entityId": "e-rain",
+      "field": "identity:Role",
+      "value": "Sunny's younger sister",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 79621977,
+        "ratio": 0.086226
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-rain-163",
+      "entityId": "e-sunny",
+      "field": "bond:Rain",
+      "value": "His sister. The reason any of this is worth surviving",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 79621977,
+        "ratio": 0.086226
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-desc",
+      "entityId": "e-rain",
+      "field": "description",
+      "value": "Sunny's little sister, and the whole reason he keeps walking back out of the Dream Realm.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 79991389,
+        "ratio": 0.086626
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-rain-intro",
+      "entityId": "e-rain",
+      "field": "introduced",
+      "value": "Chapter 163",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 79991389,
+        "ratio": 0.086626
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-189",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "318/1000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 107321310,
+        "ratio": 0.116223
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-kai-bond-e-nephis-190",
+      "entityId": "e-kai",
+      "field": "bond:Nephis",
+      "value": "Follows her lead without pretending it was his idea",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 107445068,
+        "ratio": 0.116357
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-kai-role-190",
+      "entityId": "e-kai",
+      "field": "identity:Role",
+      "value": "Archer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 107445068,
+        "ratio": 0.116357
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-kai-aspect-190",
+      "entityId": "e-kai",
+      "field": "power:Aspect",
+      "value": "The Ability that makes him the right person to go outside the Shore",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 107445068,
+        "ratio": 0.116357
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-kai-190",
+      "entityId": "e-sunny",
+      "field": "bond:Kai",
+      "value": "Stopped underestimating the beautiful archer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 107445068,
+        "ratio": 0.116357
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-aspectlegacy-219",
+      "entityId": "e-sunny",
+      "field": "power:Aspect legacy",
+      "value": "Shadow Dance",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 121781752,
+        "ratio": 0.131883
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-242",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 133045886,
+        "ratio": 0.144081
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-clan-valor-desc",
+      "entityId": "e-clan-valor",
+      "field": "description",
+      "value": "The great Legacy clan that rules Bastion.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 134298038,
+        "ratio": 0.145437
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-clan-valor-intro",
+      "entityId": "e-clan-valor",
+      "field": "introduced",
+      "value": "Chapter 244",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 134298038,
+        "ratio": 0.145437
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-weaver-s-mask-desc",
+      "entityId": "e-weaver-s-mask",
+      "field": "description",
+      "value": "Weaver wore lies as a mantle. Not even gods saw the face behind it.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149439158,
+        "ratio": 0.161834
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-weaver-s-mask-rank",
+      "entityId": "e-weaver-s-mask",
+      "field": "identity:Rank",
+      "value": "Divine",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149439158,
+        "ratio": 0.161834
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-weaver-s-mask-tier",
+      "entityId": "e-weaver-s-mask",
+      "field": "identity:Tier",
+      "value": "VII",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149439158,
+        "ratio": 0.161834
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-weaver-s-mask-type",
+      "entityId": "e-weaver-s-mask",
+      "field": "identity:Type",
+      "value": "Tool",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149439158,
+        "ratio": 0.161834
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-weaver-s-mask-intro",
+      "entityId": "e-weaver-s-mask",
+      "field": "introduced",
+      "value": "Chapter 278",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149439158,
+        "ratio": 0.161834
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-278",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 149665009,
+        "ratio": 0.162079
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-310",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "977/1000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 165860516,
+        "ratio": 0.179618
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-vol-3",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 3 Prince of Nothing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 188382266,
+        "ratio": 0.204008
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-class-352",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Monster",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189291157,
+        "ratio": 0.204992
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-352",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "2/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189291157,
+        "ratio": 0.204992
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-rank-352",
+      "entityId": "e-nephis",
+      "field": "identity:Rank",
+      "value": "Dreamer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189548510,
+        "ratio": 0.205271
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-truename-352",
+      "entityId": "e-nephis",
+      "field": "identity:True name",
+      "value": "Changing Star",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189548510,
+        "ratio": 0.205271
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nameless-sun-desc",
+      "entityId": "e-nameless-sun",
+      "field": "description",
+      "value": "Nephis's sword. It stopped longing, and the Crimson Terror was born.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nameless-sun-rank",
+      "entityId": "e-nameless-sun",
+      "field": "identity:Rank",
+      "value": "Ascended",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nameless-sun-tier",
+      "entityId": "e-nameless-sun",
+      "field": "identity:Tier",
+      "value": "VI",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-nameless-sun-type",
+      "entityId": "e-nameless-sun",
+      "field": "identity:Type",
+      "value": "Weapon",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-nameless-sun-intro",
+      "entityId": "e-nameless-sun",
+      "field": "introduced",
+      "value": "Chapter 353",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-nephis-memories-353",
+      "entityId": "e-nephis",
+      "field": "arsenal:Memories",
+      "value": "Nameless Sun",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-aspect-353-2",
+      "entityId": "e-nephis",
+      "field": "power:Aspect",
+      "value": "Light Bringer — Divine rank",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 189563711,
+        "ratio": 0.205287
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-flaw-353",
+      "entityId": "e-nephis",
+      "field": "power:Flaw",
+      "value": "Pristine Soul — you must suffer to use your power",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190210980,
+        "ratio": 0.205988
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-bond-e-sunny-354",
+      "entityId": "e-nephis",
+      "field": "bond:Sunny",
+      "value": "The one she plans around, whether or not she says so",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190360070,
+        "ratio": 0.206149
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-nephis-354",
+      "entityId": "e-sunny",
+      "field": "bond:Nephis",
+      "value": "The one person whose plans he keeps choosing to be part of",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190360070,
+        "ratio": 0.206149
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-abilities-354",
+      "entityId": "e-sunny",
+      "field": "power:Abilities",
+      "value": "Shadow Control, Shadow Step",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190360070,
+        "ratio": 0.206149
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-rank-354",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Awakened",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190784847,
+        "ratio": 0.206609
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-354",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "0/2000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 190784847,
+        "ratio": 0.206609
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-jet-alsoknownas-376",
+      "entityId": "e-jet",
+      "field": "identity:Also known as",
+      "value": "Soul Reaper",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 202757730,
+        "ratio": 0.219575
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-jet-aspect-376",
+      "entityId": "e-jet",
+      "field": "power:Aspect",
+      "value": "Strikes directly at the soul, ignoring the body entirely",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 202757730,
+        "ratio": 0.219575
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-sunny-memories-376",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 202923669,
+        "ratio": 0.219755
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sanctuary-desc",
+      "entityId": "e-sanctuary",
+      "field": "description",
+      "value": "A refuge, with all the conditions that word usually carries.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 205681790,
+        "ratio": 0.222742
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sanctuary-intro",
+      "entityId": "e-sanctuary",
+      "field": "introduced",
+      "value": "Chapter 381",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 205681790,
+        "ratio": 0.222742
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sanctuary-loc",
+      "entityId": "e-sanctuary",
+      "field": "location",
+      "value": "400,440",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 205681790,
+        "ratio": 0.222742
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-loc-e-sanctuary",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "430,470",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 205681790,
+        "ratio": 0.222742
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cruel-sight-desc",
+      "entityId": "e-cruel-sight",
+      "field": "description",
+      "value": "The Ascended blade Sunny carries out of the Forgotten Shore.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 222995110,
+        "ratio": 0.241491
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-cruel-sight-rank",
+      "entityId": "e-cruel-sight",
+      "field": "identity:Rank",
+      "value": "Ascended",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 222995110,
+        "ratio": 0.241491
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-cruel-sight-tier",
+      "entityId": "e-cruel-sight",
+      "field": "identity:Tier",
+      "value": "IV",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 222995110,
+        "ratio": 0.241491
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cruel-sight-type",
+      "entityId": "e-cruel-sight",
+      "field": "identity:Type",
+      "value": "Weapon",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 222995110,
+        "ratio": 0.241491
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-cruel-sight-intro",
+      "entityId": "e-cruel-sight",
+      "field": "introduced",
+      "value": "Chapter 415",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 222995110,
+        "ratio": 0.241491
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-415",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 223005900,
+        "ratio": 0.241503
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-428",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 229957527,
+        "ratio": 0.249031
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-mordret-bond-e-sunny-438",
+      "entityId": "e-mordret",
+      "field": "bond:Sunny",
+      "value": "A boy worth the attention of a prince",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 235652642,
+        "ratio": 0.255199
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-mordret-alsoknownas-438",
+      "entityId": "e-mordret",
+      "field": "identity:Also known as",
+      "value": "The Prince of Nothing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 235652642,
+        "ratio": 0.255199
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-mordret-438",
+      "entityId": "e-sunny",
+      "field": "bond:Mordret",
+      "value": "A prince who seems to already know him",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 235652642,
+        "ratio": 0.255199
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-mordret-desc",
+      "entityId": "e-mordret",
+      "field": "description",
+      "value": "The Prince of Nothing. Patient, theatrical, and never quite standing where you think he is.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 236211035,
+        "ratio": 0.255803
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-mordret-intro",
+      "entityId": "e-mordret",
+      "field": "introduced",
+      "value": "Chapter 438",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 236211035,
+        "ratio": 0.255803
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-512",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 277583864,
+        "ratio": 0.300608
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-512-2",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 277930280,
+        "ratio": 0.300983
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-class-526",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Demon",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 285649106,
+        "ratio": 0.309342
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-526",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "3/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 285649106,
+        "ratio": 0.309342
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-526",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "0/3000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 285649106,
+        "ratio": 0.309342
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-morgan-desc",
+      "entityId": "e-morgan",
+      "field": "description",
+      "value": "A commander who does not merely carry a blade. The sharpness in the room is hers.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 297049455,
+        "ratio": 0.321688
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-morgan-intro",
+      "entityId": "e-morgan",
+      "field": "introduced",
+      "value": "Chapter 545",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 297049455,
+        "ratio": 0.321688
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-550",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 299861359,
+        "ratio": 0.324733
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-550-2",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 300093411,
+        "ratio": 0.324985
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-mordret-abilities-577",
+      "entityId": "e-mordret",
+      "field": "power:Abilities",
+      "value": "Travels through mirrors, controls reflections",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 315617978,
+        "ratio": 0.341797
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-mordret-aspect-577",
+      "entityId": "e-mordret",
+      "field": "power:Aspect",
+      "value": "Mirrors, reflections and souls",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 315617978,
+        "ratio": 0.341797
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-mordret-secondability-577",
+      "entityId": "e-mordret",
+      "field": "power:Second ability",
+      "value": "Meet his eyes in any mirror and your soul is devoured",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 315617978,
+        "ratio": 0.341797
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-mordret-bond-e-sunny-578",
+      "entityId": "e-mordret",
+      "field": "bond:Sunny",
+      "value": "Knows him well enough to wear him",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 316219831,
+        "ratio": 0.342449
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-mordret-note-578",
+      "entityId": "e-mordret",
+      "field": "power:Note",
+      "value": "Watched Sunny for months. Can be him convincingly",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 316219831,
+        "ratio": 0.342449
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-mordret-578",
+      "entityId": "e-sunny",
+      "field": "bond:Mordret",
+      "value": "Has worn Sunny's face. The most dangerous person alive to him",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 316219831,
+        "ratio": 0.342449
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-clan-song-desc",
+      "entityId": "e-clan-song",
+      "field": "description",
+      "value": "A great Legacy clan, and a domain in the waking world.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 328686460,
+        "ratio": 0.355949
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-clan-song-intro",
+      "entityId": "e-clan-song",
+      "field": "introduced",
+      "value": "Chapter 598",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 328686460,
+        "ratio": 0.355949
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-vol-4",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 4 Chain Breaker",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 330263504,
+        "ratio": 0.357657
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-alsoknownas-621",
+      "entityId": "e-sunny",
+      "field": "identity:Also known as",
+      "value": "Sunless, the Lord of Shadows",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 342510363,
+        "ratio": 0.37092
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-654",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow, Shadow Lantern",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 361939999,
+        "ratio": 0.391961
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-class-693",
+      "entityId": "e-nephis",
+      "field": "identity:Class",
+      "value": "Tyrant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 385368923,
+        "ratio": 0.417333
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-rank-693",
+      "entityId": "e-nephis",
+      "field": "identity:Rank",
+      "value": "Dormant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 385368923,
+        "ratio": 0.417333
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-shadowcores-693",
+      "entityId": "e-nephis",
+      "field": "identity:Shadow cores",
+      "value": "5/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 385368923,
+        "ratio": 0.417333
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-shadowfragments-693",
+      "entityId": "e-nephis",
+      "field": "identity:Shadow fragments",
+      "value": "0/5000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 385368923,
+        "ratio": 0.417333
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-class-702",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Devil",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 390973606,
+        "ratio": 0.423403
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-702",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "4/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 390973606,
+        "ratio": 0.423403
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-702",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "0/4000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 390973606,
+        "ratio": 0.423403
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dying-wish-desc",
+      "entityId": "e-dying-wish",
+      "field": "description",
+      "value": "A woman who could only find freedom in death, and handed that death to her captors.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 405963006,
+        "ratio": 0.439635
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dying-wish-rank",
+      "entityId": "e-dying-wish",
+      "field": "identity:Rank",
+      "value": "Transcendent",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 405963006,
+        "ratio": 0.439635
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dying-wish-tier",
+      "entityId": "e-dying-wish",
+      "field": "identity:Tier",
+      "value": "I",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 405963006,
+        "ratio": 0.439635
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-dying-wish-type",
+      "entityId": "e-dying-wish",
+      "field": "identity:Type",
+      "value": "Charm",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 405963006,
+        "ratio": 0.439635
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-dying-wish-intro",
+      "entityId": "e-dying-wish",
+      "field": "introduced",
+      "value": "Chapter 730",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 405963006,
+        "ratio": 0.439635
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-730",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow, Shadow Lantern, Dying Wish",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 406399659,
+        "ratio": 0.440108
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-abilities-744",
+      "entityId": "e-sunny",
+      "field": "power:Abilities",
+      "value": "Shadow Control, Shadow Step, Shadow Manifestation",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 413933371,
+        "ratio": 0.448267
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-rank-744",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Ascended",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 414325029,
+        "ratio": 0.448691
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-744",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "744/4000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 414325029,
+        "ratio": 0.448691
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-antarctica-desc",
+      "entityId": "e-antarctica",
+      "field": "description",
+      "value": "The waking world's far south, and rather more than that.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 420105869,
+        "ratio": 0.454951
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-antarctica-intro",
+      "entityId": "e-antarctica",
+      "field": "introduced",
+      "value": "Chapter 754",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 420105869,
+        "ratio": 0.454951
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-antarctica-loc",
+      "entityId": "e-antarctica",
+      "field": "location",
+      "value": "600,160",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 420105869,
+        "ratio": 0.454951
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-loc-e-antarctica",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "560,190",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 420105869,
+        "ratio": 0.454951
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-vol-5",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 5 Dread Night",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 427631924,
+        "ratio": 0.463102
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-rain-note-810",
+      "entityId": "e-rain",
+      "field": "power:Note",
+      "value": "No Aspect, no soul core — nothing Sunny owns can be given to her",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 457937927,
+        "ratio": 0.495921
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-rain-810",
+      "entityId": "e-sunny",
+      "field": "bond:Rain",
+      "value": "He cannot give her a single thing he has earned",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 457937927,
+        "ratio": 0.495921
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sin-of-solace-desc",
+      "entityId": "e-sin-of-solace",
+      "field": "description",
+      "value": "The Transcendent weapon that gives Volume 7 its shape.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486841967,
+        "ratio": 0.527223
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sin-of-solace-rank",
+      "entityId": "e-sin-of-solace",
+      "field": "identity:Rank",
+      "value": "Transcendent",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486841967,
+        "ratio": 0.527223
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sin-of-solace-tier",
+      "entityId": "e-sin-of-solace",
+      "field": "identity:Tier",
+      "value": "V",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486841967,
+        "ratio": 0.527223
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sin-of-solace-type",
+      "entityId": "e-sin-of-solace",
+      "field": "identity:Type",
+      "value": "Weapon",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486841967,
+        "ratio": 0.527223
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sin-of-solace-intro",
+      "entityId": "e-sin-of-solace",
+      "field": "introduced",
+      "value": "Chapter 869",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486841967,
+        "ratio": 0.527223
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-sunny-memories-869",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow, Shadow Lantern, Dying Wish, Sin of Solace",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 486846852,
+        "ratio": 0.527228
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-923",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow, Shadow Lantern, Dying Wish, Sin of Solace, Bitter Cusp",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 513819206,
+        "ratio": 0.556438
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-memories-923-2",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Prowling Thorn, Endless Spring, Dark Wing, Weaver's Mask, Broken Oath, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Strike of Thunder, Morgan's Warbow, Shadow Lantern, Dying Wish, Sin of Solace, Bitter Cusp, Stifled Scream",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 514026801,
+        "ratio": 0.556663
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-jet-996",
+      "entityId": "e-sunny",
+      "field": "bond:Jet",
+      "value": "Still calls her Master. Still slightly afraid of her Aspect",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 548290717,
+        "ratio": 0.593768
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-sunny-loc-e-the-tomb-of-ariel",
+      "entityId": "e-sunny",
+      "field": "location",
+      "value": "250,250",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 561367111,
+        "ratio": 0.60793
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-tomb-of-ariel-desc",
+      "entityId": "e-the-tomb-of-ariel",
+      "field": "description",
+      "value": "First named far earlier than the volume it eventually titles.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 561367111,
+        "ratio": 0.60793
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-the-tomb-of-ariel-intro",
+      "entityId": "e-the-tomb-of-ariel",
+      "field": "introduced",
+      "value": "Chapter 1022",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 561367111,
+        "ratio": 0.60793
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-the-tomb-of-ariel-loc",
+      "entityId": "e-the-tomb-of-ariel",
+      "field": "location",
+      "value": "220,220",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 561367111,
+        "ratio": 0.60793
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-memories-1026",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Puppeteer's Shroud, Midnight Shard, Extraordinary Rock, Prowling Thorn, Endless Spring, Dark Wing, Moonlight Shard, Weaver's Mask, Broken Oath, Autumn Leaf, Cruel Sight, Covetous Coffer, Heavenly Burden, Memory of Fire, Memory of Ice, Strike of Thunder, Morgan's Warbow, Shadow Lantern, Bone Singer, Shadow Chair, Overpriced Saddle, Dying Wish, Sin of Solace, Bitter Cusp, Stifled Scream, Weaver's Needle, Essence Pearl, Nimble Catch, Shroud of Graceless Dusk, Siege Souvenir, Incessant Seeker",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 563124129,
+        "ratio": 0.609832
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1026",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "2973/4000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 563124129,
+        "ratio": 0.609832
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-vol-6",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 6 All the Devils Are Here",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 581820075,
+        "ratio": 0.630079
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-morgan-bond-e-sunny-1108",
+      "entityId": "e-morgan",
+      "field": "bond:Sunny",
+      "value": "An Ascended she has not finished assessing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 599887391,
+        "ratio": 0.649645
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-morgan-role-1108",
+      "entityId": "e-morgan",
+      "field": "identity:Role",
+      "value": "Commander",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 599887391,
+        "ratio": 0.649645
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-morgan-aspect-1108",
+      "entityId": "e-morgan",
+      "field": "power:Aspect",
+      "value": "She is not the one wielding the blade. She is the blade",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 599887391,
+        "ratio": 0.649645
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-morgan-1108",
+      "entityId": "e-sunny",
+      "field": "bond:Morgan",
+      "value": "A commander he studies the way he studies a Nightmare Creature",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 599887391,
+        "ratio": 0.649645
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-morgan-ascendedability-1109",
+      "entityId": "e-morgan",
+      "field": "power:Ascended ability",
+      "value": "Sees through the eyes of soldiers across the whole battlefield",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 600362139,
+        "ratio": 0.650159
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-class-1123",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Tyrant",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607378295,
+        "ratio": 0.657757
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-1123",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "5/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607378295,
+        "ratio": 0.657757
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1123",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "503/5000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607378295,
+        "ratio": 0.657757
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-abilities-1124",
+      "entityId": "e-nephis",
+      "field": "power:Abilities",
+      "value": "Soul Flame, Flame Manipulation, Longing",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607534630,
+        "ratio": 0.657926
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-innateability-1124",
+      "entityId": "e-nephis",
+      "field": "power:Innate ability",
+      "value": "Halfbreed — absorbs soul essence from whatever her flames destroy",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607534630,
+        "ratio": 0.657926
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-nephis-rank-1124",
+      "entityId": "e-nephis",
+      "field": "identity:Rank",
+      "value": "Ascended",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607607563,
+        "ratio": 0.658005
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-soulcores-1124",
+      "entityId": "e-nephis",
+      "field": "identity:Soul cores",
+      "value": "5/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 607607563,
+        "ratio": 0.658005
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-vol-7",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 7 The Tomb of Ariel",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 658080454,
+        "ratio": 0.712665
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-bond-e-nephis-1236",
+      "entityId": "e-sunny",
+      "field": "bond:Nephis",
+      "value": "Bound to each other by more than choice at this point",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 660266458,
+        "ratio": 0.715032
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1236",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "1236/5000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 660706089,
+        "ratio": 0.715508
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dark-shaper-desc",
+      "entityId": "e-dark-shaper",
+      "field": "description",
+      "value": "Left over from Ariel, the Demon of Dread, who never learned to feel fear.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 665804396,
+        "ratio": 0.721029
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dark-shaper-rank",
+      "entityId": "e-dark-shaper",
+      "field": "identity:Rank",
+      "value": "Transcendent",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 665804396,
+        "ratio": 0.721029
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-dark-shaper-tier",
+      "entityId": "e-dark-shaper",
+      "field": "identity:Tier",
+      "value": "IV",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 665804396,
+        "ratio": 0.721029
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-dark-shaper-type",
+      "entityId": "e-dark-shaper",
+      "field": "identity:Type",
+      "value": "Tool",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 665804396,
+        "ratio": 0.721029
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-dark-shaper-intro",
+      "entityId": "e-dark-shaper",
+      "field": "introduced",
+      "value": "Chapter 1247",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 665804396,
+        "ratio": 0.721029
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-crown-of-twilight-desc",
+      "entityId": "e-crown-of-twilight",
+      "field": "description",
+      "value": "Supreme rank. The Spell stops being generous with detail around this point.",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 685285301,
+        "ratio": 0.742126
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-crown-of-twilight-rank",
+      "entityId": "e-crown-of-twilight",
+      "field": "identity:Rank",
+      "value": "Supreme",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 685285301,
+        "ratio": 0.742126
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-crown-of-twilight-tier",
+      "entityId": "e-crown-of-twilight",
+      "field": "identity:Tier",
+      "value": "I",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 685285301,
+        "ratio": 0.742126
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-crown-of-twilight-type",
+      "entityId": "e-crown-of-twilight",
+      "field": "identity:Type",
+      "value": "Tool",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 685285301,
+        "ratio": 0.742126
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-crown-of-twilight-intro",
+      "entityId": "e-crown-of-twilight",
+      "field": "introduced",
+      "value": "Chapter 1288",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 685285301,
+        "ratio": 0.742126
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1302",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "1448/5000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 692356383,
+        "ratio": 0.749784
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-class-1471",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Terror",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 773458392,
+        "ratio": 0.837613
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1471",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "7/6000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 773458392,
+        "ratio": 0.837613
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-class-1525",
+      "entityId": "e-nephis",
+      "field": "identity:Class",
+      "value": "Titan",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 801653918,
+        "ratio": 0.868147
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-soulcores-1525",
+      "entityId": "e-nephis",
+      "field": "identity:Soul cores",
+      "value": "7/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 801653918,
+        "ratio": 0.868147
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-nephis-soulfragments-1525",
+      "entityId": "e-nephis",
+      "field": "identity:Soul fragments",
+      "value": "7000/7000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 801653918,
+        "ratio": 0.868147
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-vol-8",
+      "entityId": "e-sunny",
+      "field": "volume",
+      "value": "Volume 8 Lord of Shadows",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 832772684,
+        "ratio": 0.901847
+      },
+      "importance": "QUIET"
+    },
+    {
+      "factId": "f-e-sunny-rank-1592",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Transcendent",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 833328304,
+        "ratio": 0.902448
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-1592",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "6/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 833328304,
+        "ratio": 0.902448
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-1592",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "1591/6000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 833328304,
+        "ratio": 0.902448
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-note-1715",
+      "entityId": "e-rain",
+      "field": "power:Note",
+      "value": "Walking the Path of Ascension the slow way, without the Spell",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 874442890,
+        "ratio": 0.946973
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-rank-2037",
+      "entityId": "e-rain",
+      "field": "identity:Rank",
+      "value": "Awakened",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923380899,
+        "ratio": 0.99997
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-soulcore-2037",
+      "entityId": "e-rain",
+      "field": "identity:Soul core",
+      "value": "564/1000 237/5000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923380899,
+        "ratio": 0.99997
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-truename-2037",
+      "entityId": "e-rain",
+      "field": "identity:True name",
+      "value": "Promise of a Distant Sky",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923380899,
+        "ratio": 0.99997
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-rain-flaw-2038",
+      "entityId": "e-rain",
+      "field": "power:Flaw",
+      "value": "Crown of Thorns — you cannot kill",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923380940,
+        "ratio": 0.99997
+      },
+      "importance": "MAJOR"
+    },
+    {
+      "factId": "f-e-sunny-memories-2567",
+      "entityId": "e-sunny",
+      "field": "arsenal:Memories",
+      "value": "Silver Bell, Extraordinary Rock, Endless Spring, Weaver's Mask, Shadow Lantern, Shadow Chair, Overpriced Saddle, Weaver's Needle, Nebulous Mantle, Handy Bracelet, Quintessence Pearl, Definitely Not Me",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadows-2567",
+      "entityId": "e-sunny",
+      "field": "arsenal:Shadows",
+      "value": "Jade Saint, Soul Serpent, Nightmare, Shadow Fiend, Marvelous Mimic, Shadow Slayer",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-class-2567",
+      "entityId": "e-sunny",
+      "field": "identity:Class",
+      "value": "Titan",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-rank-2567",
+      "entityId": "e-sunny",
+      "field": "identity:Rank",
+      "value": "Supreme",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowcores-2567",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow cores",
+      "value": "7/7",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-shadowfragments-2567",
+      "entityId": "e-sunny",
+      "field": "identity:Shadow fragments",
+      "value": "7000/7000",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    },
+    {
+      "factId": "f-e-sunny-attributes-2567",
+      "entityId": "e-sunny",
+      "field": "power:Attributes",
+      "value": "Lord of Shadows, Flame of Divinity, Blood Weave, Bone Weave, Flesh Weave, Soul Weave, Mind Weave, Jade Shell, Fateless, Curse",
+      "anchor": {
+        "bookRef": "m1",
+        "globalMs": 923397510,
+        "ratio": 0.999988
+      },
+      "importance": "NOTABLE"
+    }
+  ],
+  "boards": [
+    {
+      "boardId": "b-map",
+      "kind": "MAP",
+      "presentation": "FULLSCREEN",
+      "artTone": "DARK",
+      "elements": [
+        {
+          "id": "el-pin-e-sunny",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-sunny",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-the-outskirts",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-the-outskirts",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-the-forgotten-shore",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-the-forgotten-shore",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-the-bastion",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-the-bastion",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-sanctuary",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-sanctuary",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-antarctica",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-antarctica",
+          "field": "location"
+        },
+        {
+          "id": "el-pin-e-the-tomb-of-ariel",
+          "kind": "PIN",
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0,
+          "entityRef": "e-the-tomb-of-ariel",
+          "field": "location"
+        }
+      ]
+    }
+  ]
+}

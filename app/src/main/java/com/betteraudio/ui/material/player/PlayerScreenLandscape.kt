@@ -128,6 +128,7 @@ internal fun PlayerLandscapeBody(
     onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
+    onOpenCompanion: () -> Unit,
     onOpenChapters: () -> Unit,
     onPlayPause: () -> Unit,
     onSkipForward: () -> Unit,
@@ -407,6 +408,7 @@ internal fun PlayerLandscapeBody(
                             onSkipSilenceLongPress = onSkipSilenceLongPress,
                             onAudioSettings = onAudioSettings,
                             onBookmarks = onBookmarksClick,
+                            onOpenCompanion = onOpenCompanion,
                             onSleepTap = onSleepTap,
                             onSleepLongPress = onSleepLongPress,
                             modifier = Modifier.padding(horizontal = 4.dp)

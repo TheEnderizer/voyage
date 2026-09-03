@@ -11,6 +11,7 @@ import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ChapterDao
+import com.betteraudio.data.db.dao.CompanionPackDao
 import com.betteraudio.data.db.dao.WidgetDesignDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
@@ -26,6 +27,7 @@ import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
 import com.betteraudio.data.db.entities.Bookmark
 import com.betteraudio.data.db.entities.Chapter
+import com.betteraudio.data.db.entities.CompanionPack
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.Series
@@ -87,9 +89,19 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             phone: Room has no downgrade path, so it refused to open the database at all
 //             (caught before any write — see MIGRATION_24_25, which starts from that exact
 //             on-disk schema). 25 is picked to sit safely above both branches' version numbers.
+// Version 26: the companion pack feature (docs/companion-packs.md) — companion_packs, plus
+//             playback_progress.revealedMs (the reveal cursor pack fact visibility is gated on,
+//             in book-global ms — NOT the same coordinate space as positionMs, which is
+//             file-relative) and audio_files.fileKey (stable per-file identity for pack
+//             export/import). This work was developed on a branch that had independently bumped
+//             the DB to its OWN 23 and 24 with exactly these columns, which is the collision
+//             version 25 exists to clean up. It is re-landed HERE, above 25, rather than by
+//             restoring those two migrations: 23 and 24 already mean something else on every
+//             device that has run a shipped build, and a migration's meaning cannot be changed
+//             retroactively. MIGRATION_25_26 therefore re-adds what MIGRATION_24_25 removed.
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class],
-    version = 25,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
+    version = 26,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -98,6 +110,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun audioFileDao(): AudioFileDao
     abstract fun playbackProgressDao(): PlaybackProgressDao
     abstract fun chapterDao(): ChapterDao
+    abstract fun companionPackDao(): CompanionPackDao
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun audioPresetDao(): AudioPresetDao
     abstract fun listeningHistoryDao(): ListeningHistoryDao
@@ -591,5 +604,67 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_progress_currentFileId` ON `playback_progress` (`currentFileId`)")
             }
         }
+
+        /**
+         * Re-lands the companion pack schema on top of version 25 — see the version-26 doc
+         * comment above @Database for why it is a new version rather than a restored 23/24.
+         *
+         * Every column add is guarded by [hasColumn] rather than issued blind. That is not
+         * defensiveness for its own sake: this app has three genuinely different populations of
+         * database on real devices, because two branches once both called themselves version 23.
+         * A device that ran the unmerged companion build already has `companion_packs` and may
+         * already have `revealedMs`/`fileKey` (or may have had them stripped again by
+         * MIGRATION_24_25, depending on which build it saw last), while a device that only ever
+         * ran shipped builds has none of them. An unguarded `ALTER TABLE ADD COLUMN` throws
+         * "duplicate column name" on the first of those and takes the app down on launch.
+         */
+        val MIGRATION_25_26 = object : Migration(25, 26) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 25 → 26 (companion packs)")
+
+                // Created with isOwn already present, unlike the companion branch's own
+                // 22→23 + 23→24 pair, so a fresh install gets the final shape in one step.
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `companion_packs` (
+                        `packId` TEXT PRIMARY KEY NOT NULL,
+                        `scope` TEXT NOT NULL,
+                        `targetKey` TEXT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `authorHandle` TEXT,
+                        `revision` INTEGER NOT NULL,
+                        `enabled` INTEGER NOT NULL,
+                        `lastSeenRevealMs` INTEGER NOT NULL DEFAULT 0,
+                        `isOwn` INTEGER NOT NULL DEFAULT 1
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_companion_packs_targetKey` ON `companion_packs` (`targetKey`)")
+
+                // The IF NOT EXISTS above is a no-op on a device whose companion_packs came from
+                // the old 22→23, which predates isOwn — so that column still has to be added.
+                if (!hasColumn(db, "companion_packs", "isOwn")) {
+                    db.execSQL("ALTER TABLE companion_packs ADD COLUMN isOwn INTEGER NOT NULL DEFAULT 1")
+                }
+                if (!hasColumn(db, "playback_progress", "revealedMs")) {
+                    db.execSQL("ALTER TABLE playback_progress ADD COLUMN revealedMs INTEGER NOT NULL DEFAULT 0")
+                }
+                if (!hasColumn(db, "audio_files", "fileKey")) {
+                    db.execSQL("ALTER TABLE audio_files ADD COLUMN fileKey TEXT")
+                }
+            }
+        }
+
+        /** Whether [table] already has [column], via `PRAGMA table_info` — the only way to ask,
+         *  since SQLite has no `ADD COLUMN IF NOT EXISTS`. */
+        private fun hasColumn(db: SupportSQLiteDatabase, table: String, column: String): Boolean =
+            db.query("PRAGMA table_info(`$table`)").use { cursor ->
+                val nameIndex = cursor.getColumnIndex("name")
+                if (nameIndex < 0) return false
+                while (cursor.moveToNext()) {
+                    if (cursor.getString(nameIndex) == column) return true
+                }
+                false
+            }
     }
 }

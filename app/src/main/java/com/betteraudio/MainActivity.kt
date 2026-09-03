@@ -118,6 +118,12 @@ class MainActivity : ComponentActivity() {
     // Set when the custom-widget configure activity's "Create new" asks to open the widget editor.
     private var widgetEditorNavRequest by mutableStateOf(false)
 
+    // Set when a `.voyagepack` arrives via the share sheet or an "open with" tap (docs/
+    // companion-packs.md §10.3, P4) — observed in setContent, which hosts CompanionImportDialog.
+    // Cleared back to null once that dialog's result has been shown, so re-composition doesn't
+    // re-trigger the same import.
+    private var pendingCompanionImportUri by mutableStateOf<Uri?>(null)
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
@@ -152,6 +158,8 @@ class MainActivity : ComponentActivity() {
         // Room query (no synchronous snapshot exists for it), so it's resolved inside the
         // cold-start LaunchedEffect below instead of blocking onCreate on it.
         val shortcutBookPath = intent?.getStringExtra(com.betteraudio.util.BookShortcuts.EXTRA_BOOK_PATH)
+        // Cold start via the share sheet / "open with" a .voyagepack — see extractCompanionImportUri.
+        extractCompanionImportUri(intent)?.let { pendingCompanionImportUri = it }
         // The last book that actually played — used to restore the collapsed mini bar even when the
         // player was collapsed at close (LAST_OPEN_BOOK_ID is -1 then, so it alone can't restore it).
         // Same snapshot read once and reused for both the widget cold-start branch and this.
@@ -684,14 +692,37 @@ class MainActivity : ComponentActivity() {
                         onSkip = { updateGateViewModel.skip() }
                     )
                 }
+
+                // Companion pack ingest (docs/companion-packs.md §10.3, P4) — armed by a
+                // share-sheet/"open with" intent (onCreate/onNewIntent) or the manual picker in
+                // Settings → Library; renders nothing while pendingCompanionImportUri is null.
+                com.betteraudio.ui.companion.CompanionImportDialog(
+                    pendingUri = pendingCompanionImportUri,
+                    onConsumed = { pendingCompanionImportUri = null }
+                )
                 }
             }
         }
     }
 
+    /** Extracts a `.voyagepack` file's [Uri] from an incoming share-sheet/"open with" [Intent], if
+     *  any (docs/companion-packs.md §10.3) — ACTION_SEND carries it as EXTRA_STREAM, ACTION_VIEW as
+     *  the intent's own data. */
+    @Suppress("DEPRECATION")
+    private fun extractCompanionImportUri(intent: Intent?): Uri? = when (intent?.action) {
+        Intent.ACTION_SEND -> if (Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+        Intent.ACTION_VIEW -> intent.data
+        else -> null
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        extractCompanionImportUri(intent)?.let { pendingCompanionImportUri = it }
         if (intent.getBooleanExtra(WidgetIntents.EXTRA_OPEN_PLAYER, false)) {
             // "Open player" only ever means show the player screen — never start audio the user
             // didn't explicitly ask for (a warm process with nothing loaded must not auto-play).

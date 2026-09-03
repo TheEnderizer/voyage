@@ -1,0 +1,115 @@
+{{Spoilers}}
+{{TabViews}}
+<blockquote>{{Quote|This world, Sunny. This cursed place. The Dream Realm. No, I won't be the first one to conquer the Fourth Nightmare. I will be the first one to conquer every Nightmare. I'll go through them one after another, destroying anything and anyone who stands in my way. And when I get to the heart of the Nightmare Spell, I'm going to obliterate every part of it, I'm going to rip it to shreds, I'm going to decimate and bring it to ruin.|Nephis to [[Sunny]]|Chapter 168 Outside}}</blockquote>
+{{ShadowSlave infobox
+  | title1=Nephis
+  | image1=
+<gallery>
+File:Nephis midjourney art.png|Illustration
+File:Nephis card.webp|Card Ver.
+File:Neph 7073.png|Fanart (1)
+File:Nephis byDr. Nero.jpg|Fanart (2)
+File:Nephis white glow shoulder.png|Chibi Ver.
+</gallery>
+  | caption1=
+  | name=Nephis<ref name=":24">Chapter 24 Moving Up in the World</ref>
+  | alias=
+*Lady Nephis {{c|By [[Caster]], Survivors from Forgotten}}
+*Saint Nephis<ref name=":157">Chapter 157 Wind of Change</ref>
+*Neph {{c|By [[Cassie]] and [[Sunny]]}}<ref name=":35">Chapter 35 A Shadow, a Star and an Oracle</ref><ref>Chapter 36 Bonfire</ref>
+*Princess {{c|By [[Effie]] and [[Sunny]]}}<ref name=":35" /><ref>Chapter 128 King of the Hill</ref>
+*Sister {{c|By [[Morgan]]}}<ref>Chapter 842 Lessons of the Past</ref>
+*Lady {{c|By [[Ananke]]}}<ref>Chapter 1285 Ananke</ref>
+*Little Nephie {{c|by [[Ki Song]]}}<ref>Chapter 2190 Broken Sword</ref>
+  | title=
+*Lady Changing Star of the Immortal Flame clan<ref name=":802">Chapter 802 Feast of Deceit</ref>
+*Heiress of Immortal Flame<ref name=":802" />
+*Star of Ruin<ref name=":1472">Chapter 1472 Given Promise</ref>
+*Last daughter of the Immortal Flame clan<ref name=":1472" />
+*Inheritor of the fire<ref name=":1472" />
+*Sword Sisters {{c|Together with [[Morgan]]}}<ref>Chapter 1603 He's a Rumor</ref>
+*Lady of the Ivory Tower<ref name=":2275">Chapter 2275 Shadow Boss</ref>
+*Ruler of the Human Domain<ref name=":2556">Chapter 2556 The Sovereigns</ref>
+*Guiding star of humanity<ref name=":2556" />
+*Queen of Humanity<ref>Chapter 2677 Light in the Depths</ref>
+  | vital_status=Alive
+  | cause_of_death=
+  | age=18 {{c|Debut}}<ref>Chapter 42 Essence of Combat</ref><br>
+~19 {{c|After Forgotten Shore}}<br>
+~20 {{c|Sunny & the rest in Second Nightmare}}<br>
+~21 {{c|Return to waking world}}<br>
+~26 {{c|Four years after, Chapter 1591}}<br>
+~27 {{c|Chapter 2261}}<br>
+~28 {{c|Chapter 2445}}<br>
+~29 {{c|Chapter 3001, 3003}}<br>
+~30 {{c|Chapter 3032}}<br>
+  | gender=Female
+  | race=Human
+  | hair_color=Silver
+  | eye_color=Gray
+  | skin_color=Ivory
+  | height=
+  | love_interest=[[Sunny]] {{c|<s>Acting Paramour<ref name=":1693">Chapter 1693 Convincing Lie</ref></s> → Boyfriend (Officially Dating)<ref name=":1774">Chapter 1774 Till You Make It</ref>}}
+  | relatives={{Dead}} [[Broken Sword]] {{c|Father}}<br>
+{{Hollow}} [[Smile of Heaven]] {{c|Mother}}<br>
+{{Dead}} [[Immortal Flame]] {{c|Grandfather}}<br>
+{{Dead}} [[Nephis' Grandmother|Grandmother]]<br>
+<span class="spoilerblur">[[Valor Clan]] {{c|Adopted}}<ref name=":810">Chapter 810 Secret Gift</ref></span>
+  | friends=[[Cassie]] <br/> [[Kai]] <br/> [[Effie]]
+  | allies=Nephis' Cohort <br> [[Dreamer Army]] <br> [[Fire Keepers]]<br>[[Jet]]
+  | enemies=
+{{Dead}} [[Gunlaug]] <br>
+{{Dead}} [[Caster]] <br>
+[[Legacy Clans#Sovereigns|Sovereigns]]
+  | occupation=
+*Cohort Leader<br> 
+*Dreamer Army Leader {{c|Former}}
+  | affiliation=
+*[[Immortal Flame Clan]] {{c|Revived in Chapter 2264}}
+*Nephis' Cohort 
+*[[Valor Clan]]<ref name=":810" /> {{c|Former}}
+  | novel=Chapter 19 Crossing the Bridge
+  | rank1=Sleeper (Dormant)
+  | rank3=Sovereign
+  | true_name1=Changing Star
+  | true_name3=Changing Star
+  | true_name_received1=First Nightmare<ref name=":24" />
+  | core1=<span class="spoilerblur">Soul Cores: [3/7]</span>
+  | core3=<span class="spoilerblur">Soul Cores: [7/7]</span>
+  | soul_sea3={{c|Click [[Nephis' Soul Sea|here]] to see description}}
+  | class1=<span class="spoilerblur">[[Nephis/Progression#Class: Demon|Demon]]</span>
+  | class3=<span class="spoilerblur">[[Nephis/Progression#Class: Titan|Titan]]</span>
+  | attributes1=[<nowiki/>[[Nephis#Dreamspawn|Dreamspawn]]]<br>[<nowiki/>[[Nephis#Nephilim|Nephilim]]]<br>[<nowiki/>[[Nephis#Flame of Divinity|Flame of Divinity]]]<br>[<nowiki/>[[Nephis#Fire|The Fire]]]
+  | attributes3=[<nowiki/>[[Nephis#Dreamspawn|Dreamspawn]]]<br>[<nowiki/>[[Nephis#Nephilim|Nephilim]]]<br>[<nowiki/>[[Nephis#Flame of Divinity|Flame of Divinity]]]<br>[<nowiki/>[[Nephis#Fire|The Fire]]]<br>[<nowiki/>[[Nephis#Blessing|Blessing]]]
+  | aspect1=[[Light Bringer]]
+  | aspect3=[[Light Bringer]]
+  | aspect_rank1=Divine
+  | aspect_rank3=Divine
+  | innate_ability1=[[Halfbreed]]
+  | innate_ability3=[[Halfbreed]]
+  | aspect_abilities1=[[Soul Flame]] {{c|Dormant}}
+  | aspect_abilities3=
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Dormant</u><br></span><div class="mw-collapsible-content">
+*[[Soul Flame]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Awakened</u><br></span><div class="mw-collapsible-content">
+*[[Flame Manipulation]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Ascended</u><br></span><div class="mw-collapsible-content">
+*[[Longing]]
+</div></div>
+  | aspect_legacy3=[[Memory of Light]]
+  | source_element3=Longing
+  | flaw1=[[Pristine Soul]]
+  | flaw3=[[Pristine Soul]]
+  | dream_anchor3=[[Tower of Longing]]
+  | citadel=[[Tower of Longing]]
+  | dream_gate3=[[Sun Gate]]
+  | powers=
+  | sorcery=[[Sorcery of Names]] {{c|Shaping}}
+  | abilities={{c|Refer to [[Nephis#Other Abilities|Nephis' other abilities]]}}
+}}
+
+'''Nephis''' is a descendant of the [[Legacy Clans#Immortal Flame|Immortal Flame Clan]]<ref name=":27">Chapter 27 Measure Of Power</ref>, and one of the important characters in Shadow Slave.
+
+She is the Star of Ruin, the last daughter of the Immortal Flame clan, and the inheritor of the fire.<ref name=":1472" />

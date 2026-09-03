@@ -1,0 +1,205 @@
+{{Spoilers}}
+{{TabViews}}
+<blockquote>{{Quote|You know… when I just came here, I was ready to die. After all, in this whole world — two worlds, actually — there's not a single soul who cares whether I live or die. When I'm gone, no one will be sad. No one will even remember that I existed. But then I changed my mind. Somewhere along the way, I decided to survive. I must survive, no matter what...To spite you all.|Sunny to the [[Auro|Hero]]|Chapter 13 Moment of Truth}}
+</blockquote>
+{{ShadowSlave infobox
+  | title1=Sunless
+  | image1=
+<gallery>
+File:Sunny midjourney art.png|Illustration
+File:sunless_card_final_3.png|Card Ver.
+File:Sunny byDr. Nero.jpg|Fanart
+File:Sunny_SS_Chibi.png|Chibi ver.
+File:Mask7.jpg|Masked
+</gallery>
+  | name=Sunless<ref name=":1">Chapter 1 Nightmare Begins</ref>
+  | alias=
+{{ScrollBox
+|content=
+*Sunny {{c|Nickname}}<ref name=":1" />
+*Kid<ref name=":1" />/Crazy kid<ref>Chapter 98 Uninvited Guests</ref>
+*Doofus<ref>Chapter 127 Abandon All Hope</ref>/Captain Doofus<ref>Chapter 840 Mobilization</ref> {{c|by [[Effie]]}}
+*Gremlin {{c|by [[Stev]]}}<ref name=":172">Chapter 172 Memory Market</ref>
+*[[Mongrel]] {{c|[[Dreamscape]]}}
+*Devil {{c|Nickname in Antarctica}}<ref>Chapter 825 Under Pressure</ref><ref name=":872">Chapter 872 Spreading Nightmares</ref>
+*Little Devil {{c|by Captains of Irregulars}}<ref name=":868">Chapter 868 Reputation</ref><ref name=":872" />
+*Sah-nee {{c|by Crow Crow}}<ref>Chapter 961 Sand Castles</ref><ref>Chapter 962 Reaper's Crow</ref>
+*Little Brother {{c|by [[Beastmaster]]}}<ref>Chapter 1224 Second Night</ref>
+*Lord {{c|By [[Ananke]]}}<ref>Chapter 1285 Ananke</ref>
+*Boss {{c|By [[Aiko]]<ref name=":1593">Chapter 1593 Pleasant Morning</ref>/Members of [[Shadow Clan]]<ref name=":2274">Chapter 2274 Dark Lord</ref>}}
+*[[Nobody]]<ref name=":1594">Chapter 1594 Familiar Faces</ref><ref name=":2562">Chapter 2562 Magnum Opus</ref>
+*[[Lord of Shadows]] {{c|[[Sunny's Avatar]]}}
+*[[Rain's Shadow]] {{c|[[Sunny's Avatar]]}}
+*Brother<ref>Chapter 1974 Lost Time</ref>/Big Brother<ref name=":1975">Chapter 1975 The Incredible Adventures and Astonishing Deeds of Heroic Dreamer Sunless and his Brave Disciple Rain, Abridged (Volume VIII)</ref> {{c|Rain}}
+*Shadow Boy {{c|by [[Effie]]}}<ref name=":2279">Chapter 2279 Damned if You Don't</ref>
+*Devil Detective {{c|in [[Mirage City Noir]]}}<ref>Chapter 2455 Floodgates</ref>
+}}
+  | title=
+{{ScrollBox
+|content=
+*<s>Sleeper Sunless<ref name=":17" /></s>
+*Cockroach/Noble Cockroach {{c|by himself}}<ref name=":176">Chapter 176 Coming Clean</ref><ref>Chapter 860 Stone Hive</ref>
+*<s>Awakened Sunless<ref name=":355" /></s>
+*<s>Master/Ascended Sunless<ref name=":745">Chapter 745 Freedom of Choice</ref><ref>Chapter 802 Feast of Deceit</ref></s>
+*Captain Sunless<br>{{c|[[First Irregular Company]]}}<ref name=":817">Chapter 817 Captain Sunless</ref>
+*The Devil of Antarctica<ref>Chapter 871 Wild Imaginations</ref>
+*Major Sunless<br>{{c|[[Evacuation Army]]}}<ref name=":984">Chapter 984 The Fall of Falcon Scott (2)</ref>
+*Rightful heir of death {{c|By Himself}}<ref name=":1274">Chapter 1274 Time of Truth</ref>
+*Bastard son of fate {{c|By Himself}}<ref name=":1274" />
+*Unreasonably gorgeous proprietor of the Brilliant Emporium {{c|by Effie}}<ref name=":1602">Chapter 1602 Short, Dark, and Handsome</ref>
+*Knight of Valor<ref name=":1804">Chapter 1804 Unexpected Invitation</ref>
+*Steward of the North {{c|Self-declared, Unofficial}}<ref>Chapter 2262 Foundation</ref>
+*Dark Lord<ref name=":2274" />
+*Sovereign of Death<ref>Chapter 2556 The Sovereigns</ref>
+}}
+  | vital_status=Deceased {{c|As Human}}<ref name=":2246">Chapter 2246 Children of War</ref><br>Alive {{c|As Shadow}}<ref name=":2251">Chapter 2251 Supreme Shadow</ref>
+  | death_chap=Chapter 2246 Children of War {{c|Death Chapter as Human}}
+  | cause_of_death=Sunny turned [[Soul Serpent]] into a ghostly stiletto and stab his own heart before he crumbled into ash by the annihilating white sky of Godgrave.<ref name=":2246" />
+  | age=16 {{c|Debut}}<br>
+17 {{c|Chapter 29}}<br>
+18 {{c|Chapter 309}}<br>
+19 {{c|Chapter 599}}<br>
+20 {{c|Chapter 751}}<br>
+21 {{c|Chapter 1267}}<br>
+22 {{c|Chapter 1758, Flashback}}<br>
+24 {{c|Chapter 1764, Flashback}}<br>
+26 {{c|Chapter 1592, 1975, 2249, refer to [[Third Nightmare (Event)|Third Nightmare]] and [[Sunny#Trivia|trivia]]}}<br>
+~27 {{c|Chapter 2261, a little over a year after the [[Throne War]]}}<br>
+28 {{c|Chapter 2445}}<br>
+29 {{c|Chapter 3001, 3003}}<br>
+30 {{c|Chapter 3032}}<br>
+  | birth=Day of Winter Solstice<ref name="bday">Chapter 29 The Last Day on Earth</ref>
+  | gender=Male
+  | race=
+<span class="mw-collapsible mw-collapsed" data-expandtext="Reveal" data-collapsetext="Hide">
+*Human {{c|Former}}
+*Shadowspawn {{c|[[Second Nightmare (Event)|Second Nightmare]]}}
+*Shadow {{c|Chapter 2251, Current}}
+</span>
+  | hair_color=Black
+  | eye_color=
+  | skin_color=
+  | height=<nowiki>5'5'' - 5'6''</nowiki> {{Tooltip|[[File:Info-icon-white.png|11px]]|file=Characters height comparison.jpg}}
+  | love_interest=[[Nephis]] {{c|[[Sunphis|Love Interest]]<ref name=":1432">Chapter 1432 Admission</ref> → Girlfriend (Officially Dating)<ref name=":1774">Chapter 1774 Till You Make It</ref>}}
+  | relatives=
+{{Dead}} Unnamed Father<br>
+{{Dead}} Unnamed Mother<br>
+[[Rain]] {{c|Younger Sister}}
+  | friends=[[Cassie]] <br> [[Kai]] <br> [[Effie]] <br> [[Jet]]
+  | allies=[[:Category:Nephis' Cohort|Nephis' Cohort]] {{c|Former}} <br>[[Dreamer Army]] {{c|Former}} <br> [[Fire Keepers]] {{c|Former}}
+  | enemies={{Dead}} [[Caster]]<br> {{Dead}} [[Harus]] <br> {{Dead}} [[Gunlaug]] <br> [[Sovereigns]]
+  | occupation=
+{{ScrollBox
+|content=
+*Contracted Researcher<ref name=":383">Chapter 383 Cowardly Researcher</ref> {{c|Former}}
+*Research Assistant - Wilderness Survival faculty<ref name=":403">Chapter 403 Sky Tide</ref> {{c|Former}}
+*Entrepreneur - [[Brilliant Emporium]]<ref name=":398">Chapter 398 Master of his Trade</ref>; [[Sunny's Brilliant Emporium: Café & Memory Boutique]]<ref>Chapter 1591 Years later</ref> {{c|Current}}
+*Advanced Scout - Sanctuary of Noctis<ref name=":398" /> {{c|Former}}
+*Lecturer - [[Awakened Academy|Awakened Academy]]<ref name=":751">Chapter 751 Master Sunless</ref> {{c|Former}}
+*Government Agent<ref name=":817" /> {{c|Former}}
+*[[Evacuation Army]] Officer<ref name=":984" /> {{c|Former}}
+*Official Memory Purveyor of the Fire Keepers<ref name=":1693">Chapter 1693 Convincing Lie</ref><ref name=":1706">Chapter 1706 Memory Purveyor</ref> {{c|Former}}
+*Knight Commander of the [[Ardent Wardens]]<ref>Chapter 1805 Sir Mongrel</ref> {{c|Former}}
+}}
+  | affiliation=
+{{ScrollBox
+|content=
+*Nephis' Cohort {{c|Former}}
+*Awakened Academy<ref name=":403" /> {{c|Former}}
+*Independent Awakened<ref name=":378">Chapter 378 A New Beginning</ref> 
+*Sanctuary of Noctis<ref name=":381">Chapter 381 Roan of White Feather</ref> {{c|Former [[Citadel]]}}
+*[[First Irregular Company]]<ref name=":817" /> {{c|Former}}
+*[[Special Reconnaissance Unit]]<ref name=":1077">Chapter 1077 Midnight Sun</ref> {{c|Former}}
+*Saint [[Cor]]'s retinue {{c|Offcial}}/Great Clan Envoy {{c|Unoffcial, Valor}}<ref>Chapter 1097 Special Envoys</ref><ref name=":1100">Chapter 1100 Accumulation</ref> {{c|Former}}
+*[[Fire Keepers]]<ref name=":1693" /> {{c|Former}}
+*[[Shadow Clan]] {{c|Current}}
+}}
+  | teacher=[[Julius]]
+  | rank1=Sleeper (Dormant) 
+  | rank3=Sovereign
+  | soul_sea1={{c|Click [[Sunny's Soul Sea|here]] to see description}}
+  | core1=<span class="spoilerblur">[[Shadow Core]]</span>
+  | core3=[[Shadow Core|Shadow Cores]]: [7/7]
+  | soul_sea3={{c|Click [[Sunny's Soul Sea|here]] to see description}}
+  | attributes1=[<nowiki/>[[Fated]]]<br>[<nowiki/>[[Mark of Divinity]]]<br>[<nowiki/>[[Child of Shadows]]]
+  | attributes3=[<nowiki/>[[Lord of Shadows]]]<br>[<nowiki/>[[Flame of Divinity]]]<br>[<nowiki/>[[Blood Weave]]]<br>[<nowiki/>[[Bone Weave]]]<br>[<nowiki/>[[Soul Weave]]]<br>[<nowiki/>[[Flesh Weave]]]<br>[<nowiki/>[[Mind Weave]]]<br>[<nowiki/>[[Spirit Weave]]]<br>[<nowiki/>[[Jade Shell]]]<br>[<nowiki/>[[Fateless]]]
+  | shadows3=
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>1st core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Gloomy Shadow|Gloomy shadow]]<ref name=":18">Chapter 18 Absence of Light</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>2nd core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Happy Shadow|Happy shadow]]<ref name=":351">Chapter 351 Once Again</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>3rd core</u><br></span><div class="mw-collapsible-content">
+<span><s>[[Sunny's shadows (Shadow Helpers)#Creepy Shadow|Creepy shadow]]<ref>Chapter 527 The New Guy</ref></s> {{c|Destroyed in Chapter 3110 and mentioned in 3111}}</span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>4th core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Haughty Shadow|Haughty shadow]]<ref name=":702">Chapter 702 Devil</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>5th core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Naughty Shadow|Naughty shadow]]<ref>Chapter 1091 Fifth Shadow</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>6th core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Crazy Shadow|Crazy shadow]]<ref name=":1471">Chapter 1471 Terror</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>7th core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Lazy Shadow|Lazy shadow]]<ref name=":2120">Chapter 2120 Godslayer</ref></span>
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Reformed Titan Core</u><br></span><div class="mw-collapsible-content">
+<span>[[Sunny's shadows (Shadow Helpers)#Eerie Shadow|Eerie shadow]]<ref name=":3115">Chapter 3115 Dark and Sinister</ref></span>
+</div></div>
+  | aspect1=[[Shadow Slave (Aspect)|Shadow Slave]]
+  | aspect3=[[Shadow Slave (Aspect)|Shadow Slave]]
+  | aspect_rank1=Divine 
+  | aspect_rank3=Divine
+  | innate_ability1=[[Shadow Bond]]
+  | innate_ability3=[[Shadow Bond]]
+  | aspect_abilities1=[[Shadow Control]] {{c|Dormant}}
+  | aspect_abilities3=
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Dormant</u><br></span><div class="mw-collapsible-content">
+*[[Shadow Control]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Awakened</u><br></span><div class="mw-collapsible-content">
+*[[Shadow Step]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Ascended</u><br></span><div class="mw-collapsible-content">
+*[[Shadow Manifestation]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Transcendent</u><br></span><div class="mw-collapsible-content">
+*[[Shadow Incarnation (Transformation Ability)|Shadow Incarnation]]
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span><u>Supreme</u><br></span><div class="mw-collapsible-content">
+*[[Shadow Legion]] {{c|[[Domain]]}}
+</div></div>
+  | aspect_legacy3=[[Shadow Dance]]
+  | source_element3=Shadows
+  | flaw1=[[Clear Conscience]]
+  | flaw3=[[Clear Conscience]]
+  | true_name1=Lost from Light
+  | true_name3=Lost from Light
+  | true_name_received1=First Nightmare<ref name=":15">Chapter 15 Shadow Slave</ref>  
+  | true_name_lost3=Lost in [[Third Nightmare (Event)|Third Nightmare]]<ref name=":1589">Chapter 1589 Untethered</ref><br>Regained after slaying [[Vile Thieving Bird]]<ref name=":2977">Chapter 2977 Familiar</ref>
+  | class3=[[Sunny/Progression#Class: Titan|Titan]]
+  | master3=
+  | gateway= 
+  | gateway3=<s>[[Sanctuary of Noctis]]</s><br>{{c|As [[Awakened (Human Rank)|Awakened]]<ref name=":381" />}}
+  | dream_anchor3=<s>[[Ivory Tower#Citadel|Tower of Longing]]</s><br>{{c|As [[Ascended]]<ref name=":752">Chapter 752 Solid Foundation</ref>}}
+  | citadel3=
+*[[Nameless Temple]]<br>{{c|As [[Transcendent]]<ref>Chapter 1592 Humble Shopkeeper</ref>/[[Supreme]]<ref name=":2247">Chapter 2247 Throne of Shadows</ref>}}
+* <s>[[Millipede Queens' Stronghold]] in [[Burned Forest]]<ref>Chapter 2580 Inevitable Defeat</ref>{{c|Second Citadel as Supreme Rank after conquering their final nest; Lost in Chapter 2977}}</s><ref name=":2977" />
+  | dream_gate3=[[Shadow Gate]]
+  | tether3=<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span>Former<br></span><div class="mw-collapsible-content">
+* Dojo below his home in [[NQSC]] {{c|Chapter 761}}
+* Naeve's ship {{c|Chapter 1055}}
+* Room inside the siege capital in East Antarctica {{c|Chapter 1067}}
+</div></div>
+<div class="mw-collapsible mw-collapsed" data-expandtext="&nbsp;+&nbsp;" data-collapsetext="&nbsp;-&nbsp;"><span>Current<br></span><div class="mw-collapsible-content">
+* Empty street on the outskirts of [[NQSC]] {{c|Chapter 1686}}
+* Far away from the heartland of [[Shadow Realm]] {{c|Chapter 2136}}
+</div></div>
+  | sorcery=[[Weaving]]
+  | abilities={{c|Refer to [[Sunny#Other Abilities|Sunny's other abilities]]}}
+  | novel=Chapter 1 Nightmare Begins {{c|Debut}}<br>Chapter 2 Slave Caravan {{c|Temple Slave}}<br>Chapter 601 Kingdom of Hope {{c|[[Shadowspawn]]}}
+}}
+
+'''Sunless''' <small>''(or Sunny)''</small>, is the main character of [[Shadow Slave (Novel)|Shadow Slave]]. Growing up in the outskirts and leading a life of deceit and focusing on his own survival, he initially has a bleak outlook on life, even resigning himself to his fate when he was infected by the Nightmare Spell. But then, inside his First Nightmare, he resolved to himself that he must survive, no matter what.<ref name=":1" /><ref name=":13">Chapter 13 Moment of Truth</ref>

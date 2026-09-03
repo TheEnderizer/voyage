@@ -100,6 +100,30 @@ class AudioFileScanner @Inject constructor(
         count
     }
 
+    /**
+     * Registers one already-placed folder as exactly one book, without a full library rescan —
+     * the companion-pack FULL-import path (docs/companion-packs.md §10.3 step 4, P7). Reuses the
+     * same [importFolderAsBook] a normal scan uses for a single book, so a book placed this way is
+     * indistinguishable from one a rescan would have found (embedded tags still win for anything
+     * [forcedAuthor] doesn't pin down). [forcedAuthor]/[seriesName]/[seriesOrder] come from the
+     * pack's own manifest metadata — the *recipient's* [com.betteraudio.data.files.LibraryPaths]
+     * placement decides the folder, but the manifest still knows who wrote it and what series it
+     * belongs to (§10.2).
+     */
+    suspend fun importSingleFolder(
+        dir: File,
+        forcedAuthor: String? = null,
+        seriesName: String? = null,
+        seriesOrder: Float? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        val imported = importFolderAsBook(dir, forcedAuthor, seriesName, seriesOrder, DirCache())
+        if (imported > 0) {
+            runCatching { reconcileLibraryFromDisk() }
+                .onFailure { AppLog.e(LogCat.SCAN, "importSingleFolder: library.json reconcile failed for ${dir.absolutePath}", it) }
+        }
+        imported > 0
+    }
+
     // ── Structured import: root/author/[series/]book/files ─────────────────────
     private suspend fun scanAuthorSeriesBook(root: File, cache: DirCache): Int {
         var count = 0

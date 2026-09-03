@@ -64,6 +64,10 @@ class SettingsStore @Inject constructor(
         val SKIPPED_UPDATE_VERSION       = stringPreferencesKey("skipped_update_version")
         // Home library grouping view: BOOKS (default) | SERIES | AUTHORS.
         val HOME_VIEW_MODE               = stringPreferencesKey("home_view_mode")
+        // Companion packs (docs/companion-packs.md §8.1) — "notify me about" → MAJOR (major only,
+        // the quietest) | NOTABLE (notable+major) | NEVER. Global, not per-pack: the author's
+        // sense of "major" won't match every listener's.
+        val COMPANION_NOTIFY_THRESHOLD   = stringPreferencesKey("companion_notify_threshold")
         // In the player, for a book that belongs to a series: show the series cover (true) instead
         // of the book's own cover (false, default).
         val PLAYER_SHOW_SERIES_COVER     = booleanPreferencesKey("player_show_series_cover")
@@ -273,6 +277,9 @@ class SettingsStore @Inject constructor(
     val playerShowSeriesCover: Flow<Boolean>  = prefsData.map { it[Keys.PLAYER_SHOW_SERIES_COVER] ?: false }.distinctUntilChanged()
     val playerLandscapeStyle: Flow<String>    = prefsData.map { it[Keys.PLAYER_LANDSCAPE_STYLE] ?: "RAILS" }.distinctUntilChanged()
     val homeViewMode: Flow<String>            = prefsData.map { it[Keys.HOME_VIEW_MODE] ?: "BOOKS" }.distinctUntilChanged()
+    /** "MAJOR" | "NOTABLE" | "NEVER" — see [Keys.COMPANION_NOTIFY_THRESHOLD]. Defaults to NOTABLE
+     *  (notable+major badge, matching the middle ground the companion-packs plan describes). */
+    val companionNotifyThreshold: Flow<String> = prefsData.map { it[Keys.COMPANION_NOTIFY_THRESHOLD] ?: "NOTABLE" }.distinctUntilChanged()
     val appTheme: Flow<String>                = prefsData.map { it[Keys.APP_THEME] ?: "" }.distinctUntilChanged()
     val themeColorSource: Flow<String>        = prefsData.map { it[Keys.THEME_COLOR_SOURCE] ?: "WALLPAPER" }.distinctUntilChanged()
     val widgetDefaultCoverPath: Flow<String>  = prefsData.map { it[Keys.WIDGET_DEFAULT_COVER_PATH] ?: "" }.distinctUntilChanged()
@@ -627,6 +634,9 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setHomeViewMode(mode: String) {
         context.dataStore.edit { it[Keys.HOME_VIEW_MODE] = mode }
+    }
+    suspend fun setCompanionNotifyThreshold(threshold: String) {
+        context.dataStore.edit { it[Keys.COMPANION_NOTIFY_THRESHOLD] = threshold }
     }
     suspend fun setPlayerShowSeriesCover(enabled: Boolean) {
         context.dataStore.edit { it[Keys.PLAYER_SHOW_SERIES_COVER] = enabled }

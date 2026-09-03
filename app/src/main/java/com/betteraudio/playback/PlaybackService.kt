@@ -98,6 +98,14 @@ class PlaybackService : MediaSessionService() {
     // serviceScope (Main dispatcher) so ExoPlayer's currentPosition is safe to read.
     private var positionSaverJob: Job? = null
 
+    // Companion packs' reveal cursor (docs/companion-packs.md §6) — lives here, not
+    // PlayerController, specifically so it survives the Activity dying (see RevealCursor's own
+    // doc). Every access — from handleJumpDetection's Player.Listener callback AND from
+    // advanceRevealCursorTick below — happens on serviceScope's Main dispatcher, by construction;
+    // RevealCursor's internal state is a plain (non-thread-safe) HashMap on the strength of that,
+    // not a defensive lock.
+    private val revealCursor = RevealCursor()
+
     // Silence-skipping audio processor — lives in the decode→sink chain (separate from the
     // session-id audio effects above). Toggled per book; its tuning follows the settings live.
     private var silenceProcessor: LiveSilenceSkippingProcessor? = null
@@ -603,6 +611,28 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    /**
+     * Companion-pack reveal cursor tick (docs/companion-packs.md §6.2 rule 1) — the counterpart to
+     * [saveCurrentPosition] for `revealedMs`, run right after it from the same 30s loop so both
+     * reads of `player.currentPosition` happen back-to-back on the one thread it's safe on.
+     * Deliberately a suspend fun called directly from serviceScope's own coroutine (NOT
+     * `appScope.launch(Dispatchers.IO)` the way [saveCurrentPosition] dispatches its write) — every
+     * call into [revealCursor] must stay on Main, the same thread [handleJumpDetection] calls it
+     * from, since [RevealCursor]'s internal map has no locking of its own (see its class doc).
+     * `repository.getRevealedMs`/`updateRevealedMs` still do their own real work off Main (Room's
+     * own dispatch), this coroutine just resumes here afterward, same as any other suspend call.
+     */
+    private suspend fun advanceRevealCursorTick() {
+        val player = exoPlayer ?: return
+        val item = player.currentMediaItem ?: return
+        val bookId = item.mediaMetadata.extras?.getLong("bookId", -1L) ?: -1L
+        if (bookId == -1L) return
+        val currentBookPosMs = bookPositionMsFor(player.currentMediaItemIndex, player.currentPosition)
+        val currentRevealedMs = repository.getRevealedMs(bookId)
+        val newRevealedMs = revealCursor.onTick(bookId, currentBookPosMs, currentRevealedMs) ?: return
+        repository.updateRevealedMs(bookId, newRevealedMs)
+    }
+
     /** Like [saveCurrentPosition], but also flushes the disk mirror once the DB write lands —
      *  used at the cadence's actual flush points (pause, book-close), not the 30s continuous-
      *  playback tick, which deliberately only marks the book dirty (see startPositionSaver). The
@@ -644,6 +674,7 @@ class PlaybackService : MediaSessionService() {
                 // itself cheap; this is about not causing it as often in the first place).
                 delay(30_000)
                 saveCurrentPosition()
+                advanceRevealCursorTick()
             }
         }
     }
@@ -872,6 +903,9 @@ class PlaybackService : MediaSessionService() {
 
         if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT) {
             jumpRestoreStore.clear(bookId)
+            // Any size, no threshold — see RevealCursor.onSeek's own doc for why this call
+            // deliberately needs no position value.
+            revealCursor.onSeek(bookId)
             return
         }
         if (reason != Player.DISCONTINUITY_REASON_INTERNAL) return
@@ -884,6 +918,12 @@ class PlaybackService : MediaSessionService() {
 
         val oldBookPosMs = bookPositionMsFor(oldPosition.mediaItemIndex, oldPosition.positionMs)
         val newBookPosMs = bookPositionMsFor(newPosition.mediaItemIndex, newPosition.positionMs)
+        // Same classification the jump-restore logic below uses, reused (not reclassified) so an
+        // INTERNAL jump the reveal cursor treats as a real jump is always the same one this method
+        // was already about to log/offer-restore-for. Note skip-silence never reaches this line at
+        // all — DISCONTINUITY_REASON_SILENCE_SKIP is its own reason, already filtered out by the
+        // `reason != INTERNAL` guard above, so it can never block the reveal cursor either.
+        revealCursor.onInternalDiscontinuity(bookId, oldBookPosMs, newBookPosMs)
         if (JumpClassifier.classify(reason, oldBookPosMs, newBookPosMs) == JumpDecision.FLAG) {
             AppLog.i(
                 LogCat.PLAYBACK,

@@ -567,6 +567,7 @@ private fun CollectionCoverSearchSheetHost(viewModel: HomeViewModel) {
 private fun rememberHomeHero(viewModel: HomeViewModel, onOpenBook: (Long) -> Unit): HomeHeroData? {
     val resume by viewModel.heroBook.collectAsStateWithLifecycle()
     val playback by viewModel.playbackState.collectAsStateWithLifecycle()
+    val chapter by viewModel.heroChapter.collectAsStateWithLifecycle()
     val bwp = resume ?: return null
     val book = bwp.book
     val isLive = playback.bookId == book.id
@@ -579,6 +580,7 @@ private fun rememberHomeHero(viewModel: HomeViewModel, onOpenBook: (Long) -> Uni
         eyebrow = book.seriesName?.takeIf { it.isNotBlank() }?.let { series ->
             book.seriesOrder?.let { "$series · Book ${it.toInt()}" } ?: series
         } ?: book.displayAuthor.takeIf { it.isNotBlank() },
+        chapterLabel = chapter,
         coverPath = book.coverArtPath,
         progressFraction = fraction,
         remainingLabel = remainingMs.takeIf { it > 0L && book.totalDurationMs > 0L }

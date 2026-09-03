@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "packId": "5f2b7c10-9a4d-4c8e-b3a1-7d6e0f13c245",
+  "scope": "BOOK",
+  "payload": "DATA_ONLY",
+  "title": "Shadow Slave - Companion",
+  "exportedAtMs": 1756400000000,
+  "members": [
+    {
+      "bookRef": "m1",
+      "title": "Shadow Slave",
+      "author": "guiltythree",
+      "durationMs": 923408236,
+      "fileCount": 8,
+      "fileKeys": [
+        "beba1abb32c6cb794580a53beceeb2274bf37749",
+        "b9b53e4490a279a772d2e81e07a4e240bc20b2b1",
+        "228d5f24346d119f7f5682c97d2e119b0a4ba824",
+        "16ae920d5b8dc0bc4cda9261da638b79ef412478",
+        "240218e058b8a46f8868845a7735c863602c016f",
+        "ef1447e88b3be8d377ce06bf944ac3aa79c51100",
+        "1780fcdda746843b6ee8c81cd5661f3680e8ca7a",
+        "76d7f1633edc31de345e16981bd12bfb43da65a1"
+      ]
+    }
+  ],
+  "mediaFiles": [],
+  "audioFiles": []
+}

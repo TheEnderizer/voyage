@@ -1,0 +1,877 @@
+<title>Companion Deck</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+
+<style>
+:root{
+  --void:#0A0C12; --slab:#12161F; --slab-2:#191E2B; --slab-3:#232A3A;
+  --edge:rgba(233,230,242,.10); --edge-2:rgba(233,230,242,.20);
+  --paper:#ECEAF2; --paper-2:#B4B8CB; --dim:#7E8399;
+  --brass:#C9A227; --brass-soft:rgba(201,162,39,.13);
+  --verdigris:#5FB49C; --verdigris-soft:rgba(95,180,156,.13);
+  --sealed:#394054;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+  --serif:"Instrument Serif",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--void); color:var(--paper);
+  font-family:var(--sans); font-size:16px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1140px; margin:0 auto; padding:0 28px}
+a{color:var(--brass)}
+
+h1,h2,h3,h4{margin:0; text-wrap:balance}
+h1{font-family:var(--serif); font-weight:400; font-size:clamp(46px,7.4vw,88px); line-height:1.01; letter-spacing:-.015em}
+h2{font-family:var(--serif); font-weight:400; font-size:clamp(30px,4vw,46px); line-height:1.08}
+h3{font-size:15px; font-weight:600}
+h4{font-size:13.5px; font-weight:600; color:var(--paper-2)}
+.eyebrow{font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--brass); margin:0}
+.eyebrow.quiet{color:var(--dim)}
+.eyebrow.lit{color:var(--verdigris)}
+.stand{font-size:19px; line-height:1.55; color:var(--paper-2); max-width:62ch; margin:0}
+p{margin:0; max-width:66ch}
+small,.small{font-size:13.5px; color:var(--dim); line-height:1.55; display:block; max-width:64ch}
+code{font-family:var(--mono); font-size:.85em; color:var(--brass); background:var(--brass-soft);
+  padding:1px 5px; border-radius:4px; border:1px solid rgba(201,162,39,.18); white-space:nowrap}
+
+header.hero{padding:92px 0 52px; border-bottom:1px solid var(--edge)}
+.hero .stack{display:flex; flex-direction:column; gap:22px}
+.metastrip{display:flex; flex-wrap:wrap; gap:6px 34px; padding-top:16px; font-family:var(--mono);
+  font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim)}
+.metastrip b{color:var(--paper-2); font-weight:500}
+section{padding:74px 0; border-bottom:1px solid var(--edge)}
+.sec-head{display:flex; flex-direction:column; gap:14px; margin-bottom:40px; max-width:72ch}
+
+/* the reveal line: sections sit on a book's timeline, because that is what orders the feature */
+.tl{display:flex; align-items:center; gap:14px; margin-bottom:16px}
+.tl .dot{width:9px;height:9px;border-radius:99px;background:var(--brass);flex:0 0 auto;
+  box-shadow:0 0 0 4px var(--brass-soft)}
+.tl .bar{height:1px;background:linear-gradient(90deg,var(--brass),rgba(201,162,39,0));flex:1}
+.tl .n{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--dim)}
+
+.cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(268px,1fr)); gap:26px}
+.card{background:var(--slab); border:1px solid var(--edge); border-radius:14px; padding:20px 22px;
+  display:flex; flex-direction:column; gap:9px}
+.card .k{font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim)}
+.card.bad .k{color:var(--brass)}
+.card.good .k{color:var(--verdigris)}
+.card p{font-size:14.5px; line-height:1.55; color:var(--paper-2)}
+
+table{border-collapse:collapse; width:100%; font-size:14px}
+.tblwrap{overflow-x:auto; border:1px solid var(--edge); border-radius:12px; background:var(--slab)}
+th,td{text-align:left; padding:11px 16px; border-bottom:1px solid var(--edge); vertical-align:top}
+th{font-family:var(--mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--dim); font-weight:400}
+tr:last-child td{border-bottom:0}
+td b{font-weight:600}
+td.mono,th.mono{font-family:var(--mono); font-size:12.5px; color:var(--paper-2); white-space:nowrap}
+
+/* device furniture */
+.rail{display:flex; flex-wrap:wrap; gap:34px; align-items:flex-start}
+.dev{display:flex; flex-direction:column; gap:13px; width:300px; flex:0 0 auto}
+.devcap{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
+.tag{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase;
+  padding:3px 8px; border-radius:999px; border:1px solid var(--edge-2); color:var(--paper-2)}
+.tag.imm{border-color:rgba(95,180,156,.4); color:var(--verdigris)}
+.tag.mat{border-color:rgba(201,162,39,.4); color:var(--brass)}
+.frame{border-radius:38px; padding:9px; background:#04060A; border:1px solid var(--edge-2);
+  box-shadow:0 30px 60px -28px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.05)}
+.screen{position:relative; width:282px; height:600px; border-radius:29px; overflow:hidden;
+  font-family:var(--sans)}
+
+/* Immersive skin: blurred cover under a top-light / bottom-heavy veil (ImmersiveStyle.backdropVeil) */
+.sk-imm .bg{position:absolute; inset:-30%; filter:blur(38px) saturate(1.25);
+  background:
+    radial-gradient(46% 40% at 26% 22%, #D8622F 0%, rgba(216,98,47,0) 68%),
+    radial-gradient(50% 44% at 76% 34%, #2F5FA8 0%, rgba(47,95,168,0) 70%),
+    radial-gradient(60% 50% at 50% 88%, #10131C 0%, rgba(16,19,28,0) 72%),
+    #171A24;}
+.sk-imm .veil{position:absolute; inset:0;
+  background:linear-gradient(180deg, rgba(14,17,25,.30) 0%, rgba(14,17,25,.52) 46%, rgba(10,12,18,.86) 100%)}
+.sk-imm .glass{background:rgba(24,28,40,.50); border:1px solid rgba(255,255,255,.10);
+  backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px)}
+.sk-imm{--ink:#F2EDE6; --ink2:rgba(242,237,230,.62); --acc:#F0A55C; --r:16px; --rchip:999px}
+
+/* Material You skin: opaque tonal M3, wallpaper-derived */
+.sk-mat .bg{position:absolute; inset:0; background:#141218}
+.sk-mat .veil{display:none}
+.sk-mat .glass{background:#211F26; border:1px solid transparent}
+.sk-mat{--ink:#E6E0E9; --ink2:#CAC4D0; --acc:#D0BCFF; --r:12px; --rchip:8px}
+
+.lay{position:absolute; inset:0; display:flex; flex-direction:column}
+
+/* screen chrome */
+.s-head{display:flex; align-items:center; gap:8px; padding:16px 12px 0 16px; flex:0 0 auto}
+.s-head .ttl{font-size:12px; font-weight:600; color:var(--ink); letter-spacing:.01em;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.s-head .sub{font-size:9px; color:var(--ink2); font-family:var(--mono); letter-spacing:.06em}
+.ico{width:26px;height:26px;border-radius:99px;display:grid;place-items:center;flex:0 0 auto}
+.sk-imm .ico{background:rgba(255,255,255,.09)}
+.sk-mat .ico{background:transparent}
+.ico svg{width:14px;height:14px;display:block;fill:var(--ink)}
+
+/* the spine: one navigation control */
+.spine{margin:12px 14px 0; flex:0 0 auto; display:flex; padding:3px; gap:2px}
+.sk-imm .spine{background:rgba(18,21,31,.55); border:1px solid rgba(255,255,255,.10); border-radius:999px;
+  backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px)}
+.sk-mat .spine{background:transparent; border-bottom:1px solid #322F37; border-radius:0; padding:0; margin:12px 8px 0; gap:0}
+.spine b{flex:1; text-align:center; font-size:10.5px; font-weight:500; padding:6px 0; color:var(--ink2);
+  letter-spacing:.02em; position:relative}
+.sk-imm .spine b{border-radius:999px}
+.sk-imm .spine b.on{background:var(--acc); color:#160F07; font-weight:600}
+.sk-mat .spine b{padding:9px 0 11px}
+.sk-mat .spine b.on{color:var(--acc); font-weight:600}
+.sk-mat .spine b.on:after{content:""; position:absolute; left:22%; right:22%; bottom:0; height:3px;
+  background:var(--acc); border-radius:3px 3px 0 0}
+
+.pane{flex:1; overflow:hidden; padding:12px 14px 0; display:flex; flex-direction:column; gap:11px}
+.lbl{font-family:var(--mono); font-size:8.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink2)}
+.lbl.acc{color:var(--acc)}
+
+.digest{display:flex; align-items:center; gap:9px; padding:9px 11px; border-radius:var(--r)}
+.digest .d{width:7px;height:7px;border-radius:99px;background:var(--acc);flex:0 0 auto}
+.digest .t{font-size:10.5px; color:var(--ink); font-weight:500}
+.digest .go{font-size:10px; color:var(--acc); font-weight:600; margin-left:auto}
+
+/* cast grid */
+.grid{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px 10px}
+.cast{display:flex; flex-direction:column; align-items:center; gap:6px; position:relative}
+.pt{position:relative; width:100%; aspect-ratio:1; overflow:hidden}
+.sk-imm .pt{border-radius:99px; box-shadow:0 0 0 1.5px var(--ptring)}
+.sk-mat .pt{border-radius:14px}
+.pt svg{width:100%;height:100%;display:block}
+.cast .nm{font-size:10px; color:var(--ink); font-weight:600; text-align:center; line-height:1.15;
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.cast .rl{font-size:8.5px; color:var(--ink2); text-align:center; line-height:1.1;
+  max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.newdot{position:absolute; top:2px; right:6px; width:9px; height:9px; border-radius:99px; z-index:2;
+  background:var(--acc); border:2px solid rgba(10,12,18,.8)}
+
+/* character detail */
+.chead{display:flex; gap:12px; align-items:center}
+.chead .pt{width:66px; height:66px; flex:0 0 auto}
+.chead .nm{font-size:19px; font-weight:600; color:var(--ink); line-height:1.15}
+.chead .rl{font-size:11px; color:var(--acc); font-weight:500}
+.stats{display:flex; gap:6px; flex-wrap:wrap}
+.stat{padding:4px 8px; border-radius:var(--rchip); display:flex; gap:5px; align-items:baseline}
+.sk-imm .stat{background:rgba(255,255,255,.09)}
+.sk-mat .stat{background:#2B2930}
+.stat i{font-style:normal; font-family:var(--mono); font-size:7.5px; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--ink2)}
+.stat b{font-size:10.5px; color:var(--ink); font-weight:600}
+.body{font-size:10.5px; line-height:1.5; color:var(--ink2)}
+.rowv{display:flex; flex-direction:column; gap:3px}
+.rowv .k{font-size:8.5px; color:var(--ink2)}
+.chips{display:flex; gap:5px; flex-wrap:wrap}
+.chip{font-size:9px; padding:3px 7px; border-radius:var(--rchip); color:var(--ink)}
+.sk-imm .chip{background:rgba(255,255,255,.11)}
+.sk-mat .chip{background:#332F3B}
+.bond{display:flex; gap:9px; align-items:center; padding:4px 0}
+.bond .pt{width:30px;height:30px;flex:0 0 auto}
+.bond .bn{font-size:10.5px;font-weight:600;color:var(--ink)}
+.bond .bv{font-size:9px;color:var(--ink2);line-height:1.25}
+.anchor{margin-left:auto; font-family:var(--mono); font-size:8px; color:var(--ink2); letter-spacing:.04em}
+
+/* map pane */
+.map{position:relative; flex:1; border-radius:var(--r); overflow:hidden; min-height:0}
+.map .land{position:absolute; inset:0;
+  background:
+    radial-gradient(38% 30% at 30% 32%, rgba(201,162,39,.20), rgba(201,162,39,0) 70%),
+    radial-gradient(40% 34% at 68% 62%, rgba(95,180,156,.16), rgba(95,180,156,0) 72%),
+    repeating-linear-gradient(58deg, rgba(255,255,255,.03) 0 1px, rgba(255,255,255,0) 1px 9px),
+    #0E1119}
+.pin{position:absolute; transform:translate(-50%,-100%); display:flex; flex-direction:column;
+  align-items:center; gap:3px}
+.pin .pt{width:26px;height:26px}
+.pin .pl{font-size:8px;color:var(--ink);background:rgba(8,10,15,.75);padding:1px 5px;border-radius:99px;
+  white-space:nowrap}
+.sealedzone{position:absolute; right:0; top:0; bottom:0; width:34%;
+  background:linear-gradient(90deg, rgba(10,12,18,0), rgba(10,12,18,.92) 55%);
+  display:flex; align-items:flex-end; justify-content:center; padding-bottom:14px}
+.sealedzone span{font-family:var(--mono);font-size:7.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--sealed)}
+
+/* timeline pane */
+.tline{display:flex; flex-direction:column}
+.tev{display:flex; gap:10px; padding:7px 0}
+.tev .spine2{width:9px; flex:0 0 auto; display:flex; flex-direction:column; align-items:center}
+.tev .knot{width:7px;height:7px;border-radius:99px;background:var(--acc);margin-top:4px;flex:0 0 auto}
+.tev.past .knot{background:var(--ink2)}
+.tev .line{flex:1;width:1px;background:rgba(255,255,255,.14)}
+.tev .tx{display:flex;flex-direction:column;gap:1px;flex:1}
+.tev .th{font-size:10.5px;color:var(--ink);font-weight:600}
+.tev .tb{font-size:9px;color:var(--ink2);line-height:1.35}
+.tev .tt{font-family:var(--mono);font-size:8px;color:var(--ink2)}
+
+/* the dock */
+.dock{flex:0 0 auto; margin:0 10px 12px; padding:10px 12px 11px; position:relative}
+.sk-imm .dock{border-radius:22px; background:rgba(18,21,31,.62); border:1px solid rgba(255,255,255,.11);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
+.sk-mat .dock{border-radius:18px; background:#2B2930; border:1px solid transparent}
+.dockrail{position:absolute; left:12px; right:12px; top:0; height:2px}
+.dockrail .trk{position:absolute; inset:0; background:rgba(255,255,255,.16); border-radius:2px}
+.dockrail .fil{position:absolute; left:0; top:0; bottom:0; width:46%; background:var(--acc); border-radius:2px}
+.dockrail .rev{position:absolute; top:-3px; width:2px; height:8px; background:#5FB49C; left:38%; border-radius:2px}
+.dockrail .rev:after{content:"reveal"; position:absolute; top:-11px; left:-11px; font-family:var(--mono);
+  font-size:6px; letter-spacing:.1em; color:#5FB49C; text-transform:uppercase}
+.dockrow{display:flex; align-items:center; gap:9px; padding-top:7px}
+.dockcov{width:36px;height:36px;border-radius:8px;flex:0 0 auto;
+  background:linear-gradient(150deg,#D8622F,#8B3F6A 50%,#2F5FA8)}
+.docktx{flex:1; min-width:0; display:flex; flex-direction:column; gap:1px}
+.docktx .a{font-size:10px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.docktx .b{font-size:8px;color:var(--ink2);font-family:var(--mono);letter-spacing:.04em}
+.tbtn{border-radius:99px; display:grid; place-items:center; flex:0 0 auto}
+.tbtn.sm{width:28px;height:28px}
+.tbtn.sm svg{width:15px;height:15px;fill:var(--ink)}
+.tbtn.pl{width:40px;height:40px;background:var(--acc)}
+.sk-mat .tbtn.pl{border-radius:14px}
+.tbtn.pl svg{width:17px;height:17px;fill:#160F07}
+
+/* morph rig */
+.morphwrap{display:flex; gap:34px; flex-wrap:wrap; align-items:flex-start}
+.mstage{position:absolute; inset:0}
+.mel{position:absolute; transform-origin:center center; will-change:transform,opacity}
+.mcover{border-radius:12px; background:linear-gradient(150deg,#D8622F 0%,#8B3F6A 48%,#2F5FA8 100%);
+  box-shadow:0 18px 34px -14px rgba(0,0,0,.8)}
+.mtitle{font-size:16px;font-weight:600;color:#F2EDE6;text-align:center;white-space:nowrap}
+.mauthor{font-size:11px;color:rgba(242,237,230,.6);text-align:center;white-space:nowrap}
+.mtrack{height:3px;border-radius:3px;background:rgba(255,255,255,.20)}
+.mtrack i{position:absolute;left:0;top:0;bottom:0;width:46%;background:#F0A55C;border-radius:3px;display:block}
+.mtimes{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:rgba(242,237,230,.55)}
+.mbtn{border-radius:99px;display:grid;place-items:center}
+.mbtn.play{background:#F0A55C}
+.mbtn.play svg{fill:#160F07}
+.mbtn.skip svg{fill:#F2EDE6}
+.msec{display:flex;justify-content:space-between;align-items:center}
+.msec span{width:20px;height:20px;border-radius:99px;background:rgba(255,255,255,.13);display:block}
+.mchrome{position:absolute;inset:0;pointer-events:none}
+.mdock{position:absolute;left:10px;right:10px;top:494px;height:92px;border-radius:22px;
+  background:rgba(18,21,31,.62);border:1px solid rgba(255,255,255,.11);
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px)}
+.ctrl{display:flex;flex-direction:column;gap:14px;flex:1 1 300px;min-width:280px;max-width:420px}
+.scrub{width:100%; accent-color:var(--brass)}
+.readout{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.08em;
+  display:flex;justify-content:space-between}
+.btn{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  background:var(--slab-2);border:1px solid var(--edge-2);color:var(--paper);
+  padding:9px 16px;border-radius:999px;cursor:pointer}
+.btn:hover{border-color:var(--brass);color:var(--brass)}
+.btn:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+.scrub:focus-visible{outline:2px solid var(--brass);outline-offset:4px}
+
+.notes{display:flex;flex-direction:column;gap:11px}
+.note{display:flex;gap:11px;align-items:flex-start}
+.note .idx{font-family:var(--mono);font-size:10px;color:var(--brass);padding-top:3px;
+  min-width:54px;letter-spacing:.08em;flex:0 0 auto}
+.note p{font-size:14.5px;line-height:1.5;color:var(--paper-2)}
+
+.ladder{display:flex;flex-wrap:wrap;align-items:stretch;border:1px solid var(--edge);
+  border-radius:14px;overflow:hidden;background:var(--slab)}
+.rung{flex:1 1 210px;padding:22px;display:flex;flex-direction:column;gap:11px;
+  border-right:1px solid var(--edge)}
+.rung:last-child{border-right:0}
+.rung .pv{width:64px;height:64px;border-radius:99px;overflow:hidden;box-shadow:0 0 0 1.5px rgba(201,162,39,.5)}
+.rung .pv svg{width:100%;height:100%;display:block}
+.rung h4{font-size:13px}
+.rung code{align-self:flex-start}
+.rung small{font-size:12.5px}
+
+footer{padding:56px 0 90px; color:var(--dim); font-size:13px}
+@media (prefers-reduced-motion:reduce){ *{animation-duration:.001ms !important; transition-duration:.001ms !important} }
+</style>
+
+<div class="wrap">
+
+<header class="hero">
+  <div class="stack">
+    <p class="eyebrow">Voyage &middot; companion packs &middot; shipped design</p>
+    <h1>The companion stops<br>being a drawer.</h1>
+    <p class="stand">Today it is a bottom sheet that covers the player, hides the transport, stacks a
+      second sheet on itself to edit anything, and looks like two unrelated apps depending on the
+      theme. This proposes one full-screen surface that <em>keeps</em> the audio controls &mdash; the
+      player&rsquo;s own controls, morphed into a dock &mdash; navigates from a single spine, gives
+      every character a face, and edits in place.</p>
+    <div class="metastrip">
+      <span>Status <b>built &mdash; 2026-08-30</b></span>
+      <span>Supersedes <b>&sect;8 SHEET presentation</b></span>
+      <span>Touches <b>ui/companion &middot; ui/{immersive,material}/companion &middot; ui/player</b></span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">01</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">Where it stands</p>
+    <h2>Four problems, and they are all the same problem</h2>
+    <p class="stand">The companion was built as a sheet because a sheet was the cheapest surface to
+      reach from the player. Everything awkward about it follows from that one decision.</p>
+  </div>
+  <div class="cols">
+    <div class="card bad">
+      <span class="k">It covers the thing it describes</span>
+      <p>A <code>ModalBottomSheet</code> over the player. Open the companion and the transport is
+        gone &mdash; so &ldquo;who is this again?&rdquo; costs you the controls, mid-listen, which is
+        exactly when you asked.</p>
+    </div>
+    <div class="card bad">
+      <span class="k">Navigation is scattered across four surfaces</span>
+      <p>Header icons (map, edit, close), a &ldquo;View map&rdquo; text button, tap-the-rail,
+        tap-a-bond &mdash; and editing opens a <em>second</em> modal sheet with its own dialogs on
+        top. Four ways in, no sense of where you are.</p>
+    </div>
+    <div class="card bad">
+      <span class="k">The two themes are two different apps</span>
+      <p>Immersive got a crest-and-stat-line character sheet. Material You still renders
+        <code>identity:Rank</code> as a literal row label. Same data, same ViewModel,
+        unrecognisably different quality.</p>
+    </div>
+    <div class="card bad">
+      <span class="k">A cast with no faces</span>
+      <p><code>PackEntity.media</code> has been in the pack format since day one. Nothing resolves
+        it. Every character is a letter in a circle, so a cast of nine reads as a list of
+        initials.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">02</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">The shape</p>
+    <h2>One surface, four bands</h2>
+    <p class="stand">A persistent full-screen overlay drawn above the <code>PlayerSheet</code> &mdash;
+      the pattern <code>ChapterOverlay</code> and <code>SeriesOverlay</code> already use, and the one
+      &sect;8 already specified for FULLSCREEN boards. Not a nav route: the player stays composed
+      underneath, which is what makes the morph possible at all.</p>
+  </div>
+  <div class="notes" style="max-width:76ch">
+    <div class="note"><span class="idx">Band 1</span><p><b>Header</b> &mdash; the pack&rsquo;s name, an
+      edit toggle, a close. Three controls, never more; everything that used to live here moved into
+      the spine.</p></div>
+    <div class="note"><span class="idx">Band 2</span><p><b>The spine</b> &mdash; one segmented control,
+      four destinations: <b>Cast &middot; Map &middot; Timeline &middot; Pack</b>. This is the single
+      place navigation happens.</p></div>
+    <div class="note"><span class="idx">Band 3</span><p><b>The pane</b> &mdash; whatever the spine
+      selected. A character detail is <em>not</em> a fifth destination; it pushes inside the Cast pane
+      and pops with back.</p></div>
+    <div class="note"><span class="idx">Band 4</span><p><b>The dock</b> &mdash; the player&rsquo;s
+      transport, morphed down here and kept. Its top edge is the scrubber, carrying two marks: where
+      you are, and how far the companion is revealed.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">03</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow lit">Drag it</p>
+    <h2>The controls travel; they do not cross-fade</h2>
+    <p class="stand">Opening the companion is one continuous move: the cover shrinks into the dock,
+      the play button arcs down and right, the skip buttons close in behind it, the scrubber widens
+      into the dock&rsquo;s top edge, and the companion&rsquo;s own chrome fades in underneath.
+      Closing runs it backwards. Scrub it.</p>
+  </div>
+
+  <div class="morphwrap">
+    <div class="dev">
+      <div class="frame"><div class="screen sk-imm">
+        <div class="bg"></div><div class="veil"></div>
+        <div class="mstage" id="mstage"></div>
+      </div></div>
+    </div>
+    <div class="ctrl">
+      <div class="readout"><span>PLAYER</span><span id="mval">t = 0.00</span><span>DECK</span></div>
+      <input class="scrub" id="mrange" type="range" min="0" max="1000" value="0" step="1" aria-label="Morph progress">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="mplay" type="button">Play morph</button>
+        <button class="btn" id="mreset" type="button">Reset</button>
+      </div>
+      <p class="small">Every element maps to one <code>ElementMotion</code> &mdash; the same
+        data-driven rig <code>PlayerChoreography</code> already uses for the mini-bar &rarr; player
+        morph in Material You portrait. No new motion machinery: a
+        <code>CompanionChoreography</code> is another table of the same values.</p>
+    </div>
+  </div>
+
+  <div class="tblwrap" style="margin-top:34px">
+    <table>
+      <tr><th>Element</th><th class="mono">slice</th><th>Path / scale</th><th>What it becomes</th></tr>
+      <tr><td><b>Cover</b></td><td class="mono">0.00 &rarr; 0.85</td><td>Linear, uniform 0.19&times;</td><td>The dock&rsquo;s 36dp art chip.</td></tr>
+      <tr><td><b>Play button</b></td><td class="mono">0.10 &rarr; 1.00</td><td><code>ArcVerticalFirst</code>, 0.65&times;</td><td>Drops before sweeping right, so it uncovers the skip buttons on the way instead of landing on top of them.</td></tr>
+      <tr><td><b>Skip &plusmn;</b></td><td class="mono">0.15 &rarr; 0.90</td><td>Linear, 0.67&times;</td><td>Close in to flank the play button in the dock.</td></tr>
+      <tr><td><b>Scrubber</b></td><td class="mono">0.00 &rarr; 0.80</td><td>Scale X only, 1.10&times;</td><td>The dock&rsquo;s top edge &mdash; and gains the reveal-cursor mark.</td></tr>
+      <tr><td><b>Title</b></td><td class="mono">0.00 &rarr; 0.70</td><td>Linear, 0.69&times;, left-anchored</td><td>The dock&rsquo;s now-playing label.</td></tr>
+      <tr><td><b>Author &middot; times &middot; secondary row</b></td><td class="mono">alpha 0.00 &rarr; 0.25</td><td>&mdash;</td><td>Gone. Their jobs moved to the header and the spine.</td></tr>
+      <tr><td><b>Header &middot; spine &middot; pane</b></td><td class="mono">alpha 0.45 &rarr; 1.00</td><td>Rise 10dp</td><td>Arrive last, into space the transport has already vacated.</td></tr>
+    </table>
+  </div>
+  <small style="margin-top:14px">In Immersive the backdrop never changes: the blurred cover is
+    already the app&rsquo;s ground, so the morph reads as furniture rearranging in a room you never
+    left. In Material You the tonal background is likewise continuous. That is the whole
+    &ldquo;not out of place&rdquo; argument &mdash; the companion is not <em>arriving</em>, the player
+    is <em>rearranging</em>.</small>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">04</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">One place to navigate</p>
+    <h2>The spine, and nothing else</h2>
+    <p class="stand">Four destinations, always visible, always in the same place. Editing is not a
+      fifth &mdash; it is a <em>mode</em> the whole surface enters, because you should change a thing
+      where you are looking at it, not in a mirror-image list inside another sheet.</p>
+  </div>
+  <div class="tblwrap">
+    <table>
+      <tr><th>Spine</th><th>Holds</th><th class="mono">replaces</th><th>In edit mode</th></tr>
+      <tr><td><b>Cast</b></td><td>Portrait grid of everyone revealed; tap pushes their sheet.</td><td class="mono">CastStrip<br>EntityFieldList</td><td>Add a character, set a portrait, edit any field where it sits.</td></tr>
+      <tr><td><b>Map</b></td><td>The FULLSCREEN board, inline. Pins are portraits.</td><td class="mono">PackBoardScreen</td><td>Drag a pin; it writes an <code>editElement</code> op.</td></tr>
+      <tr><td><b>Timeline</b></td><td>&ldquo;Since you last looked&rdquo;, the reveal cursor, catch-up, quick-capture scraps.</td><td class="mono">CatchUpBanner<br>scraps list</td><td>Turn a scrap into a fact; re-anchor a fact by dragging its knot.</td></tr>
+      <tr><td><b>Pack</b></td><td>Who authored it, revision, conflicts, share, pregenerate, delete.</td><td class="mono">CompanionEditorSheet</td><td>&mdash;</td></tr>
+    </table>
+  </div>
+  <div class="cols" style="margin-top:26px">
+    <div class="card good"><span class="k">Back means one thing</span>
+      <p>Character &rarr; Cast &rarr; close. One predictive-back chain, no stacked modals to unwind
+        and no &ldquo;which sheet am I dismissing&rdquo; ambiguity.</p></div>
+    <div class="card good"><span class="k">The badge has somewhere to land</span>
+      <p>The digest count on the player&rsquo;s companion icon deep-links straight to Timeline, so
+        &ldquo;3 changes&rdquo; answers itself instead of dropping you on a cast grid.</p></div>
+    <div class="card good"><span class="k">Edit is reversible and visible</span>
+      <p>One toggle. While it is on, every editable value grows an affordance in place and the header
+        says so. Nothing is edited through a surface that hides the thing being edited.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">05</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">Two themes, one skeleton</p>
+    <h2>Same bands, different world</h2>
+    <p class="stand">Bands, spine and dock are shared &mdash; one implementation, the way
+      <code>InfoPageScaffold</code> shares Book Info and the Series page. Only the <em>frame</em>
+      routes per theme: fills, shapes, ring vs. no ring, blur vs. elevation, pill vs. tab indicator.
+      Change the deck once and both follow.</p>
+  </div>
+
+  <p class="eyebrow" style="margin-bottom:18px">Cast</p>
+  <div class="rail" id="rail-cast"></div>
+
+  <p class="eyebrow" style="margin:52px 0 18px">Character</p>
+  <div class="rail" id="rail-char"></div>
+
+  <p class="eyebrow" style="margin:52px 0 18px">Map &amp; Timeline</p>
+  <div class="rail" id="rail-other"></div>
+
+  <div class="tblwrap" style="margin-top:40px">
+    <table>
+      <tr><th>Detail</th><th>Immersive</th><th>Material You</th></tr>
+      <tr><td>Ground</td><td>Blurred cover + <code>backdropVeil</code>, unchanged from the player.</td><td>Opaque tonal <code>surface</code>.</td></tr>
+      <tr><td>Cards</td><td>Frosted glass, hairline edge.</td><td>Solid <code>surfaceContainer</code>, no border.</td></tr>
+      <tr><td>Portrait</td><td>Circle, ringed in the entity&rsquo;s rotated cover accent.</td><td>Rounded square, no ring &mdash; the shape carries it.</td></tr>
+      <tr><td>Spine</td><td>Glass pill; selected segment filled with the accent.</td><td>Tab row; selected segment underlined, accent text.</td></tr>
+      <tr><td>Dock</td><td>Floating glass slab, inset from the edges.</td><td>Elevated tonal bar; play button is an M3 squircle.</td></tr>
+      <tr><td>Body text</td><td>Accent-tinted (<code>scrimText</code>).</td><td>Plain <code>onSurface</code> / <code>onSurfaceVariant</code>.</td></tr>
+    </table>
+  </div>
+  <small style="margin-top:14px">Per-entity accent keeps the rule already in
+    <code>ui/immersive/companion/CompanionSheet.kt</code>: hue-rotate the cover&rsquo;s
+    <code>primary</code> by a stable hash of the name, &plusmn;40&deg;, pulled back toward it. Colour
+    is still borrowed, never chosen &mdash; so a cast of nine reads as one palette, and a different
+    cover repaints the whole deck.</small>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">06</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">Faces</p>
+    <h2>Every character has a portrait, and the fallback is not a failure</h2>
+    <p class="stand">Three rungs, tried in order. The bottom rung is the crest that ships today
+      &mdash; so a pack with no art still looks authored, and a pack with art looks like a cast.</p>
+  </div>
+  <div class="ladder" id="ladder"></div>
+  <div class="cols" style="margin-top:26px">
+    <div class="card"><span class="k">What is missing today</span>
+      <p><code>PackEntity.media</code> holds <code>media/kelsier.webp</code> and nothing reads it.
+        Needed: <code>CompanionDataStore.mediaFile(bookId, packId, rel)</code> and its writer. Coil is
+        already a dependency; the rest is an <code>AsyncImage</code>.</p></div>
+    <div class="card"><span class="k">Seeding brings art</span>
+      <p><code>FandomSeedService</code> already parses the article holding the infobox image. Pulling
+        that file during a pregenerate is the difference between a seeded pack of initials and a
+        seeded pack of faces &mdash; and it stays a draft you tick per character, like every other
+        seeded fact.</p></div>
+    <div class="card"><span class="k">Adding one by hand</span>
+      <p>Edit mode &rarr; tap a portrait &rarr; pick from gallery. The file is copied into the
+        pack&rsquo;s own <code>media/</code> dir, so it travels with the export and survives a
+        reinstall like everything else under the disk-is-truth rule.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="tl"><span class="dot"></span><span class="n">07</span><span class="bar"></span></div>
+  <div class="sec-head">
+    <p class="eyebrow quiet">Build</p>
+    <h2>What this actually costs</h2>
+    <p class="stand">One new shared scaffold, two thin frames, five panes, a choreography table and a
+      media resolver. Two existing files dissolve rather than grow.</p>
+  </div>
+  <div class="tblwrap">
+    <table>
+      <tr><th class="mono">file</th><th>Change</th></tr>
+      <tr><td class="mono">ui/companion/CompanionDeck.kt</td><td><b>New.</b> The shared scaffold: overlay hosting, spine state, edit mode, the morph driver, predictive back. Owns nothing visual.</td></tr>
+      <tr><td class="mono">ui/companion/CompanionDeckStyle.kt</td><td><b>New &mdash; one file, not the two frames planned here.</b> Only two leaves turned out to be genuinely different components (the spine and the dock's surface); everything else was a fill or a shape, so a token file resolving against <code>LocalAppTheme</code> says it without giving the deck two implementations to drift apart.</td></tr>
+      <tr><td class="mono">ui/companion/CompanionMorph.kt</td><td><b>New.</b> The morph's source anchor and the player's hand-off. Shipped as a <em>container</em> travel &mdash; the transport row moves into the dock as one object via the existing <code>Modifier.morphFrom</code> &mdash; not yet the per-element arcs &sect;03 draws. Those need a registration point per button per player layout, and a morph that only worked in portrait would be worse than one that works everywhere.</td></tr>
+      <tr><td class="mono">ui/companion/panes/*.kt</td><td><b>New.</b> Cast, Character, Map, Timeline, Pack &mdash; theme-neutral content on top of <code>EntitySheetModel</code>.</td></tr>
+      <tr><td class="mono">ui/companion/EntitySheetModel.kt</td><td>Extended: portrait resolution, and a per-entry &ldquo;editable&rdquo; descriptor. The <code>group:Label</code> convention and its tests are untouched.</td></tr>
+      <tr><td class="mono">data/diskstore/CompanionDataStore.kt</td><td><code>mediaFile()</code> + <code>writeMedia()</code>, beside the existing pack/edits/scraps readers.</td></tr>
+      <tr><td class="mono">companion/fandom/FandomSeedService.kt</td><td>Pull the infobox image alongside the cited facts.</td></tr>
+      <tr><td class="mono">ui/material/player/PlayerControls.kt</td><td>The companion icon registers its bounds as the morph source, the way the mini bar&rsquo;s cover does.</td></tr>
+      <tr><td class="mono">ui/player/PlayerSheet.kt</td><td>Hosts the deck overlay above the player body &mdash; same slot as <code>ChapterOverlay</code>.</td></tr>
+      <tr><td class="mono">ui/companion/CastStrip.kt</td><td><b>Deleted.</b> Absorbed by the Cast pane.</td></tr>
+      <tr><td class="mono">ui/companion/CompanionEditorSheet.kt</td><td><b>Dissolved.</b> Its dialogs become in-place edits in the panes; its chrome becomes the Pack pane.</td></tr>
+      <tr><td class="mono">ui/{immersive,material}/companion/<br>CompanionSheet.kt</td><td><b>Deleted</b>, along with the router at <code>ui/companion/CompanionSheet.kt</code>.</td></tr>
+    </table>
+  </div>
+  <div class="cols" style="margin-top:26px">
+    <div class="card"><span class="k">Unchanged on purpose</span>
+      <p><code>CompanionViewModel</code>, <code>EntityStateResolver</code>, <code>RevealDigest</code>,
+        <code>RevealCursorRepository</code>, the pack format and every unit test. This is a
+        presentation change; the spoiler-proof-by-construction guarantee is untouched.</p></div>
+    <div class="card"><span class="k">Suggested order</span>
+      <p>Deck scaffold + spine + panes on the existing data &rarr; portraits &rarr; the dock, still
+        cross-fading &rarr; the morph last. Each step ships something better than what is there
+        now.</p></div>
+    <div class="card"><span class="k">Landscape</span>
+      <p>Two-column, as decided: header, spine and dock on a 176dp left rail, pane on the right. The
+        header stacks its controls under the title there &mdash; beside two icon buttons in 176dp the
+        title had about eight characters to work with.</p></div>
+    <div class="card"><span class="k">What the build changed</span>
+      <p>Edit mode reads the <em>author's</em> unfiltered cast, not the revealed one. Anything else
+        makes an author's own edit vanish the moment they make it, since the reveal cursor only
+        advances by listening &mdash; which is precisely why the old editor had to be a separate
+        surface, and the one thing that had to be solved before it could be deleted.</p></div>
+  </div>
+</section>
+
+<footer>
+  <p class="small">Proposal only &mdash; nothing here is implemented. Companion data model, reveal
+    semantics and pack format: <code>docs/companion-packs.md</code>. Motion vocabulary:
+    <code>docs/motion-spec.md</code>, <code>docs/motion-lab.html</code>. Theme split convention:
+    <code>CLAUDE.md</code>.</p>
+</footer>
+
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ── portrait art ────────────────────────────────────────────────────────────── */
+var uid = 0;
+var FIG = {
+  hood:'<path d="M6,100 C13,73 33,63 50,63 C67,63 87,73 94,100 Z"/>'+
+       '<circle cx="50" cy="45" r="16"/>'+
+       '<path d="M27,54 C27,25 39,15 50,15 C61,15 73,25 73,54 C73,41 63,33 50,33 C37,33 27,41 27,54 Z"/>',
+  hair:'<path d="M6,100 C13,73 33,63 50,63 C67,63 87,73 94,100 Z"/>'+
+       '<circle cx="50" cy="44" r="16"/>'+
+       '<path d="M26,56 C21,24 35,13 50,13 C65,13 79,24 74,56 L78,88 L69,88 C72,58 65,33 50,33 C35,33 28,58 31,88 L22,88 Z"/>',
+  bob: '<path d="M6,100 C13,73 33,63 50,63 C67,63 87,73 94,100 Z"/>'+
+       '<circle cx="50" cy="45" r="16"/>'+
+       '<path d="M28,47 C28,22 39,13 50,13 C61,13 72,22 72,47 L72,60 L63,60 C65,41 59,31 50,31 C41,31 35,41 37,60 L28,60 Z"/>',
+  helm:'<path d="M6,100 C13,73 33,63 50,63 C67,63 87,73 94,100 Z"/>'+
+       '<circle cx="50" cy="45" r="16"/>'+
+       '<path d="M50,9 L56,27 L44,27 Z"/><path d="M30,42 L70,42 L70,49 L30,49 Z"/>'
+};
+function monogram(n){
+  var w = n.split(' ').filter(function(x){
+    return ['the','a','an','of'].indexOf(x.toLowerCase()) < 0 && x.length;
+  });
+  if(!w.length) return n.slice(0,1).toUpperCase();
+  if(w.length === 1) return w[0].slice(0,1).toUpperCase();
+  return (w[0].slice(0,1) + w[1].slice(0,1)).toUpperCase();
+}
+function portrait(o){
+  var h = o.hue, id = 'pg' + (uid++);
+  var g1 = 'hsl(' + h + ' 44% 36%)', g2 = 'hsl(' + h + ' 40% 15%)';
+  var ink = 'hsl(' + h + ' 34% 8%)', rim = 'hsl(' + h + ' 62% 68%)';
+  var art = FIG[o.art], inner;
+  if(art){
+    inner = '<g fill="' + rim + '" opacity=".10"><rect width="100" height="52"/></g>' +
+            '<g fill="' + ink + '">' + art + '</g>';
+  } else {
+    inner = '<text x="50" y="52" text-anchor="middle" dominant-baseline="middle" ' +
+      'font-family="IBM Plex Sans, sans-serif" font-weight="600" font-size="34" ' +
+      'fill="hsl(' + h + ' 26% 88%)" opacity=".92">' + monogram(o.n) + '</text>';
+  }
+  return '<svg viewBox="0 0 100 100" role="img" aria-label="' + o.n + '">' +
+    '<defs><linearGradient id="' + id + '" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0" stop-color="' + g1 + '"/><stop offset="1" stop-color="' + g2 + '"/>' +
+    '</linearGradient></defs><rect width="100" height="100" fill="url(#' + id + ')"/>' +
+    inner + '</svg>';
+}
+function ring(h){ return 'hsl(' + h + ' 58% 58% / .85)'; }
+
+/* the worked example: a Shadow Slave pack, matching the field convention in §8.0.1 */
+var CAST = [
+  {n:'Sunny',  r:'Lost from Light', art:'hood', hue:26,  fresh:true},
+  {n:'Nephis', r:'Changing Star',   art:'hair', hue:196},
+  {n:'Cassie', r:'The Seer',        art:'bob',  hue:322, fresh:true},
+  {n:'Kai',    r:'Sea of Blood',    art:'helm', hue:6},
+  {n:'Effie',  r:'Awakened',        art:null,   hue:96},
+  {n:'The Forgotten Shore', r:'Place', art:null, hue:250}
+];
+
+var P_EDIT  = 'M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25zM20.7 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z';
+var P_CLOSE = 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z';
+var P_PLAY  = 'M8 5v14l11-7z';
+var P_BACK  = 'M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z';
+var P_FWD   = 'M13 6v12l8.5-6L13 6zM4 18l8.5-6L4 6v12z';
+
+function ico(d){
+  return '<span class="ico"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '"/></svg></span>';
+}
+function head(title, sub){
+  return '<div class="s-head"><div style="flex:1;min-width:0">' +
+    '<div class="ttl">' + title + '</div><div class="sub">' + sub + '</div></div>' +
+    ico(P_EDIT) + ico(P_CLOSE) + '</div>';
+}
+function spine(on){
+  return '<div class="spine">' + ['Cast','Map','Timeline','Pack'].map(function(x){
+    return '<b class="' + (x === on ? 'on' : '') + '">' + x + '</b>';
+  }).join('') + '</div>';
+}
+function dock(){
+  return '<div class="dock">' +
+    '<div class="dockrail"><span class="trk"></span><span class="fil"></span><span class="rev"></span></div>' +
+    '<div class="dockrow">' +
+      '<div class="dockcov"></div>' +
+      '<div class="docktx"><span class="a">Shadow Slave</span><span class="b">CH. 172 &middot; 4H 12M LEFT</span></div>' +
+      '<span class="tbtn sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + P_BACK + '"/></svg></span>' +
+      '<span class="tbtn pl"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + P_PLAY + '"/></svg></span>' +
+      '<span class="tbtn sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + P_FWD + '"/></svg></span>' +
+    '</div></div>';
+}
+
+function paneCast(){
+  var cells = CAST.map(function(c){
+    return '<div class="cast">' + (c.fresh ? '<span class="newdot"></span>' : '') +
+      '<div class="pt" style="--ptring:' + ring(c.hue) + '">' + portrait(c) + '</div>' +
+      '<span class="nm">' + c.n + '</span><span class="rl">' + c.r + '</span></div>';
+  }).join('');
+  return '<div class="pane">' +
+    '<div class="digest glass"><span class="d"></span>' +
+    '<span class="t">3 changes since you last looked</span><span class="go">Timeline</span></div>' +
+    '<span class="lbl">Revealed &middot; 6 of 6</span>' +
+    '<div class="grid">' + cells + '</div></div>';
+}
+
+function paneChar(){
+  var s = CAST[0], n = CAST[1], k = CAST[3];
+  return '<div class="pane">' +
+    '<div class="chead"><div class="pt" style="--ptring:' + ring(s.hue) + '">' + portrait(s) + '</div>' +
+      '<div><div class="nm">Sunny</div><div class="rl">Lost from Light</div></div></div>' +
+    '<div class="stats">' +
+      '<span class="stat"><i>Rank</i><b>Awakened</b></span>' +
+      '<span class="stat"><i>Class</i><b>Weaver</b></span>' +
+      '<span class="stat"><i>Soul cores</i><b>3</b></span></div>' +
+    '<p class="body">A Sleeper of the Nightmare Spell, marked by the Shadow and carrying a legacy ' +
+      'he never asked for.</p>' +
+    '<span class="lbl acc">Power</span>' +
+    '<div class="rowv"><span class="k">Aspect</span><div class="chips">' +
+      '<span class="chip">Fated</span><span class="chip">Flame of Divinity</span>' +
+      '<span class="chip">Blood Weave</span></div></div>' +
+    '<span class="lbl acc">Arsenal</span>' +
+    '<div class="rowv"><span class="k">Memories &middot; 7</span><div class="chips">' +
+      '<span class="chip">Shadow Sword</span><span class="chip">Puppeteer</span>' +
+      '<span class="chip">Cruel Sight</span><span class="chip">+4</span></div></div>' +
+    '<span class="lbl acc">Bonds</span>' +
+    '<div class="bond"><div class="pt" style="--ptring:' + ring(n.hue) + '">' + portrait(n) + '</div>' +
+      '<div><div class="bn">Nephis</div><div class="bv">Fought beside her on the Forgotten Shore</div></div>' +
+      '<span class="anchor">4h 12m</span></div>' +
+    '<div class="bond"><div class="pt" style="--ptring:' + ring(k.hue) + '">' + portrait(k) + '</div>' +
+      '<div><div class="bn">Kai</div><div class="bv">Rival, then something nearer</div></div>' +
+      '<span class="anchor">9h 03m</span></div></div>';
+}
+
+function paneMap(){
+  var pins = [[26,40,CAST[0]],[54,60,CAST[1]],[36,78,CAST[3]]];
+  return '<div class="pane"><span class="lbl">Board &middot; The Forgotten Shore</span>' +
+    '<div class="map"><div class="land"></div>' +
+    pins.map(function(p){
+      return '<div class="pin" style="left:' + p[0] + '%;top:' + p[1] + '%">' +
+        '<div class="pt" style="--ptring:' + ring(p[2].hue) + '">' + portrait(p[2]) + '</div>' +
+        '<span class="pl">' + p[2].n + '</span></div>';
+    }).join('') +
+    '<div class="sealedzone"><span>not yet reached</span></div></div></div>';
+}
+
+function paneTimeline(){
+  var ev = [
+    ['Sunny',  'Soul cores 2 &rarr; 3',           '4h 12m', false],
+    ['Cassie', 'First revealed',                  '3h 58m', false],
+    ['Nephis', 'Allegiance &middot; Changing Star','3h 40m', false],
+    ['Kai',    'Rank &rarr; Awakened',            '2h 11m', true],
+    ['Sunny',  'Aspect &middot; Blood Weave',     '1h 02m', true]
+  ];
+  return '<div class="pane">' +
+    '<div class="digest glass"><span class="d"></span>' +
+    '<span class="t">Reveal cursor at 4h 12m</span><span class="go">Catch up</span></div>' +
+    '<span class="lbl">Since you last looked</span>' +
+    '<div class="tline">' + ev.map(function(e){
+      return '<div class="tev ' + (e[3] ? 'past' : '') + '"><div class="spine2">' +
+        '<span class="knot"></span><span class="line"></span></div><div class="tx">' +
+        '<span class="th">' + e[0] + '</span><span class="tb">' + e[1] + '</span>' +
+        '<span class="tt">' + e[2] + '</span></div></div>';
+    }).join('') + '</div></div>';
+}
+
+var PANES = {
+  cast:      [paneCast,     'Cast'],
+  character: [paneChar,     'Cast'],
+  map:       [paneMap,      'Map'],
+  timeline:  [paneTimeline, 'Timeline']
+};
+
+function phone(skin, which, caption){
+  var p = PANES[which];
+  var title = (which === 'character') ? '&larr;&nbsp; Sunny' : 'Shadow Slave &middot; Era 1';
+  var sub   = (which === 'character') ? 'CAST' : 'PACK &middot; REV 3 &middot; HAJMO';
+  var imm = (skin === 'sk-imm');
+  return '<div class="dev"><div class="frame"><div class="screen ' + skin + '">' +
+    '<div class="bg"></div><div class="veil"></div><div class="lay">' +
+    head(title, sub) + spine(p[1]) + p[0]() + dock() +
+    '</div></div></div><div class="devcap">' +
+    '<span class="tag ' + (imm ? 'imm' : 'mat') + '">' + (imm ? 'Immersive' : 'Material You') + '</span>' +
+    '<span class="small" style="display:inline">' + caption + '</span></div></div>';
+}
+
+document.getElementById('rail-cast').innerHTML =
+  phone('sk-imm','cast','Portraits ring in the entity accent; the deck floats on the cover.') +
+  phone('sk-mat','cast','Rounded-square art on tonal containers; tab-row spine.');
+document.getElementById('rail-char').innerHTML =
+  phone('sk-imm','character','Pushed inside Cast &mdash; back returns to the grid, not out.') +
+  phone('sk-mat','character','Same model, same sections. No more raw <code>identity:Rank</code>.');
+document.getElementById('rail-other').innerHTML =
+  phone('sk-imm','map','The board is a pane now, not a third stacked overlay.') +
+  phone('sk-imm','timeline','Where the digest badge lands, and where catch-up lives.');
+
+/* ── portrait ladder ─────────────────────────────────────────────────────────── */
+var LADDER = [
+  ['Pack art','media/sunny.webp','What the author shipped. Travels in the export, resolved through the pack dir.',{n:'Sunny',art:'hood',hue:26}],
+  ['Seeded art','Fandom infobox','Pulled during pregenerate, ticked per character like every other seeded draft.',{n:'Nephis',art:'hair',hue:196}],
+  ['Crest','generated','Today&rsquo;s monogram disc, kept: hue-rotated cover accent, stable per name.',{n:'Effie',art:null,hue:96}]
+];
+document.getElementById('ladder').innerHTML = LADDER.map(function(r){
+  return '<div class="rung"><div class="pv">' + portrait(r[3]) + '</div>' +
+    '<h4>' + r[0] + '</h4><code>' + r[1] + '</code><small>' + r[2] + '</small></div>';
+}).join('');
+
+/* ── morph rig ───────────────────────────────────────────────────────────────── */
+/* Each element declares a FROM rect (player pose), a TO rect (deck pose) and the
+   progress slice it moves in — the same shape as ElementMotion(from, to, path, scale). */
+var MEL = [
+  { id:'cover',  cls:'mel mcover',      from:[41,78,200,200], to:[16,524,36,36],  a:0,   b:.85, mode:'uniform' },
+  { id:'title',  cls:'mel mtitle',      from:[21,296,240,22], to:[60,527,140,15], a:0,   b:.70, mode:'uniform', anchor:'left',
+    html:'Shadow Slave' },
+  { id:'author', cls:'mel mauthor',     from:[21,320,240,16], to:[21,320,240,16], a:0,   b:1,   mode:'none', fade:[0,.25],
+    html:'Guiltythree &middot; ch. 172' },
+  { id:'track',  cls:'mel mtrack',      from:[22,380,238,3],  to:[10,494,262,3],  a:0,   b:.80, mode:'x', html:'<i></i>' },
+  { id:'times',  cls:'mel mtimes',      from:[22,392,238,12], to:[22,392,238,12], a:0,   b:1,   mode:'none', fade:[0,.22],
+    html:'<span>4:12:00</span><span>-4:08:31</span>' },
+  { id:'rew',    cls:'mel mbtn skip',   from:[50,417,42,42],  to:[158,522,28,28], a:.15, b:.90, mode:'uniform',
+    html:'<svg viewBox="0 0 24 24" width="58%" height="58%" aria-hidden="true"><path d="' + P_BACK + '"/></svg>' },
+  { id:'play',   cls:'mel mbtn play',   from:[110,407,62,62], to:[198,521,40,40], a:.10, b:1,   mode:'uniform', arc:true,
+    html:'<svg viewBox="0 0 24 24" width="44%" height="44%" aria-hidden="true"><path d="' + P_PLAY + '"/></svg>' },
+  { id:'fwd',    cls:'mel mbtn skip',   from:[190,417,42,42], to:[244,522,28,28], a:.15, b:.90, mode:'uniform',
+    html:'<svg viewBox="0 0 24 24" width="58%" height="58%" aria-hidden="true"><path d="' + P_FWD + '"/></svg>' },
+  { id:'sec',    cls:'mel msec',        from:[26,506,230,20], to:[26,506,230,20], a:0,   b:1,   mode:'none', fade:[0,.20],
+    html:'<span></span><span></span><span></span><span></span><span></span>' }
+];
+
+var stage = document.getElementById('mstage');
+
+var chrome = document.createElement('div');
+chrome.className = 'mchrome';
+chrome.innerHTML =
+  '<div class="mdock"></div>' +
+  '<div class="lay">' + head('Shadow Slave &middot; Era 1','PACK &middot; REV 3 &middot; HAJMO') +
+  spine('Cast') + paneCast() + '<div style="height:104px;flex:0 0 auto"></div></div>';
+chrome.style.opacity = '0';
+stage.appendChild(chrome);
+
+var nodes = {};
+MEL.forEach(function(m){
+  var d = document.createElement('div');
+  d.className = m.cls;
+  d.style.left = m.from[0] + 'px';
+  d.style.top = m.from[1] + 'px';
+  d.style.width = m.from[2] + 'px';
+  d.style.height = m.from[3] + 'px';
+  d.style.zIndex = (m.id === 'cover') ? '3' : '4';
+  if(m.html) d.innerHTML = m.html;
+  stage.appendChild(d);
+  nodes[m.id] = d;
+});
+
+function smooth(x){ x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); }
+function slice(t, a, b){ return smooth((t - a) / Math.max(1e-4, b - a)); }
+
+function apply(t){
+  var c = slice(t, .45, 1);
+  chrome.style.opacity = String(c);
+  chrome.style.transform = 'translateY(' + (10 * (1 - c)).toFixed(2) + 'px)';
+  MEL.forEach(function(m){
+    var n = nodes[m.id];
+    if(m.fade){
+      n.style.opacity = String(1 - smooth((t - m.fade[0]) / Math.max(1e-4, m.fade[1] - m.fade[0])));
+    }
+    if(m.mode === 'none') return;
+    var p = slice(t, m.a, m.b);
+    var fcx = m.from[0] + m.from[2] / 2, fcy = m.from[1] + m.from[3] / 2;
+    var tcx = m.to[0]   + m.to[2]   / 2, tcy = m.to[1]   + m.to[3]   / 2;
+    if(m.anchor === 'left'){ fcx = m.from[0]; tcx = m.to[0]; }
+    var px = p, py = p;
+    if(m.arc){                                    /* MorphPath.ArcVerticalFirst */
+      py = smooth(Math.min(1, p / 0.55));
+      px = smooth(Math.max(0, (p - 0.35) / 0.65));
+    }
+    var s = 1 + (m.to[2] / m.from[2] - 1) * p;
+    var tf = 'translate(' + ((tcx - fcx) * px).toFixed(2) + 'px,' +
+                            ((tcy - fcy) * py).toFixed(2) + 'px)';
+    if(m.mode === 'uniform') tf += ' scale(' + s.toFixed(4) + ')';
+    if(m.mode === 'x')       tf += ' scaleX(' + s.toFixed(4) + ')';
+    n.style.transformOrigin = (m.anchor === 'left') ? 'left center' : 'center center';
+    n.style.transform = tf;
+    if(m.id === 'cover') n.style.borderRadius = (12 - 4 * p).toFixed(1) + 'px';
+  });
+}
+
+var range = document.getElementById('mrange');
+var val = document.getElementById('mval');
+function set(t){ apply(t); val.textContent = 't = ' + t.toFixed(2); }
+range.addEventListener('input', function(){ set(range.value / 1000); });
+set(0);
+
+var raf = null;
+var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+document.getElementById('mplay').addEventListener('click', function(){
+  if(raf) cancelAnimationFrame(raf);
+  if(reduce){ range.value = 1000; set(1); return; }
+  var t0 = performance.now(), dur = 900;
+  raf = requestAnimationFrame(function step(now){
+    var k = Math.min(1, (now - t0) / dur);
+    range.value = Math.round(k * 1000);
+    set(k);
+    if(k < 1) raf = requestAnimationFrame(step);
+  });
+});
+document.getElementById('mreset').addEventListener('click', function(){
+  if(raf) cancelAnimationFrame(raf);
+  range.value = 0;
+  set(0);
+});
+})();
+</script>

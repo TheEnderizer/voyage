@@ -21,6 +21,9 @@ data class HomeHeroData(
     val title: String,
     /** "Foundation · Book 2", or just the author when the book is not in a series. */
     val eyebrow: String?,
+    /** Title of the chapter the listener is currently in. Null when the book has no chapter data
+     *  worth showing (a single-mark timeline names the whole file, which the title already says). */
+    val chapterLabel: String?,
     val coverPath: String?,
     val progressFraction: Float,
     /** "6h 12m left", or null when the duration isn't known yet. */

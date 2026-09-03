@@ -35,7 +35,15 @@ data class AudioFile(
      * read, far too costly for a library scan). Cached here so a damaged file is scanned once ever
      * rather than once per play — see PlayerController's corrupt-file recovery.
      */
-    val damageRangesJson: String? = null
+    val damageRangesJson: String? = null,
+    /**
+     * [com.betteraudio.companion.model.FileKey.compute] result for this file, cached the same way
+     * [damageRangesJson] is: null = never computed, populated lazily. Used by companion-pack
+     * export (the pack's [com.betteraudio.companion.model.PackMember.fileKeys]) and P4 import
+     * matching ([com.betteraudio.data.backup.BackupMatcher]) — computing it fresh per candidate on
+     * every import would re-read every audio file in the library (docs/companion-packs.md §10.3).
+     */
+    val fileKey: String? = null
 )
 
 /**

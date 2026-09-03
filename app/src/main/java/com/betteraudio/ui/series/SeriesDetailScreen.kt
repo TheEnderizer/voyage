@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -195,6 +196,13 @@ fun SeriesDetailScreen(
                     leadingIcon = { Icon(Icons.Default.Add, null) },
                     onClick = { dismiss(); showAdd = true }
                 )
+                // Opens on the member the listener is actually in — see
+                // SeriesDetailViewModel.companionBookId for why a series cannot have one cursor.
+                HapticDropdownMenuItem(
+                    text = { Text("Companion") },
+                    leadingIcon = { Icon(Icons.Default.Groups, null) },
+                    onClick = { dismiss(); viewModel.openCompanion() }
+                )
             },
             belowPanel = {
                 Row(
@@ -329,6 +337,16 @@ fun SeriesDetailScreen(
             candidates = candidates,
             onAdd = { viewModel.addBook(it) },
             onDismiss = { showAdd = false }
+        )
+    }
+
+    // -1 means "not open" AND "no member to open on" at once, which is why this is a plain id
+    // rather than a boolean beside one: an empty series simply never shows the sheet.
+    val companionBookId by viewModel.companionBookId.collectAsStateWithLifecycle()
+    if (companionBookId != -1L) {
+        com.betteraudio.ui.companion.CompanionDeckDialog(
+            bookId = companionBookId,
+            onDismiss = { viewModel.closeCompanion() }
         )
     }
 

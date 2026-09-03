@@ -22,6 +22,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
@@ -182,6 +186,35 @@ fun PillPerimeterProgress(
 }
 
 /**
+ * Dissolves a child's trailing edge over [fade] instead of ending it on a cut.
+ *
+ * The Immersive mini player's cover is the pill's own leading cap, so its right-hand edge is the
+ * one place two different materials meet — artwork against glass. A hard vertical line there (or
+ * a small corner radius trying to soften one) reads as a photo pasted onto a pill. Ramping the
+ * cover's alpha to nothing over the last [fade] lets the pill's own fill take over, and because
+ * the fill *is* a smudge of that same cover, the two sides meet in the same colours.
+ *
+ * `CompositingStrategy.Offscreen` is required: `BlendMode.DstIn` needs a real layer to punch alpha
+ * out of, and without it the mask paints as a black gradient instead of erasing (same constraint
+ * as [com.betteraudio.ui.immersive.heroWindowMask]).
+ */
+fun Modifier.fadeTrailingEdge(fade: Dp): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        if (size.width <= 0f) return@drawWithContent
+        val start = ((size.width - fade.toPx()) / size.width).coerceIn(0f, 1f)
+        drawRect(
+            brush = Brush.horizontalGradient(
+                0f to Color.Black,
+                start to Color.Black,
+                1f to Color.Transparent
+            ),
+            blendMode = BlendMode.DstIn
+        )
+    }
+
+/**
  * Drop-in replacement for a frosted `Surface` on the Immersive theme: same shape/shadow, but the
  * fill is a vertically-smudged, darkened sample of a cover instead of a flat translucent color.
  * Falls back to a plain translucent fill when there's no cover art yet (fresh install) or the
@@ -202,6 +235,18 @@ fun GlassPillSurface(
      * rather than the player's own cover, and show the wrong thing entirely.
      */
     sampleBackdrop: Boolean = true,
+    /**
+     * Whether to stroke the 1dp top-lit rim that gives a pill its "cut glass" read.
+     *
+     * On by default, and right for the nav pill: it is a small object that needs an edge to be
+     * read as an object at all. The mini player turned it off — at 64dp tall and full-bleed wide
+     * it is the largest floating surface in the app, and at that size the rim stops reading as
+     * light catching an edge and starts reading as a drawn outline around a card. Without it the
+     * pill is defined by its own shadow and by the darkening of the glass against the backdrop,
+     * which is how the rest of the theme separates surfaces, and the only line left on the shape
+     * is the progress arc — which is the one line that means something.
+     */
+    edgeLight: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val backdrop = LocalImmersiveBackdrop.current
@@ -303,18 +348,21 @@ fun GlassPillSurface(
         // roughly the same darkness — so contrast is unchanged while the pill finally keeps the
         // artwork's hue, and its top edge reads lighter than its base like real glass.
         Box(Modifier.matchParentSize().background(ImmersiveStyle.glassVeil()))
-        // Subtle top-lit edge for the "glass" read.
-        Box(
-            Modifier
-                .matchParentSize()
-                .border(
-                    width = 1.dp,
-                    brush = Brush.verticalGradient(
-                        listOf(Color.White.copy(alpha = 0.32f), Color.White.copy(alpha = 0f))
-                    ),
-                    shape = shape
-                )
-        )
+        // Subtle top-lit edge for the "glass" read. See [edgeLight] for why the mini player
+        // opts out.
+        if (edgeLight) {
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.verticalGradient(
+                            listOf(Color.White.copy(alpha = 0.32f), Color.White.copy(alpha = 0f))
+                        ),
+                        shape = shape
+                    )
+            )
+        }
         CompositionLocalProvider(LocalContentColor provides contentColor) {
             content()
         }

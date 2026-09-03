@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -35,7 +36,7 @@ import com.betteraudio.ui.haptics.*
  * Book Info page. The page itself — cover morph out of the tapped grid card, reveal, backdrop, top
  * bar, info panel — is [InfoPageScaffold], shared verbatim with
  * [com.betteraudio.ui.series.SeriesDetailScreen] and split per theme inside it (see its doc). This
- * file supplies only what is specific to a book: its data, its overflow item, and the fact that
+ * file supplies only what is specific to a book: its data, its overflow items, and the fact that
  * Resume has to shrink the page back onto the card before the player opens.
  *
  * No theme `when` here — the scaffold owns the split, so a single implementation serves both looks.
@@ -51,6 +52,7 @@ fun BookInfoScreen(
     val book = bwp?.book
 
     var showBookOptions by remember { mutableStateOf(false) }
+    var showCompanion by remember { mutableStateOf(false) }
     val coverSearchOpen by viewModel.coverSearchOpen.collectAsStateWithLifecycle()
     val pageState = rememberInfoPageState()
 
@@ -89,8 +91,23 @@ fun BookInfoScreen(
                 leadingIcon = { Icon(Icons.Default.Edit, null) },
                 onClick = { dismiss(); showBookOptions = true }
             )
+            // Reachable without starting playback — the reveal cursor only moves while listening
+            // (docs/companion-packs.md §6), so opening the sheet from here cannot spoil anything
+            // the listener has not already reached.
+            HapticDropdownMenuItem(
+                text = { Text("Companion") },
+                leadingIcon = { Icon(Icons.Default.Groups, null) },
+                onClick = { dismiss(); showCompanion = true }
+            )
         }
     )
+
+    if (showCompanion) {
+        com.betteraudio.ui.companion.CompanionDeckDialog(
+            bookId = viewModel.bookId,
+            onDismiss = { showCompanion = false }
+        )
+    }
 
     if (showBookOptions && bwp != null) {
         BookOptionsSheet(

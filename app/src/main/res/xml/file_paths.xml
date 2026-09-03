@@ -3,4 +3,5 @@
     <cache-path name="apk_updates" path="." />
     <files-path name="logs" path="logs/" />
     <files-path name="backup_share" path="backup_share/" />
+    <files-path name="companion_share" path="companion_share/" />
 </paths>

@@ -288,6 +288,31 @@ class AudiobookRepository @Inject constructor(
         diskMirror.markDirty(bookId)
     }
 
+    // ── Companion packs (docs/companion-packs.md §6) ─────────────────────────
+    // revealedMs is written from PlaybackService's position-saver tick, the same continuous
+    // "high-frequency, deferred" cadence as updatePosition above — markDirty, not flushBook.
+    suspend fun getRevealedMs(bookId: Long): Long = progressDao.getRevealedMs(bookId) ?: 0L
+
+    suspend fun updateRevealedMs(bookId: Long, revealedMs: Long) {
+        db.withTransaction {
+            val existing = progressDao.getProgressForBookOnce(bookId)
+            if (existing == null) {
+                progressDao.upsert(PlaybackProgress(bookId = bookId, revealedMs = revealedMs))
+            } else {
+                progressDao.updateRevealedMs(bookId, revealedMs)
+            }
+        }
+        diskMirror.markDirty(bookId)
+    }
+
+    /** A deliberate, rare, user-confirmed action (§6.3's "set reveal point", or the "start fresh"
+     *  option on companion-pack import, §10.1) — flushed immediately, unlike [updateRevealedMs]'s
+     *  tick writes, matching every other one-off user edit in this repository. */
+    suspend fun resetProgress(bookId: Long) {
+        db.withTransaction { progressDao.resetProgress(bookId) }
+        diskMirror.flushBook(bookId)
+    }
+
     suspend fun updateBookMetadata(bookId: Long, titleOverride: String?, authorOverride: String?) {
         bookDao.updateMetadata(bookId, titleOverride?.takeIf { it.isNotBlank() }, authorOverride?.takeIf { it.isNotBlank() })
         diskMirror.flushBook(bookId)

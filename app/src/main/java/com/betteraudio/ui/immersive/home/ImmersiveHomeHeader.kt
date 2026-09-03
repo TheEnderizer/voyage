@@ -179,6 +179,20 @@ fun ImmersiveHomeHeader(
                 )
             )
 
+            // Where you are, under what you are in. Sits between the title and the progress bar
+            // on purpose: it reads as a continuation of the title rather than as a second caption
+            // competing with the eyebrow above it, and it is the line that changes as you listen.
+            heroData.chapterLabel?.let {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ImmersiveStyle.scrimText(muted = true),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             if (heroData.progressFraction > 0f) {
                 Spacer(Modifier.height(9.dp))
                 Box(
