@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Before you start
+
+**Read `docs/status.md` first.** It is a one-page ledger of what is already built, what is
+deliberately *not* built, and what is mid-flight — so "has this been done already?" is answered
+without a repo search or a guess. This file explains how things work; that one says what exists.
+
+**Update it in the same commit as the work it describes.** A stale ledger is worse than none,
+because it still gets trusted.
+
 ## What this is
 
 Better Audio (released as "Voyage") is a native Android audiobook player: it scans a local folder for audio files, organizes them into books, **series**, and authors, plays multi-file books (and whole series) as one resumable timeline, tracks per-book resume position, and integrates with the lock screen, a home-screen widget, and (optionally) Gemini AI for auto-generated synopses. Single Gradle module (`app/`), package `com.betteraudio`. Kotlin + Jetpack Compose + Media3 + Room + Hilt, MVVM. `minSdk = 26`, `compileSdk`/`targetSdk = 36`.
