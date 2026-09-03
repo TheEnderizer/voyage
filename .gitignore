@@ -40,3 +40,7 @@ scripts/.testlib/
 dist/
 # Icon contact sheets generated while designing launcher icons
 icon_sheet.png
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
