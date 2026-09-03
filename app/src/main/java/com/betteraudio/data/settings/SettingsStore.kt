@@ -88,16 +88,20 @@ class SettingsStore @Inject constructor(
         val SERIES_MEMBERSHIP_REPAIR_DONE = booleanPreferencesKey("series_membership_repair_done")
         // Top-level home section: AUDIO (default) | EBOOKS.
         val HOME_SECTION                 = stringPreferencesKey("home_section")
-        // Reader text size, as a percentage (100 = default CSS font-size).
+        // Every reading setting, as one serialized ReaderPrefs document — see that class for why
+        // this surface is a document and not ~45 individual keys like everything else here.
+        val READER_PREFS                 = stringPreferencesKey("reader_prefs")
+        /** Per-book override of [READER_PREFS] (inventory #160). Absent = the book follows global. */
+        fun readerPrefsForBook(bookId: Long) = stringPreferencesKey("reader_prefs_book_$bookId")
+
+        // ── Legacy reader keys ────────────────────────────────────────────────────────────
+        // Superseded by READER_PREFS. Kept read-only so an install that had already set them
+        // seeds the new document with the user's real choices instead of silently resetting the
+        // reader to defaults on update. Nothing writes them any more.
         val READER_FONT_SIZE             = intPreferencesKey("reader_font_size")
-        // Reading-page colour theme, independent of the app's own Material You/Immersive theme:
-        // PAPER (default) | SEPIA | GREY | DARK | BLACK. See ReaderTheme.
         val READER_THEME                 = stringPreferencesKey("reader_theme")
-        // SERIF (default) | SANS | MONO. See ReaderTypography.fontFamily.
         val READER_FONT_FAMILY           = stringPreferencesKey("reader_font_family")
-        // TIGHT | NORMAL (default) | LOOSE. See ReaderTypography.lineHeightMultiplier.
         val READER_LINE_SPACING          = stringPreferencesKey("reader_line_spacing")
-        // NARROW | NORMAL (default) | WIDE. See ReaderMargins.
         val READER_MARGINS               = stringPreferencesKey("reader_margins")
         val READER_JUSTIFY               = booleanPreferencesKey("reader_justify")
         val READER_HYPHENATE             = booleanPreferencesKey("reader_hyphenate")
@@ -275,13 +279,46 @@ class SettingsStore @Inject constructor(
     val ebookFolder: Flow<String>              = prefsData.map { it[Keys.EBOOK_FOLDER] ?: "" }.distinctUntilChanged()
     val phantomSeriesCleanupDone: Flow<Boolean> = prefsData.map { it[Keys.PHANTOM_SERIES_CLEANUP_DONE] ?: false }.distinctUntilChanged()
     val seriesMembershipRepairDone: Flow<Boolean> = prefsData.map { it[Keys.SERIES_MEMBERSHIP_REPAIR_DONE] ?: false }.distinctUntilChanged()
-    val readerFontSize: Flow<Int>              = prefsData.map { it[Keys.READER_FONT_SIZE] ?: 100 }.distinctUntilChanged()
-    val readerTheme: Flow<String>               = prefsData.map { it[Keys.READER_THEME] ?: "PAPER" }.distinctUntilChanged()
-    val readerFontFamily: Flow<String>          = prefsData.map { it[Keys.READER_FONT_FAMILY] ?: "SERIF" }.distinctUntilChanged()
-    val readerLineSpacing: Flow<String>         = prefsData.map { it[Keys.READER_LINE_SPACING] ?: "NORMAL" }.distinctUntilChanged()
-    val readerMargins: Flow<String>             = prefsData.map { it[Keys.READER_MARGINS] ?: "NORMAL" }.distinctUntilChanged()
-    val readerJustify: Flow<Boolean>            = prefsData.map { it[Keys.READER_JUSTIFY] ?: true }.distinctUntilChanged()
-    val readerHyphenate: Flow<Boolean>          = prefsData.map { it[Keys.READER_HYPHENATE] ?: true }.distinctUntilChanged()
+
+    /** The global reading settings (inventory #160's "global" side). */
+    val readerPrefs: Flow<ReaderPrefs> = prefsData.map { p ->
+        p[Keys.READER_PREFS]?.let { ReaderPrefs.decode(it) } ?: seedFromLegacyKeys(p)
+    }.distinctUntilChanged()
+
+    /** The raw stored document, for the disk mirror. Null/blank until the user changes anything. */
+    val readerPrefsRaw: Flow<String> = prefsData.map { it[Keys.READER_PREFS] ?: "" }.distinctUntilChanged()
+
+    /** This book's own settings if it has been detached from the global ones, else null. */
+    fun readerPrefsForBook(bookId: Long): Flow<ReaderPrefs?> =
+        prefsData.map { it[Keys.readerPrefsForBook(bookId)]?.let(ReaderPrefs::decode) }.distinctUntilChanged()
+
+    /** What the reader actually renders with: the book's override if it has one, else global. */
+    fun effectiveReaderPrefs(bookId: Long): Flow<ReaderPrefs> =
+        prefsData.map { p ->
+            p[Keys.readerPrefsForBook(bookId)]?.let(ReaderPrefs::decode)
+                ?: p[Keys.READER_PREFS]?.let(ReaderPrefs::decode)
+                ?: seedFromLegacyKeys(p)
+        }.distinctUntilChanged()
+
+    /** One-time upgrade path: build the new document out of whatever the pre-document reader keys
+     *  held, so updating the app doesn't quietly throw away a user's font size and theme. */
+    private fun seedFromLegacyKeys(p: androidx.datastore.preferences.core.Preferences) = ReaderPrefs(
+        fontSizePct = p[Keys.READER_FONT_SIZE] ?: 100,
+        theme = p[Keys.READER_THEME] ?: "PAPER",
+        fontFamily = p[Keys.READER_FONT_FAMILY] ?: "SERIF",
+        lineHeight = when (p[Keys.READER_LINE_SPACING]) {
+            "TIGHT" -> 1.25f; "LOOSE" -> 1.7f; else -> 1.45f
+        },
+        marginLeftDp = legacyMargin(p[Keys.READER_MARGINS]),
+        marginRightDp = legacyMargin(p[Keys.READER_MARGINS]),
+        justify = p[Keys.READER_JUSTIFY] ?: true,
+        hyphenate = p[Keys.READER_HYPHENATE] ?: true,
+    )
+
+    private fun legacyMargin(name: String?) = when (name) {
+        "NARROW" -> 12; "WIDE" -> 32; else -> 20
+    }
+
     val homeSection: Flow<String>              = prefsData.map { it[Keys.HOME_SECTION] ?: "AUDIO" }.distinctUntilChanged()
     val customThemeColor: Flow<String>         = prefsData.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }.distinctUntilChanged()
     val darkMode: Flow<String>                 = prefsData.map { it[Keys.DARK_MODE] ?: "AUTO" }.distinctUntilChanged()
@@ -510,26 +547,28 @@ class SettingsStore @Inject constructor(
     suspend fun setSeriesMembershipRepairDone(done: Boolean) {
         context.dataStore.edit { it[Keys.SERIES_MEMBERSHIP_REPAIR_DONE] = done }
     }
-    suspend fun setReaderFontSize(pct: Int) {
-        context.dataStore.edit { it[Keys.READER_FONT_SIZE] = pct }
+    suspend fun setReaderPrefs(prefs: ReaderPrefs) {
+        context.dataStore.edit { it[Keys.READER_PREFS] = ReaderPrefs.encode(prefs) }
     }
-    suspend fun setReaderTheme(name: String) {
-        context.dataStore.edit { it[Keys.READER_THEME] = name }
+    /** Raw form, for the disk mirror restoring a `settings.json`. */
+    suspend fun setReaderPrefsRaw(raw: String) {
+        context.dataStore.edit { it[Keys.READER_PREFS] = raw }
     }
-    suspend fun setReaderFontFamily(name: String) {
-        context.dataStore.edit { it[Keys.READER_FONT_FAMILY] = name }
+    /** Detaches [bookId] from the global settings and gives it its own copy (inventory #160). */
+    suspend fun setReaderPrefsForBook(bookId: Long, prefs: ReaderPrefs) {
+        context.dataStore.edit { it[Keys.readerPrefsForBook(bookId)] = ReaderPrefs.encode(prefs) }
     }
-    suspend fun setReaderLineSpacing(name: String) {
-        context.dataStore.edit { it[Keys.READER_LINE_SPACING] = name }
+    /** Reattaches [bookId] to the global settings (inventory #161's Reset). */
+    suspend fun clearReaderPrefsForBook(bookId: Long) {
+        context.dataStore.edit { it.remove(Keys.readerPrefsForBook(bookId)) }
     }
-    suspend fun setReaderMargins(name: String) {
-        context.dataStore.edit { it[Keys.READER_MARGINS] = name }
-    }
-    suspend fun setReaderJustify(on: Boolean) {
-        context.dataStore.edit { it[Keys.READER_JUSTIFY] = on }
-    }
-    suspend fun setReaderHyphenate(on: Boolean) {
-        context.dataStore.edit { it[Keys.READER_HYPHENATE] = on }
+    /** "Apply to all": promote this book's settings to global and drop its override, so every
+     *  other book that never detached picks them up too. */
+    suspend fun promoteReaderPrefsToGlobal(bookId: Long, prefs: ReaderPrefs) {
+        context.dataStore.edit {
+            it[Keys.READER_PREFS] = ReaderPrefs.encode(prefs)
+            it.remove(Keys.readerPrefsForBook(bookId))
+        }
     }
     suspend fun setHomeSection(name: String) {
         context.dataStore.edit { it[Keys.HOME_SECTION] = name }

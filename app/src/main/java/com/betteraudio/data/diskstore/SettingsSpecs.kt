@@ -76,7 +76,12 @@ object SettingsSpecs {
         spec("cover_accents", "string", { it.coverAccents.first().takeIf(String::isNotBlank) }, { s, v -> s.setCoverAccentsRaw(v) }),
         spec("dark_mode", "string", { it.darkMode.first() }, { s, v -> s.setDarkMode(v) }),
         spec("pure_black", "boolean", { it.pureBlack.first().toString() }, { s, v -> s.setPureBlack(v.toBoolean()) }),
-        spec("reader_font_size", "int", { it.readerFontSize.first().toString() }, { s, v -> s.setReaderFontSize(v.toInt()) }),
+        // The whole reading-settings document (ReaderPrefs) as one JSON string. Omitted while the
+        // user has never changed a reading setting, so a settings.json from an audio-only install
+        // stays free of a defaults blob. Per-book overrides (reader_prefs_book_<id>) are NOT
+        // mirrored: book row ids aren't stable across a reinstall, so they'd reattach to the wrong
+        // books — the global document is the portable half.
+        spec("reader_prefs", "string", { it.readerPrefsRaw.first().takeIf(String::isNotBlank) }, { s, v -> s.setReaderPrefsRaw(v) }),
         spec("home_section", "string", { it.homeSection.first() }, { s, v -> s.setHomeSection(v) }),
         spec("widget_hide_when_idle", "boolean", { it.widgetHideWhenIdle.first().toString() }, { s, v -> s.setWidgetHideWhenIdle(v.toBoolean()) }),
         spec("dynamic_pills", "boolean", { it.dynamicPills.first().toString() }, { s, v -> s.setDynamicPills(v.toBoolean()) }),
