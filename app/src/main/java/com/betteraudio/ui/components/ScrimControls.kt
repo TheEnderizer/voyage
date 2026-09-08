@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import com.betteraudio.ui.theme.Pill
@@ -59,7 +60,17 @@ fun ScrimPill(
     ) {
         Icon(icon, null, Modifier.size(15.dp), tint = fg)
         Spacer(Modifier.width(5.dp))
-        Text(label, style = MaterialTheme.typography.labelMedium, color = fg)
+        // Single line, ellipsised: a pill squeezed by a sibling used to wrap its label one
+        // character per row, turning "Dismiss" into a vertical column of letters. Wrapping is
+        // never right here — the pill is a fixed-height control, so a label that does not fit
+        // should say so by trailing off, and the layout above it should be the thing that gives.
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            color = fg,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         if (trailing != null) {
             Spacer(Modifier.width(2.dp))
             Icon(trailing, null, Modifier.size(15.dp), tint = fg)
