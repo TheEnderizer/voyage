@@ -1,8 +1,10 @@
-package com.betteraudio.ui.immersive.components
+package com.betteraudio.ui.components
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
@@ -25,16 +27,28 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
- * How the Immersive player draws its chapter scrubber. Four takes on the same information, all
- * white-on-scrim over the blurred cover and all painted in the cover's own accent — the choice is
- * how loudly the control states itself, not what it says.
+ * How the player draws its chapter scrubber. Five takes on the same information — the choice is
+ * how loudly the control states itself, not what it says. Offered in **both** app looks: the four
+ * painted designs were born in Immersive but nothing in them is Immersive-specific (they take an
+ * accent and a track colour and fill the width they are given), and [CLASSIC] is the Material
+ * slider Material You has always used, kept as an option rather than replaced.
  *
- * The gesture, the swell spring, the haptics and the 28dp-plus hit target live in the player's
- * `ImmersiveScrubber` and are identical for all four; only [drawScrubber] differs. That split is
- * what lets Settings preview each one with the real drawing code instead of a mock-up that can
- * drift away from it.
+ * The gesture, the swell spring, the haptics and the 28dp-plus hit target live in
+ * [com.betteraudio.ui.components.VoyageScrubber] and are identical for all of them; only
+ * [drawScrubber] differs. That split is what lets Settings preview each one with the real drawing
+ * code instead of a mock-up that can drift away from it.
+ *
+ * [CLASSIC] is the one entry [drawScrubber] cannot paint: an M3 `Slider` is a composable with its
+ * own thumb, track and interaction visuals, and hand-redrawing it on a Canvas would be a copy that
+ * silently drifts from Material's every time the library updates. `VoyageScrubber` branches to the
+ * real control for it instead, which is why that branch lives at the composable level and not here.
  */
 enum class ScrubberStyle(val label: String, val blurb: String, val height: Dp) {
+    CLASSIC(
+        "Material slider",
+        "The standard Material bar — a plain track with a round thumb. What Material You has always used.",
+        28.dp
+    ),
     EMBER(
         "Ember hairline",
         "A thin rail that gains colour as it fills, with a lit bead riding the playhead.",
@@ -61,7 +75,9 @@ enum class ScrubberStyle(val label: String, val blurb: String, val height: Dp) {
     }
 }
 
-/** Provided by MainActivity; read by the Immersive player. */
+/** Provided by MainActivity from whichever of the two per-theme preferences matches the active
+ *  look (`scrubber_style` for Immersive, `scrubber_style_material` for Material You); read by both
+ *  players through [VoyageScrubber]. One local, so no player has to know which pref fed it. */
 val LocalScrubberStyle = staticCompositionLocalOf { ScrubberStyle.EMBER }
 
 /**
@@ -84,6 +100,10 @@ fun DrawScope.drawScrubber(
     // playhead is the brightest thing on the sheet and it should still be the book's brightest.
     val bead = lerp(Color.White, accent, 0.22f)
     when (style) {
+        // Never reached: VoyageScrubber renders the real M3 Slider for CLASSIC and only calls
+        // this for the painted designs. Drawn as Ember rather than as nothing so a future caller
+        // that forgets the branch shows a working bar instead of an empty strip.
+        ScrubberStyle.CLASSIC -> drawEmber(f, swell, accent, trackColor, bead)
         ScrubberStyle.EMBER -> drawEmber(f, swell, accent, trackColor, bead)
         ScrubberStyle.RIBS -> drawRibs(f, swell, accent, trackColor, bead)
         ScrubberStyle.AURORA -> drawAurora(f, swell, accent, trackColor, bead)
@@ -292,7 +312,24 @@ fun ScrubberPreview(
     modifier: Modifier = Modifier,
     fraction: Float = 0.42f
 ) {
+    val track = Color.White.copy(alpha = 0.24f)
+    if (style == ScrubberStyle.CLASSIC) {
+        // The real control, not a drawing of one — same reason the painted styles preview through
+        // drawScrubber. Disabled so the card's row keeps the tap, but coloured as if enabled.
+        Slider(
+            value = fraction,
+            onValueChange = {},
+            enabled = false,
+            colors = SliderDefaults.colors(
+                disabledThumbColor = accent,
+                disabledActiveTrackColor = accent,
+                disabledInactiveTrackColor = track
+            ),
+            modifier = modifier.fillMaxWidth().height(style.height)
+        )
+        return
+    }
     Canvas(modifier.fillMaxWidth().height(style.height)) {
-        drawScrubber(style, fraction, swell = 0f, accent = accent, trackColor = Color.White.copy(alpha = 0.24f))
+        drawScrubber(style, fraction, swell = 0f, accent = accent, trackColor = track)
     }
 }

@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraudio.ui.components.ColorPickerPanel
 import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.components.ImportStructureDialog
 import com.betteraudio.ui.components.label
@@ -293,27 +294,36 @@ internal fun LazyListScope.themeSection(
         }
     }
 
-    // Immersive only: which chapter scrubber the player draws. Each option previews itself with
+    // Both looks: which seek bar the player draws. Every design is offered in both — the four
+    // painted ones were Immersive-only for no reason either theme could point at, and the Material
+    // slider Material You always drew is now simply the first option rather than the only one.
+    // Each look keeps its own pick (and so its own shipped default), which is why the card writes
+    // to whichever preference matches the theme that is active. Every option previews itself with
     // the player's own drawing code (ScrubberArt.drawScrubber), so the picture cannot go stale.
     item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
-            val scrubberStyle by viewModel.scrubberStyle.collectAsStateWithLifecycle()
-            CardContainer {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Chapter progress", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "How the player draws the chapter scrubber. All four drag and seek the " +
-                            "same way \u2014 they differ only in how loudly they state themselves.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+        val immersiveSeekBar = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE
+        val scrubberStyle by (
+            if (immersiveSeekBar) viewModel.scrubberStyle else viewModel.scrubberStyleMaterial
+            ).collectAsStateWithLifecycle()
+        CardContainer {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Seek bar", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "How the player draws the progress bar you drag. All five drag and seek the " +
+                        "same way \u2014 they differ only in how loudly they state " +
+                        "themselves. Each theme remembers its own choice.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                com.betteraudio.ui.components.ScrubberStyle.entries.forEach { opt ->
+                    ScrubberOptionRow(
+                        style = opt,
+                        selected = scrubberStyle == opt,
+                        onSelect = {
+                            if (immersiveSeekBar) viewModel.setScrubberStyle(opt)
+                            else viewModel.setScrubberStyleMaterial(opt)
+                        }
                     )
-                    com.betteraudio.ui.immersive.components.ScrubberStyle.entries.forEach { opt ->
-                        ScrubberOptionRow(
-                            style = opt,
-                            selected = scrubberStyle == opt,
-                            onSelect = { viewModel.setScrubberStyle(opt) }
-                        )
-                    }
                 }
             }
         }
@@ -501,25 +511,65 @@ internal fun LazyListScope.themeSection(
 
 }
 
+/**
+ * Pick the app's accent by eye, not by arithmetic.
+ *
+ * The dialog used to be presets plus a hex field, which meant every colour between two presets was
+ * only reachable by typing its code — so in practice the presets *were* the choice. It now leads
+ * with a real picker ([ColorPickerPanel]); the presets stay as shortcuts to known-good seeds, and
+ * the hex field stays for pasting a value from somewhere else. All three write the same state, so
+ * whichever you touch last is what Apply commits.
+ *
+ * Nothing is written until Apply. The whole app recolours off this preference, so a live-applying
+ * picker would strobe the entire UI under a dragging finger.
+ */
 @Composable
 private fun CustomThemeColorDialog(current: String, onSelect: (String) -> Unit, onDismiss: () -> Unit) {
+    // Seeded from the stored value when it is a plain colour; a preset id or an encoded palette has
+    // no single colour to seed from, so those start the picker at the scheme's own primary.
+    val fallback = MaterialTheme.colorScheme.primary
+    var picked by remember(current) {
+        mutableStateOf(
+            current.takeIf { it.startsWith("#") }
+                ?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() }
+                ?: fallback
+        )
+    }
     var hexInput by remember(current) {
         mutableStateOf(current.takeIf { it.startsWith("#") } ?: "")
+    }
+    fun commit(color: Color) {
+        picked = color
+        hexInput = String.format("#%08X", color.toArgb())
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Custom color") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                FlowRowSwatches(current = current, onPick = { color ->
-                    val hex = String.format("#%08X", color.toArgb())
-                    hexInput = hex
-                    onSelect(hex)
-                    onDismiss()
-                })
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                ColorPickerPanel(color = picked, onColorChange = { commit(it) })
+                Text(
+                    "Presets",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                FlowRowSwatches(
+                    current = String.format("#%08X", picked.toArgb()),
+                    onPick = { commit(it) }
+                )
                 OutlinedTextField(
                     value = hexInput,
-                    onValueChange = { hexInput = it },
+                    onValueChange = { text ->
+                        hexInput = text
+                        // Typing a valid colour moves the picker with it, so the field and the
+                        // field above never disagree about what is selected.
+                        val normalized = text.trim().let { if (it.startsWith("#")) it else "#$it" }
+                        runCatching { android.graphics.Color.parseColor(normalized) }
+                            .getOrNull()?.let { picked = Color(it) }
+                    },
                     label = { Text("Hex (#AARRGGBB or #RRGGBB)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
@@ -528,17 +578,16 @@ private fun CustomThemeColorDialog(current: String, onSelect: (String) -> Unit, 
         },
         confirmButton = {
             HapticTextButton(onClick = {
-                val normalized = hexInput.trim().let { if (it.startsWith("#")) it else "#$it" }
-                if (runCatching { android.graphics.Color.parseColor(normalized) }.isSuccess) {
-                    onSelect(normalized)
-                    onDismiss()
-                }
+                onSelect(String.format("#%08X", picked.toArgb()))
+                onDismiss()
             }) { Text("Apply") }
         },
         dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
+/** The preset seeds, as tappable circles. [current] is compared as "#AARRGGBB" so the ring
+ *  follows whatever the picker is showing, not only an already-applied preference. */
 @Composable
 private fun FlowRowSwatches(current: String, onPick: (androidx.compose.ui.graphics.Color) -> Unit) {
     val rows = CUSTOM_COLOR_PRESETS.chunked(8)
@@ -576,7 +625,7 @@ private fun FlowRowSwatches(current: String, onPick: (androidx.compose.ui.graphi
  *  the blurred cover \u2014 on a pale settings card its track and bead would read wrongly. */
 @Composable
 private fun ScrubberOptionRow(
-    style: com.betteraudio.ui.immersive.components.ScrubberStyle,
+    style: com.betteraudio.ui.components.ScrubberStyle,
     selected: Boolean,
     onSelect: () -> Unit
 ) {
@@ -618,7 +667,7 @@ private fun ScrubberOptionRow(
                 .background(Color.Black.copy(alpha = 0.42f))
                 .padding(horizontal = 14.dp, vertical = 8.dp)
         ) {
-            com.betteraudio.ui.immersive.components.ScrubberPreview(
+            com.betteraudio.ui.components.ScrubberPreview(
                 style = style,
                 accent = MaterialTheme.colorScheme.primary
             )
@@ -632,21 +681,35 @@ private fun CoverAccentCard(viewModel: SettingsViewModel) {
     val coverPath = com.betteraudio.ui.theme.LocalThemeCoverPath.current
     val accents by viewModel.coverAccents.collectAsStateWithLifecycle()
     val swatches = com.betteraudio.ui.theme.rememberCoverSwatches(coverPath)
+    val globalAccent by viewModel.globalAccent.collectAsStateWithLifecycle()
     val pinned = coverPath?.let { accents[it] }
+    // What the card is showing as chosen. While the all-books override is on it is that colour,
+    // whatever this cover's own pin says — the override is what the app is actually painting with,
+    // and a card that highlighted a per-cover pin the theme is ignoring would be lying.
+    val effective = globalAccent ?: pinned
+    var showPicker by remember { mutableStateOf(false) }
+
+    // Whether the chosen colour came off this cover. A colour mixed in the picker will not be in
+    // the swatch list, so the custom tile is what carries the tick for it.
+    val fromCover = effective != null && swatches.any { it.toArgb() == effective }
 
     CardContainer {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Cover accent", style = MaterialTheme.typography.titleSmall)
             Text(
                 when {
+                    globalAccent != null ->
+                        "One colour for the whole library. Every book uses the colour below until " +
+                            "you untick it \u2014 then each cover goes back to its own pick."
                     coverPath == null ->
                         "Start a book and the colours Voyage found in its cover will show up here."
                     swatches.isEmpty() ->
-                        "Reading the colours out of the current cover…"
+                        "Reading the colours out of the current cover\u2026"
                     pinned == null ->
                         "Voyage is choosing the accent from the current cover on its own. Pick one " +
-                            "of its colours to use that instead — useful when the automatic " +
-                            "choice keeps landing somewhere you did not want."
+                            "of its colours \u2014 or mix your own \u2014 to use that instead, " +
+                            "useful when the automatic choice keeps landing somewhere you did not " +
+                            "want."
                     else ->
                         "Pinned. This cover keeps the colour you picked; every other cover is still " +
                             "chosen automatically."
@@ -654,6 +717,8 @@ private fun CoverAccentCard(viewModel: SettingsViewModel) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            // The row still shows the cover's own colours while the override is on, so the
+            // override can be re-pointed at one of them without being turned off first.
             if (coverPath != null && swatches.isNotEmpty()) {
                 FlowRow(
                     Modifier.fillMaxWidth(),
@@ -662,31 +727,118 @@ private fun CoverAccentCard(viewModel: SettingsViewModel) {
                 ) {
                     AccentSwatch(
                         color = null,
-                        selected = pinned == null,
-                        onClick = { haptics.select(); viewModel.setCoverAccent(coverPath, null) }
+                        selected = effective == null,
+                        onClick = {
+                            haptics.select()
+                            // Automatic means automatic everywhere: leaving the all-books override
+                            // set would keep painting one colour and make the tick a lie.
+                            viewModel.setGlobalAccent(null)
+                            viewModel.setCoverAccent(coverPath, null)
+                        }
                     )
                     swatches.forEach { swatch ->
                         val argb = swatch.toArgb()
                         AccentSwatch(
                             color = swatch,
-                            selected = pinned == argb,
+                            selected = effective == argb,
                             onClick = {
-                                // Tapping the pinned colour again releases it, so the row never
+                                // Tapping the chosen colour again releases it, so the row never
                                 // needs a separate "clear" affordance beyond Auto.
-                                if (pinned == argb) haptics.select() else haptics.commit()
-                                viewModel.setCoverAccent(coverPath, if (pinned == argb) null else argb)
+                                val clearing = effective == argb
+                                if (clearing) haptics.select() else haptics.commit()
+                                if (globalAccent != null) {
+                                    viewModel.setGlobalAccent(if (clearing) null else argb)
+                                } else {
+                                    viewModel.setCoverAccent(coverPath, if (clearing) null else argb)
+                                }
                             }
+                        )
+                    }
+                    // Anything at all, not just what this cover happens to contain. A cover with
+                    // sixteen muted browns offers no way to say "green" without this.
+                    AccentSwatch(
+                        color = effective?.takeIf { !fromCover }?.let { Color(it) },
+                        selected = effective != null && !fromCover,
+                        custom = true,
+                        onClick = { haptics.select(); showPicker = true }
+                    )
+                }
+            }
+            // Only meaningful once there is a colour to spread. With nothing chosen there is
+            // nothing to apply everywhere, so the row would toggle into a no-op.
+            if (effective != null) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HapticCheckbox(
+                        checked = globalAccent != null,
+                        onCheckedChange = { on ->
+                            // Turning it on promotes whatever is chosen right now; turning it off
+                            // drops back to this cover's own pin, which was never cleared.
+                            viewModel.setGlobalAccent(if (on) effective else null)
+                        }
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("Use on every book", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "On, the whole library keeps this colour. Off, it belongs to this " +
+                                "book's cover alone and every other book is themed from its own.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
             }
         }
     }
+
+    if (showPicker) {
+        val fallback = MaterialTheme.colorScheme.primary
+        var draft by remember { mutableStateOf(effective?.let { Color(it) } ?: fallback) }
+        AlertDialog(
+            onDismissRequest = { showPicker = false },
+            title = { Text("Accent colour") },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    ColorPickerPanel(color = draft, onColorChange = { draft = it })
+                    Text(
+                        "Applies to this book's cover, or to every book when \u201cUse on every " +
+                            "book\u201d is ticked.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                HapticTextButton(onClick = {
+                    val argb = draft.toArgb()
+                    haptics.commit()
+                    if (globalAccent != null) viewModel.setGlobalAccent(argb)
+                    else coverPath?.let { viewModel.setCoverAccent(it, argb) }
+                    showPicker = false
+                }) { Text("Apply") }
+            },
+            dismissButton = {
+                HapticTextButton(onClick = { showPicker = false }) { Text("Cancel") }
+            }
+        )
+    }
 }
 
-/** One tile in the accent row. A null [color] is the Automatic tile. */
+/** One tile in the accent row. A null [color] is the Automatic tile, unless [custom] is set — then
+ *  it is the "mix your own" tile that has not been used yet. */
 @Composable
-private fun AccentSwatch(color: Color?, selected: Boolean, onClick: () -> Unit) {
+private fun AccentSwatch(
+    color: Color?,
+    selected: Boolean,
+    onClick: () -> Unit,
+    custom: Boolean = false
+) {
     val shape = RoundedCornerShape(14.dp)
     // The tick has to sit on the swatch itself, so it takes its colour from that swatch rather
     // than from the scheme — which is mid-transition to this very colour while you tap.
@@ -711,8 +863,8 @@ private fun AccentSwatch(color: Color?, selected: Boolean, onClick: () -> Unit) 
     ) {
         when {
             color == null -> Icon(
-                Icons.Default.AutoAwesome,
-                contentDescription = "Automatic",
+                if (custom) Icons.Default.Palette else Icons.Default.AutoAwesome,
+                contentDescription = if (custom) "Custom colour" else "Automatic",
                 modifier = Modifier.size(20.dp),
                 tint = markColor
             )

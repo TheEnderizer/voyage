@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -34,10 +35,14 @@ import com.betteraudio.ui.reader.EbookReaderViewModel
 import com.betteraudio.ui.reader.ReaderUiState
 import com.betteraudio.ui.reader.render.*
 
-private const val PREVIEW_HEADING = "Down the Rabbit-Hole"
-private const val PREVIEW_TEXT = "They were indeed a queer-looking party that assembled on the bank — " +
-    "the birds with draggled feathers, the animals with their fur clinging close to them, and all " +
-    "dripping wet, cross, and uncomfortable."
+/** Deliberately lorem ipsum rather than a real passage. The preview exists to show *shape* — size,
+ *  weight, leading, measure, justification, margins — and readable prose invites you to read it
+ *  instead of look at it. Nonsense Latin with ordinary word lengths and no meaning keeps the eye on
+ *  the typography, which is the only thing any control on this screen changes. */
+private const val PREVIEW_HEADING = "Lorem Ipsum"
+private const val PREVIEW_TEXT = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do " +
+    "eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis " +
+    "nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat."
 
 /** The tabs, in the order they appear. Grouped so a change you are hunting for is one tap away
  *  rather than a scroll through four unrelated sections — the whole point of the tabbed layout
@@ -259,7 +264,9 @@ private fun DisplayTab(p: ReaderPrefs, set: ((ReaderPrefs) -> ReaderPrefs) -> Un
 
     GroupLabel("Bars")
     SwitchRow("Show the top bar", p.showHeader) { v -> set { it.copy(showHeader = v) } }
+    Hint("Off, back / contents / Aa still appear as small floating buttons — the way back here is never hidden.")
     SwitchRow("Show the bottom bar", p.showFooter) { v -> set { it.copy(showFooter = v) } }
+    Hint("Long-press the page to show or hide these bars, whatever the tap settings are set to.")
 
     GroupLabel("What the bottom bar shows")
     SettingRow("Position") {
@@ -343,7 +350,13 @@ private fun PreviewPane(prefs: ReaderPrefs) {
     ) {
         Text("PREVIEW", style = MaterialTheme.typography.labelSmall, color = palette.fg.copy(alpha = 0.55f))
         Spacer(Modifier.height(8.dp))
-        ReaderPageView(Page(blocks), typography, Modifier.fillMaxWidth())
+        // fillHeight = false so the sample wraps its two paragraphs instead of claiming the whole
+        // Column; the cap then keeps it a strip even at 300% font size, where two paragraphs are
+        // taller than the screen. Clipped rather than scrolled: the preview answers "what does my
+        // text look like", and one legible line of it answers that as well as ten.
+        Box(Modifier.fillMaxWidth().heightIn(max = 260.dp).clipToBounds()) {
+            ReaderPageView(Page(blocks), typography, Modifier.fillMaxWidth(), fillHeight = false)
+        }
     }
     HorizontalDivider()
 }
@@ -355,6 +368,19 @@ private fun GroupLabel(text: String) {
     Text(
         text.uppercase(), style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp)
+    )
+}
+
+/** A line of explanation under the control it belongs to. Deliberately not a tooltip: the thing
+ *  worth saying about these two is what happens when they are OFF, which is exactly when a user
+ *  would have no way left to come back and read a tooltip. */
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
     )
 }
 

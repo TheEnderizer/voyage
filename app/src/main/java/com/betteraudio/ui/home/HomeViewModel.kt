@@ -204,17 +204,14 @@ class HomeViewModel @Inject constructor(
 
     fun connectEpub(bookId: Long, epubPath: String) {
         viewModelScope.launch {
-            paragraphCache.invalidate(bookId)
-            val ok = runCatching { ebookScanner.attachEpubToBook(bookId, File(epubPath)) }.getOrDefault(false)
-            if (!ok) _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
+            if (!ebookScanner.connect(bookId, epubPath)) {
+                _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
+            }
         }
     }
 
     fun disconnectEpub(bookId: Long) {
-        viewModelScope.launch {
-            repository.setEbook(bookId, null, 0)   // also clears anchors + chapter map
-            paragraphCache.invalidate(bookId)
-        }
+        viewModelScope.launch { ebookScanner.disconnect(bookId) }
     }
 
     // ── Online cover search ────────────────────────────────────────────────

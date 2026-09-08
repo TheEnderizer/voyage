@@ -395,6 +395,21 @@ class SettingsViewModel @Inject constructor(
     fun setCoverAccent(coverPath: String, argb: Int?) =
         viewModelScope.launch { settings.setCoverAccent(coverPath, argb) }
 
+    /** The one-colour-for-the-whole-library override, as ARGB, or null when it is off. It
+     *  outranks every per-cover pin while set — see MainActivity's coverAccentOverride. */
+    val globalAccent: StateFlow<Int?> =
+        settings.globalAccent
+            .map { hex ->
+                hex.takeIf { it.isNotBlank() }
+                    ?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** [argb] null turns the override off, handing every cover back to its own pin or the
+     *  automatic pick. The per-cover map is deliberately left intact underneath. */
+    fun setGlobalAccent(argb: Int?) =
+        viewModelScope.launch { settings.setGlobalAccent(argb?.let { "#%08X".format(it) }) }
+
     val miniCoverStyle: StateFlow<com.betteraudio.ui.player.MiniCoverStyle> =
         settings.miniCoverStyle
             .map { com.betteraudio.ui.player.MiniCoverStyle.from(it) }
@@ -406,16 +421,30 @@ class SettingsViewModel @Inject constructor(
     fun setMiniCoverStyle(style: com.betteraudio.ui.player.MiniCoverStyle) =
         viewModelScope.launch { settings.setMiniCoverStyle(style.name) }
 
-    val scrubberStyle: StateFlow<com.betteraudio.ui.immersive.components.ScrubberStyle> =
+    // Two preferences, one card. Both looks offer all five designs; they are stored apart only so
+    // each keeps the default it shipped with (Immersive EMBER, Material You CLASSIC) rather than
+    // one look's pick restyling the other — see SettingsStore.Keys.SCRUBBER_STYLE.
+    val scrubberStyle: StateFlow<com.betteraudio.ui.components.ScrubberStyle> =
         settings.scrubberStyle
-            .map { com.betteraudio.ui.immersive.components.ScrubberStyle.from(it) }
+            .map { com.betteraudio.ui.components.ScrubberStyle.from(it) }
             .stateIn(
                 viewModelScope, SharingStarted.WhileSubscribed(5_000),
-                com.betteraudio.ui.immersive.components.ScrubberStyle.EMBER
+                com.betteraudio.ui.components.ScrubberStyle.EMBER
             )
 
-    fun setScrubberStyle(style: com.betteraudio.ui.immersive.components.ScrubberStyle) =
+    val scrubberStyleMaterial: StateFlow<com.betteraudio.ui.components.ScrubberStyle> =
+        settings.scrubberStyleMaterial
+            .map { com.betteraudio.ui.components.ScrubberStyle.from(it) }
+            .stateIn(
+                viewModelScope, SharingStarted.WhileSubscribed(5_000),
+                com.betteraudio.ui.components.ScrubberStyle.CLASSIC
+            )
+
+    fun setScrubberStyle(style: com.betteraudio.ui.components.ScrubberStyle) =
         viewModelScope.launch { settings.setScrubberStyle(style.name) }
+
+    fun setScrubberStyleMaterial(style: com.betteraudio.ui.components.ScrubberStyle) =
+        viewModelScope.launch { settings.setScrubberStyleMaterial(style.name) }
 
     val hapticStrength: StateFlow<com.betteraudio.ui.haptics.HapticStrength> =
         settings.hapticStrength

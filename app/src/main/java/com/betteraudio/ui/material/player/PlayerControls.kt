@@ -125,18 +125,20 @@ internal fun HorizontalSeekBar(
     val displayFrac = dragFrac ?: fraction.coerceIn(0f, 1f)
     val displayMs = (displayFrac * durationMs).toLong()
     Column(modifier) {
-        HapticSlider(
-            value = displayFrac,
-            onValueChange = { f ->
-                if (dragFrac == null) onScrubStart()
-                dragFrac = f
-            },
-            onValueChangeFinished = {
-                dragFrac?.let { onSeekFraction(it) }
+        // Follows the user's seek-bar choice like every other bar in the app; CLASSIC is the
+        // HapticSlider this always drew. See ui/components/VoyageScrubber.kt.
+        com.betteraudio.ui.components.VoyageScrubber(
+            fraction = displayFrac,
+            accent = colors.thumbColor,
+            trackColor = colors.inactiveTrackColor,
+            sliderColors = colors,
+            enabled = enabled,
+            onScrubStart = onScrubStart,
+            onScrub = { f -> dragFrac = f },
+            onScrubEnd = { f ->
+                onSeekFraction(f)
                 dragFrac = null
             },
-            enabled = enabled,
-            colors = colors,
             modifier = Modifier.fillMaxWidth()
         )
         TimeRow(

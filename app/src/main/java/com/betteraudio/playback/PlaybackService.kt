@@ -1,7 +1,12 @@
 package com.betteraudio.playback
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.pm.ServiceInfo
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -218,6 +223,13 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_CLOSE_BOOK        = "com.betteraudio.action.WIDGET_CLOSE_BOOK"
         /** Self-start marker — see [ensureStartedService]. Not a widget action, does nothing. */
         const val ACTION_KEEP_ALIVE        = "com.betteraudio.action.KEEP_ALIVE"
+
+        // Media3's OWN notification id and channel, taken from the provider rather than copied as
+        // literals so they cannot drift apart from it. promoteForColdWidgetTap posts under these
+        // deliberately, so Media3's real notification replaces the placeholder instead of joining
+        // it — see that function.
+        private const val MEDIA_NOTIFICATION_ID = DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID
+        private const val MEDIA_CHANNEL_ID = DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
         const val ACTION_SLEEP_TIMER_TOGGLE = "com.betteraudio.action.WIDGET_SLEEP_TIMER_TOGGLE"
         const val EXTRA_SLEEP_DURATION_MS  = "extra_sleep_duration_ms"
 
@@ -732,8 +744,68 @@ class PlaybackService : MediaSessionService() {
         AppLog.i(LogCat.PLAYBACK, "Queue empty — service no longer self-started")
     }
 
+    /**
+     * Holds up this service's end of the `startForegroundService` contract that
+     * [com.betteraudio.widget.WidgetIntents] now relies on.
+     *
+     * A widget button is delivered as a foreground-service start (the only kind the system will
+     * accept while the app is closed — see that class's doc), and every such start must reach
+     * `startForeground` within ~5 s or the process is killed with
+     * `ForegroundServiceDidNotStartInTimeException`. Media3 promotes the service itself, but only
+     * once playback is actually running, and the cold path in between — reading the last-played
+     * book id, loading its files, preparing the player — is asynchronous. Worse, it can end
+     * without ever playing: no last-played book, a book whose files have gone missing, or a widget
+     * action like quick-bookmark that never starts audio at all. Every one of those would have
+     * become a hard kill.
+     *
+     * So we post a placeholder immediately, **under Media3's own notification id and channel**.
+     * That is the whole trick: when Media3 promotes a moment later it calls `startForeground` with
+     * the same id, which *replaces* this notification rather than adding a second one, and the
+     * handover is invisible. Using an id of our own would leave the user looking at two
+     * notifications for one book, and stopping ours afterwards would drop the service out of the
+     * foreground Media3 had just put it in.
+     *
+     * Skipped when audio is already playing: the service is unambiguously foreground already, and
+     * overwriting the live media notification with "Resuming…" would be a visible glitch on every
+     * widget tap.
+     */
+    private fun promoteForColdWidgetTap() {
+        if (mediaSession?.player?.isPlaying == true) return
+        runCatching {
+            // Media3 creates this channel lazily when it first posts; on a cold start we get here
+            // first, and a notification on a channel that does not exist is dropped silently —
+            // taking the foreground promotion down with it.
+            val manager = getSystemService(NotificationManager::class.java)
+            if (manager?.getNotificationChannel(MEDIA_CHANNEL_ID) == null) {
+                manager?.createNotificationChannel(
+                    NotificationChannel(
+                        MEDIA_CHANNEL_ID,
+                        getString(R.string.app_name),
+                        NotificationManager.IMPORTANCE_LOW
+                    )
+                )
+            }
+            val placeholder = NotificationCompat.Builder(this, MEDIA_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_w_play)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText("Resuming…")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build()
+            ServiceCompat.startForeground(
+                this, MEDIA_NOTIFICATION_ID, placeholder,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q)
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+            )
+        }.onFailure {
+            AppLog.w(LogCat.WIDGET, "Foreground promotion for a widget tap failed: ${it.javaClass.simpleName}")
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val player = mediaSession?.player
+        // Before anything else, and before any early return below can skip it.
+        if (intent?.action?.startsWith("com.betteraudio.action.WIDGET_") == true) promoteForColdWidgetTap()
         intent?.action?.let {
             // KEEP_ALIVE is ours, not the widget's — logging it under WIDGET would read as a
             // phantom button press once per book load.

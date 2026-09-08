@@ -146,8 +146,32 @@ class PlayerViewModel @Inject constructor(
     private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
     private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
     private val coverSearchService: com.betteraudio.data.covers.CoverSearchService,
+    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     val playerController: PlayerController
 ) : ViewModel() {
+
+    // ── Ebook (EPUB) connect/disconnect ─────────────────────────────────────
+    // The same three actions Home's Book options offers, because it is the same sheet: the player
+    // overflow opens `BookOptionsSheet` too, and until this existed it passed no ebook callbacks,
+    // so "Connect EPUB…" there opened the picker and then dropped the file on the floor.
+
+    private val _ebookError = MutableStateFlow<String?>(null)
+    val ebookError: StateFlow<String?> = _ebookError.asStateFlow()
+    fun dismissEbookError() { _ebookError.value = null }
+
+    fun connectEpub(epubPath: String) {
+        if (bookId == -1L) return
+        viewModelScope.launch {
+            if (!ebookScanner.connect(bookId, epubPath)) {
+                _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
+            }
+        }
+    }
+
+    fun disconnectEpub() {
+        if (bookId == -1L) return
+        viewModelScope.launch { ebookScanner.disconnect(bookId) }
+    }
 
     // ── Online cover search ─────────────────────────────────────────────────
     // Same behaviour as HomeViewModel's, scoped to this screen's one book: the picked image is

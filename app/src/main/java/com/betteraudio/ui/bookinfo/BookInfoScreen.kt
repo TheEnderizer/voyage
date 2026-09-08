@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -45,6 +46,7 @@ import com.betteraudio.ui.haptics.*
 fun BookInfoScreen(
     onBack: () -> Unit,
     onResume: (bookId: Long) -> Unit,
+    onOpenReader: (bookId: Long) -> Unit = {},
     viewModel: BookInfoViewModel = hiltViewModel()
 ) {
     val bwp by viewModel.bookWithProgress.collectAsStateWithLifecycle()
@@ -116,7 +118,22 @@ fun BookInfoScreen(
             onUpdateMetadata = { title, author -> viewModel.updateMetadata(title, author) },
             onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
             onUpdateStatus = { viewModel.updateStatus(it) },
-            onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() }
+            onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() },
+            onConnectEpub = { path -> viewModel.connectEpub(path) },
+            onDisconnectEpub = { viewModel.disconnectEpub() },
+            onOpenReader = { showBookOptions = false; onOpenReader(viewModel.bookId) }
+        )
+    }
+
+    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
+    ebookError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissEbookError() },
+            title = { Text("Couldn't connect ebook") },
+            text = { Text(message) },
+            confirmButton = {
+                HapticTextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") }
+            }
         )
     }
 
@@ -157,6 +174,7 @@ fun rememberBookInfoOverlayController(): BookInfoOverlayController = remember { 
 fun BookInfoOverlay(
     controller: BookInfoOverlayController,
     onResume: (bookId: Long) -> Unit,
+    onOpenReader: (bookId: Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     if (controller.bookId == -1L) return
@@ -183,6 +201,7 @@ fun BookInfoOverlay(
                 BookInfoScreen(
                     onBack = { controller.close() },
                     onResume = { bookId -> controller.close(); onResume(bookId) },
+                    onOpenReader = { bookId -> controller.close(); onOpenReader(bookId) },
                 )
             }
         }

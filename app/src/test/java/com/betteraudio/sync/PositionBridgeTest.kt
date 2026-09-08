@@ -123,4 +123,40 @@ class PositionBridgeTest {
         val backToAudio = PositionBridge.charToAudioAnchored(spine, charOffset, anchors, totalCharsFor)
         assertEquals(2000L, backToAudio)
     }
+
+    /**
+     * The straddling pair's FIRST leg — still inside `prev`'s own spine item.
+     *
+     * The case above lands in a spine fully spanned between the two anchors, where an offset is
+     * measured from that spine's start; this one lands before the transition, where it must be
+     * measured from `prev.charOffset`. The two are one branch apart and the code returned the
+     * distance travelled for both, so a position in the tail of a chapter resolved to the same
+     * distance from the chapter's *beginning* — with anchors roughly a minute apart, the last
+     * ~minute of every chapter sent the reader to the top of that chapter instead of its end.
+     */
+    @Test
+    fun `audioToCharAnchored measures from the previous anchor when it stays in that spine`() {
+        // 8000 of this spine's 10000 chars are already behind us, and the next anchor is 200 chars
+        // into the following spine: a 2200-char path, of which the first 2000 are this spine's.
+        val anchors = listOf(AnchorPoint(1000, 0, 8000), AnchorPoint(2000, 1, 200))
+        val totalCharsFor = { spine: Int -> if (spine == 0) 10000 else 5000 }
+
+        // Halfway in time = 1100 chars along the path, which is still 900 chars short of the
+        // boundary — so it is char 9100 of spine 0, not char 1100.
+        assertEquals(0 to 9100, PositionBridge.audioToCharAnchored(1500, anchors, totalCharsFor))
+
+        // And it stays the exact inverse of charToAudioAnchored, which always measured this leg
+        // from prev.charOffset.
+        assertEquals(1500L, PositionBridge.charToAudioAnchored(0, 9100, anchors, totalCharsFor))
+    }
+
+    @Test
+    fun `audioToCharAnchored crosses into the next spine once the first leg is used up`() {
+        val anchors = listOf(AnchorPoint(1000, 0, 8000), AnchorPoint(2000, 1, 200))
+        val totalCharsFor = { spine: Int -> if (spine == 0) 10000 else 5000 }
+
+        // 95% of the way = 2090 chars along the 2200-char path: 2000 of them finish spine 0, so
+        // this is 90 chars into spine 1.
+        assertEquals(1 to 90, PositionBridge.audioToCharAnchored(1950, anchors, totalCharsFor))
+    }
 }

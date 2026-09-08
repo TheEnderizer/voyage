@@ -63,7 +63,7 @@ import com.betteraudio.ui.haptics.*
 fun PlayerContent(
     onCollapse: () -> Unit,
     startPlaying: Boolean = true,
-    onOpenReader: (Long) -> Unit = {},
+    onOpenReader: (bookId: Long, fromSync: Boolean) -> Unit = { _, _ -> },
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val onBack = onCollapse
@@ -320,7 +320,7 @@ fun PlayerContent(
                         onAddBookmark = { showAddBookmark = true },
                         onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                         onHistory = { showHistory = true },
-                        onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                        onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                         onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                         onLock = onLockPlayer,
                         onOpenCompanion = { showCompanion = true },
@@ -389,7 +389,7 @@ fun PlayerContent(
                     onAddBookmark = { showAddBookmark = true },
                     onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                     onHistory = { showHistory = true },
-                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                     onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                     onLock = onLockPlayer,
                     onOpenCompanion = { showCompanion = true },
@@ -442,7 +442,7 @@ fun PlayerContent(
                     onAddBookmark = { showAddBookmark = true },
                     onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                     onHistory = { showHistory = true },
-                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId) } },
+                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                     onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                     onLock = onLockPlayer
                 )
@@ -600,24 +600,24 @@ fun PlayerContent(
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
                     val chDisplayPos = (chDisplayFrac * chDur).toLong()
-                    HapticSlider(
-                        value = chDisplayFrac,
-                        onValueChange = { f ->
-                            if (chapterDragFrac == null) chapterScrubStartMs = bookPos
-                            chapterDragFrac = f
-                        },
-                        onValueChangeFinished = {
-                            val f = chapterDragFrac
-                            if (f != null) {
-                                val target = cur.startMs + (f * chDur).toLong()
-                                viewModel.bookSeekTo(target)
-                                if (chapterScrubStartMs >= 0L)
-                                    viewModel.onScrubSeek(chapterScrubStartMs, target)
-                            }
+                    // The seek bar is a user choice in BOTH looks now (Settings → Theme → Seek
+                    // bar); CLASSIC is this screen's original HapticSlider, unchanged and still
+                    // the default here. See ui/components/VoyageScrubber.kt.
+                    com.betteraudio.ui.components.VoyageScrubber(
+                        fraction = chDisplayFrac,
+                        accent = accent,
+                        trackColor = trackColor,
+                        sliderColors = sliderColors,
+                        onScrubStart = { chapterScrubStartMs = bookPos },
+                        onScrub = { f -> chapterDragFrac = f },
+                        onScrubEnd = { f ->
+                            val target = cur.startMs + (f * chDur).toLong()
+                            viewModel.bookSeekTo(target)
+                            if (chapterScrubStartMs >= 0L)
+                                viewModel.onScrubSeek(chapterScrubStartMs, target)
                             chapterScrubStartMs = -1L
                             chapterDragFrac = null
                         },
-                        colors = sliderColors,
                         modifier = Modifier.fillMaxWidth()
                     )
                     TimeRow(formatDuration(chDisplayPos), "-${formatDuration(chDur - chDisplayPos)}", onScrimMuted)
@@ -631,24 +631,21 @@ fun PlayerContent(
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
                     val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
-                    HapticSlider(
-                        value = bookDisplayFrac,
-                        onValueChange = { f ->
-                            if (bookDragFrac == null) bookScrubStartMs = bookPos
-                            bookDragFrac = f
-                        },
-                        onValueChangeFinished = {
-                            val f = bookDragFrac
-                            if (f != null) {
-                                val target = (f * bookTotal).toLong()
-                                viewModel.bookSeekTo(target)
-                                if (bookScrubStartMs >= 0L)
-                                    viewModel.onScrubSeek(bookScrubStartMs, target)
-                            }
+                    com.betteraudio.ui.components.VoyageScrubber(
+                        fraction = bookDisplayFrac,
+                        accent = accent,
+                        trackColor = trackColor,
+                        sliderColors = sliderColors,
+                        onScrubStart = { bookScrubStartMs = bookPos },
+                        onScrub = { f -> bookDragFrac = f },
+                        onScrubEnd = { f ->
+                            val target = (f * bookTotal).toLong()
+                            viewModel.bookSeekTo(target)
+                            if (bookScrubStartMs >= 0L)
+                                viewModel.onScrubSeek(bookScrubStartMs, target)
                             bookScrubStartMs = -1L
                             bookDragFrac = null
                         },
-                        colors = sliderColors,
                         modifier = Modifier.fillMaxWidth()
                     )
                     TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
@@ -890,6 +887,9 @@ fun PlayerContent(
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
+                onConnectEpub = { path -> viewModel.connectEpub(path) },
+                onDisconnectEpub = { viewModel.disconnectEpub() },
+                onOpenReader = { bwp?.book?.id?.let { onOpenReader(it, false) } },
                 playback = PlaybackOptions(
                     currentSpeed = state.speed,
                     currentBoostDb = viewModel.currentBoostDb,

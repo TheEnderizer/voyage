@@ -10,6 +10,7 @@ import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
+import com.betteraudio.data.db.dao.ReaderMarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.CompanionPackDao
 import com.betteraudio.data.db.dao.WidgetDesignDao
@@ -26,6 +27,7 @@ import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
 import com.betteraudio.data.db.entities.Bookmark
+import com.betteraudio.data.db.entities.ReaderMark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.CompanionPack
 import com.betteraudio.data.db.entities.ListeningSession
@@ -99,9 +101,11 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 //             restoring those two migrations: 23 and 24 already mean something else on every
 //             device that has run a shipped build, and a migration's meaning cannot be changed
 //             retroactively. MIGRATION_25_26 therefore re-adds what MIGRATION_24_25 removed.
+// Version 27: reader_marks — bookmarks and highlights inside an EPUB. Purely additive: one new
+//             table, nothing existing touched, so there is no data to preserve or reshape.
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
-    version = 26,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, ReaderMark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
+    version = 27,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -112,6 +116,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chapterDao(): ChapterDao
     abstract fun companionPackDao(): CompanionPackDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun readerMarkDao(): ReaderMarkDao
     abstract fun audioPresetDao(): AudioPresetDao
     abstract fun listeningHistoryDao(): ListeningHistoryDao
     abstract fun seriesDao(): SeriesDao
@@ -652,6 +657,32 @@ abstract class AppDatabase : RoomDatabase() {
                 if (!hasColumn(db, "audio_files", "fileKey")) {
                     db.execSQL("ALTER TABLE audio_files ADD COLUMN fileKey TEXT")
                 }
+            }
+        }
+
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 26 → 27 (reader bookmarks & highlights)")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `reader_marks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `bookId` INTEGER NOT NULL,
+                        `spineIndex` INTEGER NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `renderStart` INTEGER NOT NULL,
+                        `renderEnd` INTEGER NOT NULL,
+                        `textFraction` REAL NOT NULL,
+                        `colorArgb` INTEGER NOT NULL DEFAULT 0,
+                        `note` TEXT NOT NULL DEFAULT '',
+                        `preview` TEXT NOT NULL DEFAULT '',
+                        `chapterTitle` TEXT NOT NULL DEFAULT '',
+                        `createdAt` INTEGER NOT NULL,
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reader_marks_bookId` ON `reader_marks` (`bookId`)")
             }
         }
 

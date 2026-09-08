@@ -7,6 +7,10 @@ import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.data.db.entities.PlaybackProgress
+import com.betteraudio.data.db.dao.ReaderMarkDao
+import com.betteraudio.data.db.entities.ReaderMark
+import com.betteraudio.data.db.entities.ReaderMarkKind
+import com.betteraudio.data.ebook.render.RenderBlock
 import com.betteraudio.data.ebook.EpubParser
 import com.betteraudio.data.ebook.SpineItem
 import com.betteraudio.data.ebook.render.BlockMeasurer
@@ -51,6 +55,41 @@ enum class ReaderError(val message: String) {
     PARSE_FAILED("This EPUB could not be opened.")
 }
 
+/**
+ * One chapter's blocks, parsed and ready to draw. The unit the continuous reader is built out of:
+ * scrolled mode renders a *window* of these end to end, so the chapter boundary is a paragraph
+ * break like any other rather than the point where the book stops.
+ */
+data class LoadedChapter(
+    val spineIndex: Int,
+    val title: String?,
+    val blocks: List<com.betteraudio.data.ebook.render.RenderBlock>,
+)
+
+/**
+ * Where the continuous reader should be put, and a [generation] that says whether it is a *new*
+ * instruction.
+ *
+ * Only a deliberate jump — opening a chapter from Contents, following a bookmark, dragging the
+ * scrubber, the footer's chapter arrows — bumps the generation. Reading across a chapter boundary
+ * by scrolling does not, which is the whole point: the window rotates and the current chapter
+ * changes underneath, and if that re-anchored the list it would yank the page out from under the
+ * reader at exactly the moment the seam is supposed to be invisible.
+ */
+data class ScrollAnchor(val generation: Long, val spineIndex: Int, val renderStart: Int)
+
+/**
+ * A paragraph to flash briefly, and a [generation] so that flashing the *same* paragraph twice
+ * still reads as two separate instructions.
+ *
+ * Raised only by the two commands that cross between listening and reading — "Listen from here"
+ * here in the reader, and the player's "Read from here", which arrives as the `flash` nav
+ * argument. Everything else that moves the reader (a page turn, Contents, the scrubber) leaves it
+ * alone: the flash means "this is the paragraph the other half of the book is at", and firing it
+ * for ordinary navigation would spend the meaning.
+ */
+data class ParagraphFlash(val generation: Long, val spineIndex: Int, val renderStart: Int)
+
 data class ReaderUiState(
     val loading: Boolean = true,
     val book: Book? = null,
@@ -69,6 +108,17 @@ data class ReaderUiState(
     /** True once this book has been detached from the global settings (inventory #160). */
     val prefsArePerBook: Boolean = false,
     val hasAudio: Boolean = false,
+    /** The chapters resident for continuous mode: the current one plus its neighbours, in spine
+     *  order. Empty in paged mode's terms — paged reads [pages] instead. */
+    val scrollWindow: List<LoadedChapter> = emptyList(),
+    val scrollAnchor: ScrollAnchor? = null,
+    /** The listen↔read landing spot to flash, until the screen has played it and cleared it. */
+    val flash: ParagraphFlash? = null,
+    /** Every bookmark and highlight in this book, in reading order (see [ReaderMarkDao]). */
+    val marks: List<ReaderMark> = emptyList(),
+    /** Tap-a-paragraph-to-highlight is armed. Screen state, never persisted: it is a thing you are
+     *  doing for the next few seconds, not a preference. */
+    val highlighting: Boolean = false,
     val chapterMapApproximate: Boolean = false,
     // Tier-2 sync state: number of verified anchors, live alignment progress, and the model status.
     val anchorCount: Int = 0,
@@ -92,11 +142,19 @@ class EbookReaderViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val playerController: PlayerController,
     private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache,
+    private val readerMarkDao: ReaderMarkDao,
     private val syncAligner: com.betteraudio.data.transcribe.SyncAligner,
     private val modelManager: com.betteraudio.data.transcribe.VoskModelManager
 ) : ViewModel() {
 
     private val bookId: Long = savedStateHandle["bookId"] ?: -1L
+
+    // Set by the player's "Read from here", which navigates here rather than calling us — the
+    // route carries the intent because the jump itself is already done by the time this reader
+    // exists (the locator is persisted, and load() restores to it like any other saved position).
+    // Consumed by the first [preparePages], which is where the landing paragraph is finally known.
+    private var pendingFlash: Boolean = savedStateHandle["flash"] ?: false
+    private var flashGeneration: Long = 0L
 
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -122,6 +180,17 @@ class EbookReaderViewModel @Inject constructor(
     private var currentRenderDoc: RenderDocument? = null
     private var currentProjection: RenderProjection? = null
 
+    // Parsed chapters, kept so the neighbours of wherever you are can be drawn without waiting on
+    // a parse. Small and bounded: reading forward evicts the chapter you left three chapters ago,
+    // which is far enough back that turning round does not re-parse anything.
+    private val renderDocCache = object : LinkedHashMap<Int, RenderDocument>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, RenderDocument>) = size > 5
+    }
+    // Which spine item the scroll anchor has already been published for. Guards against
+    // re-anchoring a chapter the reader has scrolled into of their own accord — see [ScrollAnchor].
+    private var anchoredSpine: Int = -1
+    private var anchorGeneration: Long = 0L
+
     /** Parsed paragraphs for a spine item (cached across the session); null if unreadable. */
     private fun paragraphsFor(spineIndex: Int): com.betteraudio.data.ebook.SpineParagraphs? {
         val href = spineList.getOrNull(spineIndex)?.href ?: return null
@@ -134,6 +203,9 @@ class EbookReaderViewModel @Inject constructor(
             _state.value = ReaderUiState(loading = false, error = ReaderError.MISSING_FILE)
         } else {
             viewModelScope.launch { load() }
+            readerMarkDao.getForBook(bookId)
+                .onEach { marks -> _state.update { it.copy(marks = marks) } }
+                .launchIn(viewModelScope)
             // Live sync state → UI. The aligner is a singleton, so a run started here keeps going
             // (and stays observable) even after the reader is closed and re-opened.
             // The whole sync surface ships frozen behind EBOOK_SYNC_UI (Phase 0) — don't subscribe
@@ -259,13 +331,11 @@ class EbookReaderViewModel @Inject constructor(
      */
     fun preparePages(measurer: BlockMeasurer, viewportWidthPx: Int, viewportHeightPx: Int) {
         val spineIndex = _state.value.currentSpineIndex
-        val href = spineList.getOrNull(spineIndex)?.href ?: return
-        val p = parser ?: return
+        if (spineList.getOrNull(spineIndex) == null) return
+        if (parser == null) return
         viewModelScope.launch {
-            val bytes = withContext(Dispatchers.IO) { p.readEntry(href) }
-            if (bytes == null || _state.value.currentSpineIndex != spineIndex) return@launch
-            val doc = withContext(Dispatchers.Default) { EpubDocumentParser.parse(bytes) }
-            if (_state.value.currentSpineIndex != spineIndex) return@launch
+            val doc = renderDocFor(spineIndex)
+            if (doc == null || _state.value.currentSpineIndex != spineIndex) return@launch
             val extractor = paragraphsFor(spineIndex)
             val projection = extractor?.let { RenderProjection.buildFor(doc, it) }
             val pages = if (doc.blocks.isEmpty()) emptyList()
@@ -285,7 +355,162 @@ class EbookReaderViewModel @Inject constructor(
                 page.blocks.any { targetRenderOffset >= it.renderStart && targetRenderOffset < it.renderEnd }
             }.let { if (it < 0) 0 else it }
 
+            // The restored position in render coordinates. Until this landed, [liveRenderOffset]
+            // stayed at 0 from load() until the first page turn — so opening a book part-way
+            // through and pressing "Listen from here" straight away flashed (and reported) the
+            // first paragraph of the chapter rather than the one on screen. The fraction it is
+            // derived from is unchanged, so the persisted position still agrees with itself.
+            liveRenderOffset = targetRenderOffset
+
             _state.update { it.copy(pages = pages, currentPageIndex = pageIndex) }
+
+            // The scroll window follows the current chapter, always. Publishing it here rather
+            // than on a separate trigger means it is rebuilt by exactly the same events that
+            // rebuild pagination — a chapter change, a jump — and by nothing else.
+            refreshScrollWindow(spineIndex)
+
+            // Anchor the continuous reader, but only for a chapter it has not been placed in yet.
+            // Scrolling across a boundary sets [anchoredSpine] itself precisely so this does not
+            // fire and drag the reader back to the top of the chapter they just flowed into.
+            if (anchoredSpine != spineIndex) {
+                anchoredSpine = spineIndex
+                anchorGeneration++
+                _state.update {
+                    it.copy(scrollAnchor = ScrollAnchor(anchorGeneration, spineIndex, targetRenderOffset))
+                }
+            }
+
+            // "Read from here" landed. Deliberately here and not in `load()`: the paragraph a
+            // locator falls in is a property of the *rendered* chapter, which does not exist
+            // until this runs — and by this point the page index and the scroll anchor above have
+            // both already been pointed at it, so the flash is drawn on something on screen.
+            if (pendingFlash) {
+                pendingFlash = false
+                flashParagraph(spineIndex, targetRenderOffset, doc.blocks)
+            }
+        }
+    }
+
+    /** Raise a one-shot flash on the paragraph containing [renderOffset]. */
+    private fun flashParagraph(spineIndex: Int, renderOffset: Int, blocks: List<RenderBlock>) {
+        val block = blocks.firstOrNull { renderOffset >= it.renderStart && renderOffset < it.renderEnd }
+            ?: blocks.lastOrNull() ?: return
+        flashGeneration++
+        _state.update { it.copy(flash = ParagraphFlash(flashGeneration, spineIndex, block.renderStart)) }
+    }
+
+    /** Flash wherever the reader is right now — "Listen from here" saying which paragraph it just
+     *  handed to the player. Uses the live render offset rather than the current page's first
+     *  block so it means the same thing in continuous mode, where there is no page. */
+    private fun flashCurrentParagraph() {
+        val spineIndex = _state.value.currentSpineIndex
+        val blocks = currentRenderDoc?.blocks ?: renderDocCache[spineIndex]?.blocks ?: return
+        flashParagraph(spineIndex, liveRenderOffset, blocks)
+    }
+
+    /** The screen, once it has played [generation]'s flash. Clearing matters: the glow is a
+     *  composable-lifetime animation, so a paragraph left marked would flash again every time it
+     *  scrolled off the screen and back. */
+    fun clearFlash(generation: Long) {
+        _state.update { if (it.flash?.generation == generation) it.copy(flash = null) else it }
+    }
+
+    /** Parse [index], from the cache when it is there. The parse is the expensive half of opening a
+     *  chapter, so caching it is what makes both the continuous window and a paged chapter turn
+     *  land without a visible gap. */
+    private suspend fun renderDocFor(index: Int): RenderDocument? {
+        renderDocCache[index]?.let { return it }
+        val href = spineList.getOrNull(index)?.href ?: return null
+        val p = parser ?: return null
+        val bytes = withContext(Dispatchers.IO) { p.readEntry(href) } ?: return null
+        val doc = withContext(Dispatchers.Default) { EpubDocumentParser.parse(bytes) }
+        renderDocCache[index] = doc
+        return doc
+    }
+
+    /**
+     * Load the chapter at [center] and its two neighbours and publish them as the continuous
+     * reader's window.
+     *
+     * Three, not more: one either side is everything needed for the seam to be invisible in both
+     * directions, and the window rotates as soon as the reader's position crosses into a
+     * neighbour — so the chapter after next is being parsed while there is still a whole chapter
+     * of reading in front of it. A wider window would hold more of the book in memory to buy
+     * nothing.
+     *
+     * The centre is published first and the neighbours are added as they arrive, so a chapter jump
+     * shows its text immediately instead of waiting on two parses it does not need yet.
+     */
+    private suspend fun refreshScrollWindow(center: Int) {
+        fun chapterOf(index: Int, doc: RenderDocument) =
+            LoadedChapter(index, spineList.getOrNull(index)?.title, doc.blocks)
+
+        val wanted = (center - 1..center + 1).filter { it in spineList.indices }
+
+        // Start from what is ALREADY on screen, keeping only the chapters still wanted — never
+        // from scratch. When the reader scrolls across a boundary this is a rotation: two of the
+        // three chapters are already resident and must stay exactly where they are. Rebuilding the
+        // window from the centre outwards would empty the list down to one chapter for however
+        // long a parse takes, and the text above and below the reader would vanish and come back
+        // — the precise flash this whole mechanism exists to remove.
+        val loaded = sortedMapOf<Int, LoadedChapter>()
+        _state.value.scrollWindow.forEach { if (it.spineIndex in wanted) loaded[it.spineIndex] = it }
+        if (loaded.isNotEmpty()) _state.update { it.copy(scrollWindow = loaded.values.toList()) }
+
+        // Centre first, then out: on a jump the reader is looking at a blank screen until the
+        // chapter they asked for arrives, and the neighbours can take as long as they need.
+        for (index in listOf(center, center + 1, center - 1)) {
+            if (index !in wanted || loaded.containsKey(index)) continue
+            val doc = renderDocFor(index) ?: continue
+            // The reader may have moved on while that parse ran; a window centred on a chapter
+            // they have left is worse than none.
+            if (_state.value.currentSpineIndex != center) return
+            loaded[index] = chapterOf(index, doc)
+            _state.update { it.copy(scrollWindow = loaded.values.toList()) }
+        }
+    }
+
+    /**
+     * The continuous reader reporting where it now is: [renderStart] of the first visible block,
+     * and which chapter that block belongs to.
+     *
+     * When the chapter differs from the current one the reader has simply *read* across a
+     * boundary, and that is treated as reading, not as navigation — no skip is recorded (nothing
+     * was skipped), and [anchoredSpine] is moved forward so the repagination this triggers does
+     * not re-anchor the list. The window rotation follows from `preparePages` seeing a new spine
+     * index, which is the same path a jump takes.
+     */
+    fun onScrolledTo(spineIndex: Int, renderStart: Int) {
+        val s = _state.value
+        val crossed = spineIndex != s.currentSpineIndex
+        if (crossed) {
+            if (spineIndex !in spineList.indices) return
+            flushNow(s.currentSpineIndex, if (spineIndex > s.currentSpineIndex) 1f else 0f)
+            anchoredSpine = spineIndex
+            currentRenderDoc = renderDocCache[spineIndex]
+            currentProjection = null
+            _state.update { it.copy(currentSpineIndex = spineIndex, pages = emptyList(), currentPageIndex = 0) }
+        }
+        liveRenderOffset = renderStart
+        // Keep the footer's "page x of y" honest while scrolling, when this chapter's pagination
+        // is loaded. Right after a crossing it is not, and it catches up when preparePages lands.
+        val pages = _state.value.pages
+        val pageIndex = pages.indexOfFirst { page ->
+            page.blocks.any { renderStart >= it.renderStart && renderStart < it.renderEnd }
+        }
+        if (pageIndex >= 0 && pageIndex != _state.value.currentPageIndex) {
+            _state.update { it.copy(currentPageIndex = pageIndex) }
+        }
+
+        saveJob?.cancel()
+        saveJob = viewModelScope.launch {
+            // Off the critical path on purpose: resolving the fraction can parse this chapter's
+            // extractor stream, and that must not happen inside a scroll frame.
+            liveTextFraction = withContext(Dispatchers.Default) {
+                fractionForRenderOffset(spineIndex, renderStart)
+            }
+            delay(1_000)
+            persist(spineIndex, liveTextFraction, renderStart)
         }
     }
 
@@ -400,9 +625,125 @@ class EbookReaderViewModel @Inject constructor(
     private fun jumpToSpine(index: Int, fraction: Float) {
         liveTextFraction = fraction
         liveRenderOffset = 0
+        // A jump IS an instruction to move the continuous reader, unlike scrolling across a
+        // boundary — so let preparePages publish a fresh anchor for wherever this lands.
+        anchoredSpine = -1
         currentRenderDoc = null
         currentProjection = null
         _state.value = _state.value.copy(currentSpineIndex = index, pages = emptyList(), currentPageIndex = 0)
+    }
+
+    // ── Bookmarks & highlights ───────────────────────────────────────────
+
+    /** The extractor-stream fraction a render offset sits at — the coordinate [jumpToSpine] takes.
+     *  Same derivation `onPageChanged` uses for the live position; factored out because a mark has
+     *  to record it at the moment it is made, for a chapter that may not be loaded when it is
+     *  followed. Returns 0f when this book has no extractor stream (no audio counterpart), which is
+     *  the same fallback the reading position itself uses. */
+    private fun fractionForRenderOffset(spineIndex: Int, renderOffset: Int): Float {
+        val extractor = paragraphsFor(spineIndex) ?: return 0f
+        if (extractor.totalChars <= 0) return 0f
+        val docLen = currentRenderDoc?.text?.length?.coerceAtLeast(1) ?: 1
+        val extractorOffset = currentProjection?.toExtractorOffset(renderOffset)
+            ?: ((renderOffset.toFloat() / docLen) * extractor.totalChars).toInt()
+        return extractor.fractionForCharOffset(extractorOffset)
+    }
+
+    /** The mark, if any, already covering [renderStart] in [spineIndex]. Used both to make the
+     *  bookmark button a toggle and to make tapping a highlighted paragraph un-highlight it. */
+    private fun markAt(kind: String, spineIndex: Int, renderStart: Int): ReaderMark? =
+        _state.value.marks.firstOrNull {
+            it.kind == kind && it.spineIndex == spineIndex && it.renderStart == renderStart
+        }
+
+    /** Whether the page currently on screen is bookmarked. */
+    fun currentPageBookmark(): ReaderMark? {
+        val s = _state.value
+        val start = s.pages.getOrNull(s.currentPageIndex)?.blocks?.firstOrNull()?.renderStart ?: return null
+        return markAt(ReaderMarkKind.BOOKMARK, s.currentSpineIndex, start)
+    }
+
+    /**
+     * Bookmark (or un-bookmark) the page on screen. A bookmark is anchored to the page's FIRST
+     * block rather than to the page number: page numbers are a function of the font size, the
+     * margins and the screen, so a bookmark stored as "page 41" would wander to a different
+     * paragraph the moment any of those changed — which for a bookmark is the same as being lost.
+     */
+    fun toggleBookmark() {
+        val s = _state.value
+        val page = s.pages.getOrNull(s.currentPageIndex) ?: return
+        val block = page.blocks.firstOrNull() ?: return
+        val existing = markAt(ReaderMarkKind.BOOKMARK, s.currentSpineIndex, block.renderStart)
+        viewModelScope.launch {
+            if (existing != null) { readerMarkDao.deleteById(existing.id); return@launch }
+            readerMarkDao.insert(
+                ReaderMark(
+                    bookId = bookId,
+                    spineIndex = s.currentSpineIndex,
+                    kind = ReaderMarkKind.BOOKMARK,
+                    renderStart = block.renderStart,
+                    renderEnd = page.blocks.lastOrNull()?.renderEnd ?: block.renderEnd,
+                    textFraction = fractionForRenderOffset(s.currentSpineIndex, block.renderStart),
+                    preview = block.text.take(PREVIEW_CHARS).trim(),
+                    chapterTitle = s.currentSpineTitle.orEmpty()
+                )
+            )
+        }
+    }
+
+    /** Highlight, or un-highlight, one paragraph. [colorArgb] is the tint the reader picked.
+     *  [spineIndex] is passed rather than assumed: continuous mode shows the neighbouring chapters
+     *  too, so the paragraph under the finger is not always in the current one. */
+    fun toggleHighlight(spineIndex: Int, block: RenderBlock, colorArgb: Int) {
+        val existing = markAt(ReaderMarkKind.HIGHLIGHT, spineIndex, block.renderStart)
+        viewModelScope.launch {
+            if (existing != null) {
+                // Same colour again means "remove"; a different one means "recolour", so a second
+                // pass with a new tint is not a delete-then-re-add the user has to do by hand.
+                if (existing.colorArgb == colorArgb) readerMarkDao.deleteById(existing.id)
+                else readerMarkDao.update(existing.copy(colorArgb = colorArgb))
+                return@launch
+            }
+            readerMarkDao.insert(
+                ReaderMark(
+                    bookId = bookId,
+                    spineIndex = spineIndex,
+                    kind = ReaderMarkKind.HIGHLIGHT,
+                    renderStart = block.renderStart,
+                    renderEnd = block.renderEnd,
+                    textFraction = fractionForRenderOffset(spineIndex, block.renderStart),
+                    colorArgb = colorArgb,
+                    preview = block.text.take(PREVIEW_CHARS).trim(),
+                    chapterTitle = spineList.getOrNull(spineIndex)?.title.orEmpty()
+                )
+            )
+        }
+    }
+
+    fun setHighlighting(on: Boolean) { _state.update { it.copy(highlighting = on) } }
+
+    fun deleteMark(id: Long) { viewModelScope.launch { readerMarkDao.deleteById(id) } }
+
+    fun setMarkNote(mark: ReaderMark, note: String) {
+        viewModelScope.launch { readerMarkDao.update(mark.copy(note = note)) }
+    }
+
+    /** Go to a mark. Within the current chapter this is a plain page change, which keeps the
+     *  render document (and so every highlight already painted) exactly as it is; across chapters
+     *  it goes through the same [jumpToSpine] path a Contents tap uses. */
+    fun openMark(mark: ReaderMark) {
+        val s = _state.value
+        if (mark.spineIndex == s.currentSpineIndex && s.pages.isNotEmpty()) {
+            val index = s.pages.indexOfFirst { page ->
+                page.blocks.any { it.renderEnd > mark.renderStart }
+            }
+            if (index >= 0) { onPageChanged(index); return }
+        }
+        flushNow(s.currentSpineIndex, liveTextFraction, liveRenderOffset)
+        if (mark.spineIndex != s.currentSpineIndex) {
+            recordTextSkip(s.currentSpineIndex, liveTextFraction, mark.spineIndex, mark.textFraction)
+        }
+        jumpToSpine(mark.spineIndex, mark.textFraction)
     }
 
     // ── Reading settings ────────────────────────────────────────────────────────
@@ -501,6 +842,11 @@ class EbookReaderViewModel @Inject constructor(
         }
 
         val targetMs = locatorToAudio(s.currentSpineIndex, liveTextFraction)
+
+        // Say which paragraph was handed over, before the player sheet starts rising over the
+        // page. Raised only once the audio-side guards above have passed, so it never promises a
+        // jump that is about to be abandoned.
+        flashCurrentParagraph()
 
         val progress = repository.getProgressForBookOnce(book.id)
         val series = book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
@@ -742,3 +1088,7 @@ class EbookReaderViewModel @Inject constructor(
         parser?.close()
     }
 }
+
+/** How much of a marked paragraph is kept for the list in Contents. Enough to recognise the
+ *  passage, short enough that a hundred marks are not a hundred paragraphs of duplicated book. */
+private const val PREVIEW_CHARS = 160

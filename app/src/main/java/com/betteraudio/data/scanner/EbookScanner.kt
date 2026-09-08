@@ -24,8 +24,34 @@ import javax.inject.Singleton
 class EbookScanner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: AudiobookRepository,
-    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore
+    private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
+    private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache
 ) {
+
+    /**
+     * Connect [epubPath] to [bookId] — the whole operation the UI needs, cache invalidation
+     * included. Returns false if the epub can't be used (DRM, corrupt, unparseable).
+     *
+     * It lives here rather than in a ViewModel because five screens can open Book options, and
+     * when this logic sat in `HomeViewModel` alone the other four passed no callback at all: the
+     * "Connect EPUB…" button in the player overflow and in Book info opened the file picker,
+     * took a selection, and then called an empty default lambda. Nothing happened, nothing was
+     * logged, and no error was shown. One shared entry point is what stops the sixth caller
+     * repeating that.
+     */
+    suspend fun connect(bookId: Long, epubPath: String): Boolean {
+        paragraphCache.invalidate(bookId)
+        val ok = runCatching { attachEpubToBook(bookId, File(epubPath)) }.getOrDefault(false)
+        AppLog.i(LogCat.SCAN, "connect epub book=$bookId ok=$ok path=$epubPath")
+        return ok
+    }
+
+    /** Detach whatever epub [bookId] has. Clears anchors and the chapter map with it. */
+    suspend fun disconnect(bookId: Long) {
+        repository.setEbook(bookId, null, 0)
+        paragraphCache.invalidate(bookId)
+        AppLog.i(LogCat.SCAN, "disconnect epub book=$bookId")
+    }
 
     /** Recursively scans [rootPath] for `.epub` files not already attached/standalone elsewhere,
      *  creating an ebook-only Book row for each. Returns the count of new/updated rows. */

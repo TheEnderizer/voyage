@@ -211,9 +211,10 @@ class MainActivity : ComponentActivity() {
             val miniCoverStyle = com.betteraudio.ui.player.MiniCoverStyle.from(
                 settings.miniCoverStyle.collectAsStateWithLifecycle(settings.currentMiniCoverStyle).value
             )
-            val scrubberStyle = com.betteraudio.ui.immersive.components.ScrubberStyle.from(
-                settings.scrubberStyle.collectAsStateWithLifecycle(settings.currentScrubberStyle).value
-            )
+            val scrubberStyleImmersiveRaw by settings.scrubberStyle
+                .collectAsStateWithLifecycle(settings.currentScrubberStyle)
+            val scrubberStyleMaterialRaw by settings.scrubberStyleMaterial
+                .collectAsStateWithLifecycle(settings.currentScrubberStyleMaterial)
             val haptics = com.betteraudio.ui.haptics.rememberHaptics(
                 com.betteraudio.ui.haptics.HapticStrength.from(
                     settings.hapticStrength.collectAsStateWithLifecycle(settings.currentHapticStrength).value
@@ -227,12 +228,30 @@ class MainActivity : ComponentActivity() {
             // first composed frame — otherwise the app would paint the automatic colour and then
             // visibly cross-fade to the pinned one on every cold start.
             val coverAccentsRaw by settings.coverAccents.collectAsStateWithLifecycle(initialCoverAccents)
-            val coverAccentOverride = remember(coverAccentsRaw, coverPath) {
-                coverPath?.let { path ->
-                    com.betteraudio.data.settings.CoverAccentCodec.decode(coverAccentsRaw)[path]
-                }?.let { androidx.compose.ui.graphics.Color(it) }
-            }
+            // One colour for the whole library, when the user asked for that. It deliberately
+            // outranks the per-cover pin AND both automatic pickers: "use this everywhere" is a
+            // stronger statement than "use this for this one book", and a per-cover pin left over
+            // from before should not punch a hole in it. Unticking it falls straight back to the
+            // per-cover map, which is why that map is never cleared when this is set.
+            val globalAccentRaw by settings.globalAccent
+                .collectAsStateWithLifecycle(settings.currentGlobalAccent)
+            val coverAccentOverride = remember(coverAccentsRaw, coverPath, globalAccentRaw) {
+                globalAccentRaw.takeIf { it.isNotBlank() }
+                    ?.let { hex -> runCatching { android.graphics.Color.parseColor(hex) }.getOrNull() }
+                    ?: coverPath?.let { path ->
+                        com.betteraudio.data.settings.CoverAccentCodec.decode(coverAccentsRaw)[path]
+                    }
+            }?.let { androidx.compose.ui.graphics.Color(it) }
             val appTheme = com.betteraudio.ui.theme.AppTheme.from(appThemeRaw)
+            // Both looks offer all five designs, but each remembers its own pick — see
+            // SettingsStore.Keys.SCRUBBER_STYLE. Resolved here so the players read one local and
+            // never have to know which preference fed it.
+            val scrubberStyle = com.betteraudio.ui.components.ScrubberStyle.from(
+                when (appTheme) {
+                    com.betteraudio.ui.theme.AppTheme.IMMERSIVE -> scrubberStyleImmersiveRaw
+                    com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU -> scrubberStyleMaterialRaw
+                }
+            )
             val colorSource = com.betteraudio.ui.theme.ThemeColorSource.from(colorSourceRaw)
             val darkMode = com.betteraudio.ui.theme.DarkMode.from(darkModeRaw)
             val darkTheme = when (darkMode) {
@@ -406,7 +425,7 @@ class MainActivity : ComponentActivity() {
                         ),
                     com.betteraudio.ui.immersive.components.LocalDynamicPillsEnabled provides dynamicPills,
                     com.betteraudio.ui.player.LocalMiniCoverStyle provides miniCoverStyle,
-                    com.betteraudio.ui.immersive.components.LocalScrubberStyle provides scrubberStyle,
+                    com.betteraudio.ui.components.LocalScrubberStyle provides scrubberStyle,
                     com.betteraudio.ui.haptics.LocalHaptics provides haptics,
                     // Every bare Modifier.clickable in the app resolves its press feedback
                     // from here, so the ripple and the tap arrive together without a single
@@ -508,28 +527,21 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable(
-                        route = "reader/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
+                        // `flash` is set only by the player's "Read from here" (see the sheet's
+                        // onOpenReader below), and tells the reader to glow the paragraph it lands
+                        // on. Opening the reader any other way — a grid card, Book options — is
+                        // not a jump from anywhere and gets no flash.
+                        route = "reader/{bookId}?flash={flash}",
+                        arguments = listOf(
+                            navArgument("bookId") { type = NavType.LongType },
+                            navArgument("flash") { type = NavType.BoolType; defaultValue = false },
+                        )
                     ) {
                         com.betteraudio.ui.reader.EbookReaderScreen(
                             onBack = { navController.popBackStack() },
                             // The reader VM already started playback (readFromHere's cascade); just
                             // expand the sheet over the reader — it stays on the back stack beneath it.
-                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) },
-                            onOpenSpike = { bookId -> navController.navigate("reader_spike/$bookId") }
-                        )
-                    }
-
-                    // ⚠️ THROWAWAY — Phase 0 item 3 of docs/reader-features-and-plan.md. Reachable
-                    // only via the "🔬 Native render spike" overflow item on the reader screen;
-                    // deleted along with ui/reader/spike/ once the native-render decision gate is
-                    // passed or the approach is reconsidered.
-                    composable(
-                        route = "reader_spike/{bookId}",
-                        arguments = listOf(navArgument("bookId") { type = NavType.LongType })
-                    ) {
-                        com.betteraudio.ui.reader.spike.ReaderSpikeScreen(
-                            onBack = { navController.popBackStack() }
+                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) }
                         )
                     }
                 }
@@ -551,7 +563,8 @@ class MainActivity : ComponentActivity() {
                     // Starts the book behind the closing overlay rather than expanding the full
                     // player over it — starting a book is not a request to be taken to another
                     // screen. Matches a grid card's play button and Home's hero Resume.
-                    onResume = { bookId -> sheetController.startCollapsed(bookId) }
+                    onResume = { bookId -> sheetController.startCollapsed(bookId) },
+                    onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
                 )
                 } // end recordBackdrop Box — everything the floating glass is allowed to sample
 
@@ -652,7 +665,13 @@ class MainActivity : ComponentActivity() {
                     liftForNavPill = currentRoute == "home",
                     // Non-null only in landscape, where the bar sits beside the pill instead.
                     miniBarSlot = miniBarSlot,
-                    onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
+                    // flash=true only when the sheet says this open came from "Read from here",
+                    // which has already converted the audio position into a text locator and
+                    // persisted it — the reader then glows the paragraph it opens on rather than
+                    // landing silently. Book options' plain "Open reader" passes false.
+                    onOpenReader = { bookId, fromSync ->
+                        navController.navigate("reader/$bookId" + if (fromSync) "?flash=true" else "")
+                    }
                 )
                 } // CompositionLocalProvider(LocalCoverBoundsRegistry)
 

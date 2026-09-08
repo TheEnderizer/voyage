@@ -678,9 +678,22 @@ class AudioFileScanner @Inject constructor(
             }
         }
         if (!multiBook && !ebookRestoredFromDisk && existing?.ebookPath == null) {
-            ebookScanner.findEpubIn(folder)?.let { epub ->
-                runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
-                    .onFailure { AppLog.e(LogCat.SCAN, "auto-attach epub failed for book=$bookId", it) }
+            val epub = ebookScanner.findEpubIn(folder)
+            if (epub != null) {
+                // Logged either way. "The epub next to my audio didn't get connected" has four
+                // different causes (no epub found, a cluster folder, DRM, a parse failure) and
+                // none of them used to leave a trace unless attach actually threw — so the only
+                // way to tell them apart was to read this function.
+                val ok = runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
+                    .onFailure { AppLog.e(LogCat.SCAN, "auto-attach epub threw for book=$bookId", it) }
+                    .getOrDefault(false)
+                AppLog.i(LogCat.SCAN, "auto-attach epub book=$bookId ok=$ok file=${epub.name}")
+            } else {
+                AppLog.d(LogCat.SCAN) { "auto-attach epub book=$bookId: none found in ${folder.name}" }
+            }
+        } else if (existing?.ebookPath == null) {
+            AppLog.d(LogCat.SCAN) {
+                "auto-attach epub book=$bookId skipped (multiBook=$multiBook restoredFromDisk=$ebookRestoredFromDisk)"
             }
         }
 

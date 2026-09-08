@@ -61,7 +61,6 @@ import com.betteraudio.ui.player.ChapterRow
 import com.betteraudio.ui.haptics.Feel
 import com.betteraudio.ui.haptics.LocalHaptics
 import com.betteraudio.ui.haptics.PressFeel
-import com.betteraudio.ui.immersive.components.drawScrubber
 import com.betteraudio.ui.player.LocalPlayerExpand
 import com.betteraudio.ui.player.LockOverlay
 import com.betteraudio.ui.player.PlayerViewModel
@@ -81,7 +80,7 @@ import com.betteraudio.ui.haptics.*
 fun PlayerContent(
     onCollapse: () -> Unit,
     startPlaying: Boolean = true,
-    onOpenReader: (Long) -> Unit = {},
+    onOpenReader: (bookId: Long, fromSync: Boolean) -> Unit = { _, _ -> },
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val onBack = onCollapse
@@ -377,7 +376,7 @@ fun PlayerContent(
                                     leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
                                     onClick = {
                                         showOverflow = false
-                                        viewModel.readFromHere { bookId -> onOpenReader(bookId) }
+                                        viewModel.readFromHere { bookId -> onOpenReader(bookId, true) }
                                     }
                                 )
                             }
@@ -541,7 +540,7 @@ fun PlayerContent(
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
                     val chDisplayPos = (chDisplayFrac * chDur).toLong()
-                    ImmersiveScrubber(
+                    com.betteraudio.ui.components.VoyageScrubber(
                         fraction = chDisplayFrac,
                         accent = accent,
                         trackColor = trackColor,
@@ -580,7 +579,7 @@ fun PlayerContent(
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
                     val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
-                    ImmersiveScrubber(
+                    com.betteraudio.ui.components.VoyageScrubber(
                         fraction = bookDisplayFrac,
                         accent = accent,
                         trackColor = trackColor,
@@ -840,6 +839,9 @@ fun PlayerContent(
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
+                onConnectEpub = { path -> viewModel.connectEpub(path) },
+                onDisconnectEpub = { viewModel.disconnectEpub() },
+                onOpenReader = { bwp?.book?.id?.let { onOpenReader(it, false) } },
                 playback = PlaybackOptions(
                     currentSpeed = state.speed,
                     currentBoostDb = viewModel.currentBoostDb,
@@ -1081,124 +1083,6 @@ private fun BookTickTrack(
 
 /** How many chapter ticks the book track aims to show before it starts counting in 2s, 3s, … */
 private const val TARGET_TICKS = 24
-
-/**
- * The Immersive player's scrubber.
- *
- * What it replaces was a stock Material 3 `Slider`: a grey inactive track, a flat accent active
- * track and the pill thumb every Material app on the phone has. It is a perfectly good control and
- * it looks like nothing else in this theme — every other surface here is glass over the book's own
- * artwork, tinted with the book's own colour.
- *
- * So this is drawn instead:
- *
- *  - **A rail, not a bar.** The unplayed side is a hairline of the same white-at-low-alpha the
- *    glass edges use, so it belongs to the surface rather than sitting on it.
- *  - **The played side deepens as it goes.** The fill is a gradient anchored to the *full* width
- *    and clipped to the current position, so early in a chapter it is a pale wash of the accent and
- *    by the end it is the accent at full strength. Progress reads as colour gaining weight, which
- *    is legible from the corner of the eye in a way a bar's length is not.
- *  - **A bead, not a thumb.** The playhead is a slim vertical capsule standing proud of the rail
- *    with a soft accent glow behind it — it looks lit from the artwork, and it does not cover the
- *    track the way a 20dp circle does.
- *  - **It swells under the thumb.** Touch it and the rail thickens, the bead grows and the glow
- *    brightens on a spring; let go and it settles back. The control acknowledges the touch instead
- *    of just following it.
- *
- * Touch handling is deliberately not Material's: the whole 28dp height is the target (the rail
- * itself is 6dp — far too thin to hit), a tap anywhere seeks there, and a drag scrubs
- * continuously. [onScrubEnd] carries the final fraction, so the caller never has to read back the
- * drag state it just wrote.
- */
-@Composable
-private fun ImmersiveScrubber(
-    fraction: Float,
-    accent: Color,
-    trackColor: Color,
-    onScrubStart: () -> Unit,
-    onScrub: (Float) -> Unit,
-    onScrubEnd: (Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var dragging by remember { mutableStateOf(false) }
-    // 0 at rest, 1 while the thumb is down — drives every dimension below at once, so the swell
-    // reads as one object reacting rather than four properties animating.
-    val swell by animateFloatAsState(
-        targetValue = if (dragging) 1f else 0f,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
-        label = "scrubberSwell"
-    )
-    val haptics = LocalHaptics.current
-    // Detents for a control with no steps of its own. Coarse enough that a slow drag has grain
-    // rather than a hum, fine enough that a fast one still reports distance travelled.
-    val detents = 40
-    var lastDetent by remember { mutableIntStateOf(Int.MIN_VALUE) }
-    val f = fraction.coerceIn(0f, 1f)
-    // The design is a user choice; the gesture, the swell and the hit target are not. Everything
-    // above this line is shared by all four, everything below is one call into ScrubberArt.
-    val style = com.betteraudio.ui.immersive.components.LocalScrubberStyle.current
-    // Both gesture blocks below are keyed on `Unit`, so they are started ONCE and keep running
-    // across every later recomposition — which means whatever they captured directly, they keep.
-    // These callbacks close over the CURRENT CHAPTER (`cur`/`chDur` at the call site), so a
-    // directly-captured `onScrubEnd` kept mapping the drag into whichever chapter happened to be
-    // playing when the block started: pick a new chapter from the list, drag this scrubber, and
-    // playback jumped back into the old one — the scrubber, the pill and the time row all showing
-    // the new chapter the whole time. Reading them through `rememberUpdatedState` keeps the
-    // gesture coroutine alive (re-keying it would cancel an in-flight drag) while still calling
-    // the latest lambda. The Material sliders never had this: `Slider` does the same internally.
-    val latestScrubStart = rememberUpdatedState(onScrubStart)
-    val latestScrub = rememberUpdatedState(onScrub)
-    val latestScrubEnd = rememberUpdatedState(onScrubEnd)
-
-    Canvas(
-        modifier
-            .fillMaxWidth()
-            // Each design declares the height it needs — Horizon's curve wants room the hairline
-            // does not — and the 28dp floor keeps every one of them a comfortable target.
-            .height(style.height)
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    val target = (offset.x / size.width).coerceIn(0f, 1f)
-                    haptics.play(Feel.Select)
-                    latestScrubStart.value()
-                    latestScrub.value(target)
-                    latestScrubEnd.value(target)
-                }
-            }
-            .pointerInput(Unit) {
-                // Tracked here rather than in composition: the drag callbacks need the latest
-                // value synchronously on release, and a recomposition may not have run yet.
-                var latest = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        latest = (offset.x / size.width).coerceIn(0f, 1f)
-                        dragging = true
-                        lastDetent = (latest * detents).toInt()
-                        haptics.play(Feel.Grab)
-                        latestScrubStart.value()
-                        latestScrub.value(latest)
-                    },
-                    onDragEnd = { dragging = false; haptics.play(Feel.Release); latestScrubEnd.value(latest) },
-                    onDragCancel = { dragging = false; haptics.play(Feel.Release); latestScrubEnd.value(latest) },
-                    onHorizontalDrag = { change, _ ->
-                        change.consume()
-                        latest = (change.position.x / size.width).coerceIn(0f, 1f)
-                        val detent = (latest * detents).toInt()
-                        if (detent != lastDetent) {
-                            lastDetent = detent
-                            // The ends are walls, not notches: running out of chapter should feel
-                            // different from crossing into the next tenth of it.
-                            if (latest <= 0.0005f || latest >= 0.9995f) haptics.play(Feel.Boundary)
-                            else haptics.play(Feel.Step)
-                        }
-                        latestScrub.value(latest)
-                    }
-                )
-            }
-    ) {
-        drawScrubber(style, f, swell, accent, trackColor)
-    }
-}
 
 /** Elapsed, a dim whole-book figure, and time left — one row where there used to be two. */
 @Composable

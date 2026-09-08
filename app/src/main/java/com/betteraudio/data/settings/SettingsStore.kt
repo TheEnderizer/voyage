@@ -130,9 +130,17 @@ class SettingsStore @Inject constructor(
         // Immersive only: how the mini player draws the cover. CAP (the pill's own left cap,
         // progress around the pill) | RING (a circle inset in the pill, progress around it).
         val MINI_COVER_STYLE             = stringPreferencesKey("mini_cover_style")
-        // Immersive only: which of the four chapter-scrubber designs the player draws.
-        // EMBER (default) | RIBS | AURORA | HORIZON. See ScrubberStyle.
+        // Which seek-bar design the player draws, per app look. All five designs are available
+        // in both (see ScrubberStyle); they are stored separately only so each look keeps the
+        // default it shipped with — Immersive's painted EMBER, Material You's CLASSIC M3 slider —
+        // instead of one theme's choice silently restyling the other.
+        // CLASSIC | EMBER | RIBS | AURORA | HORIZON.
         val SCRUBBER_STYLE               = stringPreferencesKey("scrubber_style")
+        val SCRUBBER_STYLE_MATERIAL      = stringPreferencesKey("scrubber_style_material")
+        // A single accent applied to EVERY cover, as "#AARRGGBB" ("" = off). Outranks COVER_ACCENTS
+        // and both automatic pickers: the user asked for one colour across the library rather than
+        // a colour per book. See CoverAccentCard.
+        val GLOBAL_ACCENT                = stringPreferencesKey("global_accent")
         // How much the app is allowed to vibrate: OFF | LIGHT | FULL. See HapticStrength.
         val HAPTIC_STRENGTH              = stringPreferencesKey("haptic_strength")
         // Resolved Material You ColorScheme.primary (ARGB Int), kept in sync from VoyageTheme so
@@ -339,6 +347,9 @@ class SettingsStore @Inject constructor(
     val coverAccents: Flow<String>             = prefsData.map { it[Keys.COVER_ACCENTS] ?: "" }.distinctUntilChanged()
     val miniCoverStyle: Flow<String>           = prefsData.map { it[Keys.MINI_COVER_STYLE] ?: "CAP" }.distinctUntilChanged()
     val scrubberStyle: Flow<String>            = prefsData.map { it[Keys.SCRUBBER_STYLE] ?: "EMBER" }.distinctUntilChanged()
+    val scrubberStyleMaterial: Flow<String>    = prefsData.map { it[Keys.SCRUBBER_STYLE_MATERIAL] ?: "CLASSIC" }.distinctUntilChanged()
+    /** "" = off; otherwise "#AARRGGBB" used as the accent for every cover. See Keys.GLOBAL_ACCENT. */
+    val globalAccent: Flow<String>             = prefsData.map { it[Keys.GLOBAL_ACCENT] ?: "" }.distinctUntilChanged()
     val hapticStrength: Flow<String>           = prefsData.map { it[Keys.HAPTIC_STRENGTH] ?: "FULL" }.distinctUntilChanged()
     val widgetAppColor: Flow<Int>              = prefsData.map { it[Keys.WIDGET_APP_COLOR] ?: DEFAULT_WIDGET_APP_COLOR }.distinctUntilChanged()
     val widgetHideWhenIdle: Flow<Boolean>      = prefsData.map { it[Keys.WIDGET_HIDE_WHEN_IDLE] ?: false }.distinctUntilChanged()
@@ -410,6 +421,8 @@ class SettingsStore @Inject constructor(
     @Volatile var currentCoverAccents               = "";                                       private set
     @Volatile var currentMiniCoverStyle             = "CAP";                                    private set
     @Volatile var currentScrubberStyle              = "EMBER";                                  private set
+    @Volatile var currentScrubberStyleMaterial      = "CLASSIC";                                private set
+    @Volatile var currentGlobalAccent               = "";                                       private set
     @Volatile var currentHapticStrength             = "FULL";                                   private set
     @Volatile var currentDarkMode                   = "AUTO";                                    private set
     @Volatile var currentPureBlack                  = false;                                    private set
@@ -457,6 +470,8 @@ class SettingsStore @Inject constructor(
         scope.launch { coverAccents.collect                    { currentCoverAccents                  = it } }
         scope.launch { miniCoverStyle.collect                  { currentMiniCoverStyle                = it } }
         scope.launch { scrubberStyle.collect                   { currentScrubberStyle                 = it } }
+        scope.launch { scrubberStyleMaterial.collect           { currentScrubberStyleMaterial         = it } }
+        scope.launch { globalAccent.collect                    { currentGlobalAccent                  = it } }
         scope.launch { hapticStrength.collect                  { currentHapticStrength                = it } }
         scope.launch { darkMode.collect                         { currentDarkMode                       = it } }
         scope.launch { pureBlack.collect                        { currentPureBlack                      = it } }
@@ -678,6 +693,16 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setScrubberStyle(name: String) {
         context.dataStore.edit { it[Keys.SCRUBBER_STYLE] = name }
+    }
+    suspend fun setScrubberStyleMaterial(name: String) {
+        context.dataStore.edit { it[Keys.SCRUBBER_STYLE_MATERIAL] = name }
+    }
+    /** Sets the one-colour-for-everything accent, or clears it when [hex] is null/blank. Removing
+     *  the key rather than storing "" keeps a never-used override out of the mirrored settings. */
+    suspend fun setGlobalAccent(hex: String?) {
+        context.dataStore.edit {
+            if (hex.isNullOrBlank()) it.remove(Keys.GLOBAL_ACCENT) else it[Keys.GLOBAL_ACCENT] = hex
+        }
     }
     suspend fun setHapticStrength(name: String) {
         context.dataStore.edit { it[Keys.HAPTIC_STRENGTH] = name }

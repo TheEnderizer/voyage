@@ -39,6 +39,129 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   auto page-turn, reading ruler, and per-book vs global scope. Not yet tested on device.
 - **Companion packs** — pack registry, reveal cursor, companion deck UI, pack import/export.
   Merged 2026-09-03. Working but unreviewed WIP; more changes expected.
+- **Seek bar is a choice in both themes** — the four painted scrubber designs moved out of
+  Immersive into `ui/components/ScrubberArt.kt`, joined by `CLASSIC` (the M3 slider Material You
+  always drew). One `VoyageScrubber` owns the gesture for all five. Each theme stores its own pick
+  (`scrubber_style` / `scrubber_style_material`), so both keep their shipped default.
+  All five verified rendering and selectable on an emulator.
+- **Visual colour picker** — `ui/components/ColorPickerPanel.kt` (saturation/value field + hue
+  rail). Used by Material You's "Custom color" dialog, which was presets-and-hex only, and by the
+  Immersive accent card's new "mix your own" tile. Verified on an emulator.
+- **One accent for the whole library** — the Cover accent card gained a "Use on every book"
+  checkbox backed by the `global_accent` preference; set, it outranks every per-cover pin and both
+  automatic pickers, and unticking falls back to the per-cover map (never cleared).
+  Not yet tested on device.
+- **Library top edge blurs and fades** — the grid runs under the status bar and its top band is
+  drawn through `Modifier.topEdgeFade`, so covers dissolve instead of being clipped by a straight
+  line. Blur is API 31+; the alpha ramp carries it below that. Verified on an emulator.
+- **Map pans and zooms** — `MapPane` pinches, drags and double-taps. The artwork is transformed by
+  a `graphicsLayer`; pins are transformed arithmetically (`mapToScreen`/`screenToMap`) so markers
+  keep a constant size and tap target at every zoom. Drag, double-tap in/out and the pan clamp
+  verified on an emulator; pinch is untested (adb cannot drive multi-touch).
+- **Reading settings had no settings on it** — the screen opened and showed only its live preview;
+  the scope row, the six tabs and every control were pushed off the bottom. `ReaderPageView`
+  inferred "fill the height" from `constraints.hasBoundedHeight`, and a plain `Column` hands its
+  non-weighted children a bounded height, so the preview claimed the whole screen. It is now an
+  explicit `fillHeight` parameter (true for the reader, false for the preview, which is also
+  capped at 260dp and clipped). **This was the actual reported bug.** Verified on an emulator.
+- **Reader chrome lockouts fixed** — hardening found while chasing the above, *not* its cause: the
+  top bar is the only route to Contents, Reading settings and out of the book, and two settings
+  could each remove it permanently. `showHeader = false` hid the bar (now it falls back to a
+  floating back/contents/Aa cluster), and `fullscreenTapTurns` made every tap turn a page so the
+  chrome toggle was unreachable (a long press on the page now always toggles chrome). Both rescue
+  an already-stuck install.
+- **Reading-settings preview is lorem ipsum** — the preview shows typographic shape, and readable
+  prose invites reading it instead of looking at it.
+- **Reader gestures turned chapters instead of pages** — `readerGestures` captured `onTurn`
+  directly in `pointerInput` blocks keyed only on settings, so it froze the pages list at its
+  first-composition value (empty, before pagination). Every forward turn read `target >
+  lastIndex(-1)` → next chapter and every backward one `target < 0` → previous chapter, so no tap
+  or swipe ever turned a single page. Now read through `rememberUpdatedState`. Verified on an
+  emulator: swipes step 1 → 2 → 3.
+- **Reader page text was clipped by both bars** — `chromeTop` was `statusBars + 64dp + 20dp`, but
+  the reader is fullscreen (so `statusBars` is 0) while `TopAppBar` sizes itself including the
+  **display cutout**. On a punch-hole phone ~29dp of every page sat behind the bar, top and bottom,
+  and the paginator never moved those lines to the next page — they were simply unseen. Both bars
+  now report their own height via `onSizeChanged` and the reservation follows. Verified on an
+  emulator (page count shifted as the usable height changed; first and last lines now clear).
+- **Widget controls did nothing while the app was closed** — `WidgetIntents` built its control
+  PendingIntents with `PendingIntent.getService`, and a plain `startService` aimed at a process
+  that is not running is refused outright on API 26+. Nothing reached the app, so there was nothing
+  in logcat either. Now `getForegroundService`, with `PlaybackService.promoteForColdWidgetTap`
+  posting a placeholder under Media3's own notification id so the mandatory `startForeground`
+  always lands and Media3's real notification replaces it. Confirmed on the phone with the app
+  force-stopped: `am start-service` → "app is in background uid null";
+  `am start-foreground-service` → cold process, book resumed.
+- **The left-edge brightness swipe did nothing** — the gesture reported a per-frame delta and the
+  reader added it to `prefs.brightness`, which is DataStore-backed and arrives asynchronously: every
+  frame read the same pre-drag value, so a whole swipe collapsed into one frame's worth of change.
+  Compounding it, brightness shared a `DisposableEffect` key with fullscreen/orientation/keep-awake,
+  so each frame also tore down and rebuilt the window state. The gesture now accumulates locally and
+  emits an absolute level, and brightness has an effect of its own.
+- **Continuous scroll is now genuinely continuous** — scrolled mode used to draw one chapter and
+  stop dead at its end, with the footer's chapter arrows the only way on. It now renders a *window*
+  of three chapters (previous, current, next), parsed ahead of time by the ViewModel and stacked in
+  one `LazyColumn`, so reading past the end of a chapter is reading past the end of a paragraph:
+  the next one is already below the last line. Loading on arrival would have fixed the dead end but
+  not the seam — the reader would still hit a wall, wait, and land at the top of something new.
+  The window rotates as soon as the reader's position crosses into a neighbour, `renderDocCache`
+  keeps five parsed chapters so turning round re-parses nothing, and list keys are
+  `spineIndex:renderStart` — both because `renderStart` is only unique within a chapter and
+  because that is what holds the scroll still while the window rotates underneath. Position
+  inverts here: the list owns it and reports `(spineIndex, renderStart)` up, and
+  `EbookReaderViewModel.onScrolledTo` decides what it means, including committing a chapter
+  crossing without recording a skip (nothing was skipped — it was read).
+- **The companion map was cropped** — drawn at `ContentScale.Crop`, so whatever fell outside the
+  pane's aspect ratio was cut off the map and unreachable at any zoom. Now `ContentScale.Fit`, with
+  pins anchored to the *fitted* rect (`mapToScreen`/`screenToMap` take the letterbox origin) so a
+  marker stays on the place it names.
+- **Bookmarks and highlights in the EPUB reader** — new `reader_marks` table (DB 27), a ribbon
+  toggle and a highlight mode in the reader's top bar, paragraph tints painted by
+  `ReaderPageView`/`ReaderScrollView`, and a Marks tab in Contents that jumps to and deletes them.
+  Marks anchor to a block's `renderStart`, not a page number, so they survive every reflow; they
+  store an extractor fraction as well, which is what lets a mark in an unloaded chapter be
+  followed.
+- **Sync landed at the top of the chapter for 11% of a book** — `PositionBridge.audioToCharAnchored`
+  walks a path made of "rest of the previous anchor's spine item + any spines fully spanned + the
+  next anchor's leading chars", then returns how far along that path the position sits. For the
+  legs that start at a spine boundary, distance-travelled *is* the char offset; for the first leg
+  it is not — that one starts at `prev.charOffset`, and the code returned the bare distance for
+  both. So a position in the tail of a chapter resolved to the same distance from that chapter's
+  *beginning*. `charToAudioAnchored` had always measured this leg correctly, so the pair were not
+  inverses. Measured against Shadow Slave's real `mapping.json` (13,628 anchors, ~1/min, 256 h of
+  audio): the bracketing anchors straddle a chapter boundary for 16% of the timeline and hit the
+  broken leg for **11%**, displacing the answer by a median of 5,578 characters — most of a chapter.
+  The existing round-trip test missed it because it landed in a fully-spanned middle spine, which
+  is the branch after this one. `ShadowSlaveMappingDiagnosticTest` (skips itself unless the files
+  are present) is what pinned the data down as sound first: 1,811 spine items checked, not one
+  anchor offset past `ParagraphExtractor`'s own char count for that item, so the aligner and the
+  app agree on the coordinate system and the fault was purely in the conversion.
+- **"Connect EPUB…" did nothing outside Home** — `BookOptionsSheet` is one shared sheet opened from
+  five places, and its ebook callbacks (`onConnectEpub`/`onDisconnectEpub`/`onOpenReader`) default
+  to empty lambdas. Only Home's long-press path passed them, so in the player overflow and in Book
+  info the button opened the file picker, took your selection, and dropped it: no connection, no
+  log, no error. The connect/disconnect logic moved into `EbookScanner.connect`/`disconnect` (one
+  entry point, cache invalidation and logging included) and every book call site now wires it, with
+  the DRM/corrupt-EPUB dialog surfaced in the player and Book info as well as Home. `onOpenReader`
+  through the player chain grew a `fromSync` flag so Book options' plain "Open reader" doesn't
+  trigger the "Read from here" landing flash — only an actual sync jump does.
+- **"Listen from here" / "Read from here" now show you where they landed** — both used to move the
+  book silently, leaving you to work out which paragraph the jump had chosen. The reader now flashes
+  that paragraph: a faint halo in the app's accent colour, up in 200 ms and gone over the next
+  750 ms (`ParagraphGlow` + `ParagraphFlash`, drawn by `BlockText` as inflated rounded rects behind
+  the text rather than a `background()`, so it can spill past the paragraph's box). The target is
+  addressed like a mark — spine index + `renderStart` — so it means the same thing in paged and
+  continuous mode. Paged mode is already on the right page (`preparePages` picks it); continuous
+  mode is placed by the scroll anchor, with a visibility check that only scrolls if the paragraph
+  genuinely isn't on screen. "Read from here" carries the intent through the nav route
+  (`reader/{bookId}?flash=true`, set only by the player sheet) since the jump is already persisted
+  by the time the reader exists; opening the reader any other way gets no flash. Also fixed on the
+  way: `liveRenderOffset` stayed 0 from load until the first page turn, so "Listen from here"
+  pressed right after opening a part-read book reported the top of the chapter rather than the page
+  on screen.
+- **The reader render spike is gone** — `ui/reader/spike/`, its nav route and the 🔬 button in the
+  reader's top bar. It was a Phase 0 measurement harness, marked throwaway in three places since
+  it landed.
 
 ## Deliberately not done
 

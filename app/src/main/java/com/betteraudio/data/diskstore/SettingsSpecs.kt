@@ -87,6 +87,10 @@ object SettingsSpecs {
         spec("dynamic_pills", "boolean", { it.dynamicPills.first().toString() }, { s, v -> s.setDynamicPills(v.toBoolean()) }),
         spec("mini_cover_style", "string", { it.miniCoverStyle.first() }, { s, v -> s.setMiniCoverStyle(v) }),
         spec("scrubber_style", "string", { it.scrubberStyle.first() }, { s, v -> s.setScrubberStyle(v) }),
+        spec("scrubber_style_material", "string", { it.scrubberStyleMaterial.first() }, { s, v -> s.setScrubberStyleMaterial(v) }),
+        // One accent for every cover. Omitted when off, so a settings.json from a user who never
+        // turned it on stays free of an empty override.
+        spec("global_accent", "string", { it.globalAccent.first().takeIf(String::isNotBlank) }, { s, v -> s.setGlobalAccent(v) }),
         spec("haptic_strength", "string", { it.hapticStrength.first() }, { s, v -> s.setHapticStrength(v) }),
         spec("sleep_fade_seconds", "int", { it.sleepFadeSeconds.first().toString() }, { s, v -> s.setSleepFadeSeconds(v.toInt()) }),
         spec("sleep_shake_enabled", "boolean", { it.sleepShakeEnabled.first().toString() }, { s, v -> s.setSleepShakeEnabled(v.toBoolean()) }),

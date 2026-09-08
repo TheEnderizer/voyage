@@ -29,18 +29,17 @@ import com.betteraudio.ui.haptics.*
 import com.betteraudio.ui.reader.EbookReaderViewModel
 import com.betteraudio.ui.reader.ReaderUiState
 
-private enum class ContentsTab { CHAPTERS, SEARCH }
+private enum class ContentsTab { CHAPTERS, MARKS, SEARCH }
 
 /**
  * The reader's Contents — a real screen with its own back arrow, replacing `TocSheet` (a
- * `ModalBottomSheet`, deleted). Two tabs for now: Chapters (real, from the spine) and Search
- * (real full-text search over the render stream via [EbookReaderViewModel.search]).
+ * `ModalBottomSheet`, deleted). Three tabs: Chapters (from the spine), Marks (bookmarks and
+ * highlights, backed by `reader_marks`) and Search (full-text over the render stream via
+ * [EbookReaderViewModel.search]).
  *
- * Bookmarks and Highlights are NOT included as tabs here, unlike the approved design mockup —
- * the app has no ebook annotation storage at all today (`Bookmark` is audio-only; there is no
- * highlight entity, no creation UI, no disk-mirror fields). Building that is a real feature in
- * its own right (plan Part A7, Phase 4 scope), not a chrome change, so it isn't faked here with
- * empty placeholder tabs. Add them back as real tabs once that storage exists.
+ * Marks was left out when this screen was first built, deliberately and with a note saying so:
+ * there was no ebook annotation storage to back it, `Bookmark` being audio-only, and an empty
+ * placeholder tab is worse than an absent one. That storage now exists, so the tab is real.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,6 +102,8 @@ fun ContentsScreen(
             TabRow(selectedTabIndex = tab.ordinal) {
                 Tab(selected = tab == ContentsTab.CHAPTERS, onClick = { tab = ContentsTab.CHAPTERS },
                     text = { Text("Chapters") })
+                Tab(selected = tab == ContentsTab.MARKS, onClick = { tab = ContentsTab.MARKS },
+                    text = { Text("Marks") })
                 Tab(selected = tab == ContentsTab.SEARCH, onClick = { tab = ContentsTab.SEARCH },
                     text = { Text("Search") })
             }
@@ -111,6 +112,14 @@ fun ContentsScreen(
                     spine = state.spine,
                     currentIndex = state.currentSpineIndex,
                     onSelect = onSelectSpine
+                )
+                ContentsTab.MARKS -> MarksTab(
+                    marks = state.marks,
+                    onOpen = { mark ->
+                        viewModel.openMark(mark)
+                        onSelectSpine(mark.spineIndex) // closes Contents, like tapping a chapter
+                    },
+                    onDelete = { viewModel.deleteMark(it) }
                 )
                 ContentsTab.SEARCH -> SearchTab(viewModel = viewModel, onJump = { result ->
                     viewModel.jumpToSearchResult(result)
@@ -161,6 +170,80 @@ fun ContentsScreen(
             onSave = { viewModel.saveManualChapterMap(it) },
             onDismiss = { showAlign = false }
         )
+    }
+}
+
+/**
+ * Bookmarks and highlights, in reading order rather than the order they were made — this is a
+ * second table of contents for the book, and a passage marked last week belongs where it sits in
+ * the story, not at the top of a feed.
+ */
+@Composable
+private fun MarksTab(
+    marks: List<com.betteraudio.data.db.entities.ReaderMark>,
+    onOpen: (com.betteraudio.data.db.entities.ReaderMark) -> Unit,
+    onDelete: (Long) -> Unit,
+) {
+    if (marks.isEmpty()) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "Nothing marked yet.\n\nBookmark the page you are on with the ribbon in the reader's " +
+                    "top bar, or tap the pen next to it and then tap any paragraph to highlight it.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(32.dp)
+            )
+        }
+        return
+    }
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(marks, key = { it.id }) { mark ->
+            val isHighlight = mark.kind == com.betteraudio.data.db.entities.ReaderMarkKind.HIGHLIGHT
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { onOpen(mark) }
+                    .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                // A highlight is identified by its own colour; a bookmark by the ribbon. Nothing
+                // else in the row needs to say which kind it is.
+                Box(
+                    Modifier
+                        .padding(top = 3.dp, end = 12.dp)
+                        .size(width = 4.dp, height = 34.dp)
+                        .background(
+                            if (isHighlight) androidx.compose.ui.graphics.Color(mark.colorArgb)
+                            else MaterialTheme.colorScheme.primary
+                        )
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        mark.chapterTitle.ifBlank { "Chapter ${mark.spineIndex + 1}" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        mark.preview.ifBlank { "(no text)" },
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 3, overflow = TextOverflow.Ellipsis
+                    )
+                    if (mark.note.isNotBlank()) {
+                        Text(
+                            mark.note,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                HapticIconButton(onClick = { onDelete(mark.id) }) {
+                    Icon(Icons.Default.Close, "Remove")
+                }
+            }
+            HorizontalDivider()
+        }
     }
 }
 

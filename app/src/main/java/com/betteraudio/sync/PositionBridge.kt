@@ -211,7 +211,15 @@ object PositionBridge {
         val totalPath = (d1 + midLens.sum() + d2).coerceAtLeast(1)
         var travelled = (t * totalPath).coerceIn(0f, totalPath.toFloat())
 
-        if (travelled <= d1) return prev.spineIndex to travelled.toInt()
+        // Still inside prev's own spine item, so the offset is measured from where prev sits —
+        // NOT from the spine's start. `travelled` is a distance along the path, and the path
+        // begins at prev.charOffset; only the legs after this one begin at a spine boundary.
+        // Returning the bare distance here (as this did) put a position in the tail of a chapter
+        // the same distance from that chapter's *beginning*, so with anchors about a minute apart
+        // the closing minute of every chapter resolved to its opening lines. It also made this the
+        // one leg where charToAudioAnchored — which has always measured from prev.charOffset —
+        // was not its inverse.
+        if (travelled <= d1) return prev.spineIndex to (prev.charOffset + travelled.toInt())
         travelled -= d1
         for ((k, spineIdx) in midSpines.withIndex()) {
             val len = midLens[k]

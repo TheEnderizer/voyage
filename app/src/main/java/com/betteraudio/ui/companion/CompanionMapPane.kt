@@ -5,6 +5,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -42,6 +44,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -51,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import com.betteraudio.companion.ResolvedPin
 import com.betteraudio.companion.model.ArtTone
 import com.betteraudio.companion.model.BoardArt
@@ -76,6 +81,14 @@ import kotlin.math.roundToInt
  * - **Board art renders.** [PackBoard.artMedia] was parsed and carried by the model but never
  *   drawn, because nothing could resolve a pack-relative media path. [packDir] resolves it now,
  *   and the flat [ArtTone] fill stays as the ground beneath a board with no art.
+ *
+ * **It pans and zooms.** A map is the one surface in the deck where the whole point is looking
+ * closer at part of it: a fantasy map squeezed into a phone-width pane is a picture of a map, not a
+ * map you can read. Pinch to zoom, drag to pan, double-tap to go in and back out again. The
+ * transform is applied to the artwork through a `graphicsLayer` and to the pins **arithmetically**
+ * (see [mapToScreen]) rather than by transforming a shared parent — which is what keeps a pin the
+ * same size and the same comfortable tap target at every zoom, instead of a marker that balloons
+ * when you zoom in and becomes unhittable when you zoom out.
  */
 @Composable
 fun MapPane(
@@ -163,27 +176,119 @@ fun MapPane(
                 .clip(deckPanelShape())
                 .background(groundFor(board.artTone))
         ) {
-            if (art != null) {
-                AsyncImage(
-                    model = art,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            // How far in, and where. Reset when the board changes — the previous map's zoom means
+            // nothing on a different image, and arriving at a new board already panned into an
+            // empty corner reads as a broken screen.
+            var zoom by remember(board.boardId) { mutableStateOf(1f) }
+            var pan by remember(board.boardId) { mutableStateOf(Offset.Zero) }
+
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val density = LocalDensity.current
-                val scaleX = with(density) { maxWidth.toPx() } / CANVAS_UNITS
-                val scaleY = with(density) { maxHeight.toPx() } / CANVAS_UNITS
+                val viewW = with(density) { maxWidth.toPx() }
+                val viewH = with(density) { maxHeight.toPx() }
+                // The artwork's own aspect ratio, reported by the loaded image. Null until it
+                // lands, which is why every use below falls back to the pane.
+                var artAspect by remember(board.boardId) { mutableStateOf<Float?>(null) }
+
+                // Where the whole image actually sits inside the pane.
+                //
+                // This used to be the pane itself, with the image drawn at ContentScale.Crop — so
+                // anything outside the pane's aspect ratio was simply cut off the map and could
+                // never be reached, at any zoom. A map is the one kind of picture where the edges
+                // are the point: a cropped coastline is missing coastline, not a tighter framing.
+                // Fit shows all of it, and pins are anchored to the FITTED RECT rather than to the
+                // pane, so a marker stays on the place it names instead of drifting into the
+                // letterbox as the pane's shape changes.
+                val aspect = artAspect
+                val artW = if (aspect == null) viewW else minOf(viewW, viewH * aspect)
+                val artH = if (aspect == null) viewH else minOf(viewH, viewW / aspect)
+                val artLeft = (viewW - artW) / 2f
+                val artTop = (viewH - artH) / 2f
+                // Pixels per authored unit. NOT named scaleX/scaleY: those are also the names of
+                // GraphicsLayerScope's own properties, and a local shadows the receiver inside the
+                // graphicsLayer block below, so `scaleX = zoom` would assign to this val instead.
+                val unitX = artW / CANVAS_UNITS
+                val unitY = artH / CANVAS_UNITS
+                val artOrigin = Offset(artLeft, artTop)
+
+                // At 1x the map exactly fills the pane, so there is nothing to pan to; past that,
+                // the pane may not leave the artwork. Applied on every change rather than only on
+                // release, so the map cannot be flung into empty space and left there.
+                fun clampPan(next: Offset, z: Float): Offset = Offset(
+                    next.x.coerceIn(viewW * (1f - z), 0f),
+                    next.y.coerceIn(viewH * (1f - z), 0f)
+                )
+
+                fun setZoom(next: Float, focus: Offset) {
+                    val z = next.coerceIn(MIN_MAP_ZOOM, MAX_MAP_ZOOM)
+                    // Keep the point under the fingers under the fingers: the content point at the
+                    // focus is (focus - pan) / zoom, and it must land back on focus at the new
+                    // zoom. Without this a pinch drifts toward the top-left corner.
+                    val content = (focus - pan) / zoom
+                    pan = clampPan(focus - content * z, z)
+                    zoom = z
+                }
+
+                if (art != null) {
+                    AsyncImage(
+                        model = art,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        onState = { st ->
+                            if (st is AsyncImagePainter.State.Success) {
+                                val sz = st.painter.intrinsicSize
+                                if (sz.width > 0f && sz.height > 0f) artAspect = sz.width / sz.height
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = zoom
+                                scaleY = zoom
+                                translationX = pan.x
+                                translationY = pan.y
+                                // Top-left, so the arithmetic above (and mapToScreen) is a plain
+                                // scale-then-translate rather than one about a moving centre.
+                                transformOrigin = TransformOrigin(0f, 0f)
+                            }
+                    )
+                }
+
+                // Under the pins in the stack, so a pin still takes its own touches first; this
+                // catches everything else. detectTransformGestures reports pan for a single
+                // pointer too, so one finger drags the map and two pinch it.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .pointerInput(board.boardId) {
+                            detectTransformGestures { centroid, panChange, zoomChange, _ ->
+                                if (zoomChange != 1f) setZoom(zoom * zoomChange, centroid)
+                                pan = clampPan(pan + panChange, zoom)
+                            }
+                        }
+                        .pointerInput(board.boardId) {
+                            detectTapGestures(
+                                // In to a readable magnification, and back out again — the whole
+                                // "let me look at that corner" round trip without a pinch.
+                                onDoubleTap = { at ->
+                                    if (zoom > 1.05f) { zoom = 1f; pan = Offset.Zero }
+                                    else setZoom(DOUBLE_TAP_MAP_ZOOM, at)
+                                }
+                            )
+                        }
+                )
+
                 var draggingId by remember { mutableStateOf<String?>(null) }
                 var dragOffset by remember { mutableStateOf(Offset.Zero) }
 
                 pins.forEach { pin ->
                     val dragging = draggingId == pin.elementId
-                    val baseX = pin.xUnits * scaleX
-                    val baseY = pin.yUnits * scaleY
-                    val x = baseX + if (dragging) dragOffset.x else 0f
-                    val y = baseY + if (dragging) dragOffset.y else 0f
+                    // Pins live in screen space, transformed by hand. Putting them inside the same
+                    // graphicsLayer as the artwork would scale the markers with it — a face the
+                    // size of a thumbnail at 4x, and a target too small to hit at 1x.
+                    val base = mapToScreen(pin.xUnits, pin.yUnits, unitX, unitY, artOrigin, zoom, pan)
+                    val x = base.x + if (dragging) dragOffset.x else 0f
+                    val y = base.y + if (dragging) dragOffset.y else 0f
                     val halfPx = with(density) { PIN_SIZE.toPx() } / 2f
 
                     Box(
@@ -191,7 +296,7 @@ fun MapPane(
                             .offset { IntOffset((x - halfPx).roundToInt(), (y - halfPx).roundToInt()) }
                             .size(PIN_SIZE)
                             .then(
-                                if (editing) Modifier.pointerInput(pin.elementId) {
+                                if (editing) Modifier.pointerInput(pin.elementId, zoom, pan) {
                                     detectDragGestures(
                                         onDragStart = { draggingId = pin.elementId; dragOffset = Offset.Zero },
                                         onDragEnd = {
@@ -201,10 +306,17 @@ fun MapPane(
                                             val moved = dragOffset.getDistance() >
                                                 with(density) { 6.dp.toPx() }
                                             if (moved) {
+                                                // Back out through the same transform the pin was
+                                                // drawn with, so a drag at 3x moves the pin by
+                                                // what it looks like it moved by, not by three
+                                                // times that.
+                                                val units = screenToMap(
+                                                    base + dragOffset, unitX, unitY, artOrigin, zoom, pan
+                                                )
                                                 onMovePin(
                                                     pin.entity.entityId,
-                                                    ((baseX + dragOffset.x) / scaleX).coerceIn(0f, CANVAS_UNITS),
-                                                    ((baseY + dragOffset.y) / scaleY).coerceIn(0f, CANVAS_UNITS)
+                                                    units.x.coerceIn(0f, CANVAS_UNITS),
+                                                    units.y.coerceIn(0f, CANVAS_UNITS)
                                                 )
                                             } else {
                                                 selected = pin
@@ -303,6 +415,39 @@ fun MapPane(
         }
     }
 }
+
+/** Zoom limits. 1x is "the whole board fits the pane", which is the only sensible floor: below it
+ *  the map would sit in a margin of nothing. The ceiling is where a phone-sized pane still shows
+ *  enough context to know where you are. */
+private const val MIN_MAP_ZOOM = 1f
+private const val MAX_MAP_ZOOM = 5f
+/** Where a double-tap lands. Far enough in to read a label, near enough out to keep your bearings. */
+private const val DOUBLE_TAP_MAP_ZOOM = 2.5f
+
+/** A pin's authored position, in pixels on screen under the current [zoom]/[pan]. The artwork is
+ *  transformed by a `graphicsLayer` with a top-left origin, so this is the same scale-then-translate
+ *  it performs — which is what keeps pins glued to the art through a pinch. */
+private fun mapToScreen(
+    xUnits: Float, yUnits: Float,
+    scaleX: Float, scaleY: Float,
+    /** Top-left of the fitted artwork inside the pane — the letterbox offset. */
+    origin: Offset,
+    zoom: Float, pan: Offset
+): Offset = Offset(
+    (origin.x + xUnits * scaleX) * zoom + pan.x,
+    (origin.y + yUnits * scaleY) * zoom + pan.y
+)
+
+/** [mapToScreen] inverted: where a screen point sits in the board's authored unit space. */
+private fun screenToMap(
+    point: Offset,
+    scaleX: Float, scaleY: Float,
+    origin: Offset,
+    zoom: Float, pan: Offset
+): Offset = Offset(
+    ((point.x - pan.x) / zoom - origin.x) / scaleX,
+    ((point.y - pan.y) / zoom - origin.y) / scaleY
+)
 
 @Composable
 private fun BoardChip(

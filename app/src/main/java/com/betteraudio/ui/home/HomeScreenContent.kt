@@ -25,6 +25,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import com.betteraudio.ui.components.topEdgeFade
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -182,18 +183,30 @@ fun HomeScreenContent(
         containerColor = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onBackground
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // Everything except the TOP inset is applied here. The library grid is deliberately allowed
+        // to run up under the status bar so covers dissolve at the physical edge of the screen
+        // rather than at an invisible line partway down it (see topEdgeFade below); the inset comes
+        // back as the grid's own contentPadding, so the header still starts exactly where it did,
+        // and as explicit padding on the two things that are NOT the grid.
+        val statusInset = padding.calculateTopPadding()
+        Box(
+            Modifier
+                .fillMaxSize()
+                .padding(bottom = padding.calculateBottomPadding())
+        ) {
 
             // ── Scrolling library ──────────────────────────────────────────
             // Only the truly-empty library shows the full onboarding screen; a library that has
             // books but none in the CURRENT section falls through to a per-section empty message.
             if (!hasAnyBooks) {
-                EmptyLibrary(
-                    onScan = ::onScanClick,
-                    onOpenSettings = onOpenSettings,
-                    onOpenSearch = onOpenSearch,
-                    style = style
-                )
+                Box(Modifier.padding(top = statusInset)) {
+                    EmptyLibrary(
+                        onScan = ::onScanClick,
+                        onOpenSettings = onOpenSettings,
+                        onOpenSearch = onOpenSearch,
+                        style = style
+                    )
+                }
             } else {
                 val isGridRefreshing = scan.status == ScanStatus.Running
                 PullToRefreshBox(
@@ -205,13 +218,21 @@ fun HomeScreenContent(
                     columns = GridCells.Fixed(style.gridColumns()),
                     state = gridState,
                     contentPadding = PaddingValues(
+                        // Top carries the status-bar inset the Box above no longer applies, so the
+                        // header sits exactly where it always did while the scrolled content is
+                        // free to travel behind the status bar and fade out there.
                         // Bottom clears the floating nav pill + mini player stacked above the
                         // nav inset (see FloatingNavPill / PlayerSheet).
-                        start = 16.dp, end = 16.dp, top = 8.dp, bottom = 184.dp
+                        start = 16.dp, end = 16.dp, top = statusInset + 8.dp, bottom = 184.dp
                     ),
                     horizontalArrangement = Arrangement.spacedBy(14.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxSize()
+                    // A grid clips at its own bounds, which sliced every scrolling cover off with
+                    // a razor-straight line. This blurs and dissolves the last few dp instead, so
+                    // a cover leaves the screen rather than ending on it. On the GRID, not on the
+                    // PullToRefreshBox around it — the refresh spinner lives in that box's top
+                    // band and would be erased along with the content.
+                    modifier = Modifier.fillMaxSize().topEdgeFade()
                 ) {
                     // Header — stays put; the selection bar floats over it as an overlay.
                     // Section (Audio/Ebooks) + view-mode switching moved to the floating nav pill.
@@ -370,7 +391,11 @@ fun HomeScreenContent(
                 visible = isSelectionMode,
                 enter = slideInVertically { -it } + fadeIn(),
                 exit = slideOutVertically { -it } + fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    // Its own inset: it floats over the grid, which no longer carries one.
+                    .padding(top = statusInset)
+                    .padding(horizontal = 16.dp)
             ) {
                 SelectionHeader(
                     selectedCount = selection.size,

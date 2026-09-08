@@ -76,6 +76,29 @@ object WidgetIntents {
             else -> forTapActionService(context, appWidgetId, element)
         }
 
+    /**
+     * **`getForegroundService`, not `getService` — this is what makes a widget button work while
+     * the app is closed.**
+     *
+     * A plain `startService()` aimed at a process that is not running is refused outright on
+     * API 26+. Verified on the test device with the app force-stopped:
+     *
+     * ```
+     * $ am start-service   -n com.betteraudio/.playback.PlaybackService -a …WIDGET_PLAY_PAUSE
+     * Error: app is in background uid null          ← nothing happens, no crash, no log
+     * $ am start-foreground-service -n … -a …WIDGET_PLAY_PAUSE
+     * … state=PLAYING(3) …                          ← cold process, book resumed
+     * ```
+     *
+     * That is the whole bug: every widget control was a no-op from cold, silently, because the
+     * refusal happens in the system before any of our code runs. There is nothing to see in
+     * logcat from the app side, which is why it read as "the widget just doesn't do anything".
+     *
+     * The obligation that comes with it: a service started this way MUST reach `startForeground`
+     * within ~5 s or the system kills it with `ForegroundServiceDidNotStartInTimeException`.
+     * [PlaybackService.promoteForColdWidgetTap] holds up that end — see its doc for why it posts
+     * under Media3's own notification id.
+     */
     private fun serviceIntent(
         context: Context,
         appWidgetId: Int,
@@ -89,7 +112,7 @@ object WidgetIntents {
             data = Uri.parse("voyage://w/$appWidgetId/$elementId")
             configure()
         }
-        return PendingIntent.getService(
+        return PendingIntent.getForegroundService(
             context, reqCode, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
