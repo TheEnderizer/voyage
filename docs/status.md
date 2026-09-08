@@ -173,20 +173,31 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   `COMPLETION_TAIL_MS` of the book's end, via a second DAO query that leaves the flag alone.
   Position, not ordering: the two writers are unordered, so neither can evaluate a rule about which
   came first. A genuine resume is unaffected — `resolveStart` sends a finished book to file 0 /
-  position 0. Not yet tested on device.
+  position 0. Verified on device: playing a book to its end leaves status=FINISHED and
+  isCompleted=true with the position at the end, and both survive the stop-flush save.
 - **The companion deck let taps through to the player** — its root `Box` covered the player without
   intercepting anything, so a tap on the dock band around the transport buttons worked the player's
   bookmark row underneath. The container now consumes whole gestures its own children did not want.
-  Not yet tested on device.
+  Verified on device.
 - **Return/Confirm pills armed twice** — tap a chapter, then scrub inside the chapter you landed in,
   and `PlayerViewModel.pushPosition` stacked two anchors: confirming one revealed another, and the
   second Return carried on back across the chapter boundary, so a scrub within a chapter looked
   like it had changed chapters. Pushes inside `PUSH_COALESCE_MS` now keep the older anchor — the
-  position the listener was actually at before they started navigating. Not yet tested on device.
+  position the listener was actually at before they started navigating. Verified on device: five
+  chapter jumps in a row now leave one anchor and no dropdown caret.
 - **Library top edge no longer blurs** — `Modifier.topEdgeFade` kept its alpha ramp and lost the
   four-band progressive blur, by request: covers now dissolve into the wallpaper instead of
   smearing into it. Takes four layer replays per frame off a scrolling grid and removes the API 31
-  split the blur half had. Not yet tested on device.
+  split the blur half had. Verified on device.
+
+- **The jump-restore Dismiss button rendered vertically** — one letter per line. Immersive's
+  restore row was a plain `Row`, and "Playback jumped — tap to go back" beside "Dismiss" is wider
+  than the screen, so the second pill was squeezed to its minimum and its label wrapped per
+  character. Now a `FlowRow`, matching the Material theme's `JumpRestorePill`, which had already
+  chosen one for exactly this reason; `ScrimPill`'s label is also `maxLines = 1` + ellipsis, so no
+  future squeeze can stack letters again. Pre-existing, but newly reachable: the restore offer is
+  armed by `AudioCascade.resolveStart`'s isCompleted branch, which nothing reached while completion
+  was being wiped on every save. Verified on device.
 
 ## Deliberately not done
 

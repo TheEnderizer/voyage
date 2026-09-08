@@ -507,8 +507,13 @@ fun PlayerContent(
                 if (!isLocked) {
                     jumpRestore?.let { restore ->
                         Spacer(Modifier.height(14.dp))
-                        Row(
+                        // FlowRow, not Row, for the same wrap-not-clip reason the Material theme's
+                        // JumpRestorePill already used one: these two pills together are wider than
+                        // the screen, and a plain Row resolves that by squeezing the second one
+                        // until "Dismiss" rendered as a vertical column of single letters.
+                        FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.expandReveal(expandProgress)
                         ) {
                             ScrimPill(
