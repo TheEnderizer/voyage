@@ -16,7 +16,7 @@ Update it in the same commit as the work it describes — a ledger that lags is 
 because it gets trusted. One line per item; if a line needs a paragraph, it belongs in `CLAUDE.md`
 and this line should link to it.
 
-Last updated: 2026-09-03 · beta `1.14.0b` (75) · DB v26
+Last updated: 2026-09-08 · beta `1.14.0b` (75) · DB v27
 
 ---
 
@@ -163,6 +163,31 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   reader's top bar. It was a Phase 0 measurement harness, marked throwaway in three places since
   it landed.
 
+- **A finished book never stayed finished** — one defect behind three separate reports: a book
+  resumed at its last file rather than its beginning, never moved itself to the Finished shelf, and
+  reopened an old chapter. `PlayerController`'s `STATE_ENDED` handler marks the book complete, then
+  the stop/flush position save that follows a moment later ran
+  `PlaybackProgressDao.updatePosition`, whose `isCompleted = 0` (plus the repository's
+  `status = IN_PROGRESS` beside it) exists to un-finish a book on resume — and undid the completion
+  it was racing. `AudiobookRepository.updatePosition` now keeps both when the write lands within
+  `COMPLETION_TAIL_MS` of the book's end, via a second DAO query that leaves the flag alone.
+  Position, not ordering: the two writers are unordered, so neither can evaluate a rule about which
+  came first. A genuine resume is unaffected — `resolveStart` sends a finished book to file 0 /
+  position 0. Not yet tested on device.
+- **The companion deck let taps through to the player** — its root `Box` covered the player without
+  intercepting anything, so a tap on the dock band around the transport buttons worked the player's
+  bookmark row underneath. The container now consumes whole gestures its own children did not want.
+  Not yet tested on device.
+- **Return/Confirm pills armed twice** — tap a chapter, then scrub inside the chapter you landed in,
+  and `PlayerViewModel.pushPosition` stacked two anchors: confirming one revealed another, and the
+  second Return carried on back across the chapter boundary, so a scrub within a chapter looked
+  like it had changed chapters. Pushes inside `PUSH_COALESCE_MS` now keep the older anchor — the
+  position the listener was actually at before they started navigating. Not yet tested on device.
+- **Library top edge no longer blurs** — `Modifier.topEdgeFade` kept its alpha ramp and lost the
+  four-band progressive blur, by request: covers now dissolve into the wallpaper instead of
+  smearing into it. Takes four layer replays per frame off a scrolling grid and removes the API 31
+  split the blur half had. Not yet tested on device.
+
 ## Deliberately not done
 
 - **Listen↔read sync is frozen.** The alignment/Vosk machinery exists and works, but its UI is
@@ -181,3 +206,9 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
 - Paginator never splits a block, so a block taller than the page gets a page to itself.
 - `stash@{1}` holds an unmerged chapter-seek fix (19 lines in `PlayerController`).
 - `stash@{2}` is a disproven native-demux experiment, kept only as evidence.
+- **Skip silence is reported unreliable and unintuitive** and is still open on the board. The
+  machinery reads correct — `LiveSilenceSkippingProcessor` stays in the sink chain, the per-book
+  toggle and the global tuning both take effect live — so the report needs a concrete repro before
+  anything is changed. The intuitiveness half is real and unaddressed: "Sensitivity" is a raw PCM
+  threshold shown as a bare number between 256 and 4096, and the toggle being per-book while the
+  tuning is global is nowhere explained.

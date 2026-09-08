@@ -214,6 +214,17 @@ class AudiobookRepository @Inject constructor(
     // — which genuinely do overlap — could both read "no row exists" and both insert, and the
     // loser's insert (OnConflictStrategy.REPLACE) becomes a delete-then-insert that drops
     // whichever other column the other writer had just set.
+    /**
+     * Is [bookPositionMs] (book-global) within [COMPLETION_TAIL_MS] of this book's end? Only ever
+     * asked of a book already flagged complete, so the extra read costs nothing on the common
+     * path. A book with no scanned duration answers false: there is no end to be near, and the
+     * safe answer for an unknown is the old, un-finishing behaviour.
+     */
+    private suspend fun isAtEndOfBook(bookId: Long, bookPositionMs: Long): Boolean {
+        val totalMs = bookDao.getBookOnce(bookId)?.totalDurationMs ?: 0L
+        return totalMs > 0L && bookPositionMs >= totalMs - COMPLETION_TAIL_MS
+    }
+
     suspend fun updatePosition(bookId: Long, fileId: Long, positionMs: Long) {
         db.withTransaction {
             val existing = progressDao.getProgressForBookOnce(bookId)
@@ -241,10 +252,31 @@ class AudiobookRepository @Inject constructor(
                         filesBeforeCurrentMs = filesBeforeCurrentMs
                     )
                 )
+                bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
+            } else if (existing.isCompleted && isAtEndOfBook(bookId, filesBeforeCurrentMs + positionMs)) {
+                // A position save is normally proof the book is being listened to again, so both
+                // writes below un-finish it: the flag is cleared and the status drops back to
+                // IN_PROGRESS. The one place that inference is wrong is the end of the book.
+                // PlayerController's STATE_ENDED handler marks the book complete, and the save
+                // that flushes the final position runs a moment later — unguarded, it undid the
+                // completion it was racing, every single time. That is the whole cause of three
+                // reported bugs at once: the book stayed off the Finished shelf, kept a
+                // currentFileId pointing at its last file, and so resumed there (or, once
+                // AudioCascade.resolveStart's isCompleted branch was skipped, at whatever old
+                // chapter that file began) instead of at its beginning.
+                //
+                // "At the end" rather than "immediately after STATE_ENDED" deliberately: the two
+                // writers are unordered, so a rule about which came first cannot be evaluated by
+                // either of them. Position can, from either side, and it answers the question the
+                // flag actually asks. A genuine resume of a finished book is not caught by it —
+                // resolveStart sends that book back to file 0 / position 0, about as far from
+                // this test as a position gets — and a listener who seeks into the last minute of
+                // a book they have finished has not un-finished it either.
+                progressDao.updatePositionKeepingCompletion(bookId, fileId, positionMs, System.currentTimeMillis(), filesBeforeCurrentMs)
             } else {
                 progressDao.updatePosition(bookId, fileId, positionMs, System.currentTimeMillis(), filesBeforeCurrentMs)
+                bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
             }
-            bookDao.updateStatus(bookId, BookStatus.IN_PROGRESS)
         }
         // Deferred, not flushed: the disk mirror for playback position is intentionally written
         // only on pause/stop/book-close/file-transition, not on every position tick — see
@@ -374,6 +406,12 @@ class AudiobookRepository @Inject constructor(
     }
 
     companion object {
+        /** How close to a book's end still counts as "the end" for [isAtEndOfBook]. Sized for the
+         *  gap between STATE_ENDED and the stop-flush save that follows it, which is a fraction of
+         *  a second in practice; the slack is for a last file whose scanned duration is slightly
+         *  long, the same tolerance PlayerController applies when judging a truncated item. */
+        private const val COMPLETION_TAIL_MS = 15_000L
+
         internal fun deleteQuietly(path: String, what: String) {
             try {
                 val f = java.io.File(path)

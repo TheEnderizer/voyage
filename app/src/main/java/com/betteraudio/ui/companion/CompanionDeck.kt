@@ -9,6 +9,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -45,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -262,6 +265,25 @@ fun CompanionDeck(
         Box(
             modifier
                 .fillMaxSize()
+                // The deck covers the player, but covering it is only a paint operation: without
+                // this, every touch that lands where the deck happens to have no interactive child
+                // — the dock band around its transport buttons, most of all — carried on down to
+                // the player underneath and worked its controls. Tapping the deck's own mini
+                // player fired the player's bookmark row, which is what the deck is drawn over.
+                //
+                // A modifier on the container, not a child: hit testing reaches the deck's own
+                // children first, so they still get every gesture they handle, and only what none
+                // of them wanted is swallowed here. Whole gestures rather than taps, so a drag
+                // across the deck cannot reach the scrubber behind it either.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        do {
+                            val event = awaitPointerEvent()
+                            event.changes.forEach { it.consume() }
+                        } while (event.changes.any { it.pressed })
+                    }
+                }
                 .graphicsLayer {
                     val b = backProgress.value
                     scaleX = 1f - 0.06f * b

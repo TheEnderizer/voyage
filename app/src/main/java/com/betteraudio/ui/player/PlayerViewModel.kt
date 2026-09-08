@@ -77,6 +77,11 @@ private const val SCRUB_RETURN_MIN_MS = 3_000L
 // Listening history's "Skips" list keeps its original, coarser meaning — only a genuinely long
 // drag is a navigation event worth remembering, even though far smaller ones now arm the pills.
 private const val SCRUB_HISTORY_MIN_MS = 5 * 60_000L
+// Two jumps closer together than this are treated as one piece of navigation, so they leave one
+// Return anchor between them rather than one each. Long enough to cover "tap a chapter, then find
+// the spot inside it" — the pattern that used to arm the pills twice — and short enough that a
+// jump made after actually listening for a while still gets its own anchor. See pushPosition.
+private const val PUSH_COALESCE_MS = 20_000L
 
 /**
  * A bookmark resolved against the book's *current* file/chapter timeline.
@@ -466,10 +471,33 @@ class PlayerViewModel @Inject constructor(
     val positionStack: StateFlow<List<Long>> = _positionStack.asStateFlow()
     private var autoCommitJob: Job? = null
 
+    private var lastPushAtMs = 0L
+
+    /**
+     * Remember [absMs] as somewhere the Return pill can bring the listener back to.
+     *
+     * Two jumps in quick succession are one act of navigation, not two, and pushing an anchor for
+     * each of them was a reported bug: tap a chapter, then immediately scrub inside the chapter
+     * you landed in, and the pills armed twice. Confirming dismissed one set only to reveal
+     * another behind it, and the second Return did not undo the scrub — it carried on back across
+     * the chapter boundary, so a scrub within one chapter appeared to change chapters.
+     *
+     * A push inside [PUSH_COALESCE_MS] of the last one therefore keeps the anchor already on the
+     * stack rather than adding to it. Keeping the older of the two is the point: it is the
+     * position the listener was actually at before they started navigating, which is where Return
+     * is for. It only stops meaning that if the newer push replaces it. The auto-commit timer
+     * still restarts, so the coalesced navigation gets the full ten minutes of settled listening
+     * before the pills clear themselves.
+     */
     private fun pushPosition(absMs: Long) {
-        _positionStack.update { stack ->
-            val limited = if (stack.size >= 20) stack.drop(1) else stack
-            limited + absMs
+        val now = System.currentTimeMillis()
+        val coalesce = _positionStack.value.isNotEmpty() && now - lastPushAtMs < PUSH_COALESCE_MS
+        lastPushAtMs = now
+        if (!coalesce) {
+            _positionStack.update { stack ->
+                val limited = if (stack.size >= 20) stack.drop(1) else stack
+                limited + absMs
+            }
         }
         restartAutoCommit()
     }
@@ -836,6 +864,7 @@ class PlayerViewModel @Inject constructor(
 
     fun confirmPosition() {
         _positionStack.value = emptyList()
+        lastPushAtMs = 0L
         autoCommitJob?.cancel()
         autoCommitJob = null
     }

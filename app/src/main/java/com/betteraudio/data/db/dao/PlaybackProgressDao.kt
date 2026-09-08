@@ -21,6 +21,29 @@ interface PlaybackProgressDao {
     """)
     suspend fun updatePosition(bookId: Long, fileId: Long, positionMs: Long, lastPlayedMs: Long, filesBeforeCurrentMs: Long)
 
+    /**
+     * The same write as [updatePosition] minus the `isCompleted = 0`, for the one case where a
+     * position save must not un-finish the book: the save that lands at the very end of a book
+     * that has just been marked complete.
+     *
+     * `updatePosition` clears the flag because, for every other write, a position save IS a
+     * resume — the book is being listened to again, so it is no longer finished. At the end of a
+     * book that reasoning inverts: `PlayerController`'s `STATE_ENDED` handler marks the book
+     * complete, and the stop/flush save that follows it a moment later writes the end position
+     * back through this table. Clearing the flag there wiped the completion that had just been
+     * recorded, which is why a finished book resumed at its last file instead of its beginning,
+     * never moved itself to the Finished shelf, and reopened an old chapter. Which of the two
+     * queries runs is [com.betteraudio.data.repository.AudiobookRepository.updatePosition]'s
+     * decision — see its comment for the "is this write at the end of the book" test.
+     */
+    @Query("""
+        UPDATE playback_progress
+        SET currentFileId = :fileId, positionMs = :positionMs, lastPlayedMs = :lastPlayedMs,
+            filesBeforeCurrentMs = :filesBeforeCurrentMs
+        WHERE bookId = :bookId
+    """)
+    suspend fun updatePositionKeepingCompletion(bookId: Long, fileId: Long, positionMs: Long, lastPlayedMs: Long, filesBeforeCurrentMs: Long)
+
     @Query("UPDATE playback_progress SET playbackSpeed = :speed WHERE bookId = :bookId")
     suspend fun updateSpeed(bookId: Long, speed: Float)
 
