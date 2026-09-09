@@ -162,19 +162,19 @@ class MigrationTest {
     }
 
     /**
-     * The whole chain, 19 to 28, over one seeded book.
+     * The whole chain, 19 to 29, over one seeded book.
      *
      * The per-step tests above each prove one migration in isolation; this proves they compose.
      * That matters most for 27->28, which is the first migration here that *rebuilds* tables
      * rather than adding to them — it is the one step that can drop a column another migration
      * added five versions earlier, and no isolated test would notice.
      *
-     * A real install arriving at 28 has walked exactly this path, so what it asserts is the thing
+     * A real install arriving at 29 has walked exactly this path, so what it asserts is the thing
      * a user actually cares about: the book is still there, and it is still paused where they
      * left it.
      */
     @Test
-    fun migrate19To28_wholeChainKeepsTheBookAndItsPosition() {
+    fun migrate19To29_wholeChainKeepsTheBookAndItsPosition() {
         helper.createDatabase(dbName, 19).apply {
             execSQL(
                 "INSERT INTO books (id, title, author, folderPath, totalDurationMs, addedDateMs, " +
@@ -193,21 +193,63 @@ class MigrationTest {
             close()
         }
 
-        val db = helper.runMigrationsAndValidate(dbName, 28, true, AppDatabase.MIGRATION_19_20, AppDatabase.MIGRATION_20_21, AppDatabase.MIGRATION_21_22, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_25, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28)
+        val db = helper.runMigrationsAndValidate(dbName, 29, true, AppDatabase.MIGRATION_19_20, AppDatabase.MIGRATION_20_21, AppDatabase.MIGRATION_21_22, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_25, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29)
 
         db.query("SELECT * FROM books WHERE id = 1").use { c ->
-            assertTrue("the book did not survive 19 -> 28", c.moveToFirst())
+            assertTrue("the book did not survive 19 -> 29", c.moveToFirst())
             assertEquals("Chain Book", c.getString(c.getColumnIndexOrThrow("title")))
             assertEquals(1, c.getInt(c.getColumnIndexOrThrow("skipSilenceEnabled")))
         }
         db.query("SELECT * FROM playback_progress WHERE bookId = 1").use { c ->
-            assertTrue("the saved position did not survive 19 -> 28", c.moveToFirst())
+            assertTrue("the saved position did not survive 19 -> 29", c.moveToFirst())
             assertEquals(4321L, c.getLong(c.getColumnIndexOrThrow("positionMs")))
             assertEquals(10L, c.getLong(c.getColumnIndexOrThrow("currentFileId")))
             assertEquals(1.4f, c.getFloat(c.getColumnIndexOrThrow("playbackSpeed")), 0.001f)
         }
         db.query("PRAGMA foreign_key_check").use { c ->
             assertTrue("the chain left a broken foreign key", !c.moveToFirst())
+        }
+    }
+
+    /**
+     * 28->29 deletes the standalone ebook-only rows and nothing else.
+     *
+     * The risk is entirely in the WHERE clause: it is a DELETE over the books table, and the
+     * marker it matches on (`::epub::` in folderPath) has to be narrow enough that no real
+     * audiobook is caught by it. So seed one of each — an ebook-only row, an ordinary audiobook,
+     * and an audiobook whose files have gone missing (fileCount 0, which is the state a
+     * fileCount-based match would have swallowed) — and assert only the first one goes.
+     */
+    @Test
+    fun migrate28To29_deletesOnlyTheEbookOnlyRows() {
+        helper.createDatabase(dbName, 28).apply {
+            execSQL(
+                "INSERT INTO books (id, title, author, folderPath, totalDurationMs, addedDateMs, " +
+                    "status, fileCount, isIgnored, skipSilenceEnabled, dataAppliedAtMs) VALUES " +
+                    "(1, 'Loose Epub', 'A', '/books::epub::loose', 0, 5, 'NOT_STARTED', 0, 0, 0, 0), " +
+                    "(2, 'Real Audiobook', 'A', '/books/real', 9000, 5, 'IN_PROGRESS', 2, 0, 0, 0), " +
+                    "(3, 'Missing Files', 'A', '/books/gone', 9000, 5, 'IN_PROGRESS', 0, 1, 0, 0)"
+            )
+            execSQL(
+                "INSERT INTO playback_progress (bookId, currentFileId, positionMs, lastPlayedMs, " +
+                    "playbackSpeed, boostDb, isCompleted, lastPausedAt, filesBeforeCurrentMs, revealedMs) " +
+                    "VALUES (1, NULL, 0, 1, 1.0, 0, 0, 0, 0, 0), (2, NULL, 4321, 2, 1.0, 0, 0, 0, 0, 0)"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 29, true, AppDatabase.MIGRATION_28_29)
+
+        db.query("SELECT id FROM books ORDER BY id").use { c ->
+            val ids = buildList { while (c.moveToNext()) add(c.getLong(0)) }
+            assertEquals(listOf(2L, 3L), ids)
+        }
+        // The ebook-only row's progress went with it; the real book's did not.
+        db.query("SELECT bookId, positionMs FROM playback_progress").use { c ->
+            assertTrue("the real book's progress was deleted too", c.moveToFirst())
+            assertEquals(2L, c.getLong(0))
+            assertEquals(4321L, c.getLong(1))
+            assertTrue("an ebook-only progress row survived the cascade", !c.moveToNext())
         }
     }
 }
