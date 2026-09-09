@@ -263,12 +263,12 @@ private fun EmptyHeroHeader(data: HomeHeaderData, onSort: () -> Unit) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                if (data.section == HomeSection.EBOOKS) "Ebooks" else "Library",
+                "Library",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = ImmersiveStyle.scrimText()
             )
-            val noun = if (data.section == HomeSection.EBOOKS) "ebook" else when (data.viewMode) {
+            val noun = when (data.viewMode) {
                 HomeViewMode.BOOKS -> "book"
                 HomeViewMode.SERIES -> "title"
                 HomeViewMode.AUTHORS -> "author"

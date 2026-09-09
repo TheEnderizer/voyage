@@ -78,9 +78,6 @@ fun BookOptionsSheet(
     onIgnore: () -> Unit = {},
     onDeletePermanently: (deleteFiles: Boolean) -> Unit = {},
     playback: PlaybackOptions? = null,
-    onConnectEpub: (path: String) -> Unit = {},
-    onDisconnectEpub: () -> Unit = {},
-    onOpenReader: () -> Unit = {},
     onPinShortcut: () -> Unit = {},
     seriesOptions: SeriesOptions? = null
 ) {
@@ -242,58 +239,6 @@ fun BookOptionsSheet(
                         Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Refresh cover effect")
-                    }
-                }
-
-                // ── Ebook (EPUB) ─────────────────────────────────────────────
-                if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) OptionsSection("Ebook") {
-                    if (book.ebookPath != null) {
-                        Text(
-                            java.io.File(book.ebookPath).name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            HapticOutlinedButton(
-                                onClick = { onOpenReader(); onDismiss() },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Open reader")
-                            }
-                            HapticOutlinedButton(onClick = onDisconnectEpub, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.LinkOff, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text("Disconnect")
-                            }
-                        }
-                    } else {
-                        var showEpubPicker by remember { mutableStateOf(false) }
-                        HapticOutlinedButton(
-                            onClick = { showEpubPicker = true },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.MenuBook, null, Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Connect EPUB…")
-                        }
-                        if (showEpubPicker) {
-                            val startPath = remember(book.folderPath) {
-                                val real = java.io.File(book.folderPath.substringBefore("::"))
-                                (if (real.isDirectory) real else real.parentFile)?.absolutePath
-                                    ?: "/storage/emulated/0"
-                            }
-                            FolderBrowser(
-                                startPath = startPath,
-                                onSelect = {},
-                                onCancel = { showEpubPicker = false },
-                                fileExtensions = setOf("epub"),
-                                onSelectFile = { path -> onConnectEpub(path); showEpubPicker = false },
-                                title = "Choose EPUB"
-                            )
-                        }
                     }
                 }
 

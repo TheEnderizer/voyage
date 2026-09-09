@@ -117,9 +117,7 @@ fun SettingsScreen(
     val widgetHideWhenIdle        by viewModel.widgetHideWhenIdle.collectAsStateWithLifecycle()
 
     var showBrowser by remember { mutableStateOf(false) }
-    var showEbookBrowser by remember { mutableStateOf(false) }
     var storageGranted by remember { mutableStateOf(hasAllFilesAccess()) }
-    val ebookFolder by viewModel.ebookFolder.collectAsStateWithLifecycle()
 
     val storageSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -139,16 +137,6 @@ fun SettingsScreen(
         )
     }
 
-    if (showEbookBrowser) {
-        FolderBrowser(
-            startPath = ebookFolder.ifBlank { "/storage/emulated/0" },
-            onSelect = {
-                viewModel.setEbookFolder(it)
-                showEbookBrowser = false
-            },
-            onCancel = { showEbookBrowser = false }
-        )
-    }
 
     val motion = LocalVoyageMotion.current
     val landscape = isLandscapeWindow()
@@ -189,7 +177,7 @@ fun SettingsScreen(
                 context, storageGranted, libraryFolder, bookCount, rescanRunning,
                 coverRefreshRunning, coverRefreshProgress, resetRunning, ignoredBooks, importStructure,
                 storageSettingsLauncher, { showBrowser = true },
-                ebookFolder, { showEbookBrowser = true }, viewModel
+                viewModel
             )
             SettingsSection.Playback -> playbackSection(
                 skipForwardMs, skipBackMs,

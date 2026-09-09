@@ -17,15 +17,14 @@ fun HomeScreen(
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (Long) -> Unit = {},
     onOpenAuthor: (String) -> Unit = {},
-    onOpenReader: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     when (LocalAppTheme.current) {
         AppTheme.IMMERSIVE -> ImmersiveHomeScreen(
-            onOpenSettings, onOpenBook, onOpenBookInfo, onOpenSearch, onOpenSeries, onOpenAuthor, onOpenReader, viewModel
+            onOpenSettings, onOpenBook, onOpenBookInfo, onOpenSearch, onOpenSeries, onOpenAuthor, viewModel
         )
         AppTheme.MATERIAL_YOU -> MaterialHomeScreen(
-            onOpenSettings, onOpenBook, onOpenBookInfo, onOpenSearch, onOpenSeries, onOpenAuthor, onOpenReader, viewModel
+            onOpenSettings, onOpenBook, onOpenBookInfo, onOpenSearch, onOpenSeries, onOpenAuthor, viewModel
         )
     }
 }

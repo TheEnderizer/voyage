@@ -125,7 +125,6 @@ internal fun PlayerLandscapeBody(
     onAddBookmark: () -> Unit,
     onToggleSeriesCover: () -> Unit,
     onHistory: () -> Unit,
-    onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
     onOpenCompanion: () -> Unit,
@@ -178,12 +177,10 @@ internal fun PlayerLandscapeBody(
                     PlayerOverflowMenu(
                         inSeries = inSeries,
                         showSeriesCover = showSeriesCover,
-                        hasEbook = book?.ebookPath != null,
                         onBookOptions = onBookOptions,
                         onAddBookmark = onAddBookmark,
                         onToggleSeriesCover = onToggleSeriesCover,
                         onHistory = onHistory,
-                        onReadFromHere = onReadFromHere,
                         onRefreshCoverEffect = onRefreshCoverEffect,
                         onLock = onLock
                     )

@@ -220,7 +220,6 @@ fun PlayerSheet(
     miniBarSlot: com.betteraudio.ui.components.MiniBarSlot? = null,
     // "Read from here" (player overflow) needs to collapse this sheet and navigate to the reader
     // route underneath it — that navigation lives outside the sheet's own nested NavHost.
-    onOpenReader: (bookId: Long, fromSync: Boolean) -> Unit = { _, _ -> }
 ) {
     val playback by playerController.playbackState.collectAsStateWithLifecycle()
     // Read ONLY inside MiniPlayerBar's deferred progress lambda — reading `position` anywhere
@@ -683,7 +682,6 @@ fun PlayerSheet(
                             PlayerContent(
                                 onCollapse = { controller.collapse() },
                                 startPlaying = backStackEntry.arguments?.getBoolean("startPlaying") ?: true,
-                                onOpenReader = { bookId, fromSync -> controller.collapse(); onOpenReader(bookId, fromSync) },
                                 viewModel = playerViewModel
                             )
                         }

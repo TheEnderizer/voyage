@@ -80,7 +80,6 @@ import com.betteraudio.ui.haptics.*
 fun PlayerContent(
     onCollapse: () -> Unit,
     startPlaying: Boolean = true,
-    onOpenReader: (bookId: Long, fromSync: Boolean) -> Unit = { _, _ -> },
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val onBack = onCollapse
@@ -370,16 +369,6 @@ fun PlayerContent(
                                 leadingIcon = { Icon(Icons.Default.History, null) },
                                 onClick = { showOverflow = false; showHistory = true }
                             )
-                            if (book?.ebookPath != null && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-                                HapticDropdownMenuItem(
-                                    text = { Text("Read from here") },
-                                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
-                                    onClick = {
-                                        showOverflow = false
-                                        viewModel.readFromHere { bookId -> onOpenReader(bookId, true) }
-                                    }
-                                )
-                            }
                             HapticDropdownMenuItem(
                                 text = { Text("Refresh cover effect") },
                                 leadingIcon = { Icon(Icons.Default.Refresh, null) },
@@ -844,9 +833,6 @@ fun PlayerContent(
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
-                onConnectEpub = { path -> viewModel.connectEpub(path) },
-                onDisconnectEpub = { viewModel.disconnectEpub() },
-                onOpenReader = { bwp?.book?.id?.let { onOpenReader(it, false) } },
                 playback = PlaybackOptions(
                     currentSpeed = state.speed,
                     currentBoostDb = viewModel.currentBoostDb,

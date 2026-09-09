@@ -94,12 +94,7 @@ class RestoreOps @Inject constructor(
                         eqBandsJson = p.eqBandsJson,
                         isCompleted = p.isCompleted,
                         completedDateMs = p.completedDateMs,
-                        lastPausedAt = p.lastPausedAt,
-                        textSpineIndex = p.textSpineIndex,
-                        textFraction = p.textFraction,
-                        textCharOffset = p.textCharOffset,
-                        textOverallFraction = p.textOverallFraction,
-                        lastMode = p.lastMode
+                        lastPausedAt = p.lastPausedAt
                     )
                 )
                 val status = BackupMatcher.deriveBookStatus(doc.status, p.isCompleted, p.positionMs)

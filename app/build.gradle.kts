@@ -29,9 +29,6 @@ android {
         versionCode = 75
         versionName = "1.14.0b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Vosk ships native libs per-ABI; restrict to 64-bit ARM (every modern phone) so the
-        // added speech-recognition support doesn't balloon the APK with x86/32-bit variants.
-        ndk { abiFilters += listOf("arm64-v8a") }
     }
 
     signingConfigs {
@@ -169,11 +166,6 @@ dependencies {
 
     // SAF folder access for auto-backup
     implementation(libs.androidx.documentfile)
-
-    // Vosk — offline (on-device) speech recognition for paragraph-resolution sync.
-    // JNA must be the AAR packaging (Vosk loads its native libs through it).
-    implementation(libs.vosk.android)
-    implementation(variantOf(libs.jna) { artifactType("aar") })
 
     debugImplementation(libs.androidx.ui.tooling)
 

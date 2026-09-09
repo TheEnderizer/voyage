@@ -14,7 +14,6 @@ fun HomeScreen(
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (Long) -> Unit = {},
     onOpenAuthor: (String) -> Unit = {},
-    onOpenReader: (Long) -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     HomeScreenContent(
@@ -24,7 +23,6 @@ fun HomeScreen(
         onOpenSearch = onOpenSearch,
         onOpenSeries = onOpenSeries,
         onOpenAuthor = onOpenAuthor,
-        onOpenReader = onOpenReader,
         viewModel = viewModel,
         style = MaterialHomeStyle
     )

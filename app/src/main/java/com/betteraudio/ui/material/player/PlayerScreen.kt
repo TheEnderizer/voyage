@@ -63,7 +63,6 @@ import com.betteraudio.ui.haptics.*
 fun PlayerContent(
     onCollapse: () -> Unit,
     startPlaying: Boolean = true,
-    onOpenReader: (bookId: Long, fromSync: Boolean) -> Unit = { _, _ -> },
     viewModel: PlayerViewModel = hiltViewModel()
 ) {
     val onBack = onCollapse
@@ -320,7 +319,6 @@ fun PlayerContent(
                         onAddBookmark = { showAddBookmark = true },
                         onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                         onHistory = { showHistory = true },
-                        onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                         onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                         onLock = onLockPlayer,
                         onOpenCompanion = { showCompanion = true },
@@ -389,7 +387,6 @@ fun PlayerContent(
                     onAddBookmark = { showAddBookmark = true },
                     onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                     onHistory = { showHistory = true },
-                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                     onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                     onLock = onLockPlayer,
                     onOpenCompanion = { showCompanion = true },
@@ -434,7 +431,6 @@ fun PlayerContent(
                     seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() },
                     inSeries = inSeries,
                     showSeriesCover = showSeriesCover,
-                    hasEbook = book?.ebookPath != null,
                     onScrimMuted = onScrimMuted,
                     expandProgress = expandProgress,
                     onBack = onBack,
@@ -442,7 +438,6 @@ fun PlayerContent(
                     onAddBookmark = { showAddBookmark = true },
                     onToggleSeriesCover = { viewModel.toggleShowSeriesCover() },
                     onHistory = { showHistory = true },
-                    onReadFromHere = { viewModel.readFromHere { bookId -> onOpenReader(bookId, true) } },
                     onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                     onLock = onLockPlayer
                 )
@@ -887,9 +882,6 @@ fun PlayerContent(
                 onRefreshCoverEffect = { viewModel.refreshCoverEffect() },
                 onIgnore = { },
                 onDeletePermanently = { },
-                onConnectEpub = { path -> viewModel.connectEpub(path) },
-                onDisconnectEpub = { viewModel.disconnectEpub() },
-                onOpenReader = { bwp?.book?.id?.let { onOpenReader(it, false) } },
                 playback = PlaybackOptions(
                     currentSpeed = state.speed,
                     currentBoostDb = viewModel.currentBoostDb,

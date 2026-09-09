@@ -118,24 +118,10 @@ fun BookInfoScreen(
             onUpdateMetadata = { title, author -> viewModel.updateMetadata(title, author) },
             onUpdateSeries = { name, order -> viewModel.updateSeriesInfo(name, order) },
             onUpdateStatus = { viewModel.updateStatus(it) },
-            onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() },
-            onConnectEpub = { path -> viewModel.connectEpub(path) },
-            onDisconnectEpub = { viewModel.disconnectEpub() },
-            onOpenReader = { showBookOptions = false; onOpenReader(viewModel.bookId) }
+            onSearchOnlineCover = { showBookOptions = false; viewModel.openCoverSearch() }
         )
     }
 
-    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
-    ebookError?.let { message ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissEbookError() },
-            title = { Text("Couldn't connect ebook") },
-            text = { Text(message) },
-            confirmButton = {
-                HapticTextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") }
-            }
-        )
-    }
 
     if (coverSearchOpen) {
         com.betteraudio.ui.home.CoverSearchSheet(

@@ -18,15 +18,19 @@ object BookDataCodec {
         "title", "author", "titleOverride", "authorOverride", "narrator", "genre", "year",
         "album", "description", "synopsis", "status", "isIgnored", "skipSilenceEnabled",
         "addedDateMs", "totalDurationMs", "fileCount",
-        "cover", "series", "ebook", "files", "progress", "bookmarks", "sessions", "skipEvents"
+        // "ebook" is deliberately absent: the EPUB reader is gone, so nothing decodes that
+        // object any more, and leaving it out of this set means captureUnknown picks it up and
+        // writes it back verbatim. An existing book.json therefore keeps its recorded epub
+        // connection on disk, untouched, for whenever the reader is rebuilt.
+        "cover", "series", "files", "progress", "bookmarks", "sessions", "skipEvents"
     )
     private val COVER_KEYS = setOf("relPath", "source", "updatedAt")
     private val SERIES_REF_KEYS = setOf("name", "order")
-    private val EBOOK_KEYS = setOf("relPath", "spineCount", "chapterMap")
     private val PROGRESS_KEYS = setOf(
         "positionMs", "lastPlayedMs", "currentFile", "playbackSpeed", "boostDb", "eqBandsJson",
-        "isCompleted", "completedDateMs", "lastPausedAt", "textSpineIndex", "textFraction",
-        "textCharOffset", "textOverallFraction", "lastMode"
+        // The five text-position keys are omitted for the same reason "ebook" is above — they
+        // round-trip as unknown rather than being dropped on the next write.
+        "isCompleted", "completedDateMs", "lastPausedAt"
     )
 
     fun encode(doc: BookDocument): JSONObject = JSONObject().apply {
@@ -65,13 +69,6 @@ object BookDataCodec {
                 putUnknown(s.unknown)
             })
         }
-        doc.ebook?.let { e ->
-            put("ebook", JSONObject().apply {
-                put("relPath", e.relPath); put("spineCount", e.spineCount)
-                e.chapterMap?.let { cm -> put("chapterMap", JSONArray().apply { cm.forEach { put(it) } }) }
-                putUnknown(e.unknown)
-            })
-        }
         put("files", JSONArray().apply {
             doc.files.forEach { f ->
                 put(JSONObject().apply {
@@ -96,11 +93,6 @@ object BookDataCodec {
                 put("isCompleted", p.isCompleted)
                 p.completedDateMs?.let { put("completedDateMs", it) }
                 put("lastPausedAt", p.lastPausedAt)
-                p.textSpineIndex?.let { put("textSpineIndex", it) }
-                p.textFraction?.let { put("textFraction", it) }
-                p.textCharOffset?.let { put("textCharOffset", it) }
-                put("textOverallFraction", p.textOverallFraction)
-                put("lastMode", p.lastMode)
                 putUnknown(p.unknown)
             })
         }
@@ -166,17 +158,6 @@ object BookDataCodec {
                 unknown = s.captureUnknown(SERIES_REF_KEYS)
             )
         }
-        val ebook = root.optJSONObject("ebook")?.let { e ->
-            val relPath = e.optString("relPath")
-            if (relPath.isBlank()) null else BookDocument.EbookInfo(
-                relPath = relPath,
-                spineCount = e.optInt("spineCount"),
-                chapterMap = e.optJSONArray("chapterMap")?.let { arr ->
-                    (0 until arr.length()).map { arr.optInt(it) }
-                },
-                unknown = e.captureUnknown(EBOOK_KEYS)
-            )
-        }
         val files = root.optJSONArray("files")?.let { arr ->
             (0 until arr.length()).mapNotNull { i ->
                 val f = arr.optJSONObject(i) ?: return@mapNotNull null
@@ -206,11 +187,6 @@ object BookDataCodec {
                 isCompleted = p.optBoolean("isCompleted"),
                 completedDateMs = if (p.has("completedDateMs")) p.optLong("completedDateMs") else null,
                 lastPausedAt = p.optLong("lastPausedAt"),
-                textSpineIndex = if (p.has("textSpineIndex")) p.optInt("textSpineIndex") else null,
-                textFraction = if (p.has("textFraction")) p.optDouble("textFraction").toFloat() else null,
-                textCharOffset = if (p.has("textCharOffset")) p.optInt("textCharOffset") else null,
-                textOverallFraction = p.optDouble("textOverallFraction", 0.0).toFloat(),
-                lastMode = p.optString("lastMode", "AUDIO"),
                 unknown = p.captureUnknown(PROGRESS_KEYS)
             )
         }
@@ -286,7 +262,6 @@ object BookDataCodec {
             fileCount = root.optInt("fileCount"),
             cover = cover,
             series = series,
-            ebook = ebook,
             files = files,
             progress = progress,
             bookmarks = bookmarks,

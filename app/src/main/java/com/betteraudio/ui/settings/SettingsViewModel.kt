@@ -67,11 +67,9 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val settings: SettingsStore,
     private val scanner: AudioFileScanner,
-    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     private val updateChecker: UpdateChecker,
     private val repository: AudiobookRepository,
     private val restructurer: com.betteraudio.data.files.LibraryRestructurer,
-    private val voskModelManager: com.betteraudio.data.transcribe.VoskModelManager,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater,
     private val backupManager: com.betteraudio.data.backup.BackupManager,
     private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
@@ -149,13 +147,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     // ── Listen↔read sync speech model ─────────────────────────────────────────
-    val voskModelState: StateFlow<com.betteraudio.data.transcribe.ModelState> =
-        voskModelManager.state.stateIn(
-            viewModelScope, SharingStarted.WhileSubscribed(5_000),
-            com.betteraudio.data.transcribe.ModelState.NotDownloaded
-        )
-    fun downloadVoskModel() = viewModelScope.launch { voskModelManager.download() }
-    fun deleteVoskModel() = voskModelManager.delete()
 
     // ── File restructure ─────────────────────────────────────────────────────
     data class RestructureUi(
@@ -191,15 +182,6 @@ class SettingsViewModel @Inject constructor(
 
     val libraryFolder: StateFlow<String> =
         settings.libraryFolder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
-
-    val ebookFolder: StateFlow<String> =
-        settings.ebookFolder.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
-
-    /** Persist the standalone-ebook root and immediately scan it. */
-    fun setEbookFolder(path: String) = viewModelScope.launch {
-        settings.setEbookFolder(path)
-        ebookScanner.scanEbookDirectory(path)
-    }
 
     val skipForwardMs: StateFlow<Long> =
         settings.skipForwardMs.stateIn(

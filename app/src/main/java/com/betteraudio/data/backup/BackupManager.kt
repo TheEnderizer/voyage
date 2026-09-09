@@ -264,10 +264,6 @@ class BackupManager @Inject constructor(
                                 })
                             }
                         }
-                        progress.textSpineIndex?.let { put("textSpineIndex", it) }
-                        progress.textFraction?.let { put("textFraction", it) }
-                        put("textOverallFraction", progress.textOverallFraction)
-                        put("lastMode", progress.lastMode)
                     })
                 }
 

@@ -20,7 +20,6 @@ data class HomeGridBook(
     val titleOverride: String?,
     val author: String,
     val authorOverride: String?,
-    val ebookPath: String?,
     val seriesId: Long?,
     val seriesName: String?,
     val seriesOrder: Float?,
@@ -30,14 +29,11 @@ data class HomeGridBook(
     val coverArtPath: String?,
     val positionMs: Long?,
     val lastPlayedMsRaw: Long?,
-    val textOverallFraction: Float?,
     val filesBeforeCurrentMs: Long?
 ) {
     val displayTitle: String get() = titleOverride ?: title
     val displayAuthor: String get() = authorOverride ?: author
-    val isEbookOnly: Boolean get() = ebookPath != null && totalDurationMs == 0L
     val lastPlayedMs: Long get() = lastPlayedMsRaw ?: addedDateMs
-    val readingFraction: Float get() = textOverallFraction ?: 0f
 
     val progressFraction: Float get() {
         val total = totalDurationMs.takeIf { it > 0 } ?: return 0f

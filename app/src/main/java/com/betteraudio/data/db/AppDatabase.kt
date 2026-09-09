@@ -10,7 +10,6 @@ import com.betteraudio.data.db.dao.AudioPresetDao
 import com.betteraudio.data.db.dao.AuthorMetaDao
 import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
-import com.betteraudio.data.db.dao.ReaderMarkDao
 import com.betteraudio.data.db.dao.ChapterDao
 import com.betteraudio.data.db.dao.CompanionPackDao
 import com.betteraudio.data.db.dao.WidgetDesignDao
@@ -27,15 +26,12 @@ import com.betteraudio.data.db.entities.WidgetBinding
 import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
 import com.betteraudio.data.db.entities.Bookmark
-import com.betteraudio.data.db.entities.ReaderMark
 import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.CompanionPack
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.Series
 import com.betteraudio.data.db.entities.SkipEvent
-import com.betteraudio.data.db.entities.SyncAnchor
-import com.betteraudio.data.db.dao.SyncAnchorDao
 
 // Version 9: manualGrouping on books (user-locked join/split, ignored by AutoJoiner)
 // Version 10: Book.skipSilenceEnabled + listening_sessions / skip_events history tables
@@ -104,8 +100,8 @@ import com.betteraudio.data.db.dao.SyncAnchorDao
 // Version 27: reader_marks — bookmarks and highlights inside an EPUB. Purely additive: one new
 //             table, nothing existing touched, so there is no data to preserve or reshape.
 @Database(
-    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, ReaderMark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, SyncAnchor::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
-    version = 27,
+    entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
+    version = 28,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -116,12 +112,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chapterDao(): ChapterDao
     abstract fun companionPackDao(): CompanionPackDao
     abstract fun bookmarkDao(): BookmarkDao
-    abstract fun readerMarkDao(): ReaderMarkDao
     abstract fun audioPresetDao(): AudioPresetDao
     abstract fun listeningHistoryDao(): ListeningHistoryDao
     abstract fun seriesDao(): SeriesDao
     abstract fun authorMetaDao(): AuthorMetaDao
-    abstract fun syncAnchorDao(): SyncAnchorDao
     abstract fun widgetDesignDao(): WidgetDesignDao
     abstract fun widgetBindingDao(): WidgetBindingDao
 
@@ -683,6 +677,104 @@ abstract class AppDatabase : RoomDatabase() {
                     """.trimIndent()
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_reader_marks_bookId` ON `reader_marks` (`bookId`)")
+            }
+        }
+
+        /**
+         * Drops the EPUB reader from the schema: the `reader_marks` and `sync_anchors` tables, the
+         * three epub columns on `books`, and the five text-position columns on `playback_progress`.
+         * The reader was removed wholesale to be rebuilt from scratch; nothing reads any of this.
+         *
+         * Both tables are recreated rather than altered because `ALTER TABLE ... DROP COLUMN`
+         * needs SQLite 3.35, and minSdk 26 ships 3.19 — the copy-into-a-new-table dance is the
+         * only portable way to lose a column. Foreign keys are the reason for the ceremony around
+         * it: `playback_progress` points at `books`, so `books` is rebuilt with
+         * `PRAGMA foreign_keys` off and `legacy_alter_table` on, or the rename would repoint the
+         * child's REFERENCES clause at the temp table. The integrity check at the end is what
+         * turns a silently broken key into a loud failure here rather than a crash later.
+         *
+         * The dropped reading positions and highlights are not migrated anywhere. That is the
+         * point of the removal — a from-scratch reader will not read this shape.
+         */
+        val MIGRATION_27_28 = object : Migration(27, 28) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 27 → 28 (dropping the epub reader from the schema)")
+
+                db.execSQL("DROP TABLE IF EXISTS `reader_marks`")
+                db.execSQL("DROP TABLE IF EXISTS `sync_anchors`")
+
+                db.execSQL("PRAGMA foreign_keys=OFF")
+                db.execSQL("PRAGMA legacy_alter_table=ON")
+
+                // ── books: lose ebookPath, ebookSpineCount, chapterMapJson ──────────────
+                db.execSQL("DROP TABLE IF EXISTS `books_new`")
+                db.execSQL(
+                    """
+                    CREATE TABLE `books_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL,
+                        `author` TEXT NOT NULL, `seriesId` INTEGER, `seriesName` TEXT,
+                        `seriesOrder` REAL, `folderPath` TEXT NOT NULL, `coverArtPath` TEXT,
+                        `coverFxPath` TEXT, `totalDurationMs` INTEGER NOT NULL,
+                        `addedDateMs` INTEGER NOT NULL, `status` TEXT NOT NULL,
+                        `fileCount` INTEGER NOT NULL, `synopsis` TEXT, `narrator` TEXT,
+                        `genre` TEXT, `year` INTEGER, `album` TEXT, `description` TEXT,
+                        `titleOverride` TEXT, `authorOverride` TEXT, `isIgnored` INTEGER NOT NULL,
+                        `skipSilenceEnabled` INTEGER NOT NULL, `dataAppliedAtMs` INTEGER NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `books_new` SELECT id, title, author, seriesId, seriesName,
+                        seriesOrder, folderPath, coverArtPath, coverFxPath, totalDurationMs,
+                        addedDateMs, status, fileCount, synopsis, narrator, genre, year, album,
+                        description, titleOverride, authorOverride, isIgnored, skipSilenceEnabled,
+                        dataAppliedAtMs FROM `books`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `books`")
+                db.execSQL("ALTER TABLE `books_new` RENAME TO `books`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_seriesId` ON `books` (`seriesId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_books_folderPath` ON `books` (`folderPath`)")
+
+                // ── playback_progress: lose the five text-position columns ──────────────
+                db.execSQL("DROP TABLE IF EXISTS `playback_progress_new`")
+                db.execSQL(
+                    """
+                    CREATE TABLE `playback_progress_new` (
+                        `bookId` INTEGER NOT NULL, `currentFileId` INTEGER,
+                        `positionMs` INTEGER NOT NULL, `lastPlayedMs` INTEGER NOT NULL,
+                        `playbackSpeed` REAL NOT NULL, `boostDb` INTEGER NOT NULL,
+                        `eqBandsJson` TEXT, `isCompleted` INTEGER NOT NULL,
+                        `completedDateMs` INTEGER, `lastPausedAt` INTEGER NOT NULL,
+                        `filesBeforeCurrentMs` INTEGER NOT NULL, `revealedMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`bookId`),
+                        FOREIGN KEY(`bookId`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE ,
+                        FOREIGN KEY(`currentFileId`) REFERENCES `audio_files`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO `playback_progress_new` SELECT bookId, currentFileId, positionMs,
+                        lastPlayedMs, playbackSpeed, boostDb, eqBandsJson, isCompleted,
+                        completedDateMs, lastPausedAt, filesBeforeCurrentMs, revealedMs
+                    FROM `playback_progress`
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE `playback_progress`")
+                db.execSQL("ALTER TABLE `playback_progress_new` RENAME TO `playback_progress`")
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_playback_progress_bookId` ON `playback_progress` (`bookId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_progress_currentFileId` ON `playback_progress` (`currentFileId`)")
+
+                db.execSQL("PRAGMA legacy_alter_table=OFF")
+                db.execSQL("PRAGMA foreign_keys=ON")
+                db.query("PRAGMA foreign_key_check").use { c ->
+                    if (c.moveToFirst()) {
+                        AppLog.e(LogCat.DB, "migration 27 → 28 left a broken foreign key")
+                        throw IllegalStateException("MIGRATION_27_28 broke a foreign key")
+                    }
+                }
             }
         }
 
