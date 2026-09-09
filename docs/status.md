@@ -16,7 +16,7 @@ Update it in the same commit as the work it describes — a ledger that lags is 
 because it gets trusted. One line per item; if a line needs a paragraph, it belongs in `CLAUDE.md`
 and this line should link to it.
 
-Last updated: 2026-09-08 · beta `1.14.0b` (75) · DB v27
+Last updated: 2026-09-09 · beta `1.14.0b` (75) · DB v28
 
 ---
 
@@ -31,12 +31,6 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
 
 ## Built, in beta, not yet released
 
-- **Native EPUB reader** — own Compose renderer (parser → projection → paginator → page view),
-  replaced the WebView. Contents screen, in-book search, chapter-tick scrubber. `1.13.0b`.
-- **Reader customization** — 45 settings on a tabbed screen with a live preview: typography,
-  page geometry incl. 1/2/auto columns, colour + custom themes + brightness/dimmer, scrolled
-  mode, page-turn animations, tap/swipe/volume-key config, header/footer content, auto-scroll,
-  auto page-turn, reading ruler, and per-book vs global scope. Not yet tested on device.
 - **Companion packs** — pack registry, reveal cursor, companion deck UI, pack import/export.
   Merged 2026-09-03. Working but unreviewed WIP; more changes expected.
 - **Seek bar is a choice in both themes** — the four painted scrubber designs moved out of
@@ -199,6 +193,24 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   armed by `AudioCascade.resolveStart`'s isCompleted branch, which nothing reached while completion
   was being wiped on every save. Verified on device.
 
+- **The EPUB reader is gone.** Removed wholesale on 2026-09-09, to be rebuilt from scratch: the
+  reader UI and its Compose renderer, the EPUB parser, `EbookScanner` and the `Book.ebookPath`
+  link, the listen↔read sync stack (`sync/`, `data/sync/`, `data/transcribe/`, Vosk and its JNA
+  dependency), `ReaderPrefs` and all 45 reading settings, the Ebooks nav slot, "Read from here",
+  Book options → Ebook, and Settings → Ebook folder. ~6,800 lines across five packages, plus the
+  call sites in ~30 more. DB **v28** drops `reader_marks`, `sync_anchors`, three columns from
+  `books` and five from `playback_progress`; both tables are rebuilt rather than altered because
+  `DROP COLUMN` needs a newer SQLite than minSdk 26 ships. Not yet verified on device.
+  - **What survives on purpose:** `data/book.json`'s `ebook` object and the five text-position
+    keys are omitted from `BookDataCodec`'s known-key sets, so `captureUnknown` round-trips them
+    verbatim — an install from before the removal keeps its recorded epub connection and reading
+    position on disk, untouched, for the rebuild. `BookDataCodecTest` pins that.
+    `docs/reader-features-and-plan.md` and `docs/reader-revival.md` are kept as the rebuild's
+    input; they describe code that no longer exists.
+  - **Side effect worth knowing:** the text→audio resume bridge went with it, so
+    `AudioCascade.resolveStart` now runs for every book. That closes the open bug where a finished
+    book with an epub attached resumed at the reading position instead of restarting.
+
 ## Deliberately not done
 
 - **Listen↔read sync is frozen.** The alignment/Vosk machinery exists and works, but its UI is
@@ -213,8 +225,6 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
 
 ## Known open items
 
-- Reader tap-to-turn wins the long-press over text selection; real gesture arbitration is unbuilt.
-- Paginator never splits a block, so a block taller than the page gets a page to itself.
 - `stash@{1}` holds an unmerged chapter-seek fix (19 lines in `PlayerController`).
 - `stash@{2}` is a disproven native-demux experiment, kept only as evidence.
 - **Skip silence is reported unreliable and unintuitive** and is still open on the board. The

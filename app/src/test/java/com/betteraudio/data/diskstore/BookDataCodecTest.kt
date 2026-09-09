@@ -25,14 +25,12 @@ class BookDataCodecTest {
         fileCount = 24,
         cover = BookDocument.CoverInfo("data/cover.jpg", "user", 1_754_400_000_000L),
         series = BookDocument.SeriesRef("Mistborn", 1.0f),
-        ebook = BookDocument.EbookInfo("mistborn.epub", 62, listOf(0, 1, 2)),
         files = listOf(BookDocument.FileEntry("01.mp3", 3_600_000L, 1, "Prologue", "Prologue", "")),
         progress = BookDocument.ProgressEntry(
             positionMs = 123_456L, lastPlayedMs = 1_754_470_000_000L,
             currentFile = BookDocument.CurrentFileRef("05.mp3", 3_600_000L),
             playbackSpeed = 1.25f, boostDb = 3, eqBandsJson = "[0,2,0,0,-1]",
-            isCompleted = false, completedDateMs = null, lastPausedAt = 1_754_469_000_000L,
-            textSpineIndex = 12, textFraction = 0.4f, textCharOffset = 8_842, textOverallFraction = 0.19f, lastMode = "AUDIO"
+            isCompleted = false, completedDateMs = null, lastPausedAt = 1_754_469_000_000L
         ),
         bookmarks = listOf(BookDocument.BookmarkEntry("05.mp3", 1000, 2000, "", 1_754_000_000_000L)),
         sessions = listOf(BookDocument.SessionEntry(1, 2, 0, "", 0, "", 0, 0, 0, 0)),
@@ -93,14 +91,28 @@ class BookDataCodecTest {
     }
 
     @Test
-    fun `a v1 doc written before textCharOffset existed decodes it as null`() {
-        val json = JSONObject(BookDataCodec.encodeToString(sample()))
-        json.getJSONObject("progress").remove("textCharOffset")
-        json.put("version", 1)
-        val decoded = BookDataCodec.decodeOrNull(json.toString())
-        assertNull(decoded!!.progress!!.textCharOffset)
-        // The rest of progress is untouched by the missing field.
-        assertEquals(0.4f, decoded.progress!!.textFraction)
+    fun `an epub connection written by an older build survives a decode-encode round trip`() {
+        // The EPUB reader was removed, and with it every field that used to read these keys. They
+        // are deliberately absent from the codec's known-key sets so captureUnknown picks them up
+        // and writes them back untouched — a book.json written before the removal keeps its
+        // recorded epub on disk, ready for a rebuilt reader, instead of being silently stripped
+        // the first time anything flushes that book.
+        val withEpub = JSONObject(BookDataCodec.encodeToString(sample())).apply {
+            put("ebook", JSONObject().apply {
+                put("relPath", "mistborn.epub"); put("spineCount", 62)
+            })
+            getJSONObject("progress").apply {
+                put("textSpineIndex", 12); put("textCharOffset", 8_842); put("lastMode", "TEXT")
+            }
+        }.toString()
+
+        val rewritten = JSONObject(BookDataCodec.encodeToString(BookDataCodec.decodeOrNull(withEpub)!!))
+
+        assertEquals("mistborn.epub", rewritten.getJSONObject("ebook").getString("relPath"))
+        assertEquals(62, rewritten.getJSONObject("ebook").getInt("spineCount"))
+        assertEquals(12, rewritten.getJSONObject("progress").getInt("textSpineIndex"))
+        assertEquals(8_842, rewritten.getJSONObject("progress").getInt("textCharOffset"))
+        assertEquals("TEXT", rewritten.getJSONObject("progress").getString("lastMode"))
     }
 
     @Test

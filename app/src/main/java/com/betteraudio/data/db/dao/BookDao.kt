@@ -127,10 +127,10 @@ interface BookDao {
 
     // Home grid projection — never joins audio_files (see HomeGridBook's own doc comment).
     @Query("""
-        SELECT b.id, b.title, b.titleOverride, b.author, b.authorOverride, b.ebookPath, b.seriesId,
+        SELECT b.id, b.title, b.titleOverride, b.author, b.authorOverride, b.seriesId,
                b.seriesName, b.seriesOrder, b.status, b.totalDurationMs, b.addedDateMs, b.coverArtPath,
                p.positionMs AS positionMs, p.lastPlayedMs AS lastPlayedMsRaw,
-               p.textOverallFraction AS textOverallFraction, p.filesBeforeCurrentMs AS filesBeforeCurrentMs
+               p.filesBeforeCurrentMs AS filesBeforeCurrentMs
         FROM books b LEFT JOIN playback_progress p ON p.bookId = b.id
         WHERE b.isIgnored = 0
         ORDER BY b.addedDateMs DESC
@@ -162,29 +162,6 @@ interface BookDao {
     // listening_sessions and skip_events via their FKs.
     @Query("DELETE FROM books")
     suspend fun deleteAll()
-
-    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
-    // Connecting/disconnecting an epub always nulls chapterMapJson — the audio↔spine alignment is
-    // only valid for the epub it was computed against.
-    @Query("UPDATE books SET ebookPath = :path, ebookSpineCount = :spineCount, chapterMapJson = NULL WHERE id = :id")
-    suspend fun setEbook(id: Long, path: String?, spineCount: Int)
-
-    /** Repoint an already-connected epub after an on-disk move — the file itself is unchanged, so
-     *  (unlike [setEbook]) the chapter alignment map is preserved. */
-    @Query("UPDATE books SET ebookPath = :path WHERE id = :id")
-    suspend fun updateEbookPath(id: Long, path: String)
-
-    @Query("UPDATE books SET ebookSpineCount = :spineCount WHERE id = :id")
-    suspend fun updateEbookSpineCount(id: Long, spineCount: Int)
-
-    @Query("UPDATE books SET chapterMapJson = :json WHERE id = :id")
-    suspend fun setChapterMap(id: Long, json: String?)
-
-    @Query("SELECT * FROM books WHERE ebookPath IS NOT NULL")
-    suspend fun getAllWithEbookOnce(): List<Book>
-
-    @Query("SELECT * FROM books WHERE ebookPath = :path LIMIT 1")
-    suspend fun getBookByEbookPath(path: String): Book?
 
     /** Stamped after a scan-time MERGE apply from data/book.json — see RestoreOps/AudioFileScanner
      *  and Book.dataAppliedAtMs's own doc comment for why this exists instead of comparing the

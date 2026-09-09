@@ -151,32 +151,9 @@ class PlayerViewModel @Inject constructor(
     private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
     private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
     private val coverSearchService: com.betteraudio.data.covers.CoverSearchService,
-    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     val playerController: PlayerController
 ) : ViewModel() {
 
-    // ── Ebook (EPUB) connect/disconnect ─────────────────────────────────────
-    // The same three actions Home's Book options offers, because it is the same sheet: the player
-    // overflow opens `BookOptionsSheet` too, and until this existed it passed no ebook callbacks,
-    // so "Connect EPUB…" there opened the picker and then dropped the file on the floor.
-
-    private val _ebookError = MutableStateFlow<String?>(null)
-    val ebookError: StateFlow<String?> = _ebookError.asStateFlow()
-    fun dismissEbookError() { _ebookError.value = null }
-
-    fun connectEpub(epubPath: String) {
-        if (bookId == -1L) return
-        viewModelScope.launch {
-            if (!ebookScanner.connect(bookId, epubPath)) {
-                _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
-            }
-        }
-    }
-
-    fun disconnectEpub() {
-        if (bookId == -1L) return
-        viewModelScope.launch { ebookScanner.disconnect(bookId) }
-    }
 
     // ── Online cover search ─────────────────────────────────────────────────
     // Same behaviour as HomeViewModel's, scoped to this screen's one book: the picked image is
@@ -915,34 +892,22 @@ class PlayerViewModel @Inject constructor(
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return
             val progress = bwp.progress
-            // If reading is the freshest activity (lastMode == TEXT) and an epub is connected,
-            // resume audio from the equivalent converted position instead of the stale audio spot
-            // — this is the audio-side half of the two-way listen↔read resume link (the reader
-            // already does the reverse: it re-derives its text locator from the audio position
-            // when lastMode == AUDIO).
-            val bridgedMs = com.betteraudio.sync.TextToAudioResume.resolve(bwp.book, progress, files, repository)
             // A book inherits, in order: its own override → its series default → the global
             // default preset → the scalar fallback. The default preset makes global speed/boost/EQ
             // apply to every book that hasn't been individually tuned.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
             val audio = com.betteraudio.playback.AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)
-            if (bridgedMs != null) {
-                AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id} bridged from reading position -> ${bridgedMs}ms")
-                playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
-                playerController.bookSeekTo(bridgedMs)
-            } else {
-                // resolveStart forces file 0 / position 0 for a finished book, never file 0 of the
-                // last file played — see its KDoc for the incident that made this matter.
-                val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
-                val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
-                    files, progress, rewind, bwp.book.id, jumpRestoreStore
-                )
-                AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id}" +
-                    " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
-                    " → rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
-                playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
-            }
+            // resolveStart forces file 0 / position 0 for a finished book, never file 0 of the
+            // last file played — see its KDoc for the incident that made this matter.
+            val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
+            val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
+                files, progress, rewind, bwp.book.id, jumpRestoreStore
+            )
+            AppLog.i(LogCat.PLAYBACK, "play() book=${bwp.book.id}" +
+                " dbFile=${progress?.currentFileId} dbPos=${progress?.positionMs}ms isCompleted=${progress?.isCompleted}" +
+                " → rewind=${rewind}ms startIdx=$startIndex startPos=${startPos}ms")
+            playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             // Restore per-book (or inherited series/global) boost and EQ so they don't bleed between books
             playerController.setVolumeBoost(audio.boostDb)
             _eqBandsMillibels.value = audio.eqBandsJson?.let { json ->
@@ -967,88 +932,6 @@ class PlayerViewModel @Inject constructor(
     fun seekTo(posMs: Long) = playerController.seekTo(posMs)
     fun bookSeekTo(bookPosMs: Long) = playerController.bookSeekTo(bookPosMs)
     fun jumpToFile(index: Int) = playerController.jumpToFile(index)
-
-    /**
-     * "Read from here": converts the current audio position into a text locator via
-     * [com.betteraudio.sync.PositionBridge] and persists it, then invokes [onReady] with the book
-     * id so the caller can navigate to the reader. No-op if this book has no connected epub.
-     */
-    fun readFromHere(onReady: (Long) -> Unit) {
-        if (bookId == -1L) return
-        val book = bookWithProgress.value?.book ?: return
-        val epubPath = book.ebookPath ?: return
-        viewModelScope.launch {
-            val files = repository.getAudioFilesOnce(bookId)
-            if (files.isEmpty()) return@launch
-            val chapterEntities = repository.getChaptersForBookOnce(bookId)
-            val spans = com.betteraudio.sync.AudioSpanBuilder.build(files, chapterEntities)
-            if (spans.isEmpty()) return@launch
-
-            val bookPosMs = positionState.value.bookPositionMs
-            val prevProgress = repository.getProgressForBookOnce(bookId)
-            val anchors = repository.getSyncAnchorsOnce(bookId)
-                .map { com.betteraudio.sync.AnchorPoint(it.audioMs, it.spineIndex, it.charOffset) }
-
-            // Parse + resolve inside a single parser session (transient — the reader has its own).
-            val resolved = withContext(Dispatchers.IO) {
-                com.betteraudio.data.ebook.EpubParser(java.io.File(epubPath)).use { parser ->
-                    val info = runCatching { parser.parse() }.getOrNull()
-                    if (info == null || info.encrypted || info.spine.isEmpty()) return@use null
-                    val paraCache = HashMap<Int, com.betteraudio.data.ebook.SpineParagraphs?>()
-                    fun paragraphsFor(idx: Int): com.betteraudio.data.ebook.SpineParagraphs? =
-                        paraCache.getOrPut(idx) {
-                            info.spine.getOrNull(idx)?.href?.let { href ->
-                                parser.readEntry(href)?.let { com.betteraudio.data.ebook.ParagraphExtractor.extract(it) }
-                            }
-                        }
-
-                    // Prefer the anchors alone (immune to a ChapterMap that's wrong because the
-                    // audio is split into narration "Parts" rather than actual chapters).
-                    if (anchors.size >= 2) {
-                        com.betteraudio.sync.PositionBridge.audioToCharAnchored(bookPosMs, anchors) { idx -> paragraphsFor(idx)?.totalChars ?: 0 }
-                            ?.let { (spineIdx, charOffset) ->
-                                val paras = paragraphsFor(spineIdx)
-                                if (paras != null && paras.totalChars > 0) {
-                                    val loc = com.betteraudio.sync.TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
-                                    return@use loc to info.spine.getOrNull(spineIdx)?.title
-                                }
-                            }
-                    }
-
-                    val map = com.betteraudio.sync.ChapterMap.fromJson(book.chapterMapJson) ?: run {
-                        val matched = com.betteraudio.sync.ChapterMatcher.autoMatch(spans, info.spine)
-                        repository.setChapterMap(bookId, matched.toJson())
-                        matched
-                    }
-                    val coarse = com.betteraudio.sync.PositionBridge.audioToText(bookPosMs, spans, map, info.spine.size)
-                    val paras = paragraphsFor(coarse.spineIndex)
-                    val finalLocator = if (paras == null || paras.totalChars == 0) coarse
-                    else {
-                        val (spineIdx, charOffset) = com.betteraudio.sync.PositionBridge.audioToChar(
-                            bookPosMs, spans, map, info.spine.size, paras.totalChars, anchors
-                        )
-                        com.betteraudio.sync.TextLocator(spineIdx, paras.fractionForCharOffset(charOffset))
-                    }
-                    finalLocator to info.spine.getOrNull(finalLocator.spineIndex)?.title
-                }
-            } ?: return@launch
-            val (locator, spineTitle) = resolved
-
-            val spineCount = book.ebookSpineCount.coerceAtLeast(locator.spineIndex + 1)
-            val overall = (locator.spineIndex + locator.fraction) / spineCount
-            repository.updateTextPosition(bookId, locator.spineIndex, locator.fraction, overall)
-            repository.insertSkipEvent(
-                com.betteraudio.data.db.entities.SkipEvent(
-                    bookId = bookId, kind = "TEXT",
-                    fromSpineIndex = prevProgress?.textSpineIndex, fromFraction = prevProgress?.textFraction,
-                    toSpineIndex = locator.spineIndex, toFraction = locator.fraction,
-                    toSpineTitle = spineTitle
-                )
-            )
-            AppLog.i(LogCat.PLAYBACK, "readFromHere book=$bookId pos=${bookPosMs}ms -> spine=${locator.spineIndex} frac=${locator.fraction}")
-            onReady(bookId)
-        }
-    }
 
     fun setSpeed(speed: Float) {
         playerController.setSpeed(speed)

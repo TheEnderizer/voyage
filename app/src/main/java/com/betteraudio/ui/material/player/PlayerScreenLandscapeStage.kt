@@ -116,7 +116,6 @@ internal fun PlayerLandscapeStageBody(
     onAddBookmark: () -> Unit,
     onToggleSeriesCover: () -> Unit,
     onHistory: () -> Unit,
-    onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
     onOpenCompanion: () -> Unit,
@@ -151,7 +150,6 @@ internal fun PlayerLandscapeStageBody(
             seriesLabel = book?.seriesName?.takeIf { it.isNotBlank() },
             inSeries = inSeries,
             showSeriesCover = showSeriesCover,
-            hasEbook = book?.ebookPath != null,
             onScrimMuted = onScrimMuted,
             expandProgress = expandProgress,
             onBack = onBack,
@@ -159,7 +157,6 @@ internal fun PlayerLandscapeStageBody(
             onAddBookmark = onAddBookmark,
             onToggleSeriesCover = onToggleSeriesCover,
             onHistory = onHistory,
-            onReadFromHere = onReadFromHere,
             onRefreshCoverEffect = onRefreshCoverEffect,
             onLock = onLock
         )

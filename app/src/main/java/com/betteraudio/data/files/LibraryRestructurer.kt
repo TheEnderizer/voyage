@@ -196,14 +196,6 @@ class LibraryRestructurer @Inject constructor(
         }
         repository.updateBookLocation(move.bookId, toPath, newCover)
 
-        // A connected epub lives inside the same folder (auto-attach only looks alongside the
-        // audio) — repoint it too, or the book would silently lose its ebook on the next open.
-        book?.ebookPath?.let { epub ->
-            if (epub.startsWith(fromPath)) {
-                repository.updateEbookPath(move.bookId, toPath + epub.removePrefix(fromPath))
-            }
-        }
-
         runCatching { from.deleteRecursively() }
             .onFailure { AppLog.w(LogCat.SCAN, "restructure move '${move.title}': verified copy is at '${to.absolutePath}' but deleting the original '${from.absolutePath}' failed (${it.message}) — both now exist on disk") }
         return MoveOutcome.MOVED

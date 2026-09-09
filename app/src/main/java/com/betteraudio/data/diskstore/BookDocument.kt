@@ -43,7 +43,6 @@ data class BookDocument(
 
     val cover: CoverInfo? = null,
     val series: SeriesRef? = null,
-    val ebook: EbookInfo? = null,
     val files: List<FileEntry> = emptyList(),
     val progress: ProgressEntry? = null,
     val bookmarks: List<BookmarkEntry> = emptyList(),
@@ -70,14 +69,6 @@ data class BookDocument(
         val unknown: Map<String, Any?> = emptyMap()
     )
 
-    data class EbookInfo(
-        /** Path relative to the book's containing directory. */
-        val relPath: String,
-        val spineCount: Int,
-        /** Book.chapterMapJson, decoded to a plain int array — null = not yet computed. */
-        val chapterMap: List<Int>?,
-        val unknown: Map<String, Any?> = emptyMap()
-    )
 
     data class FileEntry(
         val fileName: String,
@@ -101,14 +92,6 @@ data class BookDocument(
         val isCompleted: Boolean,
         val completedDateMs: Long?,
         val lastPausedAt: Long,
-        val textSpineIndex: Int?,
-        val textFraction: Float?,
-        /** PlaybackProgress.textCharOffset (Room v23) — render-stream position for the native
-         *  reader. Absent on a doc written by an older build; decodes to null, same as a fresh
-         *  row, so an older doc's epub position just falls back to textFraction. */
-        val textCharOffset: Int? = null,
-        val textOverallFraction: Float,
-        val lastMode: String,
         val unknown: Map<String, Any?> = emptyMap()
     )
 

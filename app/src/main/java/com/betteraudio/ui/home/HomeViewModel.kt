@@ -19,7 +19,6 @@ import com.betteraudio.di.ApplicationScope
 import com.betteraudio.playback.PlaybackState
 import com.betteraudio.playback.PlayerController
 import com.betteraudio.util.AppLog
-import com.betteraudio.util.FeatureFlags
 import com.betteraudio.util.log.LogCat
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -84,9 +83,10 @@ enum class LibraryTab(val label: String) {
 /** How the home library is grouped (within the Audio section). */
 enum class HomeViewMode { BOOKS, SERIES, AUTHORS }
 
-/** Top-level home section — Audio (audiobooks) vs Ebooks (anything with a connected/standalone
- *  EPUB). Persisted; the Audio/Ebooks switch sits above the Books/Series/Authors pill. */
-enum class HomeSection { AUDIO, EBOOKS }
+/** Only one section now that the EPUB reader is gone. Kept as an enum rather than deleted
+ *  because the nav pill, the home ViewModel and the persisted `home_section` setting are all
+ *  shaped around it, and a rebuilt reader will want the slot back. */
+enum class HomeSection { AUDIO }
 
 /** A selected library item — books, series and authors can be multi-selected together. */
 sealed interface SelKey {
@@ -139,8 +139,6 @@ class HomeViewModel @Inject constructor(
     private val seriesRepository: SeriesRepository,
     private val seriesPlayer: com.betteraudio.playback.SeriesPlayer,
     private val scanner: AudioFileScanner,
-    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
-    private val paragraphCache: com.betteraudio.data.ebook.ParagraphCache,
     private val settings: SettingsStore,
     private val coverSearchService: CoverSearchService,
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
@@ -196,23 +194,6 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { repository.deleteBook(bookId, deleteFiles) }
     }
 
-    // ── Ebook (EPUB) connect/disconnect ─────────────────────────────────────
-
-    private val _ebookError = MutableStateFlow<String?>(null)
-    val ebookError: StateFlow<String?> = _ebookError.asStateFlow()
-    fun dismissEbookError() { _ebookError.value = null }
-
-    fun connectEpub(bookId: Long, epubPath: String) {
-        viewModelScope.launch {
-            if (!ebookScanner.connect(bookId, epubPath)) {
-                _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
-            }
-        }
-    }
-
-    fun disconnectEpub(bookId: Long) {
-        viewModelScope.launch { ebookScanner.disconnect(bookId) }
-    }
 
     // ── Online cover search ────────────────────────────────────────────────
 
@@ -343,37 +324,21 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch { settings.setHomeViewMode(mode.name) }
     }
 
-    // ── Top-level home section (Audio / Ebooks) ───────────────────────────────
-    // While FeatureFlags.EBOOKS_UI is off this is pinned to AUDIO: the pill has no Ebooks slot to
-    // get back from, so a user whose persisted section is EBOOKS would otherwise launch into an
-    // Ebooks grid with no way out. The stored value is left alone, so flipping the flag on restores
-    // whatever section they were last in.
+    // ── Top-level home section ────────────────────────────────────────────────
+    // AUDIO is the only section left; the stored string is read through valueOf's fallback rather
+    // than ignored, so an install whose persisted value is still "EBOOKS" lands on AUDIO instead
+    // of throwing. The stored value itself is left alone for a rebuilt reader to claim.
     val homeSection: StateFlow<HomeSection> =
         settings.homeSection
-            .map {
-                if (!FeatureFlags.EBOOKS_UI) HomeSection.AUDIO
-                else runCatching { HomeSection.valueOf(it) }.getOrDefault(HomeSection.AUDIO)
-            }
+            .map { runCatching { HomeSection.valueOf(it) }.getOrDefault(HomeSection.AUDIO) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeSection.AUDIO)
 
     fun setHomeSection(section: HomeSection) {
         viewModelScope.launch { settings.setHomeSection(section.name) }
     }
 
-    init {
-        // Migration for users who lived in the old "Ebooks" view-mode pill: move them to the new
-        // top-level Ebooks section and reset the (now 3-way) view mode. Runs once — the stale
-        // "EBOOKS" string otherwise just falls back to BOOKS via the valueOf guard above.
-        viewModelScope.launch {
-            if (settings.homeViewMode.first() == "EBOOKS") {
-                settings.setHomeSection(HomeSection.EBOOKS.name)
-                settings.setHomeViewMode(HomeViewMode.BOOKS.name)
-            }
-        }
-    }
 
-    /** True when the library has any book at all (audio or ebook) — drives the empty-state gate so
-     *  a user with only ebooks (or only audiobooks) isn't shown the full EmptyLibrary screen. */
+    /** True when the library has any book at all — drives the empty-state gate. */
     val hasAnyBooks: StateFlow<Boolean> =
         repository.hasAnyBooks()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
@@ -445,15 +410,8 @@ class HomeViewModel @Inject constructor(
     ): List<HomeGridItem> {
         val result = mutableListOf<HomeGridItem>()
 
-        if (section == HomeSection.EBOOKS) {
-            // The Ebooks section is a flat list of everything with a connected/standalone EPUB
-            // (audiobooks-with-epub AND ebook-only rows); the Books/Series/Authors mode is ignored.
-            gridBooks.filter { it.ebookPath != null }
-                .forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
-        } else {
-            // Audio section: exclude ebook-only rows (they have no audio) — this single filter also
-            // keeps them out of visibleGridItems and tabCounts, which both derive from gridItems.
-            val audioList = gridBooks.filter { !it.isEbookOnly }
+        run {
+            val audioList = gridBooks
             when (mode) {
                 HomeViewMode.BOOKS ->
                     audioList.forEach { result.add(HomeGridItem.SingleBook(it, it.lastPlayedMs)) }
@@ -496,10 +454,7 @@ class HomeViewModel @Inject constructor(
             SortOption.DATE_ADDED -> members(item).maxOf { it.addedDateMs }.toDouble()
             SortOption.DURATION -> members(item).sumOf { it.totalDurationMs }.toDouble()
             SortOption.LAST_PLAYED -> item.lastPlayedMs.toDouble()
-            // In the Ebooks section, PROGRESS sorts by reading progress, not audio position.
-            SortOption.PROGRESS ->
-                if (section == HomeSection.EBOOKS) members(item).maxOf { it.readingFraction.toDouble() }
-                else members(item).maxOf { it.progressFraction.toDouble() }
+            SortOption.PROGRESS -> members(item).maxOf { it.progressFraction.toDouble() }
             else -> 0.0
         }
         fun textKey(item: HomeGridItem): String = when (item) {
@@ -623,27 +578,18 @@ class HomeViewModel @Inject constructor(
             val files = bwp.audioFiles.sortedWith(compareBy({ it.trackNumber }, { it.fileName }))
             if (files.isEmpty()) return@launch
             val progress = bwp.progress
-            // If reading is the freshest activity (lastMode == TEXT) and an epub is connected,
-            // resume from the equivalent converted audio position instead of the stale audio spot
-            // — the audio-side half of the two-way listen↔read resume link (mirrors PlayerViewModel.play()).
-            val bridgedMs = com.betteraudio.sync.TextToAudioResume.resolve(bwp.book, progress, files, repository)
             // Effective audio: book override → series default → global default preset → fallback.
             val series = bwp.book.seriesId?.let { seriesRepository.getSeriesOnce(it) }
             val gPreset = repository.getDefaultAudioPreset()
             val audio = com.betteraudio.playback.AudioCascade.resolve(bwp.book, progress, series, gPreset, settings.currentDefaultSpeed)
-            if (bridgedMs != null) {
-                playerController.playBook(bwp.book, files, 0, 0L, audio.speed)
-                playerController.bookSeekTo(bridgedMs)
-            } else {
-                // Same auto-rewind as the full player (PlayerViewModel.play()) — resuming from this
-                // card shouldn't behave differently just because it skipped opening the full player.
-                // resolveStart forces file 0 / position 0 for a finished book — see its KDoc.
-                val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
-                val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
-                    files, progress, rewind, bwp.book.id, jumpRestoreStore
-                )
-                playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
-            }
+            // Same auto-rewind as the full player (PlayerViewModel.play()) — resuming from this
+            // card shouldn't behave differently just because it skipped opening the full player.
+            // resolveStart forces file 0 / position 0 for a finished book — see its KDoc.
+            val rewind = com.betteraudio.playback.AudioCascade.autoRewindMs(settings, progress?.lastPausedAt ?: 0L)
+            val (startIndex, startPos) = com.betteraudio.playback.AudioCascade.resolveStart(
+                files, progress, rewind, bwp.book.id, jumpRestoreStore
+            )
+            playerController.playBook(bwp.book, files, startIndex, startPos, audio.speed)
             playerController.setVolumeBoost(audio.boostDb)
             playerController.setEqBands(audio.eqBandsJson)
             playerController.setSkipSilence(audio.skipSilence)

@@ -257,12 +257,10 @@ internal fun formatDuration(ms: Long): String {
 internal fun PlayerOverflowMenu(
     inSeries: Boolean,
     showSeriesCover: Boolean,
-    hasEbook: Boolean,
     onBookOptions: () -> Unit,
     onAddBookmark: () -> Unit,
     onToggleSeriesCover: () -> Unit,
     onHistory: () -> Unit,
-    onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
     modifier: Modifier = Modifier,
@@ -293,13 +291,6 @@ internal fun PlayerOverflowMenu(
                 leadingIcon = { Icon(Icons.Default.History, null) },
                 onClick = { showOverflow = false; onHistory() }
             )
-            if (hasEbook && com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-                HapticDropdownMenuItem(
-                    text = { Text("Read from here") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.MenuBook, null) },
-                    onClick = { showOverflow = false; onReadFromHere() }
-                )
-            }
             HapticDropdownMenuItem(
                 text = { Text("Refresh cover effect") },
                 leadingIcon = { Icon(Icons.Default.Refresh, null) },
@@ -323,7 +314,6 @@ internal fun PlayerTopBar(
     seriesLabel: String?,
     inSeries: Boolean,
     showSeriesCover: Boolean,
-    hasEbook: Boolean,
     onScrimMuted: Color,
     expandProgress: State<Float>,
     onBack: () -> Unit,
@@ -331,7 +321,6 @@ internal fun PlayerTopBar(
     onAddBookmark: () -> Unit,
     onToggleSeriesCover: () -> Unit,
     onHistory: () -> Unit,
-    onReadFromHere: () -> Unit,
     onRefreshCoverEffect: () -> Unit,
     onLock: () -> Unit,
     modifier: Modifier = Modifier,
@@ -362,12 +351,10 @@ internal fun PlayerTopBar(
         PlayerOverflowMenu(
             inSeries = inSeries,
             showSeriesCover = showSeriesCover,
-            hasEbook = hasEbook,
             onBookOptions = onBookOptions,
             onAddBookmark = onAddBookmark,
             onToggleSeriesCover = onToggleSeriesCover,
             onHistory = onHistory,
-            onReadFromHere = onReadFromHere,
             onRefreshCoverEffect = onRefreshCoverEffect,
             onLock = onLock
         )

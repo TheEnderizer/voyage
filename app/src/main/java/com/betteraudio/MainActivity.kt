@@ -481,8 +481,7 @@ class MainActivity : ComponentActivity() {
                             onOpenBookInfo = { bookId -> bookInfoOverlayController.open(bookId) },
                             onOpenSearch = { navController.navigate("search") },
                             onOpenSeries = { seriesId -> seriesOverlayController.open(seriesId) },
-                            onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") },
-                            onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
+                            onOpenAuthor = { name -> navController.navigate("author/${Uri.encode(name)}") }
                         )
                     }
 
@@ -526,24 +525,6 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    composable(
-                        // `flash` is set only by the player's "Read from here" (see the sheet's
-                        // onOpenReader below), and tells the reader to glow the paragraph it lands
-                        // on. Opening the reader any other way — a grid card, Book options — is
-                        // not a jump from anywhere and gets no flash.
-                        route = "reader/{bookId}?flash={flash}",
-                        arguments = listOf(
-                            navArgument("bookId") { type = NavType.LongType },
-                            navArgument("flash") { type = NavType.BoolType; defaultValue = false },
-                        )
-                    ) {
-                        com.betteraudio.ui.reader.EbookReaderScreen(
-                            onBack = { navController.popBackStack() },
-                            // The reader VM already started playback (readFromHere's cascade); just
-                            // expand the sheet over the reader — it stays on the back stack beneath it.
-                            onListenFromHere = { bookId -> sheetController.open(bookId = bookId, startPlaying = false) }
-                        )
-                    }
                 }
 
                 // Series info overlay — drawn ABOVE the NavHost's Home content (as a sibling, not
@@ -563,8 +544,7 @@ class MainActivity : ComponentActivity() {
                     // Starts the book behind the closing overlay rather than expanding the full
                     // player over it — starting a book is not a request to be taken to another
                     // screen. Matches a grid card's play button and Home's hero Resume.
-                    onResume = { bookId -> sheetController.startCollapsed(bookId) },
-                    onOpenReader = { bookId -> navController.navigate("reader/$bookId") }
+                    onResume = { bookId -> sheetController.startCollapsed(bookId) }
                 )
                 } // end recordBackdrop Box — everything the floating glass is allowed to sample
 
@@ -572,11 +552,7 @@ class MainActivity : ComponentActivity() {
                 // draws over it and it slides away in lockstep with the sheet's expansion.
                 val homeSectionRaw by settings.homeSection.collectAsStateWithLifecycle("AUDIO")
                 val homeViewModeRaw by settings.homeViewMode.collectAsStateWithLifecycle("BOOKS")
-                // Pinned to AUDIO while the ebook UI is hidden — matches HomeViewModel.homeSection,
-                // so the pill's indicator can't sit on a slot that isn't drawn.
-                val pillSection = if (!com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-                    com.betteraudio.ui.home.HomeSection.AUDIO
-                } else runCatching {
+                val pillSection = runCatching {
                     com.betteraudio.ui.home.HomeSection.valueOf(homeSectionRaw)
                 }.getOrDefault(com.betteraudio.ui.home.HomeSection.AUDIO)
                 val pillViewMode = runCatching {
@@ -665,13 +641,6 @@ class MainActivity : ComponentActivity() {
                     liftForNavPill = currentRoute == "home",
                     // Non-null only in landscape, where the bar sits beside the pill instead.
                     miniBarSlot = miniBarSlot,
-                    // flash=true only when the sheet says this open came from "Read from here",
-                    // which has already converted the audio position into a text locator and
-                    // persisted it — the reader then glows the paragraph it opens on rather than
-                    // landing silently. Book options' plain "Open reader" passes false.
-                    onOpenReader = { bookId, fromSync ->
-                        navController.navigate("reader/$bookId" + if (fromSync) "?flash=true" else "")
-                    }
                 )
                 } // CompositionLocalProvider(LocalCoverBoundsRegistry)
 

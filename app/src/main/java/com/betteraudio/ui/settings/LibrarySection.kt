@@ -107,8 +107,6 @@ internal fun LazyListScope.librarySection(
     importStructure: com.betteraudio.data.scanner.ImportStructure,
     storageSettingsLauncher: androidx.activity.result.ActivityResultLauncher<Intent>,
     onBrowse: () -> Unit,
-    ebookFolder: String,
-    onBrowseEbooks: () -> Unit,
     viewModel: SettingsViewModel
 ) {
     item {
@@ -156,18 +154,6 @@ internal fun LazyListScope.librarySection(
             pendingUri = pendingImportUri,
             onConsumed = { pendingImportUri = null }
         )
-    }
-    if (com.betteraudio.util.FeatureFlags.EBOOKS_UI) {
-        item {
-            SettingsCard(
-                icon = Icons.AutoMirrored.Filled.MenuBook,
-                iconTint = MaterialTheme.colorScheme.primary,
-                title = "Ebook folder",
-                subtitle = ebookFolder.ifBlank { "Not set — standalone ebooks live here" },
-                subtitleMono = ebookFolder.isNotBlank(),
-                onClick = onBrowseEbooks
-            )
-        }
     }
     item {
         var showStructureDialog by remember { mutableStateOf(false) }

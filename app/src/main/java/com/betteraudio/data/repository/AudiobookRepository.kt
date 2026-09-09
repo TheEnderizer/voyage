@@ -21,7 +21,6 @@ import com.betteraudio.data.db.entities.Chapter
 import com.betteraudio.data.db.entities.ListeningSession
 import com.betteraudio.data.db.entities.PlaybackProgress
 import com.betteraudio.data.db.entities.SkipEvent
-import com.betteraudio.data.db.entities.SyncAnchor
 import com.betteraudio.data.model.BookWithProgress
 import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
@@ -43,7 +42,6 @@ class AudiobookRepository @Inject constructor(
     private val audioPresetDao: AudioPresetDao,
     private val listeningHistoryDao: ListeningHistoryDao,
     private val authorMetaDao: com.betteraudio.data.db.dao.AuthorMetaDao,
-    private val syncAnchorDao: com.betteraudio.data.db.dao.SyncAnchorDao,
     private val coverEffectBaker: CoverEffectBaker,
     private val diskMirror: DiskMirror
 ) {
@@ -420,119 +418,6 @@ class AudiobookRepository @Inject constructor(
                 AppLog.e(LogCat.DB, "failed to delete orphaned $what: $path", e)
             }
         }
-    }
-
-    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
-
-    /** Connect (or disconnect, path = null) an epub to an existing book. Always clears the stale
-     *  chapter-alignment map AND the forced-alignment anchors — both are specific to the epub they
-     *  were computed against. */
-    suspend fun setEbook(bookId: Long, path: String?, spineCount: Int) {
-        bookDao.setEbook(bookId, path, spineCount)   // also nulls chapterMapJson
-        syncAnchorDao.deleteForBook(bookId)
-        diskMirror.flushBook(bookId)
-    }
-
-    // ── Sync anchors (paragraph-resolution alignment points) ──────────────────
-    suspend fun getSyncAnchorsOnce(bookId: Long): List<SyncAnchor> =
-        syncAnchorDao.getForBookOnce(bookId)
-    fun syncAnchorCount(bookId: Long): Flow<Int> = syncAnchorDao.countForBook(bookId)
-    suspend fun insertSyncAnchors(anchors: List<SyncAnchor>) {
-        syncAnchorDao.insertAll(anchors)
-        anchors.map { it.bookId }.distinct().forEach { diskMirror.flushBook(it) }
-    }
-    suspend fun deleteSyncAnchors(bookId: Long) {
-        syncAnchorDao.deleteForBook(bookId)
-        diskMirror.flushBook(bookId)
-    }
-
-    suspend fun updateEbookSpineCount(bookId: Long, spineCount: Int) {
-        bookDao.updateEbookSpineCount(bookId, spineCount)
-        diskMirror.flushBook(bookId)
-    }
-
-    /** Repoint a connected epub's path after a library-restructure move (keeps the chapter map). */
-    suspend fun updateEbookPath(bookId: Long, path: String) {
-        bookDao.updateEbookPath(bookId, path)
-        diskMirror.flushBook(bookId)
-    }
-
-    suspend fun setChapterMap(bookId: Long, json: String?) {
-        bookDao.setChapterMap(bookId, json)
-        diskMirror.flushBook(bookId)
-    }
-
-    /** Every book with a connected/standalone ebook (for reconciliation and the Ebooks view). */
-    suspend fun getAllWithEbookOnce(): List<Book> = bookDao.getAllWithEbookOnce()
-
-    suspend fun getBookByEbookPath(path: String): Book? = bookDao.getBookByEbookPath(path)
-
-    /** Upsert a standalone ebook-only Book row keyed by its synthetic `::epub::` folderPath —
-     *  create on first scan, refresh spine count (never clobber user overrides) on later scans. */
-    suspend fun upsertEbookOnlyBook(
-        folderPath: String, title: String, author: String, coverArtPath: String?, ebookPath: String,
-        spineCount: Int
-    ): Long {
-        val existing = bookDao.getBookByFolder(folderPath)
-        val id = if (existing != null) {
-            bookDao.updateEbookSpineCount(existing.id, spineCount)
-            existing.id
-        } else {
-            bookDao.upsert(
-                Book(
-                    title = title, author = author, folderPath = folderPath,
-                    coverArtPath = coverArtPath, ebookPath = ebookPath, ebookSpineCount = spineCount,
-                    fileCount = 0, totalDurationMs = 0
-                )
-            )
-        }
-        diskMirror.flushBook(id)
-        return id
-    }
-
-    /** Persist the reader's scroll position and mark text as the freshest mode. Creates the
-     *  progress row on first read, mirroring [touchLastPlayed]'s upsert-if-missing pattern. */
-    suspend fun updateTextPosition(bookId: Long, spineIndex: Int, fraction: Float, overallFraction: Float, charOffset: Int? = null) {
-        val now = System.currentTimeMillis()
-        if (progressDao.updateTextPosition(bookId, spineIndex, fraction, charOffset, overallFraction, now) == 0) {
-            progressDao.upsert(
-                PlaybackProgress(
-                    bookId = bookId, textSpineIndex = spineIndex, textFraction = fraction,
-                    textCharOffset = charOffset,
-                    textOverallFraction = overallFraction, lastMode = "TEXT", lastPlayedMs = now
-                )
-            )
-        }
-        diskMirror.markDirty(bookId)
-    }
-
-    /** Mark audio as the freshest mode (called when starting/resuming playback from the reader or
-     *  the normal player, so the next mode-switch converts FROM the audio position). */
-    suspend fun setLastModeAudio(bookId: Long) {
-        if (progressDao.setLastModeAudio(bookId) == 0) {
-            progressDao.upsert(PlaybackProgress(bookId = bookId, lastMode = "AUDIO"))
-        }
-        diskMirror.markDirty(bookId)
-    }
-
-    /** When a standalone ebook-only row is being merged into a newly-connected audiobook, carry
-     *  its reading progress AND its reading/listening history over — this is what makes the two
-     *  books' history "merged" once linked, rather than the standalone row's history being lost to
-     *  cascade delete when it's removed. The *position* carry-over only applies if the audiobook
-     *  doesn't already have its own (a book already being read/listened to keeps its own position),
-     *  but history (skip events, listening sessions) is always reassigned regardless. */
-    suspend fun mergeStandaloneEbookProgress(fromBookId: Long, toBookId: Long) {
-        val existingTarget = progressDao.getProgressForBookOnce(toBookId)
-        if (existingTarget?.textSpineIndex == null) {
-            val source = progressDao.getProgressForBookOnce(fromBookId)
-            source?.textSpineIndex?.let { spine ->
-                updateTextPosition(toBookId, spine, source.textFraction ?: 0f, source.textOverallFraction)
-            }
-        }
-        listeningHistoryDao.reassignSkipsToBook(fromBookId, toBookId)
-        listeningHistoryDao.reassignSessionsToBook(fromBookId, toBookId)
-        diskMirror.flushBook(fromBookId)
-        diskMirror.flushBook(toBookId)
     }
 
     /** Mark a book as just-played now (moves it to the top of last-played sorting immediately). */

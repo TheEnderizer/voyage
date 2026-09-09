@@ -36,31 +36,11 @@ class BookInfoViewModel @Inject constructor(
     private val libraryRestructurer: com.betteraudio.data.files.LibraryRestructurer,
     private val coverSearchService: com.betteraudio.data.covers.CoverSearchService,
     private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
-    private val ebookScanner: com.betteraudio.data.scanner.EbookScanner,
     private val widgetUpdater: com.betteraudio.widget.WidgetUpdater
 ) : ViewModel() {
 
     val bookId: Long = checkNotNull(savedStateHandle["bookId"])
 
-    // ── Ebook (EPUB) connect/disconnect ─────────────────────────────────────
-    // Book info opens the same `BookOptionsSheet` Home and the player do, so it needs the same
-    // three actions — without them its "Connect EPUB…" button picked a file and did nothing.
-
-    private val _ebookError = MutableStateFlow<String?>(null)
-    val ebookError: StateFlow<String?> = _ebookError.asStateFlow()
-    fun dismissEbookError() { _ebookError.value = null }
-
-    fun connectEpub(epubPath: String) {
-        viewModelScope.launch {
-            if (!ebookScanner.connect(bookId, epubPath)) {
-                _ebookError.value = "Couldn't connect that EPUB — it may be DRM-protected or corrupted."
-            }
-        }
-    }
-
-    fun disconnectEpub() {
-        viewModelScope.launch { ebookScanner.disconnect(bookId) }
-    }
 
     // ── Online cover search ─────────────────────────────────────────────────
     // Same behaviour as HomeViewModel's, scoped to this screen's one book: the picked image is

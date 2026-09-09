@@ -54,7 +54,6 @@ class AudioFileScanner @Inject constructor(
     private val repository: AudiobookRepository,
     private val seriesRepository: SeriesRepository,
     private val settings: SettingsStore,
-    private val ebookScanner: EbookScanner,
     private val bookDataStore: com.betteraudio.data.diskstore.BookDataStore,
     private val libraryDataStore: com.betteraudio.data.diskstore.LibraryDataStore,
     private val restoreOps: com.betteraudio.data.diskstore.RestoreOps,
@@ -90,12 +89,6 @@ class AudioFileScanner @Inject constructor(
         // and playback groups are only ever created by an explicit user action.
         runCatching { reconcileAgainstDisk(root) }
             .onFailure { AppLog.e(LogCat.SCAN, "reconcile failed for $rootPath", it) }
-        // One "rescan" covers both libraries: also sweep the (separate) standalone-ebook folder.
-        runCatching {
-            settings.ebookFolder.first().takeIf { it.isNotBlank() }
-                ?.let { ebookScanner.scanEbookDirectory(it) }
-            ebookScanner.reconcileEbooks()
-        }.onFailure { AppLog.e(LogCat.SCAN, "ebook scan/reconcile failed", it) }
         AppLog.i(LogCat.SCAN, "done path=$rootPath imported/updated=$count")
         count
     }
@@ -659,51 +652,6 @@ class AudioFileScanner @Inject constructor(
             else -> { extractCoverArt(sortedFiles.firstOrNull(), bookId, folderKey); "5:fresh-extract" }
         }
         AppLog.d(LogCat.SCAN) { "cover priority book=$bookId rule=$coverRule" }
-
-        // A disk-doc-recorded ebook connection (restored from a prior install) wins outright for
-        // a brand-new row when the epub it points at still exists, carrying its chapter-alignment
-        // map along (setEbook itself always nulls chapterMapJson, so it's re-applied after).
-        // Otherwise: auto-attach an .epub sitting next to the audio, once. Skipped for multi-book
-        // folders (a synthetic "::" split) — ambiguous which of the cluster's books the epub
-        // belongs to; the user can still connect it manually from that book's options.
-        var ebookRestoredFromDisk = false
-        if (existing == null && diskDoc?.ebook != null) {
-            val epubFile = com.betteraudio.data.diskstore.BookDataPaths.resolveRelOrAbs(
-                com.betteraudio.data.diskstore.BookDataPaths.containingDir(folderKey), diskDoc.ebook.relPath
-            )
-            if (epubFile.isFile) {
-                repository.setEbook(bookId, epubFile.absolutePath, diskDoc.ebook.spineCount)
-                diskDoc.ebook.chapterMap?.let { cm -> repository.setChapterMap(bookId, org.json.JSONArray(cm).toString()) }
-                ebookRestoredFromDisk = true
-            }
-        }
-        if (!multiBook && !ebookRestoredFromDisk && existing?.ebookPath == null) {
-            val epub = ebookScanner.findEpubIn(folder)
-            if (epub != null) {
-                // Logged either way. "The epub next to my audio didn't get connected" has four
-                // different causes (no epub found, a cluster folder, DRM, a parse failure) and
-                // none of them used to leave a trace unless attach actually threw — so the only
-                // way to tell them apart was to read this function.
-                val ok = runCatching { ebookScanner.attachEpubToBook(bookId, epub) }
-                    .onFailure { AppLog.e(LogCat.SCAN, "auto-attach epub threw for book=$bookId", it) }
-                    .getOrDefault(false)
-                AppLog.i(LogCat.SCAN, "auto-attach epub book=$bookId ok=$ok file=${epub.name}")
-            } else {
-                AppLog.d(LogCat.SCAN) { "auto-attach epub book=$bookId: none found in ${folder.name}" }
-            }
-        } else if (existing?.ebookPath == null) {
-            AppLog.d(LogCat.SCAN) {
-                "auto-attach epub book=$bookId skipped (multiBook=$multiBook restoredFromDisk=$ebookRestoredFromDisk)"
-            }
-        }
-
-        // Auto-import a bundled mapping (paragraph-resolution sync data — see MappingFileIO)
-        // sitting in the book's data/ folder (or the pre-redesign location), once an epub is
-        // connected and only while the book has no anchors yet, so a bundled file is picked up
-        // without overwriting a fresher on-device alignment the user already ran. Clusters get
-        // their own <slug>.mapping.json now, so this is no longer skipped for multiBook.
-        runCatching { importMappingFileIfPresent(bookId, folderKey) }
-            .onFailure { AppLog.e(LogCat.SCAN, "mapping.json import failed for book=$bookId", it) }
     }
 
     /**
@@ -757,18 +705,6 @@ class AudioFileScanner @Inject constructor(
         }
         retriever.release()
         return result
-    }
-
-    private suspend fun importMappingFileIfPresent(bookId: Long, folderKey: String) {
-        val mapping = com.betteraudio.data.sync.MappingFileIO.read(folderKey) ?: return
-        val book = repository.getBookOnce(bookId) ?: return
-        if (book.ebookPath == null) return
-        if (repository.syncAnchorCount(bookId).first() > 0) return
-        mapping.chapterMapJson?.let { repository.setChapterMap(bookId, it) }
-        if (mapping.anchors.isNotEmpty()) {
-            repository.insertSyncAnchors(mapping.anchors.map { it.copy(bookId = bookId) })
-            AppLog.i(LogCat.SCAN, "imported mapping.json for book=$bookId anchors=${mapping.anchors.size}")
-        }
     }
 
     /**

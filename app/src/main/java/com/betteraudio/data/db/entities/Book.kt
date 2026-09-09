@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 
 enum class BookStatus { NOT_STARTED, IN_PROGRESS, FINISHED }
 
-@Entity(tableName = "books", indices = [Index("seriesId"), Index("folderPath"), Index("ebookPath")])
+@Entity(tableName = "books", indices = [Index("seriesId"), Index("folderPath")])
 data class Book(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -40,16 +40,6 @@ data class Book(
     // Per-book toggle: when on, the player auto-skips silent gaps (sensitivity + min length
     // are global, in SettingsStore).
     val skipSilenceEnabled: Boolean = false,
-    // ── Ebook (EPUB) support ─────────────────────────────────────────────────
-    // Absolute path to a connected .epub. Non-null = this book has an ebook (either attached to an
-    // audiobook, or a standalone ebook-only row where fileCount/totalDurationMs are both 0).
-    val ebookPath: String? = null,
-    // Spine item count at last parse — used for whole-book reading-progress math without
-    // re-parsing the epub on every read of PlaybackProgress.
-    val ebookSpineCount: Int = 0,
-    // Audio-chapter-index ↔ epub-spine-index alignment (JSON int array), or null = not yet
-    // computed (auto-matched on next reader/sync use). Nulled whenever ebookPath changes.
-    val chapterMapJson: String? = null,
     // Last time this book's on-disk data/book.json was successfully applied to this row (scan-
     // time MERGE) — 0 = never. Distinguishes "the doc exists" from "the doc has been read since
     // it last changed": BookDataStore.lastModified(folderKey) is always >= lastPlayedMs once the

@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import com.betteraudio.BuildConfig
 import androidx.work.Configuration
-import com.betteraudio.data.ebook.ParagraphCache
 import com.betteraudio.data.repository.AudiobookRepository
 import com.betteraudio.data.repository.SeriesRepository
 import com.betteraudio.data.settings.SettingsStore
@@ -26,7 +25,6 @@ class VoyageApp : Application(), Configuration.Provider {
     @Inject lateinit var settings: SettingsStore
     @Inject lateinit var seriesRepository: SeriesRepository
     @Inject lateinit var repository: AudiobookRepository
-    @Inject lateinit var paragraphCache: ParagraphCache
     @Inject lateinit var diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration
     @Inject @ApplicationScope lateinit var appScope: CoroutineScope
 
@@ -111,7 +109,6 @@ class VoyageApp : Application(), Configuration.Provider {
         if (level >= TRIM_MEMORY_RUNNING_LOW) {
             AppLog.i(LogCat.SYSTEM, "onTrimMemory(level=$level) — clearing widget bitmap and paragraph caches")
             WidgetBitmapCache.clear()
-            paragraphCache.clear()
         }
     }
 

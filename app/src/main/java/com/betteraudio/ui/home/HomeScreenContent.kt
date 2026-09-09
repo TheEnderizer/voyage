@@ -82,7 +82,6 @@ fun HomeScreenContent(
     onOpenSearch: () -> Unit = {},
     onOpenSeries: (Long) -> Unit = {},
     onOpenAuthor: (String) -> Unit = {},
-    onOpenReader: (Long) -> Unit = {},
     viewModel: HomeViewModel,
     style: HomeStyle
 ) {
@@ -235,7 +234,7 @@ fun HomeScreenContent(
                     modifier = Modifier.fillMaxSize().topEdgeFade()
                 ) {
                     // Header — stays put; the selection bar floats over it as an overlay.
-                    // Section (Audio/Ebooks) + view-mode switching moved to the floating nav pill.
+                    // Section + view-mode switching moved to the floating nav pill.
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         val gridItems by viewModel.gridItems.collectAsStateWithLifecycle()
                         style.Header(
@@ -267,9 +266,7 @@ fun HomeScreenContent(
                                     LibraryTab.LISTENING -> "Nothing in progress yet"
                                     LibraryTab.NOT_STARTED -> "No unstarted books"
                                     LibraryTab.FINISHED -> "No finished books yet"
-                                    LibraryTab.ALL -> if (homeSection == HomeSection.EBOOKS)
-                                        "No ebooks yet — connect an EPUB from a book's options, or set an ebook folder in Settings"
-                                    else "No audiobooks yet"
+                                    LibraryTab.ALL -> "No audiobooks yet"
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -287,7 +284,6 @@ fun HomeScreenContent(
                                     // screen (header, tabs, every other card, dialogs).
                                     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
                                     val key = SelKey.BookK(gridItem.book.id)
-                                    val ebookOnly = gridItem.book.isEbookOnly
                                     BookGridCard(
                                         modifier = Modifier.animateItem(),
                                         book = gridItem.book,
@@ -297,22 +293,13 @@ fun HomeScreenContent(
                                         isPlayingNow = playbackState.bookId == gridItem.book.id &&
                                             playbackState.isPlaying,
                                         style = style,
-                                        useReadingProgress = homeSection == HomeSection.EBOOKS,
                                         onClick = {
-                                            when {
-                                                isSelectionMode -> viewModel.toggleSelection(key)
-                                                // In the Ebooks section (or an audio-less ebook row)
-                                                // a tap opens the reader.
-                                                homeSection == HomeSection.EBOOKS || ebookOnly ->
-                                                    onOpenReader(gridItem.book.id)
-                                                else -> onOpenBookInfo(gridItem.book.id)
-                                            }
+                                            if (isSelectionMode) viewModel.toggleSelection(key)
+                                            else onOpenBookInfo(gridItem.book.id)
                                         },
-                                        // Play in place (mini bar), do NOT open the full player —
-                                        // unless this row has no audio, in which case play = read.
+                                        // Play in place (mini bar), do NOT open the full player.
                                         onPlayClick = {
                                             when {
-                                                ebookOnly -> onOpenReader(gridItem.book.id)
                                                 // Already the live book and actually playing: this
                                                 // is a PAUSE. It used to fall through to
                                                 // playResumeBook, which reloads the queue from the
@@ -428,7 +415,6 @@ fun HomeScreenContent(
     // Dialogs — each of these five collects its own viewModel state internally (see the
     // *Host composables below) rather than reading it here, so opening/closing one doesn't
     // recompose the whole screen and a screen recompose doesn't re-run these unnecessarily.
-    EbookErrorDialog(viewModel, style)
 
     if (showDeleteConfirm) {
         var deleteFiles by remember { mutableStateOf(false) }
@@ -491,23 +477,9 @@ fun HomeScreenContent(
     }
 
     SortFilterDialogHost(viewModel, show = showSortFilter, onDismiss = { showSortFilter = false })
-    BookOptionsSheetHost(viewModel, context, onOpenReader)
+    BookOptionsSheetHost(viewModel, context)
     CoverSearchSheetHost(viewModel)
     CollectionCoverSearchSheetHost(viewModel)
-}
-
-@Composable
-private fun EbookErrorDialog(viewModel: HomeViewModel, style: HomeStyle) {
-    val ebookError by viewModel.ebookError.collectAsStateWithLifecycle()
-    ebookError?.let { message ->
-        AlertDialog(
-            containerColor = style.dialogContainerColor(),
-            onDismissRequest = { viewModel.dismissEbookError() },
-            title = { Text("Couldn't connect ebook") },
-            text = { Text(message) },
-            confirmButton = { HapticTextButton(onClick = { viewModel.dismissEbookError() }) { Text("OK") } }
-        )
-    }
 }
 
 @Composable
@@ -521,7 +493,7 @@ private fun SortFilterDialogHost(viewModel: HomeViewModel, show: Boolean, onDism
 // from gridItems, which no longer carries a full BookWithProgress) since this sheet shows the
 // book's actual file list.
 @Composable
-private fun BookOptionsSheetHost(viewModel: HomeViewModel, context: Context, onOpenReader: (Long) -> Unit) {
+private fun BookOptionsSheetHost(viewModel: HomeViewModel, context: Context) {
     val bookOptionsTarget by viewModel.bookOptionsTarget.collectAsStateWithLifecycle()
     val bookOptionsTargetId = bookOptionsTarget ?: return
     val optionsBwpState by viewModel.bookWithProgressFlow(bookOptionsTargetId)
@@ -537,9 +509,6 @@ private fun BookOptionsSheetHost(viewModel: HomeViewModel, context: Context, onO
         onRefreshCoverEffect = { viewModel.refreshCoverEffect(optionsBwp.book.id) },
         onIgnore = { viewModel.ignoreBook(optionsBwp.book.id) },
         onDeletePermanently = { deleteFiles -> viewModel.deleteBook(optionsBwp.book.id, deleteFiles) },
-        onConnectEpub = { path -> viewModel.connectEpub(optionsBwp.book.id, path) },
-        onDisconnectEpub = { viewModel.disconnectEpub(optionsBwp.book.id) },
-        onOpenReader = { onOpenReader(optionsBwp.book.id) },
         onPinShortcut = { com.betteraudio.util.BookShortcuts.requestPin(context, optionsBwp.book) }
     )
 }
@@ -723,7 +692,6 @@ private fun BookGridCard(
     onPlayClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
-    useReadingProgress: Boolean = false,
     /** [isNowPlaying] only means this is the book the service has loaded — it may well be paused.
      *  The button's icon needs the stricter "and audio is actually running". */
     isPlayingNow: Boolean = false
@@ -740,7 +708,7 @@ private fun BookGridCard(
         },
         tween(150), label = "border"
     )
-    val progressFraction = if (useReadingProgress) book.readingFraction else book.progressFraction
+    val progressFraction = book.progressFraction
 
     // Published so a cover-morph transition can start from this exact card's on-screen bounds:
     // Book Info's own open/close morph (BookInfoScreen.kt, via morphFrom) always reads this, and

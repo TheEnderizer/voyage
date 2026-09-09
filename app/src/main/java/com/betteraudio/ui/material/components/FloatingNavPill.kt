@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Headphones
@@ -53,12 +52,12 @@ import com.betteraudio.ui.home.HomeViewMode
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
-import com.betteraudio.util.FeatureFlags
 
 /**
- * ArchiveTune-style floating bottom pill: all-icon slots for the Audio/Ebooks sections (with a
- * sliding selection indicator between those two), a Books→Series→Authors view-cycle button
- * (Audio section only), and Search/Settings actions. Slides off-screen in lockstep with the
+ * ArchiveTune-style floating bottom pill: an icon slot for the Audio section, a
+ * Books→Series→Authors view-cycle button, and Search/Settings actions. The Ebooks slot went with
+ * the EPUB reader, so the sliding indicator now has a single stop; [HomeSection] keeps its shape
+ * for the rebuild. Slides off-screen in lockstep with the
  * player sheet's expansion ([expandProgress] read only inside graphicsLayer — no per-frame
  * recomposition).
  */
@@ -134,15 +133,6 @@ fun FloatingNavPill(
                     onClick = { onSelectSection(HomeSection.AUDIO) },
                     measure = { x, w -> slotX[HomeSection.AUDIO] = x; slotW[HomeSection.AUDIO] = w }
                 )
-                if (FeatureFlags.EBOOKS_UI) {
-                    PillSlot(
-                        icon = Icons.AutoMirrored.Filled.MenuBook,
-                        cd = "Ebooks",
-                        selected = section == HomeSection.EBOOKS,
-                        onClick = { onSelectSection(HomeSection.EBOOKS) },
-                        measure = { x, w -> slotX[HomeSection.EBOOKS] = x; slotW[HomeSection.EBOOKS] = w }
-                    )
-                }
                 // View-cycle: icon shows the CURRENT view; tap advances Books→Series→Authors.
                 // Ebooks ignores view modes, so the slot collapses away in that section.
                 AnimatedVisibility(

@@ -6,11 +6,9 @@ import com.betteraudio.data.db.dao.BookDao
 import com.betteraudio.data.db.dao.BookmarkDao
 import com.betteraudio.data.db.dao.ListeningHistoryDao
 import com.betteraudio.data.db.dao.PlaybackProgressDao
-import com.betteraudio.data.db.dao.SyncAnchorDao
 import com.betteraudio.data.db.entities.AudioFile
 import com.betteraudio.data.db.entities.Book
 import com.betteraudio.data.settings.SettingsStore
-import com.betteraudio.sync.ChapterMap
 import com.betteraudio.util.AppLog
 import com.betteraudio.util.log.LogCat
 import kotlinx.coroutines.Dispatchers
@@ -23,8 +21,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Reads and writes one book's `data/` folder — `book.json` (or `<slug>.json` / `epub.<slug>.json`
- * for a shared/ebook-only folderKey), its cover, and orphan cleanup. This is the only class that
+ * Reads and writes one book's `data/` folder — `book.json` (or `<slug>.json` for a shared
+ * folderKey), its cover, and orphan cleanup. This is the only class that
  * translates between [BookDocument] and the real Room entities; everything above it (DiskMirror,
  * RestoreOps, the scanner) works in one language or the other, never both.
  *
@@ -39,7 +37,6 @@ class BookDataStore @Inject constructor(
     private val progressDao: PlaybackProgressDao,
     private val bookmarkDao: BookmarkDao,
     private val listeningHistoryDao: ListeningHistoryDao,
-    private val syncAnchorDao: SyncAnchorDao,
     private val settings: SettingsStore
 ) {
     // Cover source ("user" | "embedded" | "external") is known precisely only at the moment a
@@ -121,7 +118,7 @@ class BookDataStore @Inject constructor(
             app = BuildConfig.VERSION_NAME,
             folderPath = folderKey,
             relPath = BookDataPaths.relPath(folderKey, libraryFolder),
-            kind = if (files.isEmpty() && book.ebookPath != null) "EPUB" else "AUDIO",
+            kind = "AUDIO",
             title = book.title,
             author = book.author,
             titleOverride = book.titleOverride,
@@ -140,13 +137,6 @@ class BookDataStore @Inject constructor(
             fileCount = book.fileCount,
             cover = buildCoverInfo(book, folderKey, dir, existing),
             series = book.seriesName?.takeIf { it.isNotBlank() }?.let { BookDocument.SeriesRef(it, book.seriesOrder) },
-            ebook = book.ebookPath?.let { path ->
-                BookDocument.EbookInfo(
-                    relPath = BookDataPaths.relativizeToDir(path, dir),
-                    spineCount = book.ebookSpineCount,
-                    chapterMap = book.chapterMapJson?.let { ChapterMap.fromJson(it)?.audioToSpine }
-                )
-            },
             files = files.map { f ->
                 BookDocument.FileEntry(f.fileName, f.durationMs, f.trackNumber, f.title, f.chapterTitle, f.damageRangesJson)
             },
@@ -161,12 +151,7 @@ class BookDataStore @Inject constructor(
                     eqBandsJson = p.eqBandsJson,
                     isCompleted = p.isCompleted,
                     completedDateMs = p.completedDateMs,
-                    lastPausedAt = p.lastPausedAt,
-                    textSpineIndex = p.textSpineIndex,
-                    textFraction = p.textFraction,
-                    textCharOffset = p.textCharOffset,
-                    textOverallFraction = p.textOverallFraction,
-                    lastMode = p.lastMode
+                    lastPausedAt = p.lastPausedAt
                 )
             },
             bookmarks = bookmarks.mapNotNull { bm ->
@@ -320,7 +305,10 @@ class BookDataStore @Inject constructor(
      *  cluster convention — a cluster-to-single-book transition's cover/mapping is left to be
      *  rewritten fresh rather than guessed at. */
     private companion object {
-        /** "<slug>." / "epub.<slug>." prefix, where a slug always ends in "~" + 8 hex chars —
+        /** "<slug>." prefix, where a slug always ends in "~" + 8 hex chars —
+         *  The optional "epub." arm is legacy: the EPUB reader is gone, but installs from before
+         *  its removal still have `epub.<slug>.json` sidecars on disk, and this pattern is what
+         *  keeps orphan cleanup treating them as recognised files rather than acting on them. —
          *  see [BookDataPaths.slug]. */
         val SLUG_PREFIXED = Regex("^(epub\\.)?[a-z0-9_]+~[0-9a-f]{8}\\.")
     }
