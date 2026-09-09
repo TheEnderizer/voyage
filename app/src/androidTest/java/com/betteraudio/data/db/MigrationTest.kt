@@ -119,8 +119,8 @@ class MigrationTest {
                     "'/x/book.epub', 62, '[0,1,2]', 7)"
             )
             execSQL(
-                "INSERT INTO audio_files (id, bookId, filePath, fileName, durationMs, trackNumber) " +
-                    "VALUES (10, 1, '/x/03.mp3', '03.mp3', 3000, 3)"
+                "INSERT INTO audio_files (id, bookId, filePath, fileName, trackNumber, durationMs, " +
+                    "fileSizeBytes) VALUES (10, 1, '/x/03.mp3', '03.mp3', 3, 3000, 4096)"
             )
             execSQL(
                 "INSERT INTO playback_progress (bookId, currentFileId, positionMs, lastPlayedMs, " +
@@ -158,6 +158,56 @@ class MigrationTest {
         // been repointed at the temp table, this would come back non-empty.
         db.query("PRAGMA foreign_key_check").use { c ->
             assertTrue("migration left a broken foreign key", !c.moveToFirst())
+        }
+    }
+
+    /**
+     * The whole chain, 19 to 28, over one seeded book.
+     *
+     * The per-step tests above each prove one migration in isolation; this proves they compose.
+     * That matters most for 27->28, which is the first migration here that *rebuilds* tables
+     * rather than adding to them — it is the one step that can drop a column another migration
+     * added five versions earlier, and no isolated test would notice.
+     *
+     * A real install arriving at 28 has walked exactly this path, so what it asserts is the thing
+     * a user actually cares about: the book is still there, and it is still paused where they
+     * left it.
+     */
+    @Test
+    fun migrate19To28_wholeChainKeepsTheBookAndItsPosition() {
+        helper.createDatabase(dbName, 19).apply {
+            execSQL(
+                "INSERT INTO books (id, title, author, folderPath, totalDurationMs, addedDateMs, " +
+                    "status, fileCount, isIgnored, skipSilenceEnabled, ebookSpineCount) " +
+                    "VALUES (1, 'Chain Book', 'Author', '/x', 9000, 5, 'IN_PROGRESS', 1, 0, 1, 0)"
+            )
+            execSQL(
+                "INSERT INTO audio_files (id, bookId, filePath, fileName, trackNumber, durationMs, " +
+                    "fileSizeBytes) VALUES (10, 1, '/x/01.mp3', '01.mp3', 1, 9000, 4096)"
+            )
+            execSQL(
+                "INSERT INTO playback_progress (bookId, currentFileId, positionMs, lastPlayedMs, " +
+                    "playbackSpeed, boostDb, isCompleted, lastPausedAt, textOverallFraction, lastMode) " +
+                    "VALUES (1, 10, 4321, 99, 1.4, 3, 0, 88, 0.5, 'TEXT')"
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 28, true, AppDatabase.MIGRATION_19_20, AppDatabase.MIGRATION_20_21, AppDatabase.MIGRATION_21_22, AppDatabase.MIGRATION_22_23, AppDatabase.MIGRATION_23_25, AppDatabase.MIGRATION_24_25, AppDatabase.MIGRATION_25_26, AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28)
+
+        db.query("SELECT * FROM books WHERE id = 1").use { c ->
+            assertTrue("the book did not survive 19 -> 28", c.moveToFirst())
+            assertEquals("Chain Book", c.getString(c.getColumnIndexOrThrow("title")))
+            assertEquals(1, c.getInt(c.getColumnIndexOrThrow("skipSilenceEnabled")))
+        }
+        db.query("SELECT * FROM playback_progress WHERE bookId = 1").use { c ->
+            assertTrue("the saved position did not survive 19 -> 28", c.moveToFirst())
+            assertEquals(4321L, c.getLong(c.getColumnIndexOrThrow("positionMs")))
+            assertEquals(10L, c.getLong(c.getColumnIndexOrThrow("currentFileId")))
+            assertEquals(1.4f, c.getFloat(c.getColumnIndexOrThrow("playbackSpeed")), 0.001f)
+        }
+        db.query("PRAGMA foreign_key_check").use { c ->
+            assertTrue("the chain left a broken foreign key", !c.moveToFirst())
         }
     }
 }

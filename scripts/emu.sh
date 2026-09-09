@@ -20,9 +20,8 @@
 #  - Run from Git Bash. MSYS_NO_PATHCONV=1 is required or /sdcard/... is
 #    rewritten into a Windows path; every adb call here sets it.
 #  - Avoid spaces in on-device paths: `adb push` mangles them under MSYS.
-#  - The APK ships arm64-v8a only (Vosk), so speech alignment cannot run on an
-#    x86_64 emulator. Everything else works. To test alignment, add x86_64 to
-#    `ndk { abiFilters }` in app/build.gradle.kts for local builds.
+#  - The app has no native libraries any more (Vosk went with the EPUB reader),
+#    so the release APK is ABI-agnostic and everything runs on an x86_64 image.
 
 set -uo pipefail
 export MSYS_NO_PATHCONV=1
