@@ -101,7 +101,7 @@ import com.betteraudio.data.db.entities.SkipEvent
 //             table, nothing existing touched, so there is no data to preserve or reshape.
 @Database(
     entities = [Book::class, AudioFile::class, PlaybackProgress::class, Chapter::class, Bookmark::class, AudioPreset::class, ListeningSession::class, SkipEvent::class, Series::class, AuthorMeta::class, WidgetDesign::class, WidgetBinding::class, CompanionPack::class],
-    version = 28,
+    version = 29,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -775,6 +775,44 @@ abstract class AppDatabase : RoomDatabase() {
                         throw IllegalStateException("MIGRATION_27_28 broke a foreign key")
                     }
                 }
+            }
+        }
+
+        /**
+         * Deletes the standalone ebook-only book rows left behind by the EPUB reader's removal.
+         *
+         * These rows never represented an audiobook. `EbookScanner` created one per loose `.epub`
+         * it found, with `fileCount = 0`, no audio, and a synthetic `"<parentDir>::epub::<stem>"`
+         * folderPath — and the library grid kept them out of the Audio section with an
+         * `isEbookOnly` check that read `ebookPath != null && totalDurationMs == 0`. Removing the
+         * reader took `ebookPath` with it, and so took the filter, and the rows surfaced in the
+         * audio library as books that have nothing to play. They are matched on the `::epub::`
+         * marker rather than on `fileCount = 0`, which a real audiobook can also reach when its
+         * files go missing (`reconcileAgainstDisk` hides those with `isIgnored`, keeping progress).
+         *
+         * A separate migration rather than a fix to [MIGRATION_27_28] because 28 has already run
+         * on a real device; an install still on 27 runs both and ends up in the same place.
+         *
+         * The `.epub` files and their `data/epub.<slug>.json` mirrors are untouched on disk — that
+         * mirror is where the preserved reading position lives (see `BookDataCodec`), so a rebuilt
+         * reader can still find both.
+         *
+         * Every child table is deleted explicitly rather than left to `ON DELETE CASCADE`: Room
+         * runs migrations with `PRAGMA foreign_keys` **off**, so the cascade does not fire here and
+         * a bare `DELETE FROM books` would leave orphaned progress, chapter and history rows behind
+         * pointing at ids that no longer exist.
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                AppLog.i(LogCat.DB, "migrating 28 → 29 (dropping standalone ebook-only book rows)")
+                val doomed = "SELECT `id` FROM `books` WHERE `folderPath` LIKE '%::epub::%'"
+                for (child in listOf(
+                    "audio_files", "playback_progress", "chapters",
+                    "bookmarks", "listening_sessions", "skip_events",
+                )) {
+                    db.execSQL("DELETE FROM `$child` WHERE `bookId` IN ($doomed)")
+                }
+                db.execSQL("DELETE FROM `books` WHERE `folderPath` LIKE '%::epub::%'")
             }
         }
 

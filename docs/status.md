@@ -16,7 +16,7 @@ Update it in the same commit as the work it describes — a ledger that lags is 
 because it gets trusted. One line per item; if a line needs a paragraph, it belongs in `CLAUDE.md`
 and this line should link to it.
 
-Last updated: 2026-09-09 · beta `1.14.0b` (75) · DB v28
+Last updated: 2026-09-09 · beta `1.14.0b` (75) · DB v29
 
 ---
 
@@ -210,6 +210,16 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   - **Side effect worth knowing:** the text→audio resume bridge went with it, so
     `AudioCascade.resolveStart` now runs for every book. That closes the open bug where a finished
     book with an epub attached resumed at the reading position instead of restarting.
+
+- **Standalone ebook-only rows purged (DB v29).** Removing the reader took `Book.ebookPath` with
+  it, and with it the `isEbookOnly` filter that kept `EbookScanner`'s loose-`.epub` rows out of the
+  Audio grid — so seven of them surfaced in the library as books with nothing to play (35 → 42).
+  `MIGRATION_28_29` deletes rows whose folderPath carries the scanner's synthetic `::epub::`
+  marker, matched on that rather than on `fileCount = 0`, which a real audiobook reaches when its
+  files go missing. Every child table is deleted explicitly: **Room runs migrations with
+  `PRAGMA foreign_keys` off**, so `ON DELETE CASCADE` does not fire in a migration and a bare
+  `DELETE FROM books` leaves orphans. The `.epub` files and their `data/epub.<slug>.json` mirrors
+  are untouched on disk. Verified on device.
 
 ## Deliberately not done
 
