@@ -48,6 +48,8 @@ import com.betteraudio.ui.material.MaterialStyle
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import com.betteraudio.ui.settings.SettingsSection
+import com.betteraudio.ui.settings.SettingsSearchAction
+import com.betteraudio.ui.settings.SettingsTopBarTitle
 import com.betteraudio.ui.settings.SettingsViewModel
 import com.betteraudio.ui.settings.aboutSection
 import com.betteraudio.ui.settings.aiSection
@@ -211,17 +213,28 @@ fun SettingsScreen(
                     // Static title in two-pane mode: the left pane IS the root list, so
                     // "Settings" describes the screen better than whichever detail happens
                     // to be open in the right pane.
-                    Text(if (landscape) "Settings" else sectionTitle, style = MaterialTheme.typography.titleLarge)
+                    SettingsTopBarTitle(viewModel, if (landscape) "Settings" else sectionTitle)
                 },
                 navigationIcon = {
                     HapticIconButton(onClick = {
+                        // Back leaves search first when it is open, so the icon never skips a
+                        // state the user can see.
+                        if (viewModel.searchActive) viewModel.closeSearch()
                         // In two-pane mode there's no "collapse to Root" step — the root list
                         // never collapses — so the arrow always exits Settings.
-                        if (landscape || currentSection == SettingsSection.Root) onBack()
+                        else if (landscape || currentSection == SettingsSection.Root) onBack()
                         else viewModel.navigateTo(SettingsSection.Root)
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
+                },
+                // In two-pane mode the root list is always on screen, so search stays available
+                // whatever the right pane is showing.
+                actions = {
+                    SettingsSearchAction(
+                        viewModel,
+                        if (landscape) SettingsSection.Root else currentSection
+                    )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialStyle.surfaceColor()

@@ -47,9 +47,13 @@ fun BookInfoScreen(
     onBack: () -> Unit,
     onResume: (bookId: Long) -> Unit,
     onOpenReader: (bookId: Long) -> Unit = {},
+    /** The player sheet's expansion — this page is the player's morph source, so its panel needs
+     *  to know how far the player has opened. See [InfoPageScaffold]. */
+    sheetProgress: androidx.compose.runtime.State<Float>? = null,
     viewModel: BookInfoViewModel = hiltViewModel()
 ) {
     val bwp by viewModel.bookWithProgress.collectAsStateWithLifecycle()
+    val chapterStarts by viewModel.chapterStarts.collectAsStateWithLifecycle()
     val synopsisGenerating by viewModel.synopsisGenerating.collectAsStateWithLifecycle()
     val book = bwp?.book
 
@@ -82,11 +86,19 @@ fun BookInfoScreen(
             synopsis         = book?.synopsis?.takeIf { it.isNotBlank() }
                                ?: book?.description?.takeIf { it.isNotBlank() }
                                ?: if (synopsisGenerating) "Generating synopsis…" else null,
+            chapterStarts    = chapterStarts,
         ),
         onBack = onBack,
-        // Close the page onto the grid card FIRST, then open the player — the two animations fight
-        // if they overlap.
-        onResume = { pageState.closeWithMorph { onResume(viewModel.bookId) } },
+        // The page holds still and the player grows out of the cover you are looking at.
+        //
+        // It used to shrink back onto the grid card first and then start the book collapsed, on the
+        // reasoning that two animations would fight if they overlapped. They do not overlap: the
+        // player takes THIS page's cover as its morph source (see InfoPageScaffold's publishCover),
+        // so there is one animation, not two, and the cover never travels away from the finger that
+        // tapped Resume. The overlay stays mounted underneath and closes once the player has
+        // covered it — see MainActivity.
+        onResume = { onResume(viewModel.bookId) },
+        sheetProgress = sheetProgress,
         overflowItems = { dismiss ->
             HapticDropdownMenuItem(
                 text = { Text("Book options") },
@@ -161,6 +173,9 @@ fun BookInfoOverlay(
     controller: BookInfoOverlayController,
     onResume: (bookId: Long) -> Unit,
     onOpenReader: (bookId: Long) -> Unit = {},
+    /** Forwarded to the page so Resume can become the player's play button — see
+     *  [com.betteraudio.ui.player.ResumeChoreography]. */
+    sheetProgress: androidx.compose.runtime.State<Float>? = null,
     modifier: Modifier = Modifier,
 ) {
     if (controller.bookId == -1L) return
@@ -177,6 +192,17 @@ fun BookInfoOverlay(
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
+            // Navigation's AnimatedContent animates the CONTAINER'S SIZE between
+            // destinations by default (ContentTransform's sizeTransform defaults to
+            // SizeTransform(), which clips), and it places content at Alignment.TopStart.
+            // Every destination here is full-screen, so that animation has nothing to
+            // express -- but on the frame a navigate lands it clips the whole screen to a
+            // box growing out of the top-left corner while the content inside is already
+            // laid out at full size. That is the "swipe expanding from the top-left" on
+            // the Resume leg: this NavHost navigates at the same moment the sheet expands,
+            // so the wipe runs underneath the whole choreography. Explicitly no size
+            // transform.
+            sizeTransform = { null },
             popExitTransition = { ExitTransition.None },
         ) {
             composable("blank") { Box(Modifier.fillMaxSize()) }
@@ -186,8 +212,11 @@ fun BookInfoOverlay(
             ) {
                 BookInfoScreen(
                     onBack = { controller.close() },
-                    onResume = { bookId -> controller.close(); onResume(bookId) },
+                    // Deliberately does NOT close: the page is the player's morph source and has to
+                    // still be composed while the player grows out of it.
+                    onResume = { bookId -> onResume(bookId) },
                     onOpenReader = { bookId -> controller.close(); onOpenReader(bookId) },
+                    sheetProgress = sheetProgress,
                 )
             }
         }

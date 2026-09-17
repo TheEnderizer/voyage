@@ -115,44 +115,57 @@ internal fun LazyListScope.playbackSection(
     btAutoResumeWindowMinutes: Int,
     viewModel: SettingsViewModel
 ) {
-    item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Skip forward", style = MaterialTheme.typography.titleSmall)
-                IntervalChips(
-                    options = listOf(10_000L, 15_000L, 30_000L, 60_000L),
-                    selected = skipForwardMs,
-                    onSelect = { viewModel.setSkipForward(it) }
-                )
-                Text("Skip back", style = MaterialTheme.typography.titleSmall)
-                IntervalChips(
-                    options = listOf(5_000L, 10_000L, 15_000L, 30_000L),
-                    selected = skipBackMs,
-                    onSelect = { viewModel.setSkipBack(it) }
-                )
+    item { BandHeader("Skipping") }
 
-                Text("Default speed, boost & EQ", style = MaterialTheme.typography.titleSmall)
-                Text(
-                    "The default audio for every book now comes from your global default preset. " +
-                        "A book keeps its own settings if you change them individually.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                HapticFilledTonalButton(
-                    onClick = { viewModel.navigateTo(SettingsSection.Presets) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Tune, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Manage audio presets")
-                }
+    // Three groups that used to share one card. Split, because a collapsed group states its own
+    // answer: "Skip forward — 30s" is the thing you came here to read, and it cannot be shown for
+    // three settings stacked behind one heading.
+    item {
+        CollapsingCard("Skip forward", "${skipForwardMs / 1000}s", viewModel) {
+            IntervalChips(
+                options = listOf(10_000L, 15_000L, 30_000L, 60_000L),
+                selected = skipForwardMs,
+                onSelect = { viewModel.setSkipForward(it) }
+            )
+        }
+    }
+
+    item {
+        CollapsingCard("Skip back", "${skipBackMs / 1000}s", viewModel) {
+            IntervalChips(
+                options = listOf(5_000L, 10_000L, 15_000L, 30_000L),
+                selected = skipBackMs,
+                onSelect = { viewModel.setSkipBack(it) }
+            )
+        }
+    }
+
+    item { BandHeader("Audio") }
+
+    item {
+        CollapsingCard("Default speed, boost & EQ", "From preset", viewModel) {
+            Text(
+                "The default audio for every book now comes from your global default preset. " +
+                    "A book keeps its own settings if you change them individually.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HapticFilledTonalButton(
+                onClick = { viewModel.navigateTo(SettingsSection.Presets) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Tune, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Manage audio presets")
             }
         }
     }
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Auto-rewind", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard(
+            "Auto-rewind",
+            if (autoRewindThresholdMinutes == 0) "Off" else "${autoRewindSeconds}s after ${autoRewindThresholdMinutes} min",
+            viewModel
+        ) {
                 Text(
                     "Rewind when resuming after a long pause",
                     style = MaterialTheme.typography.bodySmall,
@@ -241,27 +254,31 @@ internal fun LazyListScope.playbackSection(
                             modifier = Modifier.size(32.dp)
                         ) { Text("+", style = MaterialTheme.typography.titleMedium) }
                     }
-                }
             }
         }
     }
     item {
-        CardContainer {
+        // The threshold is a raw amplitude (0..32767) and means nothing on a summary line; the
+        // minimum gap length is the part a person actually reasons about.
+        CollapsingCard("Skip silence", "Gaps over ${skipSilenceMinMs} ms", viewModel) {
             com.betteraudio.ui.player.SkipSilenceControls(
                 minMs = skipSilenceMinMs,
                 threshold = skipSilenceThreshold,
                 paddingMs = skipSilencePaddingMs,
                 onSetMinMs = { viewModel.setSkipSilenceMinMs(it) },
                 onSetThreshold = { viewModel.setSkipSilenceThreshold(it) },
-                onSetPaddingMs = { viewModel.setSkipSilencePaddingMs(it) },
-                modifier = Modifier.padding(16.dp)
+                onSetPaddingMs = { viewModel.setSkipSilencePaddingMs(it) }
             )
         }
     }
+
+    item { BandHeader("Sleep & hardware") }
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("Sleep timer", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard(
+            "Sleep timer",
+            if (sleepScheduleEnabled) "Scheduled" else "${sleepFadeSeconds}s fade",
+            viewModel
+        ) {
                 com.betteraudio.ui.player.SleepTimerTuningControls(
                     fadeSeconds = sleepFadeSeconds,
                     shakeEnabled = sleepShakeEnabled,
@@ -278,27 +295,23 @@ internal fun LazyListScope.playbackSection(
                     onSetScheduleEndMinutes = { viewModel.setSleepScheduleEndMinutes(it) },
                     onSetScheduleDefaultMinutes = { viewModel.setSleepScheduleDefaultMinutes(it) }
                 )
-            }
         }
     }
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Headset button mapping", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Double/triple-click the headset button for extra actions. Adds a short delay to every single press to tell them apart — behavior varies by headset.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    HapticSwitch(checked = headsetMultiPressEnabled, onCheckedChange = { viewModel.setHeadsetMultiPressEnabled(it) })
-                }
+        CollapsingGroup(
+            title = "Headset button mapping",
+            value = null,
+            expanded = viewModel.openGroup == "Headset button mapping",
+            onToggle = { viewModel.toggleGroup("Headset button mapping") },
+            trailing = {
+                HapticSwitch(checked = headsetMultiPressEnabled, onCheckedChange = { viewModel.setHeadsetMultiPressEnabled(it) })
+            }
+        ) {
+                Text(
+                    "Double/triple-click the headset button for extra actions. Adds a short delay to every single press to tell them apart — behavior varies by headset.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (headsetMultiPressEnabled) {
                     HeadsetActionPicker(
                         label = "Double press",
@@ -311,27 +324,23 @@ internal fun LazyListScope.playbackSection(
                         onSelect = { viewModel.setHeadsetTriplePressAction(it) }
                     )
                 }
-            }
         }
     }
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Resume on headphones", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Automatically resume a paused book when headphones or a Bluetooth speaker connect, if it was paused recently. Only while the app is still running in the background.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    HapticSwitch(checked = btAutoResumeEnabled, onCheckedChange = { viewModel.setBtAutoResumeEnabled(it) })
-                }
+        CollapsingGroup(
+            title = "Resume on headphones",
+            value = null,
+            expanded = viewModel.openGroup == "Resume on headphones",
+            onToggle = { viewModel.toggleGroup("Resume on headphones") },
+            trailing = {
+                HapticSwitch(checked = btAutoResumeEnabled, onCheckedChange = { viewModel.setBtAutoResumeEnabled(it) })
+            }
+        ) {
+                Text(
+                    "Automatically resume a paused book when headphones or a Bluetooth speaker connect, if it was paused recently. Only while the app is still running in the background.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 if (btAutoResumeEnabled) {
                     var windowSlider by remember(btAutoResumeWindowMinutes) { mutableFloatStateOf(btAutoResumeWindowMinutes.toFloat()) }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
@@ -352,7 +361,6 @@ internal fun LazyListScope.playbackSection(
                     )
                 }
             }
-        }
     }
     item {
         CardContainer {

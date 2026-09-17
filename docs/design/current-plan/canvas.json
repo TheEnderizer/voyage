@@ -1,0 +1,147 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Map + confirmations"
+    },
+    {
+      "id": "page-2",
+      "name": "Typeface"
+    },
+    {
+      "id": "page-3",
+      "name": "Player morph"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "page": "page-1",
+      "title": "Map · Material You",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "MapImmersive.dc.html",
+      "page": "page-1",
+      "title": "Map · Immersive",
+      "x": 490,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "MapEditMaterial.dc.html",
+      "page": "page-1",
+      "title": "Map editing · Material You",
+      "x": 980,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "MapEditImmersive.dc.html",
+      "page": "page-1",
+      "title": "Map editing · Immersive",
+      "x": 1470,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "ConfirmMaterial.dc.html",
+      "page": "page-1",
+      "title": "Confirm · Material You",
+      "x": 1960,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "ConfirmImmersive.dc.html",
+      "page": "page-1",
+      "title": "Confirm · Immersive",
+      "x": 2450,
+      "y": 0,
+      "w": 390,
+      "h": 844
+    },
+    {
+      "file": "ConfirmWording.dc.html",
+      "page": "page-1",
+      "title": "Confirmation wording",
+      "x": 2940,
+      "y": 0,
+      "w": 720,
+      "h": 1180
+    },
+    {
+      "file": "TypefaceMaterial.dc.html",
+      "page": "page-2",
+      "title": "Typeface · Material You",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 1040
+    },
+    {
+      "file": "TypefaceImmersive.dc.html",
+      "page": "page-2",
+      "title": "Typeface · Immersive",
+      "x": 490,
+      "y": 0,
+      "w": 390,
+      "h": 1040
+    },
+    {
+      "file": "MorphMaterial.dc.html",
+      "page": "page-3",
+      "title": "Book info → player · Material You",
+      "x": 0,
+      "y": 0,
+      "w": 1160,
+      "h": 1400
+    },
+    {
+      "file": "MorphImmersive.dc.html",
+      "page": "page-3",
+      "title": "Book info → player · Immersive",
+      "x": 1280,
+      "y": 0,
+      "w": 1160,
+      "h": 1500
+    }
+  ],
+  "annotations": [
+    {
+      "id": "map-note",
+      "page": "page-1",
+      "x": 0,
+      "y": -190,
+      "w": 900,
+      "text": "The map is redesigned per theme, not once.\nMaterial You CONTAINS it: a tonal card at the app's own 28dp cover radius, inset from the screen, with the artwork fitted inside so the rounded tonal edge shows all the way round the picture.\nImmersive lets it BE the backdrop: no card, no pane — the map takes the whole screen and the deck's cover ground steps aside, the letterbox filled by a blurred copy of the map itself, exactly the way the cover is the ground everywhere else in that theme. Legibility comes from two gradient veils at the ends where the chrome lives, leaving the middle clear.\nBoth drop the rows that used to stack above and below the map — board chips, four editor icons, the Versions strip and its hint paragraph — which is worth roughly 150dp of map on a phone. Pins take theme fills instead of hardcoded white-on-black."
+    },
+    {
+      "id": "pin-note",
+      "page": "page-1",
+      "x": 980,
+      "y": -190,
+      "w": 860,
+      "text": "Adding a pin works now.\nToday \"Add a pin\" writes a PIN element and no location fact, and a pin with no resolved location renders nothing at all — so the character is silently invisible. It now lands in the middle of what you are looking at, with a placement hint, and can be dragged from there."
+    },
+    {
+      "id": "morph-note",
+      "page": "page-3",
+      "x": 0,
+      "y": -170,
+      "w": 1000,
+      "text": "Two legs of one gesture.\nGrid card → book info already morphs. Book info → player did not: the page shrank back onto the card and playback started under a collapsed mini bar. Same modifiers, new source rect."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

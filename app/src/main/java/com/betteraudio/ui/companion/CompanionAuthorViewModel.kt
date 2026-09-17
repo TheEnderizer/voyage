@@ -120,6 +120,12 @@ class CompanionAuthorViewModel @Inject constructor(
     private val _shareEvent = MutableSharedFlow<File>()
     val shareEvent: SharedFlow<File> = _shareEvent.asSharedFlow()
 
+    /** The entity whose pin was just placed in the middle of the view and has not been dragged yet.
+     *  Set by [addPinFor] only when it authored the placement itself — see its kdoc — so a pin that
+     *  landed on its own recorded location never asks to be moved. */
+    private val _pinHint = MutableStateFlow<String?>(null)
+    val pinHint: StateFlow<String?> = _pinHint.asStateFlow()
+
     private var boundBookId: Long = -1L
 
     fun bind(bookId: Long) {
@@ -662,53 +668,100 @@ class CompanionAuthorViewModel @Inject constructor(
             reload(bookId)
         }
     }
-    fun addPinFor(entityId: String) {
+    /**
+     * Puts [entityId] on [boardId] at ([xUnits], [yUnits]).
+     *
+     * **Two defects lived in this function, and together they were "adding pins to the map doesn't
+     * work".**
+     *
+     * The board came from `mapBoard`, which is `mapBoards.first()` — so on a pack with more than one
+     * map every pin landed on the first one no matter which map was on screen, and the map you were
+     * looking at stayed empty. [boardId] is now passed in from the pane.
+     *
+     * The larger one: it wrote only the `PIN` element. A pin's position is *not* on the element —
+     * [PackBoardResolver.resolvePins] takes it from the bound entity's newest resolved `location`
+     * fact, and returns nothing at all for an element whose entity has no such fact. So adding a pin
+     * for anyone whose location had never been recorded produced an element that rendered nothing:
+     * no marker, no error, nothing in the log. It now authors the placement fact alongside the
+     * element, at the position the pane says the author is looking at.
+     *
+     * Only when they have nowhere to be yet, though. A character who already has a recorded
+     * location is being put on the map *at* it, and overwriting that with the middle of the view
+     * would silently move them — so in that case the element is all that is written, and the pin
+     * appears wherever the story last put them.
+     */
+    fun addPinFor(entityId: String, boardId: String, xUnits: Float, yUnits: Float) {
         val bookId = boundBookId
         val packId = _uiState.value.packId ?: return
-        val boardId = _uiState.value.mapBoard?.boardId ?: return
         val isOwn = _uiState.value.isOwn
         viewModelScope.launch {
-            if (isOwn) authorRepository.addPinElement(bookId, packId, boardId, entityId) else editsRepository.addPinElement(bookId, packId, boardId, entityId)
+            if (isOwn) authorRepository.addPinElement(bookId, packId, boardId, entityId)
+            else editsRepository.addPinElement(bookId, packId, boardId, entityId)
+            val placed = _uiState.value.doc?.facts
+                ?.none { it.entityId == entityId && it.field == "location" } ?: true
+            if (placed) {
+                writePinLocation(bookId, packId, isOwn, entityId, xUnits, yUnits)
+                // Only a pin we placed ourselves gets the "drag me" hint: one that landed on its
+                // own recorded location is already where it belongs.
+                _pinHint.value = entityId
+            }
             reload(bookId)
         }
     }
 
-    /** Commits a drag — records where [entityId] is as of the current playback position. Edits the
-     *  existing fact instead of adding a new one when one already exists at the exact same anchor,
-     *  so repeatedly nudging a pin in one editing session doesn't spam waypoints. */
+    /** Commits a drag — records where [entityId] is as of the current playback position. */
     fun setPinLocation(entityId: String, xUnits: Float, yUnits: Float) {
         val bookId = boundBookId
         val packId = _uiState.value.packId ?: return
         val isOwn = _uiState.value.isOwn
         viewModelScope.launch {
-            val anchorMs = currentAnchorMs(bookId)
-            val value = PackBoardResolver.formatCoords(xUnits, yUnits)
-            val existing = _uiState.value.doc?.facts?.firstOrNull {
-                it.entityId == entityId && it.field == "location" && it.anchor.globalMs == anchorMs
-            }
-            if (isOwn) {
-                if (existing != null) {
-                    authorRepository.editFact(bookId, packId, existing.factId, value = value)
-                } else {
-                    authorRepository.addFact(bookId, packId, entityId, "location", value, anchorMs, Importance.NOTABLE)
-                }
-            } else {
-                editsRepository.editOrAddFact(bookId, packId, existing?.factId, entityId, "location", value, anchorMs, Importance.NOTABLE)
-            }
+            writePinLocation(bookId, packId, isOwn, entityId, xUnits, yUnits)
+            if (_pinHint.value == entityId) _pinHint.value = null
             reload(bookId)
         }
     }
 
-    fun deletePin(elementId: String) {
+    /** Writes one placement. Edits the existing fact instead of adding a new one when one already
+     *  exists at the exact same anchor, so repeatedly nudging a pin in one editing session doesn't
+     *  spam waypoints. */
+    private suspend fun writePinLocation(
+        bookId: Long,
+        packId: String,
+        isOwn: Boolean,
+        entityId: String,
+        xUnits: Float,
+        yUnits: Float
+    ) {
+        val anchorMs = currentAnchorMs(bookId)
+        val value = PackBoardResolver.formatCoords(xUnits, yUnits)
+        val existing = _uiState.value.doc?.facts?.firstOrNull {
+            it.entityId == entityId && it.field == "location" && it.anchor.globalMs == anchorMs
+        }
+        if (isOwn) {
+            if (existing != null) {
+                authorRepository.editFact(bookId, packId, existing.factId, value = value)
+            } else {
+                authorRepository.addFact(bookId, packId, entityId, "location", value, anchorMs, Importance.NOTABLE)
+            }
+        } else {
+            editsRepository.editOrAddFact(bookId, packId, existing?.factId, entityId, "location", value, anchorMs, Importance.NOTABLE)
+        }
+    }
+
+    fun deletePin(elementId: String, boardId: String) {
         val bookId = boundBookId
         val packId = _uiState.value.packId ?: return
-        val boardId = _uiState.value.mapBoard?.boardId ?: return
         val isOwn = _uiState.value.isOwn
         viewModelScope.launch {
-            if (isOwn) authorRepository.deleteBoardElement(bookId, packId, boardId, elementId) else editsRepository.deleteBoardElement(bookId, packId, boardId, elementId)
+            if (isOwn) authorRepository.deleteBoardElement(bookId, packId, boardId, elementId)
+            else editsRepository.deleteBoardElement(bookId, packId, boardId, elementId)
             reload(bookId)
         }
     }
+
+    /** Clears the placement hint — the pane calls this when the map is left, so the chip does not
+     *  come back on a later visit for a pin that was placed and forgotten about. */
+    fun clearPinHint() { _pinHint.value = null }
 
     /** "Take theirs" (§9.2) — drops one conflicting local edit, letting the update's value show
      *  through for that item. "Keep mine" needs no call at all — it's simply not clicking this. */

@@ -19,7 +19,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -48,7 +54,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,6 +87,24 @@ enum class CompanionDestination(val label: String) {
     TIMELINE("Timeline"),
     PACK("Pack")
 }
+
+/**
+ * A destructive companion action, held between the tap that asked for it and the answer.
+ *
+ * Everything in the deck used to delete on one tap: a map with its pins and every version of its
+ * art, a character with everything ever recorded about them, an entry, a note. There is no undo
+ * anywhere in the pack model to fall back on and no trash to fish it out of, so each of those is
+ * now routed through one [ConfirmDialog] instead.
+ *
+ * The copy travels with the action rather than being derived from it, because the sentence worth
+ * reading is never "are you sure" \u2014 it is what else goes, and what survives.
+ */
+private data class PendingDelete(
+    val title: String,
+    val body: String,
+    val confirm: String,
+    val run: () -> Unit
+)
 
 /**
  * The companion, as a full-screen deck that keeps the audio controls.
@@ -175,6 +202,15 @@ fun CompanionDeck(
     var mapImageFor by remember { mutableStateOf<String?>(null) }
     var renamingBoard by remember { mutableStateOf<String?>(null) }
     var showAddMap by remember { mutableStateOf(false) }
+    // Every destructive action in the deck parks itself here first. See [PendingDelete] and
+    // [ConfirmDialog] — nothing in the pack model can be undone, so nothing in the pack should
+    // happen on one tap.
+    var pendingDelete by remember { mutableStateOf<PendingDelete?>(null) }
+    // Where a pin being added is going to land, held between the rail button and the character
+    // pick. The pane is the only thing that knows what "here" means on a panned, zoomed map, and
+    // it has stopped being on screen by the time the dialog is answered.
+    var pendingPinAt by remember { mutableStateOf<Pair<Float, Float>?>(null) }
+    val pinHint by authorViewModel.pinHint.collectAsStateWithLifecycle()
 
     LaunchedEffect(visible, bookId) {
         if (visible && bookId != -1L) {
@@ -194,6 +230,12 @@ fun CompanionDeck(
     // Leaving edit mode when the deck closes: an editing toggle that survives a close reopens onto
     // a surface covered in affordances the user did not ask for this time.
     LaunchedEffect(visible) { if (!visible) editing = false }
+    // The "drag me into place" chip belongs to the moment a pin was added. Leaving the map (or the
+    // deck) ends that moment, so a pin placed and forgotten about does not still be asking on a
+    // visit next week.
+    LaunchedEffect(destination, visible) {
+        if (destination != CompanionDestination.MAP || !visible) authorViewModel.clearPinHint()
+    }
 
     val back: () -> Unit = {
         when {
@@ -346,6 +388,38 @@ fun CompanionDeck(
                 )
             }
 
+            // Resolved out here rather than inside the pane, because the LAYOUT depends on it.
+            // An Immersive map with artwork is not a differently-filled pane - it is the deck's
+            // ground, with the header, spine and dock floating on it (see PortraitDeck's
+            // `overlaid` branch), which is a different arrangement of the same four bands.
+            //
+            // Editing shows the author's view - every map, every pin ever placed and every version
+            // of the art - because you cannot edit what the reveal cursor is hiding, and an author
+            // is by definition ahead of their own cursor.
+            val mapBoards = if (editing) author.mapBoards
+                            else state.boards.filter { it.kind == BoardKind.MAP }
+            val mapBoard = mapBoards.firstOrNull { it.boardId == selectedBoardId }
+                ?: mapBoards.firstOrNull()
+            val mapBoardId = mapBoard?.boardId
+            // In edit mode the newest version wins outright; in consumption the ViewModel has
+            // already picked the one the listener has reached.
+            val mapArtPath = if (editing) {
+                author.artTimelineByBoard[mapBoardId].orEmpty().lastOrNull()?.first?.media
+                    ?: mapBoard?.artMedia
+            } else mapBoardId?.let { state.artByBoard[it] }
+            // The same existence check the pane makes, so the layout and the pane can never
+            // disagree about whether there is a picture to go full-bleed with.
+            val mapHasArt = remember(mapArtPath, state.packDir) {
+                val rel = mapArtPath?.takeIf { it.isNotBlank() }
+                val dir = state.packDir
+                rel != null && dir != null && java.io.File(dir, rel).isFile
+            }
+            val mapPins = mapBoardId
+                ?.let { if (editing) author.pinsByBoard[it] else state.pinsByBoard[it] }
+                .orEmpty()
+            val overlaidMap = destination == CompanionDestination.MAP &&
+                selectedEntityId == null && state.hasPack && mapIsFullBleed(mapHasArt)
+
             val pane: @Composable (Modifier, PaddingValues) -> Unit = { m, pad ->
                 AnimatedContent(
                     targetState = destination to selectedEntityId,
@@ -375,10 +449,32 @@ fun CompanionDeck(
                                     )
                                 },
                                 onAddFact = { addingFactFor = current.entity.entityId },
-                                onDeleteFact = { authorViewModel.deleteFact(it) },
+                                onDeleteFact = { factId ->
+                                    val entry = current.entity.let { _ ->
+                                        author.doc?.facts?.firstOrNull { it.factId == factId }
+                                    }
+                                    pendingDelete = PendingDelete(
+                                        title = "Delete this entry?",
+                                        body = entry?.let { "\u201c${it.field}: ${it.value}\u201d is removed from ${current.entity.name} and from the timeline." }
+                                            ?: "It is removed from ${current.entity.name} and from the timeline.",
+                                        confirm = "Delete"
+                                    ) { authorViewModel.deleteFact(factId) }
+                                },
                                 onDeleteEntity = {
-                                    authorViewModel.deleteEntity(current.entity.entityId)
-                                    viewModel.selectEntity(null)
+                                    val facts = author.doc?.facts?.count { it.entityId == current.entity.entityId } ?: 0
+                                    pendingDelete = PendingDelete(
+                                        title = "Remove ${current.entity.name}?",
+                                        body = buildString {
+                                            append("Everything recorded about them")
+                                            if (facts > 0) append(" \u2014 $facts ${if (facts == 1) "entry" else "entries"}, their portrait and any map pins \u2014")
+                                            else append(", their portrait and any map pins,")
+                                            append(" goes too. This can\u2019t be undone.")
+                                        },
+                                        confirm = "Remove"
+                                    ) {
+                                        authorViewModel.deleteEntity(current.entity.entityId)
+                                        viewModel.selectEntity(null)
+                                    }
                                 }
                             )
 
@@ -406,54 +502,78 @@ fun CompanionDeck(
                                 )
                             }
 
-                        dest == CompanionDestination.MAP -> {
-                            // Editing shows the author's view — every map, every pin ever placed
-                            // and every version of the art — because you cannot edit what the
-                            // reveal cursor is hiding, and an author is by definition ahead of
-                            // their own cursor.
-                            val boards = if (editing) author.mapBoards
-                                         else state.boards.filter { it.kind == BoardKind.MAP }
-                            val current = boards.firstOrNull { it.boardId == selectedBoardId }
-                                ?: boards.firstOrNull()
-                            val id = current?.boardId
+                        dest == CompanionDestination.MAP ->
                             MapPane(
-                                boards = boards,
-                                boardId = id,
-                                pins = id?.let {
-                                    if (editing) author.pinsByBoard[it] else state.pinsByBoard[it]
-                                }.orEmpty(),
-                                // In edit mode the newest version wins outright; in consumption the
-                                // ViewModel has already picked the one the listener has reached.
-                                artPath = if (editing) {
-                                    author.artTimelineByBoard[id].orEmpty().lastOrNull()?.first?.media
-                                        ?: current?.artMedia
-                                } else id?.let { state.artByBoard[it] },
-                                artTimeline = author.artTimelineByBoard[id].orEmpty(),
+                                boards = mapBoards,
+                                boardId = mapBoardId,
+                                pins = mapPins,
+                                artPath = mapArtPath,
+                                artTimeline = author.artTimelineByBoard[mapBoardId].orEmpty(),
                                 packDir = state.packDir,
                                 editing = editing,
                                 contentPadding = pad,
+                                hintEntityId = pinHint,
                                 onSelectBoard = { selectedBoardId = it },
                                 onMovePin = { entityId, x, y -> authorViewModel.setPinLocation(entityId, x, y) },
-                                onDeletePin = { authorViewModel.deletePin(it) },
-                                onAddPin = { showAddPin = true },
+                                onDeletePin = { elementId ->
+                                    val name = mapPins.firstOrNull { it.elementId == elementId }?.entity?.name
+                                    val board = mapBoardId
+                                    if (board != null) pendingDelete = PendingDelete(
+                                        title = if (name != null) "Take $name off the map?" else "Remove this pin?",
+                                        body = "Their recorded locations stay in the timeline \u2014 only the marker goes.",
+                                        confirm = "Remove pin"
+                                    ) { authorViewModel.deletePin(elementId, board) }
+                                },
+                                // The pane hands over where "here" is; the dialog decides who goes
+                                // there, and the two only meet once a candidate is picked.
+                                onAddPin = { x, y -> pendingPinAt = x to y; showAddPin = true },
                                 onCreateBoard = { showAddMap = true },
                                 onAddMap = { showAddMap = true },
-                                onRenameBoard = { renamingBoard = id },
+                                onRenameBoard = { renamingBoard = mapBoardId },
                                 onDeleteBoard = {
-                                    id?.let { authorViewModel.deleteBoard(it) }
-                                    selectedBoardId = null
+                                    val board = mapBoardId
+                                    val versions = author.artTimelineByBoard[board].orEmpty().size +
+                                        if (mapBoard?.artMedia != null) 1 else 0
+                                    if (board != null) pendingDelete = PendingDelete(
+                                        title = "Delete this map?",
+                                        body = buildString {
+                                            append("“")
+                                            append(mapBoard?.title?.takeIf { it.isNotBlank() } ?: "This map")
+                                            append("”, its ")
+                                            append(mapPins.size)
+                                            append(if (mapPins.size == 1) " pin" else " pins")
+                                            if (versions > 0) {
+                                                append(" and ")
+                                                append(if (versions == 1) "its picture" else "all $versions of its versions")
+                                            }
+                                            append(" go with it. The image files stay on disk. This can’t be undone.")
+                                        },
+                                        confirm = "Delete map"
+                                    ) {
+                                        authorViewModel.deleteBoard(board)
+                                        selectedBoardId = null
+                                    }
                                 },
                                 onSetImage = {
-                                    if (id != null) {
-                                        mapImageFor = id
+                                    if (mapBoardId != null) {
+                                        mapImageFor = mapBoardId
                                         mapImagePicker.launch(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     }
                                 },
-                                onDeleteArt = { artId -> id?.let { authorViewModel.deleteBoardArt(it, artId) } }
+                                onDeleteArt = { artId ->
+                                    val board = mapBoardId
+                                    val at = author.artTimelineByBoard[board].orEmpty()
+                                        .firstOrNull { it.first.artId == artId }
+                                    if (board != null) pendingDelete = PendingDelete(
+                                        title = "Delete this version?",
+                                        body = at?.let { "From ${formatDeckHm(it.second)} on, the map goes back to the version before it." }
+                                            ?: "The map goes back to the version before this one.",
+                                        confirm = "Delete version"
+                                    ) { authorViewModel.deleteBoardArt(board, artId) }
+                                }
                             )
-                        }
 
                         dest == CompanionDestination.TIMELINE ->
                             TimelinePane(
@@ -466,7 +586,13 @@ fun CompanionDeck(
                                 onCatchUp = { showCatchUp = true },
                                 onQuickCapture = { showQuickCapture = true },
                                 onConvertScrap = { convertingScrap = it },
-                                onDeleteScrap = { authorViewModel.deleteScrap(it) }
+                                onDeleteScrap = { scrapId ->
+                                    pendingDelete = PendingDelete(
+                                        title = "Delete this note?",
+                                        body = "It hasn\u2019t been turned into an entry yet, so nothing else changes.",
+                                        confirm = "Delete note"
+                                    ) { authorViewModel.deleteScrap(scrapId) }
+                                }
                             )
 
                         else ->
@@ -479,7 +605,15 @@ fun CompanionDeck(
                                 onShare = { showShareChoice = true },
                                 onFork = { authorViewModel.forkPack() },
                                 onCreateMap = { authorViewModel.createMapBoard() },
-                                onDropConflict = { authorViewModel.dropConflictOp(it) }
+                                // "Take theirs" drops one of the reader's own edits, which is a
+                                // deletion wearing a merge's clothes.
+                                onDropConflict = { opId ->
+                                    pendingDelete = PendingDelete(
+                                        title = "Use their version?",
+                                        body = "Your own edit is dropped and the pack author\u2019s value shows through. This can\u2019t be undone.",
+                                        confirm = "Use theirs"
+                                    ) { authorViewModel.dropConflictOp(opId) }
+                                }
                             )
                     }
                 }
@@ -500,9 +634,9 @@ fun CompanionDeck(
             } else Modifier
 
             if (landscape) {
-                LandscapeDeck(header, spine, pane, transport, chrome, dockMorph)
+                LandscapeDeck(header, spine, pane, transport, chrome, dockMorph, overlaidMap)
             } else {
-                PortraitDeck(header, spine, pane, transport, chrome, dockMorph)
+                PortraitDeck(header, spine, pane, transport, chrome, dockMorph, overlaidMap)
             }
         }
     }
@@ -576,8 +710,25 @@ fun CompanionDeck(
         AddPinDialog(
             candidates = author.doc?.entities.orEmpty().filterNot { it.entityId in pinned },
             packDir = state.packDir,
-            onPick = { authorViewModel.addPinFor(it.entityId); showAddPin = false },
-            onDismiss = { showAddPin = false }
+            onPick = { entity ->
+                val at = pendingPinAt
+                val boardId = board?.boardId
+                if (at != null && boardId != null) {
+                    authorViewModel.addPinFor(entity.entityId, boardId, at.first, at.second)
+                }
+                pendingPinAt = null
+                showAddPin = false
+            },
+            onDismiss = { pendingPinAt = null; showAddPin = false }
+        )
+    }
+    pendingDelete?.let { pending ->
+        ConfirmDialog(
+            title = pending.title,
+            body = pending.body,
+            confirm = pending.confirm,
+            onConfirm = { pending.run(); pendingDelete = null },
+            onDismiss = { pendingDelete = null }
         )
     }
     if (showAddMap) {
@@ -620,32 +771,107 @@ private fun PortraitDeck(
     pane: @Composable (Modifier, PaddingValues) -> Unit,
     transport: CompanionTransport?,
     chrome: Modifier,
-    dockMorph: Modifier
+    dockMorph: Modifier,
+    /**
+     * The same four bands, stacked instead of tiled: the pane fills the whole window and the other
+     * three float on top of it. Only the Immersive map asks for this (see [mapIsFullBleed]), and
+     * only because there the pane's content *is* the ground — a full-bleed map with a band of flat
+     * colour above and below it would be a cropped picture in a frame, which is precisely what the
+     * contained look is for.
+     *
+     * **Known cost.** The two arrangements are different subtrees, so arriving at or leaving the
+     * Immersive map disposes the pane's `AnimatedContent` and recomposes it: that one spine change
+     * hard-cuts instead of cross-fading, and any pane-internal state that is not `rememberSaveable`
+     * (the cast grid's scroll offset, most visibly) starts again. The header, the spine and the
+     * dock sit in exactly the same places in both arrangements, so nothing visibly moves. Fixing it
+     * properly means `movableContentOf` around the pane with every value it reads hoisted into
+     * parameters — worth doing if the hard cut turns out to be noticeable, and not worth the
+     * freeze-the-captured-locals hazard before then.
+     */
+    overlaid: Boolean
 ) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        header(Modifier.fillMaxWidth().then(chrome), false)
-        spine(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)
-                .height(SPINE_HEIGHT).then(chrome),
-            false
-        )
-        pane(
-            Modifier.weight(1f).fillMaxWidth().then(chrome),
-            PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
-        )
-        if (transport != null) {
-            CompanionDock(
-                transport = transport,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp)
-                    .padding(bottom = 10.dp)
-                    .navigationBarsPadding()
-                    .then(dockMorph)
+    if (!overlaid) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            header(Modifier.fillMaxWidth().then(chrome), false)
+            spine(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)
+                    .height(SPINE_HEIGHT).then(chrome),
+                false
             )
+            pane(
+                Modifier.weight(1f).fillMaxWidth().then(chrome),
+                PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
+            )
+            if (transport != null) {
+                CompanionDock(
+                    transport = transport,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 10.dp)
+                        .navigationBarsPadding()
+                        .then(dockMorph)
+                )
+            }
+        }
+        return
+    }
+
+    // The floating bands are measured rather than assumed, and what comes back is handed to the
+    // pane as its content padding: the pane's *artwork* ignores it and goes to the edges, its
+    // *chrome* respects it, which is what keeps the map plate clear of the spine and the bottom
+    // chips clear of the dock. onSizeChanged sits FIRST in each chain so the reported height
+    // includes the insets and margins to its right, not just the content inside them.
+    val density = LocalDensity.current
+    var topPx by remember { mutableStateOf(0) }
+    var bottomPx by remember { mutableStateOf(0) }
+    val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+
+    Box(Modifier.fillMaxSize()) {
+        pane(
+            Modifier.fillMaxSize().then(chrome),
+            with(density) {
+                PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = topPx.toDp() + OVERLAID_GAP,
+                    bottom = (if (transport != null) bottomPx.toDp() else navBottom) + OVERLAID_GAP
+                )
+            }
+        )
+        Column(Modifier.fillMaxSize()) {
+            Column(
+                Modifier
+                    .onSizeChanged { topPx = it.height }
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+            ) {
+                header(Modifier.fillMaxWidth().then(chrome), false)
+                spine(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)
+                        .height(SPINE_HEIGHT).then(chrome),
+                    false
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (transport != null) {
+                CompanionDock(
+                    transport = transport,
+                    modifier = Modifier
+                        .onSizeChanged { bottomPx = it.height }
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp)
+                        .padding(bottom = 10.dp)
+                        .navigationBarsPadding()
+                        .then(dockMorph)
+                )
+            }
         }
     }
 }
+
+/** Breathing room between a floating band and the map chrome tucked under it. */
+private val OVERLAID_GAP = 8.dp
 
 /**
  * Landscape: a rail carrying the header, the spine and the dock, and the pane beside it.
@@ -662,9 +888,11 @@ private fun LandscapeDeck(
     pane: @Composable (Modifier, PaddingValues) -> Unit,
     transport: CompanionTransport?,
     chrome: Modifier,
-    dockMorph: Modifier
+    dockMorph: Modifier,
+    /** As [PortraitDeck]'s: the rail floats on the pane instead of standing beside it. */
+    overlaid: Boolean
 ) {
-    Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    val rail: @Composable () -> Unit = {
         Column(Modifier.width(RAIL_WIDTH).fillMaxSize()) {
             header(Modifier.fillMaxWidth().then(chrome), true)
             spine(
@@ -685,10 +913,34 @@ private fun LandscapeDeck(
                 )
             }
         }
+    }
+
+    if (!overlaid) {
+        Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+            rail()
+            pane(
+                Modifier.weight(1f).fillMaxSize().then(chrome),
+                PaddingValues(start = 6.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
+            )
+        }
+        return
+    }
+
+    // Nothing to measure here: the rail is a fixed width and the pane's chrome only has to clear
+    // it sideways, so the padding is arithmetic on the insets rather than a layout round-trip.
+    val insets = WindowInsets.safeDrawing.asPaddingValues()
+    val direction = LocalLayoutDirection.current
+    Box(Modifier.fillMaxSize()) {
         pane(
-            Modifier.weight(1f).fillMaxSize().then(chrome),
-            PaddingValues(start = 6.dp, end = 16.dp, top = 4.dp, bottom = 16.dp)
+            Modifier.fillMaxSize().then(chrome),
+            PaddingValues(
+                start = RAIL_WIDTH + insets.calculateStartPadding(direction) + OVERLAID_GAP,
+                end = insets.calculateEndPadding(direction) + 16.dp,
+                top = insets.calculateTopPadding() + OVERLAID_GAP,
+                bottom = insets.calculateBottomPadding() + 16.dp
+            )
         )
+        Row(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) { rail() }
     }
 }
 

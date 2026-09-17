@@ -15,6 +15,9 @@ object VoyageLayout {
     /** Companion packs (docs/companion-packs.md §7.1). Series-scoped packs only — a BOOK-scoped
      *  pack lives under the book's own `data/` dir instead, see [BookDataPaths.companionDir]. */
     const val COMPANION_DIR_NAME = "companion"
+    /** The user's own app font, copied here so it outlives the picker's Uri grant and a reinstall —
+     *  see [com.betteraudio.data.diskstore.CustomFontStore]. */
+    const val FONTS_DIR_NAME = "fonts"
 
     fun rootDir(libraryFolder: String): File? = libraryFolder.takeIf { it.isNotBlank() }?.let { File(it, ROOT_DIR_NAME) }
     fun libraryFile(libraryFolder: String): File? = rootDir(libraryFolder)?.let { File(it, LIBRARY_FILE_NAME) }
@@ -23,6 +26,7 @@ object VoyageLayout {
     fun widgetsDir(libraryFolder: String): File? = rootDir(libraryFolder)?.let { File(it, WIDGETS_DIR_NAME) }
     fun widgetDesignsFile(libraryFolder: String): File? = widgetsDir(libraryFolder)?.let { File(it, WIDGET_DESIGNS_FILE_NAME) }
     fun widgetImagesDir(libraryFolder: String): File? = widgetsDir(libraryFolder)?.let { File(it, WIDGET_IMAGES_DIR_NAME) }
+    fun fontsDir(libraryFolder: String): File? = rootDir(libraryFolder)?.let { File(it, FONTS_DIR_NAME) }
 
     /** Root of every SERIES-scoped companion pack — `.voyage/companion/`. Packs live one level
      *  down, `<this>/<packId>/`, keyed by [com.betteraudio.data.db.entities.CompanionPack.packId],

@@ -32,12 +32,19 @@ import androidx.compose.ui.util.lerp
  * Drives the shared-element morph between the mini player and the full player.
  *
  * [progress] is the sheet expansion (0 = mini bar, 1 = full player). [miniCover]/[miniTitle]/
- * [miniControls] are the bounds a morphing element travels FROM, in root coordinates — normally
- * the mini bar's, but [PlayerSheet] repoints [miniCover] at a library grid card's bounds (via
- * [CoverBoundsRegistry]) when there's no live mini bar (e.g. opening the full player directly from
- * Book Info's Resume button, or a fresh unplayed book), so the grid → full player transition still
- * morphs from the tapped card. This is separate from Book Info's own grid → Book Info morph (its
- * own [morphFrom] usage in BookInfoScreen.kt).
+ * [miniControls] are the bounds a morphing element travels FROM, in root coordinates. There are
+ * three sources, all published through [CoverBoundsRegistry] and all resolved by [PlayerSheet]:
+ *
+ * - the live **mini bar**'s own cover slot, the ordinary case;
+ * - a library **grid card**, when there is no mini bar to travel from (a fresh unplayed book);
+ * - an **info page's own cover** — Book Info's Resume, the Series page's Play — which outranks
+ *   even a live mini bar, because that cover is the thing under the finger that asked for the
+ *   player while the bar is a pill at the bottom of the screen. In Immersive the two are drawn the
+ *   same way (full width, top-anchored, the cover's own aspect), so this reduces to an identity
+ *   transform on its own and the cover simply stays put while the chrome changes around it.
+ *
+ * All three are separate from the info page's *own* grid card → page morph, which runs on the same
+ * primitives one leg earlier (see `InfoPageScaffold`).
  * [coverSourceRadius] is that source's corner radius, for [morphFrom]'s clip-radius animation.
  * All values are [State] so readers can defer reads into graphicsLayer/draw lambdas and avoid
  * per-frame recomposition.
@@ -53,13 +60,40 @@ class PlayerExpandTransition(
     // expandingContainer). Immersive ignores these (defaults keep it a no-op).
     val miniBar: State<Rect> = stateOfZeroRect,
     val miniBarRadius: Dp = 0.dp,
-    // True when [miniCover] is a library grid card's bounds (Book Info opened from the grid)
-    // rather than the live mini-player's cover slot — Material You uses this to pick the
-    // aspect-aware coverCropMorph instead of the mini-bar's morphFrom (see MaterialMotion.kt).
+    // True when [miniCover] is a plain rectangle somewhere on screen — a library grid card, or an
+    // info page's cover — rather than the live mini-player's cover slot. Material You uses it to
+    // pick the aspect-aware coverCropMorph instead of the mini-bar's morphFrom (see
+    // MaterialMotion.kt), and PlayerSheet uses it to grow the player's background out of that same
+    // rectangle instead of out of a mini-bar pill that may not exist.
     val sourceIsGridCard: Boolean = false,
     /** The mini bar's author line — the full player's author travels out of it, the way the title
      *  travels out of [miniTitle]. Zero when the mini bar has no author to show. */
     val miniAuthor: State<Rect> = stateOfZeroRect,
+    /**
+     * True when the player was opened from an info page's Resume button, and that page has
+     * published the rest of its furniture — so the player should run [ResumeChoreography] instead
+     * of the mini-bar one. False leaves every existing leg exactly as it was.
+     */
+    val resumeActive: Boolean = false,
+    /** The page's whole-book track, Resume button, its play glyph and its label — the sources for
+     *  the four elements the resume leg carries that the mini bar has no counterpart for. All
+     *  [Rect.Zero] unless [resumeActive]. */
+    val infoTrack: State<Rect> = stateOfZeroRect,
+    val resumeButton: State<Rect> = stateOfZeroRect,
+    val resumeIcon: State<Rect> = stateOfZeroRect,
+    val resumeLabel: State<Rect> = stateOfZeroRect,
+    /**
+     * Set by the portrait players once their play button has actually been LAID OUT.
+     *
+     * The sheet waits for this before it starts an expand whose player has never been composed —
+     * a book with no mini bar, or a different book from the one the nested NavHost last showed.
+     * Without it the whole choreography ran against a player that did not exist yet: every `own`
+     * rect was Rect.Zero, so every morph modifier took its "nothing to travel from" branch, while
+     * the page had already handed its title, track and Resume button over at p > 0.02. The button
+     * vanished into a gap and the finished player popped in halfway through.
+     */
+    val playerReady: androidx.compose.runtime.MutableState<Boolean> =
+        androidx.compose.runtime.mutableStateOf(true),
     /** True when [miniCover] is the Immersive mini player's *circular* cover (MiniCoverStyle.RING)
      *  rather than a rectangle. The Immersive player switches to [morphFromCircle] on this: a
      *  circle and a full-bleed cover don't share an aspect, so the plain rigid-box scale of

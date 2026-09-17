@@ -29,6 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -66,6 +69,13 @@ internal fun ImmersiveInfoPageFrame(
     contentModifier: Modifier,
     overflowItems: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
     belowPanel: @Composable ColumnScope.() -> Unit,
+    /** Reports this page's own cover, so the full player can grow out of it. Square-cornered and
+     *  full-bleed here, which is also exactly how the Immersive player draws its own cover — so
+     *  the hand-off is very nearly an identity transform and the cover simply stays put while the
+     *  room changes around it. */
+    onCoverBounds: (Rect, Dp) -> Unit,
+    /** How the panel below hands its own elements to an opening player. */
+    handoff: com.betteraudio.ui.player.ResumeHandoff,
 ) {
     var showOverflow by remember { mutableStateOf(false) }
     val onScrimMuted = ImmersiveStyle.scrimText(muted = true)
@@ -118,6 +128,9 @@ internal fun ImmersiveInfoPageFrame(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(0.72f)
+                .onGloballyPositioned {
+                    onCoverBounds(Rect(it.positionInRoot(), it.size.toSize()), 0.dp)
+                }
                 .morphFrom(
                     coverSource, openProgress,
                     anchorTopLeft = true, byWidth = true,
@@ -193,6 +206,8 @@ internal fun ImmersiveInfoPageFrame(
                 totalMs          = data.totalMs,
                 synopsis         = data.synopsis,
                 onResume         = onResume,
+                chapterStarts    = data.chapterStarts,
+                handoff          = handoff,
                 modifier         = Modifier.expandReveal(openProgress)
             )
 

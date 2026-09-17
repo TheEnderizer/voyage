@@ -582,6 +582,17 @@ fun SeriesOverlay(
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
+            // Navigation's AnimatedContent animates the CONTAINER'S SIZE between
+            // destinations by default (ContentTransform's sizeTransform defaults to
+            // SizeTransform(), which clips), and it places content at Alignment.TopStart.
+            // Every destination here is full-screen, so that animation has nothing to
+            // express -- but on the frame a navigate lands it clips the whole screen to a
+            // box growing out of the top-left corner while the content inside is already
+            // laid out at full size. That is the "swipe expanding from the top-left" on
+            // the Resume leg: this NavHost navigates at the same moment the sheet expands,
+            // so the wipe runs underneath the whole choreography. Explicitly no size
+            // transform.
+            sizeTransform = { null },
             popExitTransition = { ExitTransition.None },
         ) {
             composable("blank") { Box(Modifier.fillMaxSize()) }

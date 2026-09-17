@@ -198,6 +198,130 @@ so frame one is pixel-identical to the grid.
 
 ---
 
+## 3b. Book info / Series page → player (info page → player)
+
+`ui/player/PlayerSheet.kt` + `ui/components/InfoPageScaffold.kt` + `ui/player/PlayerMorph.kt`.
+
+The second leg of the same gesture as section 3. Grid card → info page already morphed; Resume did
+not — the page shrank back onto the card and playback started under a collapsed mini bar, so the
+cover travelled away from the finger that tapped it. The player now takes the **info page's own
+cover** as its morph source and the page holds still underneath until the player has covered it.
+
+The first pass changed nothing but the source rect. It is now a full choreography of its own —
+see **section 3c** — because carrying only the cover left every other part of the page cutting to
+every other part of the player.
+
+```
+Type:   the sheet's own expand spring (section 2a) — this is the player opening, not a new animation
+Driver: PlayerSheet.dragProgress, as for the mini → full morph
+```
+
+| element | modifier | mapping |
+|---|---|---|
+| cover (Material You) | `coverCropMorph` | info-page card (0.72, r28) → square player slot (r28) |
+| cover (Immersive) | `morphFrom` | source rect **is** the destination rect ⇒ scale 1, translate 0 — stationary for free |
+| sharp cover copy (Immersive) | `graphicsLayer` alpha | 1 → 0 over p 0.55…0.90, cross-fading with an identical image |
+| player background (Material You) | `morphingContainer` | grows out of the same cover rect, radius 28dp → 0dp |
+| player backdrop (Immersive) | root `drawBehind` | black at alpha p², so the info page under it is covered rather than cut to |
+| player chrome | `expandReveal` | unchanged: alpha (p−0.35)/0.65 · scale 0.8→1 · translateY 14dp→0 |
+| info page | — | stays mounted; closes at p ≥ 0.995 (`MainActivity`) |
+
+Two things that are load-bearing rather than decorative:
+
+- **The page must not unmount at the tap.** It is the morph source, and it is also what fills the
+  screen around the growing window. `MainActivity` closes it on full expansion, not on
+  `isExpanded` (which flips at halfway and would pop the visible remainder).
+- **The source is dropped once open.** `PlayerSheetController.clearCoverSource()` runs at p ≥ 0.995,
+  so a later collapse travels back to the mini bar rather than to the closed page's zeroed rect.
+
+---
+
+## 3c. Resume → the play button (info page → player, per element)
+
+`ui/player/ResumeMorph.kt` (modifiers) + `ResumeChoreography` in `ui/player/ElementMotion.kt`
+(values) + both portrait players + `ui/components/BookInfoPanel.kt` (the page's half).
+
+Storyboarded, live and scrubbable, at
+https://claude.ai/code/artifact/5277ad3a-759c-4b9a-8c8e-995a2f0f388d — that page runs the same
+numbers this table does. **Change the values in three places together: there, here, and in
+`ResumeChoreography`.**
+
+Section 2 describes the player growing out of the mini bar: a 64dp pill with four things in it, so
+almost everything in the player has to be revealed. This is the other leg, and it is a different
+problem — nearly every element of the player already has a counterpart on screen, sitting somewhere
+else on the page. So almost nothing fades in. Things travel, or they leave.
+
+```
+Type:   the sheet's own expand spring (section 2a)
+Driver: PlayerSheet.dragProgress — the same float, so both legs stay scrubbable and interruptible
+Set:    ResumeChoreography, field names mirroring PlayerChoreography's so a call site picks a
+        choreography once and reads the same names either way
+```
+
+| element | p | curve | what happens |
+|---|---|---|---|
+| Resume pill | 0.00 → 0.85 | Standard | its rect is **redrawn** into the 72dp circle; radius = h/2 |
+| "Resume" label | 0.00 → 0.14 | linear alpha | the player's own copy of the word, fading |
+| play glyph | 0.00 → 0.85 | Standard | translates only |
+| synopsis, chip, % row, narrator, series label, history, parts | 0.00 → 0.30 | Accelerate | fade and leave |
+| title, author | 0.05 → 0.80 | Standard | descend into the player's identity band |
+| whole-book track | 0.05 → 0.80 | Standard | descends under the chapter scrubber — the same widget |
+| utility rail | 0.30 → 0.80 | Decelerate | rises 64dp from below the display edge, as one row |
+| chapter scrubber | 0.55 → 0.85 | Decelerate | fades in, rising 14dp |
+| top bar | 0.55 → 0.80 | Decelerate | fades in |
+| skip ± | 0.60 → 1.00 | Decelerate | slides out from under the play button |
+| times, chapter line | 0.60 → 0.90 | Decelerate | fade in |
+| chapter arrows | 0.68 → 1.00 | Decelerate | slide out, staggered behind the skips |
+
+Five decisions that are load-bearing rather than taste:
+
+- **The button is redrawn, not scaled.** A 268dp pill scaled into a 72dp circle carries the play
+  triangle up to ~4× and back down; the one glyph that should hold still would visibly breathe.
+  `Modifier.resumePillMorph` paints the ground at the interpolated rect (draw phase, no relayout)
+  and `resumeIconMorph` only translates the glyph. This is also why the button's `clip(Pill)` has to
+  sit *after* the morph in the chain — the pill deliberately paints outside the 72dp bounds.
+- **The player carries the label.** The page's own "Resume" is occluded by the morphing pill from
+  the first frame, so fading the page's copy would do nothing visible. The player draws its own and
+  fades that, the same way it draws its own travelling copy of the cover.
+- **The page hands over, then hides.** Everything the player carries (`travellingSlot`) is dropped
+  by the page at p > 0.02 — same threshold and same reasoning as `CoverBoundsRegistry.isMorphHidden`
+  for a grid card. Otherwise each carried element is drawn twice and separates into a ghost.
+- **The leaving furniture is the page's job, not the player's.** The player has no synopsis to fade.
+  It works because the Immersive backdrop is only opaque by p ≈ 0.5 and Material You's container is
+  still growing, so the page is genuinely visible while those first 0.16 run.
+- **The sharp cover copy is not drawn on this leg.** The immersive player paints a sharp,
+  un-scrimmed copy of the cover over its baked backdrop, opaque until p = 0.55, so the mini-bar leg
+  has a solid object to follow. Here the cover morph is an identity, so that copy does not travel —
+  it just replaces the page's scrimmed backdrop with an unscrimmed one for half the transition and
+  swaps back. `alpha = if (resume) 0f else ...`. Both ends of this leg draw the same backdrop, so
+  there is nothing for it to cross-fade.
+- **Both legs share the elements, not the timings.** `resumeOrReveal` / `resumeOnly` pick per
+  element; the mini-bar leg's behaviour is untouched everywhere.
+- **Two prerequisites are layout, not motion — and both only bite when the mini player is closed.**
+  This leg is the only one that expands a player which does not already exist on screen, so it is the
+  only one that can run against a player that has not been laid out where it draws. (1) The sheet
+  parks the collapsed player one screen height down, and every morph modifier records its own rect
+  including that offset; the parked state must therefore be a *composition* state, so the modifier
+  chain changes and a real relayout re-fires those callbacks, and the expand must unpark and let two
+  frames land before progress leaves 0. (2) The nested NavHost must not navigate on the frame the
+  sheet expands: its `AnimatedContent` clips the incoming destination to a window opening downward
+  (measured `0..791` at p=0 rising to `0..3168`), which hides the transport and the utility row for
+  most of the travel no matter what the choreography says. It now starts on the player route instead.
+  Both are recorded with their measurements in `docs/status.md`. **If this leg ever looks like
+  elements arriving late or sliding in from nowhere, measure the containers before changing a
+  timing here** — twice now the choreography was correct and the layout underneath it was not.
+
+One cost, taken deliberately: in both portrait players the scrubber band no longer reveals as one
+group. Its three children carry their own reveals, because on this leg the track travels while its
+neighbours fade, and one group modifier cannot say two things. On the mini-bar leg this means each
+child now scales about its own centre instead of the group's — a difference of a few dp at the
+extremes.
+
+Landscape does not implement this leg; it keeps `morphFrom`/`expandReveal` throughout and simply
+takes the page's title as its source.
+
+---
+
 ## 4. Nav pill
 
 `ui/{material,immersive}/components/FloatingNavPill.kt`.

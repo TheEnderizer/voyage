@@ -379,3 +379,86 @@ object PlayerChoreography {
     val secondaryRow = ElementMotion(from = 0.70f, to = 0.90f, easing = MorphEasing.Decelerate,
         scale = ScaleMode.None, rise = 14.dp, alpha = 0.70f..0.77f)
 }
+
+/**
+ * The OTHER leg into the full player: Book Info's (and the Series page's) Resume button.
+ *
+ * [PlayerChoreography] above describes the player growing out of the mini bar — a 64dp pill at the
+ * bottom of the screen with four things in it. This describes it growing out of a whole page, which
+ * is a different problem: nearly every element of the player already has a counterpart on screen,
+ * sitting somewhere else. So almost nothing here fades in. Things travel, or they leave.
+ *
+ * The shape of it, in the user's own words: the Resume button rises and shortens into the play
+ * button while the transport slides out from under it and the utility rail rises from the display
+ * edge; the whole-book track and the title/author descend into their player positions; the synopsis
+ * and the page's status furniture go away; the chapter scrubber fades in.
+ *
+ * Field names deliberately mirror [PlayerChoreography]'s, so a call site picks a choreography once
+ * and reads the same names either way. Both are pure functions of the sheet's progress, so this leg
+ * is as scrubbable and interruptible as the other one.
+ *
+ * Storyboarded at https://claude.ai/code/artifact/5277ad3a-759c-4b9a-8c8e-995a2f0f388d and recorded
+ * in docs/motion-spec.md — change the values in both places together.
+ */
+object ResumeChoreography {
+    /** Descend into the player's identity band. No scale: both screens set them at the same size,
+     *  so scaling would be a wobble with nothing to say. */
+    val title = ElementMotion(
+        from = 0.05f, to = 0.80f, easing = MorphEasing.Standard,
+        anchor = MorphAnchor.TopLeft, scale = ScaleMode.None,
+    )
+    val author = title
+
+    /** The whole-book track — the same [com.betteraudio.ui.components.BookSegmentTrack] the page
+     *  is already showing — sliding down to sit under the chapter scrubber. */
+    val bookTrack = ElementMotion(
+        from = 0.05f, to = 0.80f, easing = MorphEasing.Standard,
+        anchor = MorphAnchor.TopLeft, scale = ScaleMode.None,
+    )
+
+    /** The transport buttons come out from under the play button as it settles — they are not
+     *  revealed in place, they are deposited. Chapter arrows trail the skips so the row builds
+     *  outward rather than appearing all at once. */
+    val skipBack = ElementMotion(
+        from = 0.60f, to = 1f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, spawn = Spawn.SlideOutFromPlay,
+    )
+    val skipForward = skipBack
+    val prevChapter = ElementMotion(
+        from = 0.68f, to = 1f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, spawn = Spawn.SlideOutFromPlay,
+    )
+    val nextChapter = prevChapter
+
+    /** Rises as one row from below the display edge, starting while the button is still climbing
+     *  so the two read as one arrival instead of a queue. */
+    val secondaryRow = ElementMotion(
+        from = 0.30f, to = 0.80f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, rise = 64.dp, alpha = 0.30f..0.50f,
+    )
+
+    /** Arrivals: nothing on the page corresponds to these, so they are the one place a plain fade
+     *  is right. Late enough that the travelling elements have arrived first. */
+    val seekBar = ElementMotion(from = 0.55f, to = 0.85f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, rise = 14.dp, alpha = 0.55f..0.72f)
+    val times = ElementMotion(from = 0.62f, to = 0.90f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, rise = 12.dp, alpha = 0.62f..0.78f)
+    val chapterPill = ElementMotion(from = 0.60f, to = 0.90f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, rise = 14.dp, alpha = 0.60f..0.76f)
+    val topBar = ElementMotion(from = 0.55f, to = 0.80f, easing = MorphEasing.Decelerate,
+        scale = ScaleMode.None, rise = 14.dp, alpha = 0.55f..0.70f)
+
+    /** The button's own slice. It does not use [ElementMotion] — a pill that has to become a circle
+     *  is redrawn rather than transformed (see [Modifier.resumePillMorph]) — but its window is
+     *  authored here with everything else. */
+    const val BUTTON_FROM = 0f
+    const val BUTTON_TO = 0.85f
+
+    /** The word "Resume" is gone well before the pill is narrow enough to clip it. */
+    const val LABEL_FADE_TO = 0.14f
+
+    /** How long the page's own leaving furniture — synopsis, status chip, the percentage row —
+     *  takes to clear. Short, and on an accelerating curve: it is the tallest thing on the page and
+     *  the descending title would otherwise appear to fall through text. */
+    const val LEAVE_TO = 0.30f
+}

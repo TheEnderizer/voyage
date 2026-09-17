@@ -95,6 +95,45 @@ fun deckGround(): Brush {
     }
 }
 
+/**
+ * The two veils that sit over a full-bleed map so the chrome drawn on it stays readable — one at
+ * the top under the header and spine, one at the bottom under the dock, and deliberately nothing
+ * in between (see [deckGround] for the same argument: legibility should come from a shape, not a
+ * wall, and on the Map the middle of the screen is the thing you came to look at).
+ *
+ * **Why this is not a two-stop gradient.** A linear ramp reaches zero with its slope unchanged, so
+ * the eye sees the exact row where the darkening stops as a line across the artwork — the alpha is
+ * continuous there but its *derivative* is not, and edge detection in human vision keys off the
+ * derivative. Smootherstep (`6t⁵ − 15t⁴ + 10t³`) has zero slope at both ends, so the veil leaves
+ * full strength and arrives at nothing without an edge at either end; sampling it into [steps]
+ * stops also breaks the ramp into small enough segments that the 8-bit quantisation of a large
+ * gradient reads as grain rather than as bands. The last stop is exactly [Color.Transparent] —
+ * not a small alpha — because a veil that ends at 0.02 has a visible rectangle edge no easing can
+ * hide.
+ *
+ * Height matters as much as shape: a veil shorter than about a quarter of the screen has to be
+ * steep to cover the chrome, and steep is what you see. Callers give these a generous run.
+ */
+fun mapVeil(ink: Color, maxAlpha: Float, fromTop: Boolean, steps: Int = 20): Brush {
+    val stops = Array(steps + 1) { i ->
+        val t = i.toFloat() / steps
+        val s = t * t * t * (t * (t * 6f - 15f) + 10f)
+        val a = maxAlpha * (if (fromTop) 1f - s else s)
+        // The ink at zero alpha rather than Color.Transparent: the latter is transparent *black*,
+        // so the last segment of the ramp would interpolate hue as well as alpha. Nothing you could
+        // point at, but it costs nothing to keep the whole veil one colour.
+        t to ink.copy(alpha = a)
+    }
+    return Brush.verticalGradient(colorStops = stops)
+}
+
+/** The ink the map's veils are mixed from — the same cover-tinted black the deck's ground uses, so
+ *  a veiled map belongs to the playing book rather than sitting under a neutral grey. */
+@Composable
+fun deckVeilInk(): Color =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) ImmersiveStyle.coverInk()
+    else MaterialTheme.colorScheme.surface
+
 /** Body text on the deck's ground. */
 @Composable
 fun deckOn(): Color =
@@ -132,6 +171,68 @@ fun deckPanelShape(): Shape =
 fun deckChipShape(): Shape =
     if (LocalAppTheme.current == AppTheme.IMMERSIVE) RoundedCornerShape(50)
     else RoundedCornerShape(8.dp)
+
+// ── the map's own tokens ────────────────────────────────────────────────────────────────────
+//
+// The Map is the one pane where the two looks differ in *structure*, not only in fill: Material You
+// contains the artwork in a card, Immersive lets it be the deck's ground. Which of the two a build
+// takes is [mapIsFullBleed]; everything below dresses whichever one is drawn.
+
+/**
+ * True where the map should take the whole screen rather than sit in the pane.
+ *
+ * Immersive's whole language is "the artwork is the room": the cover fills the screen and the
+ * screens are glass over it. A map in a card inside that is a picture of a map hung on the wall of
+ * the room — so on the Map the map becomes the ground and the deck's cover backdrop steps aside.
+ * Material You goes the other way, because a full-bleed image under tonal chrome is not an M3
+ * surface at all; there it is a `surfaceContainer` card at the same radius as the app's cover
+ * cards, with the artwork fitted inside so the rounded tonal edge shows all the way round it.
+ *
+ * Gated on there actually being a picture: with no art, full-bleed would mean a flat fill from edge
+ * to edge with a sentence in the middle of it, which is worse than the pane's empty state in both
+ * looks.
+ */
+@Composable
+fun mapIsFullBleed(hasArt: Boolean): Boolean =
+    hasArt && LocalAppTheme.current == AppTheme.IMMERSIVE
+
+/** The Material You map card. 28dp is not a fresh pick — it is the radius the app's cover cards
+ *  already use (Book Info, the player), so the map reads as the same family of object. */
+@Composable
+fun deckMapCardShape(): Shape = RoundedCornerShape(28.dp)
+
+/** Fill for a control floating ON the map — the map plate, the edit rail, the zoom and versions
+ *  chips, the selected-pin card. Heavier than [deckCardHighColor] on purpose: these sit over
+ *  arbitrary artwork rather than over a known ground, so they need enough body to hold text at any
+ *  point on any picture. */
+@Composable
+fun deckMapChromeColor(): Color =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) ImmersiveStyle.coverInk().copy(alpha = 0.62f)
+    else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
+
+/** Silhouette for that chrome: Immersive pills it, Material You gives it a container radius that
+ *  steps down from the card's 28dp rather than matching the deck's flat 12dp. */
+@Composable
+fun deckMapChromeShape(): Shape =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) RoundedCornerShape(50)
+    else RoundedCornerShape(16.dp)
+
+/** The selected-pin card is the largest thing floating on the map, so it takes the next radius up
+ *  in Material You; Immersive keeps pilling. */
+@Composable
+fun deckMapCardChromeShape(): Shape =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) RoundedCornerShape(24.dp)
+    else RoundedCornerShape(20.dp)
+
+/** Fill behind a pin's name.
+ *
+ *  This used to be `Color.Black.copy(alpha = 0.55f)` with `Color.White` on it — the one place in
+ *  the deck that ignored the theme entirely, which is why the markers read as a debug overlay
+ *  rather than as part of either look. */
+@Composable
+fun deckPinCaptionColor(): Color =
+    if (LocalAppTheme.current == AppTheme.IMMERSIVE) ImmersiveStyle.coverInk().copy(alpha = 0.74f)
+    else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f)
 
 // ── the spine ───────────────────────────────────────────────────────────────────────────────
 

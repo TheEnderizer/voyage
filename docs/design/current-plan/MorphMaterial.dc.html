@@ -1,0 +1,221 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; background: #12100E; }
+    a { color: #FFA552; } a:hover { color: #FFB871; }
+    .fr { position: relative; width: 200px; height: 432px; border-radius: 14px; overflow: hidden;
+          background: #12100E; flex: 0 0 auto; }
+    .cap { font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 1.2px;
+           color: #B6AB9C; text-transform: uppercase; }
+    .cover { position: absolute; background: linear-gradient(150deg,#7A4A2E 0%,#3E2438 55%,#171019 100%);
+             border-radius: 14px; }
+    .bar { border-radius: 50px; background: #3A352F; }
+    .th { font-size: 11px; line-height: 14px; font-weight: 600; letter-spacing: 1.4px;
+          color: #B6AB9C; text-transform: uppercase; }
+    .td { font-size: 13px; line-height: 19px; color: #B6AB9C; }
+    .td b { color: #F3EBE1; font-weight: 600; }
+  </style>
+</helmet>
+
+<div style="width:1160px;background:#12100E;color:#F3EBE1;padding:32px;box-sizing:border-box;font-family:Poppins,system-ui,sans-serif">
+
+  <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:1.8px;color:#FFA552;text-transform:uppercase">Material You · motion</div>
+  <div style="font-size:26px;line-height:30px;font-weight:700;letter-spacing:-0.5px;margin-top:10px">Book info → player</div>
+  <div style="font-size:14px;line-height:20px;color:#B6AB9C;margin-top:10px;max-width:78ch">
+    Resume opens the player out of the cover you are already looking at. Today it does the opposite:
+    the page shrinks back onto the grid card first, then playback starts under a collapsed mini bar —
+    two animations and a cover that travels away from where you tapped. The page now holds still and
+    the player grows out of its cover, re-cropping 0.72 → square on the way, which is the same
+    <b style="color:#F3EBE1;font-weight:600">coverCropMorph</b> the grid card already hands the player.
+  </div>
+
+  <div style="display:flex;gap:24px;margin-top:28px">
+
+    <!-- ───────────────────────── p = 0 ───────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="fr">
+        <!-- book info page -->
+        <div style="position:absolute;inset:0;background:#12100E">
+          <div style="position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:6px;width:180px">
+            <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+            <div style="flex-grow:1"></div>
+            <div style="width:26px;height:7px;border-radius:50px;background:#3A352F"></div>
+            <div style="flex-grow:1"></div>
+            <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+          </div>
+          <div style="position:absolute;left:10px;top:296px;width:180px;display:flex;flex-direction:column;gap:7px">
+            <div class="bar" style="width:132px;height:11px;background:#F3EBE1"></div>
+            <div class="bar" style="width:88px;height:7px"></div>
+            <div class="bar" style="width:180px;height:4px;background:#272320;margin-top:4px"></div>
+            <div style="margin-top:8px;height:34px;border-radius:50px;background:#FFA552;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#231405;box-shadow:0 0 0 3px rgba(255,165,82,.25)">Resume</div>
+          </div>
+        </div>
+        <!-- travelling cover -->
+        <div class="cover" style="left:10px;top:34px;width:180px;height:250px"></div>
+      </div>
+      <div class="cap">p 0.00 · pressed</div>
+    </div>
+
+    <!-- ───────────────────────── p = 0.25 ───────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="fr">
+        <div style="position:absolute;inset:0;background:#12100E">
+          <div style="position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:6px;width:180px">
+            <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+            <div style="flex-grow:1"></div><div style="width:26px;height:7px;border-radius:50px;background:#3A352F"></div><div style="flex-grow:1"></div>
+            <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+          </div>
+          <div style="position:absolute;left:10px;top:296px;width:180px;display:flex;flex-direction:column;gap:7px;opacity:0.55">
+            <div class="bar" style="width:132px;height:11px;background:#F3EBE1"></div>
+            <div class="bar" style="width:88px;height:7px"></div>
+            <div class="bar" style="width:180px;height:4px;background:#272320;margin-top:4px"></div>
+            <div style="margin-top:8px;height:34px;border-radius:50px;background:#FFA552"></div>
+          </div>
+        </div>
+        <!-- player page, clipped to the growing window -->
+        <div style="position:absolute;inset:0;clip-path:inset(25.5px 7.5px 111px 7.5px round 12px)">
+          <div style="position:absolute;inset:0;background:#12100E;opacity:0.45"></div>
+        </div>
+        <div class="cover" style="left:14px;top:35.5px;width:172px;height:224.5px"></div>
+      </div>
+      <div class="cap">p 0.25</div>
+    </div>
+
+    <!-- ───────────────────────── p = 0.50 ───────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="fr">
+        <div style="position:absolute;inset:0;background:#12100E">
+          <div style="position:absolute;left:10px;top:296px;width:180px;display:flex;flex-direction:column;gap:7px;opacity:0.2">
+            <div class="bar" style="width:132px;height:11px;background:#F3EBE1"></div>
+            <div class="bar" style="width:88px;height:7px"></div>
+          </div>
+        </div>
+        <div style="position:absolute;inset:0;clip-path:inset(17px 5px 74px 5px round 10px)">
+          <div style="position:absolute;inset:0;background:#12100E"></div>
+          <!-- player chrome, expandReveal: alpha .23, still 10px low, 90% scale -->
+          <div style="position:absolute;left:20px;top:206px;width:160px;display:flex;flex-direction:column;gap:6px;opacity:0.23;transform:translateY(10px) scale(.9);transform-origin:center top">
+            <div class="bar" style="width:120px;height:11px;background:#F3EBE1"></div>
+            <div class="bar" style="width:76px;height:7px"></div>
+            <div class="bar" style="width:160px;height:4px;background:#272320;margin-top:8px"></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px">
+              <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+              <div style="width:34px;height:34px;border-radius:50%;background:#FFA552"></div>
+              <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+            </div>
+          </div>
+        </div>
+        <div class="cover" style="left:18px;top:37px;width:164px;height:199px"></div>
+      </div>
+      <div class="cap">p 0.50</div>
+    </div>
+
+    <!-- ───────────────────────── p = 0.75 ───────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="fr">
+        <div style="position:absolute;inset:0;clip-path:inset(8.5px 2.5px 37px 2.5px round 6px)">
+          <div style="position:absolute;inset:0;background:#12100E"></div>
+          <div style="position:absolute;left:20px;top:200px;width:160px;display:flex;flex-direction:column;gap:6px;opacity:0.61;transform:translateY(4px) scale(.95);transform-origin:center top">
+            <div class="bar" style="width:120px;height:11px;background:#F3EBE1"></div>
+            <div class="bar" style="width:76px;height:7px"></div>
+            <div class="bar" style="width:160px;height:4px;background:#272320;margin-top:8px"></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:12px">
+              <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+              <div style="width:34px;height:34px;border-radius:50%;background:#FFA552"></div>
+              <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+            </div>
+          </div>
+        </div>
+        <div class="cover" style="left:22px;top:38.5px;width:156px;height:173.5px"></div>
+      </div>
+      <div class="cap">p 0.75</div>
+    </div>
+
+    <!-- ───────────────────────── p = 1 ───────────────────────── -->
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="fr">
+        <div style="position:absolute;inset:0;background:#12100E"></div>
+        <div style="position:absolute;left:10px;top:10px;display:flex;align-items:center;gap:6px;width:180px">
+          <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+          <div style="flex-grow:1"></div><div style="width:34px;height:7px;border-radius:50px;background:#3A352F"></div><div style="flex-grow:1"></div>
+          <div style="width:20px;height:20px;border-radius:50%;background:#272320"></div>
+        </div>
+        <div class="cover" style="left:26px;top:40px;width:148px;height:148px"></div>
+        <div style="position:absolute;left:20px;top:198px;width:160px;display:flex;flex-direction:column;gap:6px">
+          <div class="bar" style="width:120px;height:11px;background:#F3EBE1"></div>
+          <div class="bar" style="width:76px;height:7px"></div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:10px">
+            <div class="bar" style="width:6px;height:6px;background:#B6AB9C"></div>
+            <div class="bar" style="flex-grow:1;height:4px;background:#272320;position:relative;overflow:hidden"><div style="position:absolute;left:0;top:0;bottom:0;width:62%;background:#FFA552;border-radius:50px"></div></div>
+            <div class="bar" style="width:6px;height:6px;background:#B6AB9C"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:center;gap:14px;margin-top:14px">
+            <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+            <div style="width:34px;height:34px;border-radius:50%;background:#FFA552"></div>
+            <div style="width:22px;height:22px;border-radius:50%;background:#272320"></div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+            <div style="width:20px;height:20px;border-radius:6px;background:#272320"></div>
+            <div style="width:20px;height:20px;border-radius:6px;background:#272320"></div>
+            <div style="width:20px;height:20px;border-radius:6px;background:#272320"></div>
+            <div style="width:20px;height:20px;border-radius:6px;background:#272320"></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap">p 1.00 · settled</div>
+    </div>
+  </div>
+
+  <!-- channel table -->
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:34px">
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:12px 16px;border-radius:12px;background:#1B1815">
+      <div class="th">Element</div><div class="th">Modifier</div><div class="th">Mapping</div><div class="th">Note</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Player page</b></div>
+      <div class="td">containerReveal</div>
+      <div class="td">clip window: book-info cover rect → full screen; radius 28dp → 0</div>
+      <div class="td">Unchanged code — only the source rect is new</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Cover</b></div>
+      <div class="td">coverCropMorph</div>
+      <div class="td">0.72 book-info card → square player slot; radius 28dp → 28dp</div>
+      <div class="td">Real layout size, so the crop re-resolves with no aspect pop</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Player chrome</b></div>
+      <div class="td">expandReveal</div>
+      <div class="td">alpha (p−0.35)/0.65 · scale 0.8→1 · translateY 14dp→0</div>
+      <div class="td">Already how the mini→full player reveals</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Book info panel</b></div>
+      <div class="td">graphicsLayer alpha</div>
+      <div class="td">1 → 0 over p 0…0.45</div>
+      <div class="td">It sits outside the window early on, so it has to fade rather than be covered</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Book info overlay</b></div>
+      <div class="td">—</div>
+      <div class="td">stays mounted; closes at p ≥ 0.98</div>
+      <div class="td">Unmounting it at the tap is what makes today's version blink</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4, minmax(0, 1fr));gap:16px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div class="td"><b>Spring</b></div>
+      <div class="td">motion.spatialDefault</div>
+      <div class="td">0.8 / 380</div>
+      <div class="td">Same token as grid card → book info, so the two legs feel like one gesture</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

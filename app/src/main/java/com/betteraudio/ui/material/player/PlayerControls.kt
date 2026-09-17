@@ -40,7 +40,13 @@ import com.betteraudio.ui.haptics.*
 
 /** Slim whole-book progress, tappable to reveal a full book scrubber. Styled for the dark scrim.
  *  [readOnly] (used for the locked player) disables the tap-to-expand/drag entirely and hides the
- *  expand chevron, leaving a purely passive progress display. */
+ *  expand chevron, leaving a purely passive progress display.
+ *
+ *  The bar itself is [BookSegmentTrack] — the same divided track the Immersive player and the Book
+ *  Info page draw, rather than a third design of the same fact. [trackModifier] and [labelModifier]
+ *  exist for the Resume → player transition, where the bar travels out of the page's own copy of
+ *  itself while the label and percentage around it are arrivals that fade in (see
+ *  [com.betteraudio.ui.player.ResumeChoreography]); both default to nothing. */
 @Composable
 internal fun CompactBookProgress(
     positionMs: Long,
@@ -48,7 +54,10 @@ internal fun CompactBookProgress(
     accent: Color,
     muted: Color,
     trackColor: Color,
+    chapterStarts: List<Long> = emptyList(),
     readOnly: Boolean = false,
+    trackModifier: Modifier = Modifier,
+    labelModifier: Modifier = Modifier,
     onSeek: (Long) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -60,21 +69,25 @@ internal fun CompactBookProgress(
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Book", style = MaterialTheme.typography.labelSmall, color = muted)
+            Text("Book", style = MaterialTheme.typography.labelSmall, color = muted,
+                modifier = labelModifier)
             Spacer(Modifier.width(10.dp))
-            LinearProgressIndicator(
-                progress = { frac },
-                modifier = Modifier.weight(1f).height(4.dp).clip(Pill),
-                color = accent,
-                trackColor = trackColor
+            com.betteraudio.ui.components.BookSegmentTrack(
+                positionMs = positionMs,
+                totalMs = totalMs,
+                chapterStarts = chapterStarts,
+                accent = accent,
+                trackColor = trackColor,
+                modifier = Modifier.weight(1f).then(trackModifier)
             )
             Spacer(Modifier.width(10.dp))
-            Text("${(frac * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = muted)
+            Text("${(frac * 100).toInt()}%", style = MaterialTheme.typography.labelSmall, color = muted,
+                modifier = labelModifier)
             if (!readOnly) {
                 Icon(
                     if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     if (expanded) "Collapse" else "Expand book progress",
-                    Modifier.size(18.dp),
+                    Modifier.size(18.dp).then(labelModifier),
                     tint = muted
                 )
             }

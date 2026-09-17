@@ -43,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -78,7 +79,10 @@ import com.betteraudio.ui.theme.LocalAppTheme
 import com.betteraudio.ui.theme.Pill
 import com.betteraudio.ui.theme.pressScale
 import java.io.File
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 /** Mini bar's Pill shape radius at its actual 64dp height (RoundedCornerShape(percent = 50) on a
@@ -91,6 +95,17 @@ data class PlayerTarget(
     val bookId: Long = -1L,
     // false on cold-start restore so the player doesn't auto-play when the app opens
     val startPlaying: Boolean = true,
+    /**
+     * Which published cover the player should grow out of, when it is not the mini bar's.
+     *
+     * Null means the ordinary two cases: a live mini bar to morph from, or a library grid card
+     * ([CoverBoundsRegistry] keyed by book id) when there is no mini bar yet. A non-null key names
+     * an info page's own cover instead (`CoverBoundsRegistry.bookInfoKey` /
+     * `seriesInfoKey`) — Resume on Book Info, Play on the Series page — because that cover is the
+     * one actually on screen at the moment the player is asked for, and the grid card it came from
+     * is hidden behind it.
+     */
+    val coverSourceKey: String? = null,
 )
 
 /**
@@ -132,9 +147,11 @@ class PlayerSheetController {
             target = PlayerTarget(bookId = bookId, startPlaying = false)
     }
 
-    /** Open a book in the full player (expands the sheet). */
-    fun open(bookId: Long = -1L, startPlaying: Boolean = true) {
-        target = PlayerTarget(bookId, startPlaying)
+    /** Open a book in the full player (expands the sheet). [coverSourceKey] names the cover it
+     *  should grow out of when that is an info page's rather than a grid card's — see
+     *  [PlayerTarget.coverSourceKey]. */
+    fun open(bookId: Long = -1L, startPlaying: Boolean = true, coverSourceKey: String? = null) {
+        target = PlayerTarget(bookId, startPlaying, coverSourceKey)
         expandToken++
     }
 
@@ -150,6 +167,19 @@ class PlayerSheetController {
     fun startCollapsed(bookId: Long) {
         if (bookId == -1L) return
         target = PlayerTarget(bookId, startPlaying = true)
+    }
+
+    /**
+     * Drops the info-page cover source once the player is fully open.
+     *
+     * The page that supplied it has closed by then (see MainActivity), so its published rect has
+     * been reset to [androidx.compose.ui.geometry.Rect.Zero] — and a collapse reading that would
+     * travel back to nothing instead of shrinking into the mini bar it is actually becoming. The
+     * outward leg is finished at this point, so swapping the source back costs nothing visually.
+     */
+    internal fun clearCoverSource() {
+        val current = target ?: return
+        if (current.coverSourceKey != null) target = current.copy(coverSourceKey = null)
     }
 
     fun expandCurrent() { if (target != null) expandToken++ }
@@ -267,6 +297,24 @@ fun PlayerSheet(
     // this directly and synchronously instead, so N per-delta coroutines can never race an
     // in-flight animateTo the way writing progressAnim.value from onDelta used to (AN-2).
     val dragProgress = remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    // ── Parking ────────────────────────────────────────────────────────────────────────────
+    // "The sheet is allowed to occupy the screen." While collapsed the full player is pushed one
+    // screen height down so the app underneath stays interactive.
+    //
+    // This is deliberately a COMPOSITION state and not a value read inside the parking modifier's
+    // own lambda. Every morph modifier in the player records where it sits with
+    // `onGloballyPositioned { positionInRoot() }`, and that includes the parking offset — so while
+    // parked, every element believes it lives ~3168px below where it will actually draw. Only a
+    // real re-measure/re-place re-fires those callbacks; changing a value a placement lambda reads
+    // re-runs the placement but does not reliably refresh them, so the recorded bounds stayed
+    // parked for the whole transition and every element travelled from one screen-height off the
+    // top — invisible until the last third of the gesture, then arriving all at once. Flipping a
+    // composition state swaps the modifier chain itself, which forces the relayout. It flips twice
+    // per open/close, so it costs nothing.
+    //
+    // [forceUnpark] is the expand path's way of getting that relayout to happen BEFORE the first
+    // animated frame rather than on it (see the expand effect below).
+    var forceUnpark by remember { mutableStateOf(false) }
     // True for the duration of a live drag on either the mini bar or the full container. Gates
     // the mirror below so a stale/still-finishing animateTo (the interrupt case) can't stomp
     // dragProgress while a drag is in control of it.
@@ -291,7 +339,11 @@ fun PlayerSheet(
     // nav pill) slides in lockstep with the sheet, including mid-drag.
     LaunchedEffect(Unit) {
         androidx.compose.runtime.snapshotFlow { dragProgress.floatValue }
-            .collect { controller.expandProgress.floatValue = it }
+            .collect { p ->
+                controller.expandProgress.floatValue = p
+                // The outward leg is over: hand the collapse back to the mini bar.
+                if (p >= 0.995f) controller.clearCoverSource()
+            }
     }
 
     // Material You predictive back: while MainActivity's PredictiveBackHandler reports gesture
@@ -302,6 +354,10 @@ fun PlayerSheet(
         androidx.compose.runtime.snapshotFlow { controller.seekProgress }
             .filterNotNull()
             .collect { progressAnim.snapTo(it) }
+    }
+
+    val unparked by remember {
+        derivedStateOf { forceUnpark || dragProgress.floatValue > 0.001f }
     }
 
     var heightPx by remember { mutableStateOf(0) }
@@ -338,22 +394,72 @@ fun PlayerSheet(
 
     // Material You's morph choreography is built around a visible rebound: progress deliberately
     // overshoots past 1.0 and the mini-player group (cover/title/author/play) absorbs that as ONE
-    // rigid unit — see docs/motion-spec.md section 8 and ui/player/ElementMotion.kt. Immersive
-    // keeps the shared near-flat token, so its player is unchanged.
+    // rigid unit — see docs/motion-spec.md section 8 and ui/player/ElementMotion.kt.
+    //
+    // Immersive is the opposite instruction: NO bounce. It used to take the shared
+    // MotionTokens.floatSpatial (damping 0.82), which is "slight overshoot then settle" — small,
+    // but on a full-screen surface carrying a cover and a whole page of travelling furniture that
+    // small overshoot is a visible wobble at the end of every open and close. Critically damped
+    // here instead, with the stiffness raised to keep the same arrival speed a 380 spring had.
     // (This is the one sanctioned exception to AN-11's "no sheet-specific springs" unification:
-    // the bounce IS the design here, and it is scoped to one theme.)
+    // the bounce IS the design in one theme and explicitly unwanted in the other.)
     val sheetSpring = remember(isMaterialYou) {
         if (isMaterialYou) androidx.compose.animation.core.spring<Float>(
             // 391ms settle, peak at 143ms, 5.4% overshoot. The first pass (0.60/380) took 580ms
             // and overshot 9.4%, which read as slow and wobbly rather than as a landing.
             dampingRatio = 0.68f, stiffness = 900f
-        ) else com.betteraudio.ui.theme.MotionTokens.floatSpatial
+        ) else androidx.compose.animation.core.spring<Float>(
+            dampingRatio = 1f, stiffness = 520f
+        )
     }
+
+    // The nested player route, and with it "has the player for THIS book ever been laid out".
+    //
+    // Keyed remember, so switching books (or opening one with no mini bar at all) hands back a
+    // fresh `false` on the very frame the target changes, while reopening the book the sheet
+    // already holds keeps the `true` it earned. That is exactly the difference between the two
+    // cases: an expand whose player is already on screen can start immediately; an expand that has
+    // to build the player first has to wait for it, or the morph runs against Rect.Zero.
+    // clearCoverSource() deliberately does not change this string (see its KDoc).
+    // The book, and ONLY the book. startPlaying used to be part of this string, which made
+    // "restore this book paused" and "resume this book" two different destinations for the same
+    // player -- so pressing Resume on a book the sheet was already holding tore the whole player
+    // down and rebuilt it (fresh ViewModel, fresh layout) on exactly the frame the expand started.
+    // Every morph then ran against a player that did not exist yet: the page had handed its title,
+    // track and Resume button over at p > 0.02 and there was nothing on the other side to catch
+    // them. That is the "player wasn't already open" case. Whether to start playing is an ACTION,
+    // not an address; it rides on the target and reaches the player as a parameter below.
+    val playerRoute = target?.let { "player?bookId=${it.bookId}" }
+    val playerReady = remember(playerRoute) { mutableStateOf(false) }
 
     // React to expand/collapse intents (token-based so they survive composition timing).
     LaunchedEffect(controller.expandToken) {
-        if (controller.expandToken > 0)
-            progressAnim.animateTo(1f, sheetSpring)
+        if (controller.expandToken > 0) {
+            // Let the player lay out first when it has not already. With a live mini bar it is
+            // already up and this costs nothing; with no mini bar at all the whole subtree —
+            // NavHost destination, ViewModel, the book's first Room emission — is being built from
+            // scratch on this very frame, and running the choreography against it means running it
+            // against nothing: every `own` rect is Rect.Zero and the page has already handed its
+            // furniture over. Worth a beat of stillness; not worth a hang.
+            if (!playerReady.value) withTimeoutOrNull(1200) {
+                snapshotFlow { playerReady.value }.first { it }
+            }
+            // Unpark FIRST, and let a layout pass actually land, so every morph modifier in
+            // the player has recorded its real on-screen bounds before progress leaves 0. Two
+            // frames: the first commits the recomposition that swaps the parking modifier out,
+            // the second is the layout pass whose onGloballyPositioned callbacks rewrite the
+            // bounds. Without this the whole choreography runs against parked coordinates.
+            try {
+                forceUnpark = true
+                androidx.compose.runtime.withFrameNanos { }
+                androidx.compose.runtime.withFrameNanos { }
+                progressAnim.animateTo(1f, sheetSpring)
+            } finally {
+                // Past this point `unparked` follows progress again, so a cancelled or finished
+                // expand can never leave an invisible full-screen sheet eating touches.
+                forceUnpark = false
+            }
+        }
     }
     LaunchedEffect(controller.collapseToken) {
         if (controller.collapseToken > 0)
@@ -394,16 +500,26 @@ fun PlayerSheet(
     // that still needs to morph from the tapped grid card's published bounds rather than a
     // nonexistent mini bar.
     val coverBoundsRegistry = LocalCoverBoundsRegistry.current
-    val sourceIsGridCard = !usingLivePlayback
-    val effectiveCoverSource = remember(target?.bookId, usingLivePlayback) {
-        if (sourceIsGridCard) {
-            coverBoundsRegistry.boundsState(target?.bookId ?: -1L)
-        } else {
-            miniCoverRect
+    // An info page opened the player: its cover is what is on screen, and the grid card the page
+    // grew out of is hidden behind it. This one outranks a live mini bar rather than deferring to
+    // it — the bar is a 64dp pill at the bottom of the screen and the cover is the thing under the
+    // finger that asked for the player, so it wins even when something else is already playing.
+    val infoCoverKey = target?.coverSourceKey
+    // "The source is a rectangle that is not the mini bar's cover slot" — which is what Material
+    // You branches on to pick the aspect-aware coverCropMorph, and what decides whether its
+    // background grows out of that rectangle too.
+    val sourceIsGridCard = !usingLivePlayback || infoCoverKey != null
+    val effectiveCoverSource = remember(target?.bookId, infoCoverKey, usingLivePlayback) {
+        when {
+            infoCoverKey != null -> coverBoundsRegistry.infoCoverBounds(infoCoverKey)
+            sourceIsGridCard -> coverBoundsRegistry.boundsState(target?.bookId ?: -1L)
+            else -> miniCoverRect
         }
     }
-    val effectiveCoverRadius = remember(target?.bookId, usingLivePlayback, isMaterialYou, miniCoverStyle) {
-        if (sourceIsGridCard) {
+    val effectiveCoverRadius = remember(target?.bookId, infoCoverKey, usingLivePlayback, isMaterialYou, miniCoverStyle) {
+        if (infoCoverKey != null) {
+            coverBoundsRegistry.infoCoverRadius(infoCoverKey)
+        } else if (sourceIsGridCard) {
             coverBoundsRegistry.radiusFor(target?.bookId ?: -1L)
         } else if (isMaterialYou) {
             12.dp   // matches the mini bar's 48dp thumbnail clip
@@ -421,19 +537,71 @@ fun PlayerSheet(
     }
     // Tell the grid card whose cover is currently morphing so it can hide its own copy (prevents
     // seeing both the still grid card AND the traveling player cover at once).
-    LaunchedEffect(sourceIsGridCard, target?.bookId) {
+    // Deliberately NOT registered for an info-page source: the page is still on screen and has its
+    // own setActiveMorph registration live for the same book (that is how it hides the grid card it
+    // grew out of), and two writers of one slot would leave whichever finished last in charge.
+    LaunchedEffect(sourceIsGridCard, infoCoverKey, target?.bookId) {
         coverBoundsRegistry.setActiveMorph(
-            if (sourceIsGridCard) target?.bookId ?: -1L else -1L,
+            if (sourceIsGridCard && infoCoverKey == null) target?.bookId ?: -1L else -1L,
             progressState
         )
     }
+    // Material You's background grows out of a rect too, and with no mini bar there is no pill to
+    // grow from — miniBarRect stays Rect.Zero, which morphingContainer reads as "no morph" and
+    // paints the whole screen on the first frame. Starting it from the same cover the transition is
+    // travelling from means the panel unfolds out of the picture instead of appearing behind it.
+    val containerSource = if (sourceIsGridCard) effectiveCoverSource else miniBarRect
+    val containerRadius = if (sourceIsGridCard) effectiveCoverRadius else MINI_BAR_RADIUS
+    // ── The resume leg ──────────────────────────────────────────────────────────────────────
+    // An info page publishes its own title, author, whole-book track and Resume button while it is
+    // on screen (see CoverBoundsRegistry.publishInfoSlot). When the player was opened from that
+    // page, those become the sources its counterparts travel out of — so the title/author simply
+    // point somewhere else and need no change in either player, while the track and the button are
+    // new travellers that only exist on this leg.
+    val resumeTitle = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.TITLE) }
+    }
+    val resumeAuthor = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.AUTHOR) }
+    }
+    val resumeTrack = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.TRACK) }
+    }
+    val resumeButton = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.BUTTON) }
+    }
+    val resumeIcon = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.BUTTON_ICON) }
+    }
+    val resumeLabel = remember(infoCoverKey) {
+        infoCoverKey?.let { coverBoundsRegistry.infoSlotBounds(it, InfoSlot.BUTTON_LABEL) }
+    }
+    // The page has to have actually published a button for this leg to be runnable — a page that
+    // hasn't laid out yet, or one that shows no Resume button at all, falls back to the ordinary
+    // reveal rather than travelling out of Rect.Zero.
+    // derivedStateOf: the page republishes these rects on every layout pass, and only the flip from
+    // "nothing published" to "published" is worth a recomposition here.
+    val resumeActive by remember(resumeButton) {
+        derivedStateOf { (resumeButton?.value ?: Rect.Zero) != Rect.Zero }
+    }
+
     val transition = remember(
-        effectiveCoverSource, effectiveCoverRadius, sourceIsGridCard, miniCoverStyle, isMaterialYou
+        effectiveCoverSource, effectiveCoverRadius, containerSource, containerRadius,
+        sourceIsGridCard, miniCoverStyle, isMaterialYou, resumeActive, infoCoverKey, playerReady
     ) {
         PlayerExpandTransition(
-            progressState, effectiveCoverSource, miniTitleRect, miniControlsRect, effectiveCoverRadius,
-            miniBar = miniBarRect, miniBarRadius = MINI_BAR_RADIUS, sourceIsGridCard = sourceIsGridCard,
-            miniAuthor = miniAuthorRect,
+            progressState, effectiveCoverSource,
+            miniTitle = if (resumeActive) resumeTitle!! else miniTitleRect,
+            miniControls = miniControlsRect,
+            coverSourceRadius = effectiveCoverRadius,
+            miniBar = containerSource, miniBarRadius = containerRadius, sourceIsGridCard = sourceIsGridCard,
+            miniAuthor = if (resumeActive) resumeAuthor!! else miniAuthorRect,
+            resumeActive = resumeActive,
+            infoTrack = resumeTrack ?: miniTitleRect,
+            resumeButton = resumeButton ?: miniControlsRect,
+            resumeIcon = resumeIcon ?: miniControlsRect,
+            resumeLabel = resumeLabel ?: miniControlsRect,
+            playerReady = playerReady,
             // A grid card is always a rectangle, so the circular morph only applies when the live
             // mini bar is genuinely the source.
             coverSourceIsCircle = !isMaterialYou && !sourceIsGridCard &&
@@ -468,6 +636,45 @@ fun PlayerSheet(
         },
         label = "miniBarLift"
     )
+
+    // ── Dismissal ──────────────────────────────────────────────────────────────────────────
+    // A fling-down close used to be instantaneous: playerController.stop() and controller.clear()
+    // on the same frame, so the bar was simply not there on the next one. Everything else in this
+    // app tells you where a thing went; this one blinked out. 0 = resting, 1 = gone.
+    //
+    // Driven from the draw phase through the layer the bar already has, so the dismissal costs no
+    // layout passes (C3-5, the same reason miniBarLift translates rather than pads).
+    val dismissAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+    var dismissing by remember { mutableStateOf(false) }
+
+    // How far it falls: its own height plus the padding beneath it, so it is clear of the display
+    // edge rather than merely mostly gone. Falls back to a sensible constant before the bar has
+    // ever reported bounds.
+    val dismissDropPx = (miniBarRect.value.height.takeIf { it > 1f } ?: 220f) +
+        with(density) { (bottomNavInset + 20.dp).toPx() }
+
+    suspend fun dismissMiniBar() {
+        if (dismissing) return
+        dismissing = true
+        try {
+            // Accelerating out, not a spring: this is a thing leaving, and a spring's settle
+            // implies it is coming to rest somewhere — which it is not.
+            dismissAnim.animateTo(
+                1f,
+                androidx.compose.animation.core.tween(
+                    durationMillis = 260,
+                    easing = androidx.compose.animation.core.FastOutLinearInEasing
+                )
+            )
+            playerController.stop()
+            controller.clear()
+        } finally {
+            // Reset before the next book opens, so a bar that returns does not start invisible
+            // and one screen low if this composable outlives the clear.
+            dismissAnim.snapTo(0f)
+            dismissing = false
+        }
+    }
 
     // The full player's own resume action (PlayerViewModel.play(), with series context and the
     // isCompleted-safe start position — see AudioCascade.resolveStart), captured from whichever
@@ -547,13 +754,20 @@ fun PlayerSheet(
                     // Float NAV_PILL_GAP above the pill on home; hug the bottom (the padding
                     // above already accounts for) elsewhere. Deferred (draw-phase) read of
                     // miniBarLift.value, same discipline as dragProgress/alpha below.
-                    translationY = -miniBarLift.value.toPx()
+                    // The dismissal rides on top of the lift: it falls from wherever it was
+                    // sitting, rather than snapping to a baseline first.
+                    translationY = -miniBarLift.value.toPx() + dismissAnim.value * dismissDropPx
                     // Material You: the pill stays fully visible — it's physically occluded by
                     // the full player's morphingContainer (same rect, grown from it) the moment
                     // the sheet starts opening, so no separate fade is needed. Immersive keeps the
                     // original crossfade look (no growing container there).
-                    alpha = if (isMaterialYou) 1f
+                    val expandAlpha = if (isMaterialYou) 1f
                             else (1f - dragProgress.floatValue * IMMERSIVE_MINI_BAR_FADE_RATE).coerceIn(0f, 1f)
+                    // Fading FASTER than it falls, so it is gone before it reaches the bottom of
+                    // its travel: a bar still faintly visible as it clears the edge reads as
+                    // sliding behind the display rather than being dismissed.
+                    val dismissAlpha = (1f - dismissAnim.value * 1.6f).coerceIn(0f, 1f)
+                    alpha = expandAlpha * dismissAlpha
                 }
                 .draggable(
                     orientation = Orientation.Vertical,
@@ -582,8 +796,7 @@ fun PlayerSheet(
                         isDragging = false
                         if (velocity > 1800f && dragProgress.floatValue < 0.15f &&
                             gestureStartedSettled && gesturePeak < 0.15f) {
-                            playerController.stop()
-                            controller.clear()
+                            scope.launch { dismissMiniBar() }
                         } else scope.launch { settle(velocity) }
                     }
                 )
@@ -592,23 +805,30 @@ fun PlayerSheet(
         // ── Full player — fixed full-screen; its elements morph out of the mini bar. When
         // fully collapsed it's parked offscreen so the app underneath stays interactive.
         if (target != null) {
-            val nested = rememberNavController()
-            LaunchedEffect(target) {
-                nested.navigate(
-                    "player?bookId=${target!!.bookId}&startPlaying=${target!!.startPlaying}"
-                ) {
-                    // Clear the entire nested back stack so every book switch gets a fresh
-                    // ViewModel. launchSingleTop is intentionally NOT set — it matches on
-                    // route pattern, not the URL, so it would reuse the old book's entry.
-                    popUpTo(0) { inclusive = true }
-                }
-            }
+            // The NavHost below STARTS on the player route; it never navigates. See the comment on
+            // `key(playerRoute)` there for why, and for what a book switch does instead.
             Box(
                 Modifier
                     .fillMaxSize()
-                    .graphicsLayer {
-                        translationY = if (dragProgress.floatValue <= 0.001f) heightPx.toFloat() else 0f
-                    }
+                    // Parked offscreen while collapsed, so the app underneath stays interactive.
+                    //
+                    // This MUST be a placement offset and not a graphicsLayer translation. Every
+                    // morph modifier in the player records its own bounds with
+                    // `onGloballyPositioned { positionInRoot() }`, and positionInRoot includes any
+                    // ancestor layer transform — so while the sheet was parked, every element in
+                    // the player believed it lived one whole screen height below where it actually
+                    // draws. A graphicsLayer change does not relayout, so those bounds were never
+                    // corrected: the pill, the title and the transport spent the whole transition
+                    // translated ~3000px off the top of the screen, sliding in from nowhere around
+                    // p = 0.3. Invisible with a live mini bar (the player had already been laid out
+                    // unparked at some point, so its bounds were right), and the whole of the
+                    // "only when the mini player is closed" bug. `offset` runs in the layout phase,
+                    // reads dragProgress deferred exactly like the layer did, and re-fires
+                    // onGloballyPositioned the moment it unparks.
+                    .then(
+                        if (unparked) Modifier
+                        else Modifier.offset { androidx.compose.ui.unit.IntOffset(0, heightPx) }
+                    )
                     // draggable on the container — activates only after the touch-slop
                     // threshold, so buttons/menus inside still receive their own taps.
                     .draggable(
@@ -646,31 +866,79 @@ fun PlayerSheet(
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .morphingContainer(
-                                source = miniBarRect,
-                                ownSizePx = ownSizePx,
-                                progress = progressState,
-                                sourceRadius = MINI_BAR_RADIUS,
-                                destRadius = 0.dp,
-                                color = growingColor
+                            .then(
+                                // The resume leg does NOT unfold. Growing this container out of
+                                // the cover is right when the player is arriving over some other
+                                // screen, and wrong here: the page underneath is this same book's
+                                // page, its title/author/track/button are travelling into their
+                                // player positions, and a window opening out of the cover drags
+                                // all of that sideways behind a corner wipe -- which reads as
+                                // "the page expanded from the top left", the very gesture the
+                                // library -> Book Info leg already owns. So the ground simply
+                                // becomes opaque in place, on the same p^2 ramp Immersive's
+                                // backdrop uses, which also keeps the first ~0.16 of the
+                                // transition (the leaving synopsis, chip and % row) visible.
+                                if (resumeActive) Modifier.drawBehind {
+                                    val p = dragProgress.floatValue.coerceIn(0f, 1f)
+                                    drawRect(bgColor.copy(alpha = p * p))
+                                }
+                                else Modifier.morphingContainer(
+                                    source = containerSource,
+                                    ownSizePx = ownSizePx,
+                                    progress = progressState,
+                                    sourceRadius = containerRadius,
+                                    destRadius = 0.dp,
+                                    color = growingColor
+                                )
                             )
                     )
                 }
                 CompositionLocalProvider(LocalPlayerExpand provides transition) {
+                    // ── Why this NavHost starts on the player route and never navigates ──────────
+                    //
+                    // A NavHost renders its destinations inside an AnimatedContent. On the frame a
+                    // navigate lands, that AnimatedContent clips the incoming destination to a
+                    // window that opens downward from the top, while the content inside it is
+                    // already laid out at full size. Measured on the emulator, Resume leg, the
+                    // destination's own boundsInRoot against its measured height of 3168:
+                    //
+                    //     p=0.00  h=3168  clipped 0..791
+                    //     p=0.31  h=3168  clipped 0..1683
+                    //     p=0.73  h=3168  clipped 0..2546
+                    //     p=1.00  h=3168  clipped 0..3168
+                    //
+                    // The play button sits at 2652..2868, so it is cut away entirely until p≈0.77
+                    // and then appears to grow downward. That is the reported "rectangle that is
+                    // expanding": the transport and the utility row are not late, they are clipped.
+                    // The Box wrapping this NavHost measures 0..3168 unclipped throughout, so the
+                    // clip is introduced strictly between it and the destination.
+                    //
+                    // `sizeTransform = { null }` and EnterTransition.None do NOT remove it, which is
+                    // why this is structural rather than another transition argument. The mini-bar
+                    // leg never shows the fault because the NavHost settled on this route long ago:
+                    // there, the same probe fires once, unclipped. The Resume leg navigates on the
+                    // very frame the sheet expands, so the wipe runs underneath the choreography.
+                    //
+                    // So: do not navigate. `target != null` guards this whole block, so playerRoute
+                    // is always a real route here and the old "blank" start destination was only
+                    // ever a placeholder to navigate away from. `key(playerRoute)` gives a book
+                    // switch what `popUpTo(0) { inclusive = true }` used to give it — a brand new
+                    // controller, back stack and ViewModel — by rebuilding the NavHost outright
+                    // instead of animating between two destinations.
+                    key(playerRoute) {
                     NavHost(
-                        navController = nested,
-                        startDestination = "blank",
+                        navController = rememberNavController(),
+                        startDestination = playerRoute!!,
                         enterTransition = { EnterTransition.None },
                         exitTransition = { ExitTransition.None },
                         popEnterTransition = { EnterTransition.None },
+                        sizeTransform = { null },
                         popExitTransition = { ExitTransition.None }
                     ) {
-                        composable("blank") { Box(Modifier.fillMaxSize()) }
                         composable(
-                            route = "player?bookId={bookId}&startPlaying={startPlaying}",
+                            route = "player?bookId={bookId}",
                             arguments = listOf(
-                                navArgument("bookId") { type = NavType.LongType; defaultValue = -1L },
-                                navArgument("startPlaying") { type = NavType.BoolType; defaultValue = true }
+                                navArgument("bookId") { type = NavType.LongType; defaultValue = -1L }
                             )
                         ) { backStackEntry ->
                             // Obtained explicitly (rather than via PlayerContent's own default
@@ -681,10 +949,15 @@ fun PlayerSheet(
                             LaunchedEffect(playerViewModel) { resumeAction = { playerViewModel.play() } }
                             PlayerContent(
                                 onCollapse = { controller.collapse() },
-                                startPlaying = backStackEntry.arguments?.getBoolean("startPlaying") ?: true,
+                                // Read live off the target rather than frozen into the route, so a
+                                // restore (false) that the user then resumes (true) flips this in
+                                // place instead of rebuilding the screen. The players key their
+                                // auto-play effect on it.
+                                startPlaying = target?.startPlaying ?: true,
                                 viewModel = playerViewModel
                             )
                         }
+                    }
                     }
                 }
             }

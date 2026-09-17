@@ -102,7 +102,7 @@ internal fun LazyListScope.widgetSection(
     viewModel: SettingsViewModel
 ) {
     item {
-        NavRow(Icons.Default.Widgets, "Widget designs", onOpenWidgetGallery)
+        NavRow(Icons.Default.Widgets, "Widget designs", onClick = onOpenWidgetGallery)
     }
 
     item {

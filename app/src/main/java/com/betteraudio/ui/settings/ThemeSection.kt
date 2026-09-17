@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Remove
@@ -117,28 +118,41 @@ internal fun LazyListScope.themeSection(
     appIcon: com.betteraudio.util.AppIconManager.AppIcon,
     viewModel: SettingsViewModel
 ) {
+    item { BandHeader("Theme") }
+
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("App theme", style = MaterialTheme.typography.titleSmall)
-                com.betteraudio.ui.components.THEME_OPTIONS.forEach { opt ->
-                    com.betteraudio.ui.components.ThemeOptionRow(
-                        opt = opt,
-                        selected = appTheme == opt.theme,
-                        onSelect = { viewModel.setAppTheme(opt.theme) }
-                    )
-                }
+        CollapsingCard(
+            "App theme",
+            com.betteraudio.ui.components.THEME_OPTIONS.firstOrNull { it.theme == appTheme }?.title,
+            viewModel
+        ) {
+            com.betteraudio.ui.components.THEME_OPTIONS.forEach { opt ->
+                com.betteraudio.ui.components.ThemeOptionRow(
+                    opt = opt,
+                    selected = appTheme == opt.theme,
+                    onSelect = { viewModel.setAppTheme(opt.theme) }
+                )
             }
         }
     }
 
+    // The app's type. Both looks, always visible: the two themes disagree about colour and shape,
+    // not about which face the words are set in.
+    item { TypefaceCard(viewModel) }
+
     // Colour source only applies to the Material You theme (Immersive always follows the cover).
-    item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+    if (appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) item {
+        run {
             var showColorPicker by remember { mutableStateOf(false) }
-            CardContainer {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Color source", style = MaterialTheme.typography.titleSmall)
+            CollapsingCard(
+                "Colour source",
+                when (colorSource) {
+                    com.betteraudio.ui.theme.ThemeColorSource.WALLPAPER -> "System wallpaper"
+                    com.betteraudio.ui.theme.ThemeColorSource.COVER -> "Book cover"
+                    com.betteraudio.ui.theme.ThemeColorSource.CUSTOM -> "Custom colour"
+                },
+                viewModel
+            ) {
                     val wallpaperAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     if (wallpaperAvailable) {
                         ThemeRadioRow(
@@ -172,7 +186,6 @@ internal fun LazyListScope.themeSection(
                     if (colorSource == com.betteraudio.ui.theme.ThemeColorSource.CUSTOM) {
                         HapticTextButton(onClick = { showColorPicker = true }) { Text("Change custom color") }
                     }
-                }
             }
             if (showColorPicker) {
                 CustomThemeColorDialog(
@@ -187,23 +200,30 @@ internal fun LazyListScope.themeSection(
     // The manual accent pin. Only meaningful where an automatic cover pick is what's on screen:
     // Immersive always themes from the cover, and Material You does so on its "Book cover" source.
     // On wallpaper or a custom colour there is no cover-derived accent to disagree with.
-    item {
-        val coverAccentVisible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE ||
-            (appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU &&
-                colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER)
-        AnimatedVisibility(visible = coverAccentVisible) {
-            CoverAccentCard(viewModel)
-        }
+    // Hidden groups are left OUT of the list rather than emitted and hidden. An `item { }` holding
+    // an invisible child still takes the LazyColumn's own vertical spacing, and with every group
+    // collapsed to one row those empty slots read as a dead band — three of them stacked up as a
+    // visible gap above the App icon band in Material You. Nothing here needs the cross-fade a
+    // hidden-but-present item bought: a theme switch rebuilds the whole screen anyway.
+    val coverAccentVisible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE ||
+        (appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU &&
+            colorSource == com.betteraudio.ui.theme.ThemeColorSource.COVER)
+    if (coverAccentVisible) item {
+        CoverAccentCard(viewModel)
     }
+
+    // Bands are placed at the boundaries the existing order already has, rather than reordering
+    // the groups to suit them — a band that lies about what is under it is worse than none, and
+    // every band below holds at least one group that is visible in both themes, so none of them
+    // can end up as a header over nothing.
+    item { BandHeader("Display") }
 
     // Landscape player layout — Material You only (the Immersive player has a single landscape
     // layout). Portrait is unaffected by this choice either way.
-    item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) {
+    if (appTheme == com.betteraudio.ui.theme.AppTheme.MATERIAL_YOU) item {
+        run {
             val style by viewModel.landscapePlayerStyle.collectAsStateWithLifecycle()
-            CardContainer {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Landscape player", style = MaterialTheme.typography.titleSmall)
+            CollapsingCard("Landscape player", style.label, viewModel) {
                     Text(
                         "How the full player lays out when you turn the phone sideways. " +
                             "Portrait is the same either way.",
@@ -218,7 +238,6 @@ internal fun LazyListScope.themeSection(
                             onSelect = { viewModel.setLandscapePlayerStyle(opt) }
                         )
                     }
-                }
             }
         }
     }
@@ -226,9 +245,15 @@ internal fun LazyListScope.themeSection(
     // Dark mode + pure black apply to both looks (Immersive's own backdrop is the blurred cover,
     // so pure black there would have no visible effect — hidden unless Material You is active).
     item {
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Dark mode", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard(
+            "Dark mode",
+            when (darkMode) {
+                com.betteraudio.ui.theme.DarkMode.AUTO -> "Auto"
+                com.betteraudio.ui.theme.DarkMode.ON -> "On"
+                com.betteraudio.ui.theme.DarkMode.OFF -> "Off"
+            },
+            viewModel
+        ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
                         com.betteraudio.ui.theme.DarkMode.AUTO to "Auto",
@@ -259,16 +284,15 @@ internal fun LazyListScope.themeSection(
                         HapticSwitch(checked = pureBlack, onCheckedChange = { viewModel.setPureBlack(it) })
                     }
                 }
-            }
         }
     }
+
+    item { BandHeader("Player & feel") }
 
     // Haptics apply to both looks, so this card never hides.
     item {
         val hapticStrength by viewModel.hapticStrength.collectAsStateWithLifecycle()
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Haptics", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard("Haptics", hapticStrength.label, viewModel) {
                 Text(
                     "Voyage answers a touch with a short vibration chosen to match what happened " +
                         "\u2014 a tick for a tap, a different one each way for a switch, detents " +
@@ -290,7 +314,6 @@ internal fun LazyListScope.themeSection(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
         }
     }
 
@@ -305,9 +328,7 @@ internal fun LazyListScope.themeSection(
         val scrubberStyle by (
             if (immersiveSeekBar) viewModel.scrubberStyle else viewModel.scrubberStyleMaterial
             ).collectAsStateWithLifecycle()
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Seek bar", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard("Seek bar", scrubberStyle.label, viewModel) {
                 Text(
                     "How the player draws the progress bar you drag. All five drag and seek the " +
                         "same way \u2014 they differ only in how loudly they state " +
@@ -325,17 +346,14 @@ internal fun LazyListScope.themeSection(
                         }
                     )
                 }
-            }
         }
     }
 
     // Immersive only: the mini player cover, and therefore where its progress goes.
-    item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+    if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) item {
+        run {
             val miniCoverStyle by viewModel.miniCoverStyle.collectAsStateWithLifecycle()
-            CardContainer {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Mini player cover", style = MaterialTheme.typography.titleSmall)
+            CollapsingCard("Mini player cover", miniCoverStyle.label, viewModel) {
                     com.betteraudio.ui.player.MiniCoverStyle.entries.forEach { opt ->
                         ThemeRadioRow(
                             title = opt.label,
@@ -344,59 +362,43 @@ internal fun LazyListScope.themeSection(
                             onSelect = { viewModel.setMiniCoverStyle(opt) }
                         )
                     }
-                }
             }
         }
     }
 
     // Immersive only — Material You has no "glass" pill for this to affect.
-    item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
-            CardContainer {
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Dynamic pills", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "The mini player and nav pill blur whatever is actually behind them, " +
-                                "updating live as the library scrolls underneath. Off, they show " +
-                                "a fixed smudge of the now-playing cover instead.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+    if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) item {
+        run {
+            CollapsingGroup(
+                title = "Dynamic pills",
+                value = null,
+                expanded = viewModel.openGroup == "Dynamic pills",
+                onToggle = { viewModel.toggleGroup("Dynamic pills") },
+                trailing = {
                     HapticSwitch(checked = dynamicPills, onCheckedChange = { viewModel.setDynamicPills(it) })
                 }
+            ) {
+                Text(
+                    "The mini player and nav pill blur whatever is actually behind them, " +
+                        "updating live as the library scrolls underneath. Off, they show " +
+                        "a fixed smudge of the now-playing cover instead.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
 
     // Immersive only — this darkens the app-wide blurred-cover backdrop, which Material You
     // does not draw at all.
-    item {
-        AnimatedVisibility(visible = appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) {
+    if (appTheme == com.betteraudio.ui.theme.AppTheme.IMMERSIVE) item {
+        run {
             val backdropDim by viewModel.backdropDim.collectAsStateWithLifecycle()
             // Dragging writes on every frame; DataStore is a suspending write, so the slider
             // tracks the thumb locally and only the committed value goes to disk (on release).
             var dragDim by remember { mutableStateOf<Float?>(null) }
             val shown = dragDim ?: backdropDim
-            CardContainer {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Backdrop darkening", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "${(shown * 100).roundToInt()}%",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+            CollapsingCard("Backdrop darkening", "${(shown * 100).roundToInt()}%", viewModel) {
                     Text(
                         "How dark the blurred cover behind the app gets toward the bottom of "  +
                             "the screen. It fades in gradually, the same way the blur does — "  +
@@ -414,18 +416,21 @@ internal fun LazyListScope.themeSection(
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
             }
         }
     }
+
+    item { BandHeader("App icon") }
 
     // ── App icon (see util/AppIconManager.kt) ───────────────────────────────
     item {
         var pendingIcon by remember { mutableStateOf<com.betteraudio.util.AppIconManager.AppIcon?>(null) }
         val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
-        CardContainer {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("App icon", style = MaterialTheme.typography.titleSmall)
+        CollapsingCard(
+            "App icon",
+            "${appIcon.style.label} · ${appIcon.colorLabel}",
+            viewModel
+        ) {
                 // Which style's colours are showing. Follows the active icon, so opening the
                 // page always lands on the family you are actually using.
                 var openStyle by remember(appIcon) {
@@ -493,7 +498,6 @@ internal fun LazyListScope.themeSection(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            }
         }
         pendingIcon?.let { target ->
             AppIconConfirmDialog(
@@ -693,9 +697,11 @@ private fun CoverAccentCard(viewModel: SettingsViewModel) {
     // the swatch list, so the custom tile is what carries the tick for it.
     val fromCover = effective != null && swatches.any { it.toArgb() == effective }
 
-    CardContainer {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Cover accent", style = MaterialTheme.typography.titleSmall)
+    CollapsingCard(
+        "Cover accent",
+        if (globalAccent != null) "Every book" else if (pinned != null) "Pinned" else "From cover",
+        viewModel
+    ) {
             Text(
                 when {
                     globalAccent != null ->
@@ -791,7 +797,6 @@ private fun CoverAccentCard(viewModel: SettingsViewModel) {
                     }
                 }
             }
-        }
     }
 
     if (showPicker) {
@@ -1001,6 +1006,191 @@ private fun AppIconConfirmDialog(
         confirmButton = { HapticTextButton(onClick = onConfirm) { Text("Change icon") } },
         dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/**
+ * Settings → Theme → Typeface.
+ *
+ * The app shipped with exactly one face and no way to change it, which is a reasonable place to
+ * start and a strange place to stay for an app people read in for hours. The choice is deliberately
+ * binary — Voyage's own Poppins, or a file from the phone — rather than a list of bundled
+ * alternatives: shipping four more faces would add megabytes to the APK to guess at a preference
+ * the user can simply state.
+ *
+ * The preview is the type ramp rather than a specimen sheet: what matters is not what the font's
+ * lowercase g looks like but whether a book title, a chapter line and a duration all still read at
+ * the sizes Voyage actually draws them.
+ */
+@Composable
+private fun TypefaceCard(viewModel: SettingsViewModel) {
+    val path by viewModel.customFontPath.collectAsStateWithLifecycle()
+    val name by viewModel.customFontName.collectAsStateWithLifecycle()
+    val error by viewModel.fontError.collectAsStateWithLifecycle()
+    val family = com.betteraudio.ui.theme.rememberCustomFontFamily(path)
+    val fileSize = remember(path) {
+        runCatching { File(path).takeIf { it.isFile }?.length() ?: 0L }.getOrDefault(0L)
+    }
+
+    // OpenDocument, not GetContent: the app needs a Uri it can read for the length of one copy, and
+    // OpenDocument is the one that reliably offers the file browser rather than the gallery.
+    // "*/*" rather than a font MIME list on purpose — providers disagree wildly about what a .ttf
+    // is (font/ttf, application/x-font-ttf, application/octet-stream, or nothing at all), and a
+    // narrow filter hides the user's own file from them. The extension check and the real
+    // Typeface load in CustomFontStore are what actually decide.
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) viewModel.importCustomFont(uri)
+    }
+
+    CollapsingCard(
+        "Typeface",
+        if (path.isBlank()) "Poppins" else (name.takeIf { it.isNotBlank() } ?: "Custom"),
+        viewModel
+    ) {
+            Text(
+                "The font every screen is set in. A file you pick is copied into Voyage, so it " +
+                    "keeps working after the original is moved or deleted.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            ThemeRadioRow(
+                title = "Poppins",
+                detail = "Voyage's own type.",
+                selected = path.isBlank(),
+                onSelect = { if (path.isNotBlank()) viewModel.clearCustomFont() }
+            )
+            ThemeRadioRow(
+                title = "From a font file",
+                detail = "A .ttf, .otf or .ttc from your phone.",
+                selected = path.isNotBlank(),
+                onSelect = { picker.launch(arrayOf("*/*")) }
+            )
+
+            if (path.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Drawn in the font it names, which is the shortest possible answer to
+                        // "did that work?".
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "Aa",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontFamily = family,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                name.ifBlank { "Custom font" },
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                buildString {
+                                    append(File(path).name)
+                                    if (fileSize > 0) append(" · ${fileSize / 1024} KB")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        HapticIconButton(onClick = { viewModel.clearCustomFont() }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                "Remove this font",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+                HapticTextButton(onClick = { picker.launch(arrayOf("*/*")) }) {
+                    Text("Choose a file…")
+                }
+            }
+
+            if (error != null) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth().clickable { viewModel.dismissFontError() }
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Icon(
+                            Icons.Default.ErrorOutline, null,
+                            Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            error.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
+            // Only worth the room once there is something to preview: in Poppins this would be a
+            // panel showing the app in the font the app is already in.
+            if (family != null) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "Shadow Slave",
+                            style = MaterialTheme.typography.displaySmall.copy(fontFamily = family)
+                        )
+                        Text(
+                            "Book 3 · Sanctuary",
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = family)
+                        )
+                        Text(
+                            "Sunny wakes in the Dream Realm with nothing but a nightmare spell " +
+                                "and a debt he can't name.",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = family),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            "14 H 08 M LEFT · 62%",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = family),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Text(
+                    "Weights the file doesn't carry are drawn by the system instead — a " +
+                        "single-weight font will look flat where Voyage asks for bold.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+    }
 }
 
 @Composable

@@ -144,6 +144,69 @@ class CoverBoundsRegistry {
 
     private fun seriesRectState(seriesId: Long) =
         seriesRects.getOrPut(seriesId) { mutableStateOf(Rect.Zero) }
+
+    // ── Info pages (Book Info / the Series page) ─────────────────────────────────────────────
+    //
+    // A third source, because there are three places a full player can grow out of and they are
+    // live at the same time: the mini bar, a library grid card, and the cover of an info page that
+    // is itself currently morphing out of that grid card. Keyed by a STRING rather than by id,
+    // because these keys have to span both kinds ("book:12" and "series:12" are different covers)
+    // and a Long map cannot say which it holds.
+
+    private val infoRects = mutableStateMapOf<String, MutableState<Rect>>()
+    private val infoRadii = mutableStateMapOf<String, Dp>()
+    private val infoSlots = mutableStateMapOf<String, MutableState<Rect>>()
+
+    /** Called by the active info page frame on every layout pass, with the radius its own cover is
+     *  drawn at — 28dp in Material You, 0dp in Immersive, which is the frame's business and not
+     *  the player's. */
+    fun publishInfoCover(key: String, rect: Rect, radius: Dp) {
+        infoRectState(key).value = rect
+        infoRadii[key] = radius
+    }
+
+    fun infoCoverBounds(key: String): State<Rect> = infoRectState(key)
+    fun infoCoverRadius(key: String): Dp = infoRadii[key] ?: 0.dp
+
+    /** Reset in place, for the same reason [forget] is: PlayerSheet captures this MutableState by
+     *  `remember` for the length of a transition that outlives the page it came from. */
+    fun forgetInfoCover(key: String) {
+        infoRects[key]?.value = Rect.Zero
+        infoRadii.remove(key)
+        for (slot in InfoSlot.entries) infoSlots["$key/$slot"]?.value = Rect.Zero
+    }
+
+    private fun infoRectState(key: String) =
+        infoRects.getOrPut(key) { mutableStateOf(Rect.Zero) }
+
+    /**
+     * The rest of the info page's furniture, for the Resume → player choreography.
+     *
+     * The cover above is a special case only because it also carries a corner radius; these are
+     * plain rectangles. Each is where an element of the *page* is sitting right now, which is where
+     * the player's own counterpart starts its travel — the page's title is the player's title's
+     * source, its Resume button is the play button's, and so on. See
+     * [com.betteraudio.ui.player.ResumeChoreography].
+     *
+     * Published from [com.betteraudio.ui.components.BookInfoPanel] on every layout pass, and read
+     * by [PlayerSheet] when the player was opened from that page.
+     */
+    fun publishInfoSlot(key: String, slot: InfoSlot, rect: Rect) {
+        infoSlotState(key, slot).value = rect
+    }
+
+    fun infoSlotBounds(key: String, slot: InfoSlot): State<Rect> = infoSlotState(key, slot)
+
+    private fun infoSlotState(key: String, slot: InfoSlot) =
+        infoSlots.getOrPut("$key/$slot") { mutableStateOf(Rect.Zero) }
+
+    companion object {
+        fun bookInfoKey(bookId: Long) = "book:$bookId"
+        fun seriesInfoKey(seriesId: Long) = "series:$seriesId"
+    }
 }
+
+/** The pieces of an info page the player grows out of, beyond its cover. */
+enum class InfoSlot { TITLE, AUTHOR, TRACK, BUTTON, BUTTON_ICON, BUTTON_LABEL }
 
 val LocalCoverBoundsRegistry = compositionLocalOf { CoverBoundsRegistry() }

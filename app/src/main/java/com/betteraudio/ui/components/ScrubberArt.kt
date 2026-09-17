@@ -211,7 +211,9 @@ private fun DrawScope.drawAurora(
     f: Float, swell: Float, accent: Color, trackColor: Color, bead: Color
 ) {
     val cy = size.height / 2f
-    val hair = (1f + 0.6f * swell).dp.toPx()
+    // Thicker than the 1dp hairline this shipped with, by request: at 1dp the unplayed half all
+    // but disappeared against a bright cover, so the track read as starting at the playhead.
+    val hair = (1.8f + 0.8f * swell).dp.toPx()
     drawRoundRect(
         color = trackColor.copy(alpha = trackColor.alpha * 0.65f),
         topLeft = Offset(0f, cy - hair / 2f),
@@ -240,7 +242,7 @@ private fun DrawScope.drawAurora(
     }
 
     if (hx > 0.5f) {
-        val washH = (2.5f + 1.5f * swell).dp.toPx()
+        val washH = (4f + 1.8f * swell).dp.toPx()
         drawRoundRect(
             brush = Brush.horizontalGradient(
                 colors = listOf(Color.Transparent, accent.copy(alpha = 0.38f), accent),

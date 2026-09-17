@@ -23,6 +23,10 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -43,7 +47,11 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Remove
@@ -127,7 +135,7 @@ internal fun settingsCardColor(): Color =
     if (LocalAppTheme.current == AppTheme.IMMERSIVE) ImmersiveStyle.cardColor() else MaterialStyle.cardColor()
 
 @Composable
-internal fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
+internal fun NavRow(icon: ImageVector, label: String, value: String? = null, onClick: () -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = settingsCardColor(),
@@ -141,10 +149,137 @@ internal fun NavRow(icon: ImageVector, label: String, onClick: () -> Unit) {
             Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(14.dp))
             Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            // The row's current answer, so the root page states the settings instead of only
+            // forwarding to them. Optional: a destination with no single summarising value
+            // (Diagnostics) simply omits it rather than inventing one.
+            if (!value.isNullOrBlank()) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(end = 10.dp)
+                )
+            }
             Icon(Icons.AutoMirrored.Filled.ArrowForwardIos, null,
                 Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/**
+ * A settings group that shows only its answer until you open it.
+ *
+ * Settings' navigation problem was never the root list — that is nine rows and half a screen of
+ * empty space. It was one level down: "Look and feel" was about seven screens of unbroken scroll,
+ * because every option is a full-width card carrying a title AND a two-line description, drawn
+ * permanently expanded, for choices made once and then never thought about again. You scrolled past
+ * roughly fifteen paragraphs of prose to reach App icon.
+ *
+ * Collapsed to `title — value`, the same section is one screen. The descriptions are not deleted;
+ * they appear when the group opens, which is the only moment they are worth their space.
+ *
+ * [value] is the current answer, drawn on the right in the accent colour — so a collapsed section is
+ * still a readable summary of every choice in it, not just a list of doors.
+ *
+ * The trailing glyph is deliberately [Icons.Default.ExpandMore] and not the [NavRow] chevron: down
+ * means "opens here", the sideways chevron means "opens another screen". Both glyphs already
+ * existed in the app, so this adds no new icon.
+ *
+ * Open/closed state is hoisted rather than remembered internally, so a section can hold one group
+ * open at a time and so a future search can land with its group already open.
+ */
+@Composable
+internal fun CollapsingGroup(
+    title: String,
+    value: String?,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    /**
+     * A control drawn in the collapsed header, in place of [value]. For a switch the control IS
+     * the answer, so burying it behind a disclosure would cost a tap to reach something that was
+     * already one tap away; the paragraph explaining it is what belongs inside. Tapping the row
+     * still expands, tapping the control still operates it.
+     */
+    trailing: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val haptics = com.betteraudio.ui.haptics.LocalHaptics.current
+    CardContainer {
+        Column {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (expanded) haptics.dismiss() else haptics.reveal()
+                        onToggle()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                if (trailing != null) {
+                    Box(Modifier.padding(end = 10.dp)) { trailing() }
+                } else if (!value.isNullOrBlank()) {
+                    Text(
+                        value,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(end = 10.dp)
+                    )
+                }
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            AnimatedVisibility(visible = expanded) {
+                Column(
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    content = content
+                )
+            }
+        }
+    }
+}
+
+/**
+ * [CollapsingGroup] keyed on its own title, which is what a section wants at almost every call
+ * site: the titles within a section are already unique, so they make a serviceable id and there is
+ * nothing extra to keep in sync.
+ */
+@Composable
+internal fun CollapsingCard(
+    title: String,
+    value: String?,
+    viewModel: SettingsViewModel,
+    content: @Composable ColumnScope.() -> Unit
+) = CollapsingGroup(
+    title = title,
+    value = value,
+    expanded = viewModel.openGroup == title,
+    onToggle = { viewModel.toggleGroup(title) },
+    content = content
+)
+
+/**
+ * The label over a run of related groups ("THEME", "PLAYER", "FEEL"). Purely a scanning aid: the
+ * rows below it are ordinary groups and nothing about the band is interactive.
+ */
+@Composable
+internal fun BandHeader(text: String) {
+    Text(
+        text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 2.dp)
+    )
 }
 
 @Composable
@@ -297,3 +432,66 @@ internal fun allFilesAccessIntent(context: Context): Intent =
             Uri.parse("package:${context.packageName}")
         )
     }
+
+// ─── Search in the app bar ────────────────────────────────────────────────────
+// Shared by both theme variants: each keeps its own TopAppBar and colours, but the search
+// behaviour is identical and duplicating it would mean fixing every change twice.
+
+/**
+ * The top bar's title slot: the section name normally, the search field while searching.
+ *
+ * Search replaces the title rather than sitting above the list. A permanent field costs a row of
+ * height on every visit for something wanted occasionally, and competes with the first band for the
+ * eye; the app bar already has the room, and the row is where a search icon is looked for.
+ */
+@Composable
+internal fun SettingsTopBarTitle(viewModel: SettingsViewModel, sectionTitle: String) {
+    if (!viewModel.searchActive) {
+        Text(sectionTitle, style = MaterialTheme.typography.titleLarge)
+        return
+    }
+    val focus = remember { FocusRequester() }
+    // Opening search puts the caret in the field: tapping the icon is already the statement of
+    // intent, and making the user then tap the field to type would be a second tap for nothing.
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    Box {
+        if (viewModel.searchQuery.isEmpty()) {
+            Text(
+                "Search settings",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        BasicTextField(
+            value = viewModel.searchQuery,
+            onValueChange = { viewModel.searchQuery = it },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.titleLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            modifier = Modifier.fillMaxWidth().focusRequester(focus)
+        )
+    }
+}
+
+/**
+ * The top bar's search action, to the right of the title.
+ *
+ * Only offered on the root: the sections are one screen each now, so there is nothing to find
+ * inside one, and searching from a section would have to decide whether it means "here" or
+ * "everywhere". [SettingsViewModel.navigateTo] closes search for the same reason.
+ */
+@Composable
+internal fun SettingsSearchAction(viewModel: SettingsViewModel, currentSection: SettingsSection) {
+    if (currentSection != SettingsSection.Root) return
+    if (viewModel.searchActive) {
+        HapticIconButton(onClick = { viewModel.closeSearch() }) {
+            Icon(Icons.Default.Close, "Close search")
+        }
+    } else {
+        HapticIconButton(onClick = { viewModel.openSearch() }) {
+            Icon(Icons.Default.Search, "Search settings")
+        }
+    }
+}

@@ -1,0 +1,125 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; background: #0B0806; }
+    a { color: #FFA552; } a:hover { color: #FFB871; }
+  </style>
+</helmet>
+
+<!-- IMMERSIVE, editing · still full-bleed. Zoomed to 2.5× the map covers the screen outright, so
+     there is no letterbox to fill; the veils stay because the chrome still has to be readable, and
+     the edit rail is a column of glass discs on the artwork rather than icons in a title row. -->
+<div style="width:390px;height:844px;position:relative;overflow:hidden;color:#FFEBD5;font-family:Poppins,system-ui,sans-serif;background:#0B0806">
+
+  <div style="position:absolute;left:-190px;top:-300px;width:975px;height:1253px">
+    <svg viewBox="0 0 700 900" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
+      <defs>
+        <linearGradient id="parchD" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#E8DCC0"/><stop offset="0.55" stop-color="#DDCFAE"/><stop offset="1" stop-color="#CBBA95"/></linearGradient>
+        <linearGradient id="seaD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9C4B2"/><stop offset="1" stop-color="#9FAE9C"/></linearGradient>
+      </defs>
+      <rect width="700" height="900" fill="url(#seaD)"/>
+      <g stroke="#8C9A8A" stroke-width="1" fill="none" opacity="0.5"><path d="M0 120 Q 180 96 360 122 T 700 108"/><path d="M0 200 Q 180 176 360 202 T 700 188"/><path d="M0 760 Q 180 736 360 762 T 700 748"/><path d="M0 840 Q 180 816 360 842 T 700 828"/></g>
+      <path d="M92 96 C 210 60 340 84 402 140 C 470 200 452 260 500 300 C 566 354 622 336 640 404 C 660 480 596 520 604 592 C 612 664 556 700 470 726 C 386 752 300 800 236 776 C 168 750 150 676 106 626 C 58 572 44 500 70 430 C 96 360 62 260 78 194 C 84 160 78 120 92 96 Z" fill="url(#parchD)" stroke="#6B5C3C" stroke-width="2.5"/>
+      <g stroke="#8C7A52" stroke-width="1.1" fill="none" opacity="0.6"><path d="M120 180 C 200 150 280 190 320 240"/><path d="M150 300 C 240 280 300 320 360 300"/><path d="M110 470 C 190 450 250 490 330 470"/><path d="M180 620 C 260 596 340 636 420 610"/><path d="M330 700 C 400 680 470 706 540 686"/></g>
+      <g fill="none" stroke="#6B5C3C" stroke-width="1.6" opacity="0.75"><path d="M190 210 l 22 -34 l 22 34 Z"/><path d="M232 214 l 26 -42 l 26 42 Z"/><path d="M418 372 l 24 -38 l 24 38 Z"/><path d="M458 376 l 20 -30 l 20 30 Z"/><path d="M262 536 l 22 -34 l 22 34 Z"/></g>
+      <g stroke="#7C8B6F" stroke-width="1.8" fill="none" opacity="0.8"><path d="M330 150 C 320 240 372 300 356 380 C 342 452 392 500 380 574"/><path d="M150 380 C 220 396 262 372 300 400"/></g>
+      <g fill="#6B7F5A" opacity="0.55"><circle cx="168" cy="250" r="5"/><circle cx="184" cy="262" r="4"/><circle cx="156" cy="266" r="4"/><circle cx="520" cy="470" r="5"/><circle cx="536" cy="484" r="4"/><circle cx="506" cy="486" r="4"/><circle cx="300" cy="660" r="5"/><circle cx="316" cy="672" r="4"/><circle cx="286" cy="674" r="4"/></g>
+    </svg>
+  </div>
+
+  <div style="position:absolute;left:0;right:0;top:0;height:230px;background:linear-gradient(180deg,rgba(31,20,10,.92) 0%,rgba(31,20,10,.78) 46%,rgba(31,20,10,.34) 78%,rgba(31,20,10,0) 100%)"></div>
+  <div style="position:absolute;left:0;right:0;bottom:0;height:210px;background:linear-gradient(0deg,rgba(31,20,10,.95) 0%,rgba(31,20,10,.78) 44%,rgba(31,20,10,.28) 78%,rgba(31,20,10,0) 100%)"></div>
+
+  <!-- an already-placed pin at this zoom -->
+  <div style="position:absolute;left:92px;top:346px;display:flex;flex-direction:column;align-items:center;gap:2px;width:110px;margin-left:-55px">
+    <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(140deg,#3E5A62,#1E2C31);border:1.5px solid rgba(255,235,213,.6);box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#FFEBD5">NE</div>
+    <div style="padding:1px 8px;border-radius:50px;background:rgba(25,23,21,.72);backdrop-filter:blur(8px);font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;white-space:nowrap">Nephis</div>
+  </div>
+
+  <!-- THE FIX: a pin added from "Add a pin" lands in the middle of what you are looking at, with a
+       placement hint — instead of writing an element that renders nothing at all. -->
+  <div style="position:absolute;left:196px;top:420px;display:flex;flex-direction:column;align-items:center;gap:5px;width:170px;margin-left:-85px">
+    <div style="padding:4px 11px;border-radius:50px;background:#FFA552;font-size:11px;line-height:14px;font-weight:600;letter-spacing:0.3px;color:#231405;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.4)">Drag Sunny into place</div>
+    <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(140deg,#5B4A6B,#2E2536);border:2px dashed #FFA552;box-shadow:0 0 0 8px rgba(255,165,82,.14),0 4px 16px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#FFEBD5">SU</div>
+    <div style="padding:1px 8px;border-radius:50px;background:rgba(25,23,21,.72);backdrop-filter:blur(8px);font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;white-space:nowrap">Sunny</div>
+  </div>
+
+  <!-- chrome -->
+  <div style="position:absolute;left:0;right:0;top:44px;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:2px;padding:10px 6px 0 18px">
+      <div style="display:flex;flex-direction:column;gap:1px;flex-grow:1;min-width:0">
+        <div style="font-size:14px;line-height:20px;font-weight:600">Shadow Slave</div>
+        <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;color:rgba(255,231,205,.68)">REV 3 · YOURS</div>
+      </div>
+      <div style="width:38px;height:38px;border-radius:50%;background:#FFA552;display:flex;align-items:center;justify-content:center">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#231405" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><path d="M3 3l18 18"/></svg>
+      </div>
+      <div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.8" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </div>
+    </div>
+    <div style="height:42px;margin:10px 14px;border-radius:50px;background:rgba(25,23,21,.58);backdrop-filter:blur(16px);padding:3px;display:flex">
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:50px;font-size:12px;font-weight:500;letter-spacing:0.3px;color:rgba(255,231,205,.68)">Cast</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:50px;background:#FFA552;font-size:12px;font-weight:600;letter-spacing:0.3px;color:#231405">Map</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:50px;font-size:12px;font-weight:500;letter-spacing:0.3px;color:rgba(255,231,205,.68)">Timeline</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;border-radius:50px;font-size:12px;font-weight:500;letter-spacing:0.3px;color:rgba(255,231,205,.68)">Pack</div>
+    </div>
+    <div style="align-self:flex-start;margin:2px 0 0 16px;display:flex;align-items:center;gap:8px;padding:7px 10px 7px 14px;border-radius:50px;background:rgba(25,23,21,.58);backdrop-filter:blur(16px);box-shadow:0 4px 18px rgba(0,0,0,.4)">
+      <div style="display:flex;flex-direction:column;gap:1px">
+        <div style="font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.3px">Sanctuary Coast</div>
+        <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;color:rgba(255,231,205,.68)">6 pins · map 1 of 3</div>
+      </div>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,231,205,.68)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </div>
+  </div>
+
+  <!-- edit rail: glass discs down the free edge, clear of the spine above -->
+  <div style="position:absolute;right:16px;top:216px;display:flex;flex-direction:column;gap:10px">
+    <div style="width:44px;height:44px;border-radius:50%;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="m21 15-5-5L5 21"/></svg>
+    </div>
+    <div style="width:44px;height:44px;border-radius:50%;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+    </div>
+    <div style="width:44px;height:44px;border-radius:50%;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </div>
+    <div style="width:44px;height:44px;border-radius:50%;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#FF7A6B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+    </div>
+  </div>
+
+  <!-- versions + zoom, floating just above the dock -->
+  <div style="position:absolute;left:16px;bottom:82px;display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:50px;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.4)">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,231,205,.68)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+    <div style="font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.3px">Versions · 3</div>
+  </div>
+  <div style="position:absolute;right:16px;bottom:82px;display:flex;align-items:center;gap:7px;padding:8px 14px;border-radius:50px;background:rgba(25,23,21,.62);backdrop-filter:blur(16px);box-shadow:0 6px 20px rgba(0,0,0,.4)">
+    <div style="font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.3px">2.5×</div>
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="rgba(255,231,205,.68)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4M15 3h4a2 2 0 0 1 2 2v4M9 21H5a2 2 0 0 1-2-2v-4M15 21h4a2 2 0 0 0 2-2v-4"/></svg>
+  </div>
+
+  <div style="position:absolute;left:10px;right:10px;bottom:10px;border-radius:24px;background:rgba(25,23,21,.62);backdrop-filter:blur(22px);box-shadow:0 12px 34px rgba(0,0,0,.55);display:flex;align-items:center;gap:10px;padding:10px 12px">
+    <div style="width:38px;height:38px;border-radius:50%;flex:0 0 auto;background:linear-gradient(150deg,#3A2A44,#171019)"></div>
+    <div style="display:flex;flex-direction:column;gap:1px;flex-grow:1;min-width:0">
+      <div style="font-size:12px;line-height:16px;font-weight:600;letter-spacing:0.3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Ch. 214 — The Forgotten Shore</div>
+      <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;color:rgba(255,231,205,.68)">4:12:08</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19 2 12l9-7v14Z"/><path d="M22 19l-9-7 9-7v14Z"/></svg></div>
+      <div style="width:44px;height:44px;border-radius:50%;background:#FFA552;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="#231405"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></div>
+      <div style="width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m13 19 9-7-9-7v14Z"/><path d="m2 19 9-7-9-7v14Z"/></svg></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

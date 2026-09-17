@@ -117,6 +117,11 @@ class SettingsStore @Inject constructor(
         // CLASSIC | EMBER | RIBS | AURORA | HORIZON.
         val SCRUBBER_STYLE               = stringPreferencesKey("scrubber_style")
         val SCRUBBER_STYLE_MATERIAL      = stringPreferencesKey("scrubber_style_material")
+        // The user's own app font: an absolute path to the copy Voyage keeps (see CustomFontStore),
+        // and a name to show for it. "" = Voyage's own Poppins. The path is deliberately what is
+        // stored rather than the picked content:// Uri, which stops resolving between launches.
+        val CUSTOM_FONT_PATH             = stringPreferencesKey("custom_font_path")
+        val CUSTOM_FONT_NAME             = stringPreferencesKey("custom_font_name")
         // A single accent applied to EVERY cover, as "#AARRGGBB" ("" = off). Outranks COVER_ACCENTS
         // and both automatic pickers: the user asked for one colour across the library rather than
         // a colour per book. See CoverAccentCard.
@@ -276,6 +281,8 @@ class SettingsStore @Inject constructor(
 
     val homeSection: Flow<String>              = prefsData.map { it[Keys.HOME_SECTION] ?: "AUDIO" }.distinctUntilChanged()
     val customThemeColor: Flow<String>         = prefsData.map { it[Keys.CUSTOM_THEME_COLOR] ?: "default" }.distinctUntilChanged()
+    val customFontPath: Flow<String>           = prefsData.map { it[Keys.CUSTOM_FONT_PATH] ?: "" }.distinctUntilChanged()
+    val customFontName: Flow<String>           = prefsData.map { it[Keys.CUSTOM_FONT_NAME] ?: "" }.distinctUntilChanged()
     val darkMode: Flow<String>                 = prefsData.map { it[Keys.DARK_MODE] ?: "AUTO" }.distinctUntilChanged()
     val pureBlack: Flow<Boolean>               = prefsData.map { it[Keys.PURE_BLACK] ?: false }.distinctUntilChanged()
     // Defaults ON: the pills' real backdrop blur is the Immersive theme's signature surface, and
@@ -496,6 +503,14 @@ class SettingsStore @Inject constructor(
     }
     suspend fun setDefaultAudioPresetId(id: Long) {
         context.dataStore.edit { it[Keys.DEFAULT_AUDIO_PRESET_ID] = id }
+    }
+    /** Both halves together, always: a path with no name shows an unnamed row, and a name with no
+     *  path shows a font that is not in use. */
+    suspend fun setCustomFont(path: String, name: String) {
+        context.dataStore.edit {
+            it[Keys.CUSTOM_FONT_PATH] = path
+            it[Keys.CUSTOM_FONT_NAME] = name
+        }
     }
     suspend fun setWidgetDefaultCoverPath(path: String) {
         context.dataStore.edit { it[Keys.WIDGET_DEFAULT_COVER_PATH] = path }

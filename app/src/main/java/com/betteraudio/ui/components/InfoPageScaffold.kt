@@ -20,6 +20,9 @@ import com.betteraudio.data.db.entities.BookStatus
 import com.betteraudio.ui.immersive.components.ImmersiveInfoPageFrame
 import com.betteraudio.ui.material.components.MaterialInfoPageFrame
 import com.betteraudio.ui.material.motion.LocalVoyageMotion
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.Dp
+import com.betteraudio.ui.player.CoverBoundsRegistry
 import com.betteraudio.ui.player.LocalCoverBoundsRegistry
 import com.betteraudio.ui.theme.AppTheme
 import com.betteraudio.ui.theme.LocalAppTheme
@@ -73,6 +76,9 @@ data class InfoPageData(
     val progressFraction: Float = 0f,
     val totalMs: Long = 0L,
     val synopsis: String? = null,
+    /** Absolute chapter starts, for the whole-book track. Empty is fine — see
+     *  [com.betteraudio.ui.components.BookSegmentTrack]. */
+    val chapterStarts: List<Long> = emptyList(),
 )
 
 /**
@@ -123,6 +129,15 @@ fun InfoPageScaffold(
     onBack: () -> Unit,
     onResume: () -> Unit,
     backEnabled: Boolean = true,
+    /**
+     * The player sheet's live expansion, when this page is allowed to be the player's morph source.
+     *
+     * Null — the default — is a page that simply gets read: it publishes nothing and never hides
+     * anything. Non-null turns Resume into the first half of one gesture, and the panel hands its
+     * own title, author, whole-book track and button over to the player as it opens (see
+     * [com.betteraudio.ui.player.ResumeChoreography]).
+     */
+    sheetProgress: State<Float>? = null,
     contentModifier: Modifier = Modifier,
     overflowItems: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit = {},
     belowPanel: @Composable ColumnScope.() -> Unit = {},
@@ -132,11 +147,14 @@ fun InfoPageScaffold(
     // Motion is the one thing the frames don't own: Material You springs come from its own tokens,
     // Immersive keeps the hand-tuned pair the pages have always used.
     val openSpec = when (theme) {
-        AppTheme.IMMERSIVE -> spring<Float>(dampingRatio = 0.85f, stiffness = 380f)
+        // No overshoot in Immersive, by instruction: the page is a full-bleed cover, and a
+        // rebound on a full-screen image reads as the picture wobbling. Stiffer to keep the
+        // arrival as quick as the bouncier spring felt.
+        AppTheme.IMMERSIVE -> spring<Float>(dampingRatio = 1f, stiffness = 500f)
         AppTheme.MATERIAL_YOU -> motion.spatialDefault
     }
     val closeSpec = when (theme) {
-        AppTheme.IMMERSIVE -> spring<Float>(dampingRatio = 0.9f, stiffness = 400f)
+        AppTheme.IMMERSIVE -> spring<Float>(dampingRatio = 1f, stiffness = 520f)
         AppTheme.MATERIAL_YOU -> motion.spatialDefault
     }
     SideEffect { state.closeSpec = closeSpec }
@@ -170,6 +188,34 @@ fun InfoPageScaffold(
     val coverSourceRadius = when (kind) {
         InfoPageKind.BOOK -> registry.radiusFor(morphId)
         InfoPageKind.SERIES -> registry.seriesRadiusFor(morphId)
+    }
+
+    // The other end of the same idea: this page's OWN cover, published so the full player can grow
+    // out of it. Grid card -> info page has always morphed; info page -> player did not, and
+    // instead shrank the page back onto the card before starting the book, so the cover you had
+    // just tapped travelled away from you and playback began somewhere off screen. The player now
+    // takes this rect as its source (see PlayerSheet), which makes the two legs one gesture.
+    //
+    // The radius comes from the frame rather than from here because the two looks draw the cover
+    // differently — a 28dp tonal card in Material You, full-bleed and square-cornered in Immersive
+    // — and the player has to start at whichever it actually is.
+    val coverKey = remember(morphId, kind) {
+        when (kind) {
+            InfoPageKind.BOOK -> CoverBoundsRegistry.bookInfoKey(morphId)
+            InfoPageKind.SERIES -> CoverBoundsRegistry.seriesInfoKey(morphId)
+        }
+    }
+    val publishCover: (Rect, Dp) -> Unit = { rect, radius ->
+        registry.publishInfoCover(coverKey, rect, radius)
+    }
+    DisposableEffect(coverKey) { onDispose { registry.forgetInfoCover(coverKey) } }
+
+    // The rest of the page's furniture, on the same terms as the cover above.
+    val handoff = remember(coverKey, sheetProgress, registry) {
+        if (sheetProgress == null) com.betteraudio.ui.player.NoResumeHandoff
+        else com.betteraudio.ui.player.ResumeHandoff(sheetProgress) { slot, rect ->
+            registry.publishInfoSlot(coverKey, slot, rect)
+        }
     }
 
     // Predictive back drives the open morph backwards, all from ONE coroutine.
@@ -217,11 +263,13 @@ fun InfoPageScaffold(
     when (theme) {
         AppTheme.IMMERSIVE -> ImmersiveInfoPageFrame(
             data, openProgress, coverSource, coverSourceRadius,
-            closeWithMorph, onResume, contentModifier, overflowItems, belowPanel
+            closeWithMorph, onResume, contentModifier, overflowItems, belowPanel, publishCover,
+            handoff
         )
         AppTheme.MATERIAL_YOU -> MaterialInfoPageFrame(
             data, openProgress, coverSource, coverSourceRadius,
-            closeWithMorph, onResume, contentModifier, overflowItems, belowPanel
+            closeWithMorph, onResume, contentModifier, overflowItems, belowPanel, publishCover,
+            handoff
         )
     }
 }

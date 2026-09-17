@@ -71,6 +71,19 @@ object SettingsSpecs {
         spec("app_theme", "string", { it.appTheme.first().takeIf(String::isNotBlank) }, { s, v -> s.setAppTheme(v) }),
         spec("theme_color_source", "string", { it.themeColorSource.first() }, { s, v -> s.setThemeColorSource(v) }),
         spec("custom_theme_color", "string", { it.customThemeColor.first() }, { s, v -> s.setCustomThemeColor(v) }),
+        // The user's own app font. Both halves are omitted when unset so an untouched settings.json
+        // stays free of empty strings, and the path is worth mirroring precisely because the file
+        // it points at lives in `.voyage/fonts/` — the two travel together through a reinstall.
+        spec(
+            "custom_font_path", "string",
+            { it.customFontPath.first().takeIf(String::isNotBlank) },
+            { s, v -> s.setCustomFont(v, s.customFontName.first()) }
+        ),
+        spec(
+            "custom_font_name", "string",
+            { it.customFontName.first().takeIf(String::isNotBlank) },
+            { s, v -> s.setCustomFont(s.customFontPath.first(), v) }
+        ),
         // Manual per-cover accent picks. Omitted when empty so a settings.json from a user who
         // never pinned one stays free of an empty object.
         spec("cover_accents", "string", { it.coverAccents.first().takeIf(String::isNotBlank) }, { s, v -> s.setCoverAccentsRaw(v) }),

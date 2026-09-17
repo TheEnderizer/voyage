@@ -94,6 +94,44 @@ fun NameDialog(
     )
 }
 
+/**
+ * The one dialog every destructive companion action goes through.
+ *
+ * Nothing in the deck used to ask. An icon tap deleted a map, a pin, a version of the art, a
+ * character with everything recorded about them, an entry or a note — immediately, with no undo
+ * anywhere in the pack model to fall back on. That is fine for a gesture you can reverse by
+ * repeating it (dragging a pin, renaming a board) and wrong for one you cannot.
+ *
+ * [body] is deliberately a parameter rather than derived from [confirm]: the useful sentence is
+ * never "are you sure", it is *what else goes with it* and *what survives* — the picture files a
+ * deleted map leaves on disk, the timeline entries an un-pinned character keeps. Each call site
+ * knows those and nothing here could.
+ *
+ * The confirm button says the verb and takes the error colour; the dismiss is the ordinary text
+ * button, so the safe answer is the one that looks like every other cancel in the app.
+ */
+@Composable
+fun ConfirmDialog(
+    title: String,
+    body: String,
+    confirm: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = appDialogColor(),
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            HapticTextButton(onClick = onConfirm) {
+                Text(confirm, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 @Composable
 fun AddEntityDialog(onConfirm: (EntityKind, String) -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }

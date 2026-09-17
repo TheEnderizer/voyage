@@ -143,6 +143,10 @@ fun VoyageTheme(
     // Immersive, and to Material You only while its colour source is the book cover, because those
     // are the two cases where an automatic cover pick is what's on screen to disagree with.
     coverAccentOverride: Color? = null,
+    // The user's own app font, or null for Voyage's Poppins. Resolved by the caller (it is a file
+    // on disk, and MainActivity is where the preference is already being collected) so this stays
+    // a pure function of what it is handed.
+    fontFamily: androidx.compose.ui.text.font.FontFamily? = null,
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -236,9 +240,14 @@ fun VoyageTheme(
         LocalAppTheme provides appTheme,
         LocalThemeCoverPath provides coverArtPath
     ) {
+        // Rebuilt only when the face actually changes: voyageTypography allocates fifteen TextStyles
+        // and this composable recomposes on every frame of a colour transition.
+        val typography = remember(fontFamily) {
+            if (fontFamily == null) Typography else voyageTypography(fontFamily)
+        }
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = typography,
             shapes = expressiveShapes,
             content = content
         )

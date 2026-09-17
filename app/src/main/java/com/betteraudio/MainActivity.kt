@@ -259,6 +259,10 @@ class MainActivity : ComponentActivity() {
                 com.betteraudio.ui.theme.DarkMode.OFF -> false
                 com.betteraudio.ui.theme.DarkMode.AUTO -> isSystemInDarkTheme()
             }
+            // The user's own app font. Null whenever nothing is chosen or the file has gone, which
+            // is the same thing on screen — Voyage's own Poppins — see rememberCustomFontFamily.
+            val customFontPath by settings.customFontPath.collectAsStateWithLifecycle("")
+            val customFontFamily = com.betteraudio.ui.theme.rememberCustomFontFamily(customFontPath)
             VoyageTheme(
                 darkTheme = darkTheme,
                 appTheme = appTheme,
@@ -266,7 +270,8 @@ class MainActivity : ComponentActivity() {
                 customThemeColor = customThemeColor,
                 pureBlack = pureBlack,
                 coverArtPath = coverPath,
-                coverAccentOverride = coverAccentOverride
+                coverAccentOverride = coverAccentOverride,
+                fontFamily = customFontFamily
             ) {
                 val navController = rememberNavController()
                 val sheetController = rememberPlayerSheetController()
@@ -471,7 +476,12 @@ class MainActivity : ComponentActivity() {
                     popExitTransition = {
                         if (isMaterialYou) materialPopExit()
                         else immersivePopExit()
-                    }
+                    },
+                    // Same reason as the three nested NavHosts (see PlayerSheet's): every
+                    // destination here is full-screen, so navigation's default container-size
+                    // animation only ever clips the screen to a box growing out of the top-left
+                    // corner while the route change lands.
+                    sizeTransform = { null }
                 ) {
 
                     composable("home") {
@@ -532,7 +542,14 @@ class MainActivity : ComponentActivity() {
                 // animation to work, exactly like Book Info inside PlayerSheet below.
                 SeriesOverlay(
                     controller = seriesOverlayController,
-                    onOpenPlayer = { bookId -> sheetController.open(bookId = bookId) }
+                    // Grows out of the series cover on screen, not out of a grid card behind it.
+                    onOpenPlayer = { bookId ->
+                        sheetController.open(
+                            bookId = bookId,
+                            coverSourceKey = com.betteraudio.ui.player.CoverBoundsRegistry
+                                .seriesInfoKey(seriesOverlayController.seriesId)
+                        )
+                    }
                 )
 
                 // Book info overlay — same treatment as the series overlay above (a persistent
@@ -541,11 +558,38 @@ class MainActivity : ComponentActivity() {
                 // opens the full player on that book.
                 BookInfoOverlay(
                     controller = bookInfoOverlayController,
-                    // Starts the book behind the closing overlay rather than expanding the full
-                    // player over it — starting a book is not a request to be taken to another
-                    // screen. Matches a grid card's play button and Home's hero Resume.
-                    onResume = { bookId -> sheetController.startCollapsed(bookId) }
+                    // Resume takes you to the player, morphing out of the cover the page is already
+                    // showing. (It used to start the book behind a closing overlay instead, on the
+                    // reasoning that starting a book is not a request to change screen — true of a
+                    // grid card's play button, which is a control on a list, and not of a Resume
+                    // button on the book's own page, where the next thing you want is the transport.)
+                    onResume = { bookId ->
+                        sheetController.open(
+                            bookId = bookId,
+                            coverSourceKey = com.betteraudio.ui.player.CoverBoundsRegistry
+                                .bookInfoKey(bookId)
+                        )
+                    },
+                    // Resume is the first half of one gesture: the page's own title, author,
+                    // whole-book track and button become the player's, so the panel has to know how
+                    // far the player has opened (see ResumeChoreography).
+                    sheetProgress = sheetController.expandProgress
                 )
+                // An info page that opened the player stays mounted so the player can morph out of
+                // its cover; it closes when the player has finished covering it. Full expansion,
+                // not `isExpanded` (which flips at halfway) — unmounting the page mid-travel would
+                // pop the part of it still visible around the growing window. Harmless when no
+                // overlay is open, and correct when one is open for another reason: a fully
+                // expanded player means anything underneath it is off screen.
+                androidx.compose.runtime.LaunchedEffect(sheetController) {
+                    androidx.compose.runtime.snapshotFlow { sheetController.expandProgress.floatValue }
+                        .collect { p ->
+                            if (p >= 0.995f) {
+                                bookInfoOverlayController.close()
+                                seriesOverlayController.close()
+                            }
+                        }
+                }
                 } // end recordBackdrop Box — everything the floating glass is allowed to sample
 
                 // Floating nav pill (ArchiveTune style) — home route only; the player sheet

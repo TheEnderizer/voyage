@@ -1,0 +1,56 @@
+<svg viewBox="0 0 700 900" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
+  <defs>
+    <linearGradient id="parch" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#E8DCC0"/>
+      <stop offset="0.55" stop-color="#DDCFAE"/>
+      <stop offset="1" stop-color="#CBBA95"/>
+    </linearGradient>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#B9C4B2"/>
+      <stop offset="1" stop-color="#9FAE9C"/>
+    </linearGradient>
+    <radialGradient id="vig" cx="0.5" cy="0.45" r="0.75">
+      <stop offset="0.55" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3A2E18" stop-opacity="0.42"/>
+    </radialGradient>
+  </defs>
+  <rect width="700" height="900" fill="url(#sea)"/>
+  <g stroke="#8C9A8A" stroke-width="1" fill="none" opacity="0.5">
+    <path d="M0 120 Q 180 96 360 122 T 700 108"/>
+    <path d="M0 200 Q 180 176 360 202 T 700 188"/>
+    <path d="M0 760 Q 180 736 360 762 T 700 748"/>
+    <path d="M0 840 Q 180 816 360 842 T 700 828"/>
+  </g>
+  <path d="M92 96 C 210 60 340 84 402 140 C 470 200 452 260 500 300 C 566 354 622 336 640 404
+           C 660 480 596 520 604 592 C 612 664 556 700 470 726 C 386 752 300 800 236 776
+           C 168 750 150 676 106 626 C 58 572 44 500 70 430 C 96 360 62 260 78 194 C 84 160 78 120 92 96 Z"
+        fill="url(#parch)" stroke="#6B5C3C" stroke-width="2.5"/>
+  <g stroke="#8C7A52" stroke-width="1.1" fill="none" opacity="0.6">
+    <path d="M120 180 C 200 150 280 190 320 240"/>
+    <path d="M150 300 C 240 280 300 320 360 300"/>
+    <path d="M110 470 C 190 450 250 490 330 470"/>
+    <path d="M180 620 C 260 596 340 636 420 610"/>
+    <path d="M330 700 C 400 680 470 706 540 686"/>
+  </g>
+  <g fill="none" stroke="#6B5C3C" stroke-width="1.6" opacity="0.75">
+    <path d="M190 210 l 22 -34 l 22 34 Z"/>
+    <path d="M232 214 l 26 -42 l 26 42 Z"/>
+    <path d="M418 372 l 24 -38 l 24 38 Z"/>
+    <path d="M458 376 l 20 -30 l 20 30 Z"/>
+    <path d="M262 536 l 22 -34 l 22 34 Z"/>
+  </g>
+  <g stroke="#7C8B6F" stroke-width="1.8" fill="none" opacity="0.8">
+    <path d="M330 150 C 320 240 372 300 356 380 C 342 452 392 500 380 574"/>
+    <path d="M150 380 C 220 396 262 372 300 400"/>
+  </g>
+  <g fill="#6B7F5A" opacity="0.55">
+    <circle cx="168" cy="250" r="5"/><circle cx="184" cy="262" r="4"/><circle cx="156" cy="266" r="4"/>
+    <circle cx="520" cy="470" r="5"/><circle cx="536" cy="484" r="4"/><circle cx="506" cy="486" r="4"/>
+    <circle cx="300" cy="660" r="5"/><circle cx="316" cy="672" r="4"/><circle cx="286" cy="674" r="4"/>
+  </g>
+  <g opacity="0.55" stroke="#6B5C3C" stroke-width="1.4" fill="none">
+    <circle cx="590" cy="150" r="34"/>
+    <path d="M590 110 l 0 80 M550 150 l 80 0 M590 116 l 9 25 l 25 9 l -25 9 l -9 25 l -9 -25 l -25 -9 l 25 -9 Z"/>
+  </g>
+  <rect width="700" height="900" fill="url(#vig)"/>
+</svg>

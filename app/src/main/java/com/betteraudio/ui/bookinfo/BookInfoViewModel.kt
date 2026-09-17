@@ -75,6 +75,23 @@ class BookInfoViewModel @Inject constructor(
         repository.getBookWithProgress(bookId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /**
+     * Absolute start of every chapter, for the whole-book track the page now draws (the player's
+     * own [com.betteraudio.ui.components.BookSegmentTrack]).
+     *
+     * DB-backed and scoped to this page's book, exactly as
+     * [com.betteraudio.ui.player.PlayerViewModel.chapterTimeline] is — the page has no playback
+     * wiring at all, and none is needed to say how a book is divided. Only the mark starts are
+     * exposed: a plain `List<Long>` compares by value, so it can sit inside the page's
+     * [com.betteraudio.ui.components.InfoPageData] without defeating skipping.
+     */
+    val chapterStarts: StateFlow<List<Long>> =
+        combine(repository.getChaptersForBook(bookId), bookWithProgress) { chs, bwp ->
+            com.betteraudio.playback.ChapterTimeline
+                .build(bwp?.audioFiles ?: emptyList(), chs, bookId)
+                .marks.map { it.startMs }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     private val _synopsisGenerating = MutableStateFlow(false)
     val synopsisGenerating: StateFlow<Boolean> = _synopsisGenerating.asStateFlow()
 

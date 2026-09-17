@@ -2,7 +2,6 @@ package com.betteraudio.ui.immersive.player
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -24,7 +23,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -33,7 +31,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -67,7 +69,14 @@ import com.betteraudio.ui.player.PlayerViewModel
 import com.betteraudio.ui.player.activeChapterRowIndex
 import com.betteraudio.ui.player.SkipSilenceSettingsSheet
 import com.betteraudio.ui.player.SleepTimerSheet
+import com.betteraudio.ui.components.BookSegmentTrack
+import com.betteraudio.ui.player.ResumeChoreography
+import com.betteraudio.ui.player.elementMotion
 import com.betteraudio.ui.player.expandReveal
+import com.betteraudio.ui.player.resumeIconMorph
+import com.betteraudio.ui.player.resumeLabelMorph
+import com.betteraudio.ui.player.resumeOrReveal
+import com.betteraudio.ui.player.resumePillMorph
 import com.betteraudio.ui.player.morphFrom
 import com.betteraudio.ui.player.morphFromCircle
 import com.betteraudio.ui.theme.Pill
@@ -162,7 +171,9 @@ fun PlayerContent(
     // e.g. touchLastPlayed inside play()) before the service confirms the new bookId via syncState.
     var hasAutoPlayed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(bwp) {
+    // Keyed on startPlaying as well as bwp: it is no longer frozen into the nav route, so a book
+    // restored paused and then resumed flips it in place, and that flip IS the request to play.
+    LaunchedEffect(bwp, startPlaying) {
         // Only auto-play when the user deliberately opened this book (startPlaying = true).
         // Cold-start restores (startPlaying = false) must not start playback automatically.
         if (!startPlaying || hasAutoPlayed) return@LaunchedEffect
@@ -241,6 +252,15 @@ fun PlayerContent(
 
         val trackColor = Color.White.copy(alpha = 0.24f)
 
+        // Which leg of the transition is running. `false` is the mini bar (or a grid card), and
+        // every modifier below falls back to exactly what it always did; `true` is Book Info's
+        // Resume button, where most of this screen travels out of the page instead of revealing
+        // in place. See ResumeChoreography.
+        val resume = expand.resumeActive
+        // The play button's RESTING bounds - what the transport buttons slide out from under.
+        val playRect = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+        val chapterStarts = remember(chapterTimeline) { chapterTimeline.marks.map { it.startMs } }
+
         val dimColor = Color.Black
         Box(
             Modifier
@@ -314,8 +334,20 @@ fun PlayerContent(
                             )
                     )
                     .graphicsLayer {
+                        // Not drawn at all on the resume leg. This is the SHARP copy of the cover,
+                        // opaque until p = 0.55 so the eye has something solid to follow out of the
+                        // mini bar -- but it is un-scrimmed and top-anchored at its own full aspect,
+                        // while both the page and the finished player show the BAKED composite
+                        // (scrimmed, its sharp half sitting a quarter down). On this leg the morph
+                        // is an identity, so the sharp copy doesn't travel: it just slams over the
+                        // page at full opacity, the scrim vanishes and the artwork's visible extent
+                        // jumps downward, then the whole thing settles back as it fades out at
+                        // 0.55-0.90. That flash IS the "page expanding" this leg was reported for.
+                        // The page and the player draw the same backdrop, so cross-fading nothing
+                        // is exactly right here.
                         val p = expandProgress.value
-                        alpha = 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
+                        alpha = if (resume) 0f
+                                else 1f - ((p - 0.55f) / 0.35f).coerceIn(0f, 1f)
                     }
             )
 
@@ -327,7 +359,8 @@ fun PlayerContent(
             ) {
                 // ── Top bar ─────────────────────────────────────────────
                 Row(
-                    Modifier.fillMaxWidth().padding(vertical = 6.dp).expandReveal(expandProgress),
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp)
+                        .resumeOrReveal(resume, ResumeChoreography.topBar, expandProgress),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     ScrimButton(Icons.Default.KeyboardArrowDown, "Back", tonal = false, onClick = onBack)
@@ -416,7 +449,13 @@ fun PlayerContent(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     // Moves/enlarges out of the mini player's title as the sheet opens.
-                    modifier = Modifier.fillMaxWidth().morphFrom(expand.miniTitle, expandProgress, anchorTopLeft = true)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(
+                        if (resume) Modifier.elementMotion(
+                            ResumeChoreography.title, expandProgress, source = expand.miniTitle
+                        ) else Modifier.morphFrom(expand.miniTitle, expandProgress, anchorTopLeft = true)
+                    )
                 )
                 val credit = listOfNotNull(
                     effectiveAuthor?.takeIf { it.isNotBlank() },
@@ -430,7 +469,11 @@ fun PlayerContent(
                         color = onScrimMuted,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth().expandReveal(expandProgress)
+                        modifier = Modifier.fillMaxWidth().then(
+                            if (resume) Modifier.elementMotion(
+                                ResumeChoreography.author, expandProgress, source = expand.miniAuthor
+                            ) else Modifier.expandReveal(expandProgress)
+                        )
                     )
                 }
                 if (!isLocked && chapterTimeline.hasMultiple && cur != null) {
@@ -439,7 +482,7 @@ fun PlayerContent(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .expandReveal(expandProgress)
+                            .resumeOrReveal(resume, ResumeChoreography.chapterPill, expandProgress)
                             .clip(com.betteraudio.ui.theme.Pill)
                             .clickable { showChapters = true }
                             .padding(vertical = 2.dp)
@@ -528,12 +571,17 @@ fun PlayerContent(
                     CompactBookProgress(bookPos, bookTotal, accent, onScrimMuted, trackColor, readOnly = true) {}
                 } else {
                 // ── Scrubber (reveals as the sheet opens) ───────────────
-                Column(Modifier.fillMaxWidth().expandReveal(expandProgress)) {
+                // Each child carries its own reveal rather than the band carrying one for all
+                // three: on the resume leg the whole-book track TRAVELS (out of the page's copy of
+                // itself) while the scrubber and the times fade in, and a shared group modifier
+                // cannot express two different things at once.
+                Column(Modifier.fillMaxWidth()) {
                 if (chapterTimeline.hasMultiple && cur != null) {
                     val chDur = (cur.endMs - cur.startMs).coerceAtLeast(1L)
                     val livePos = (bookPos - cur.startMs).coerceIn(0L, chDur)
                     val chDisplayFrac = chapterDragFrac ?: (livePos.toFloat() / chDur).coerceIn(0f, 1f)
                     val chDisplayPos = (chDisplayFrac * chDur).toLong()
+                    Box(Modifier.resumeOrReveal(resume, ResumeChoreography.seekBar, expandProgress)) {
                     com.betteraudio.ui.components.VoyageScrubber(
                         fraction = chDisplayFrac,
                         accent = accent,
@@ -554,25 +602,33 @@ fun PlayerContent(
                     // row. One tick per chapter, the current chapter's segment lit, everything
                     // before it dimmed — so "where am I in the book" is readable at a glance and
                     // still tappable to seek, without a second slider competing with the first.
+                    }
                     Spacer(Modifier.height(4.dp))
-                    BookTickTrack(
-                        bookPos = bookPos,
-                        bookTotal = bookTotal,
-                        timeline = chapterTimeline,
+                    BookSegmentTrack(
+                        positionMs = bookPos,
+                        totalMs = bookTotal,
+                        chapterStarts = chapterStarts,
                         accent = accent,
-                        trackColor = trackColor
+                        trackColor = trackColor,
+                        modifier = Modifier.resumeOrReveal(
+                            resume, ResumeChoreography.bookTrack, expandProgress,
+                            source = expand.infoTrack
+                        )
                     )
                     Spacer(Modifier.height(5.dp))
+                    Box(Modifier.resumeOrReveal(resume, ResumeChoreography.times, expandProgress)) {
                     ThreeUpTimeRow(
                         left = formatDuration(chDisplayPos),
                         center = if (bookTotal > 0) "${formatDurationHuman(bookTotal - bookPos)} left in book" else "",
                         right = "-${formatDuration(chDur - chDisplayPos)}",
                         color = onScrimMuted
                     )
+                    }
                 } else {
                     val liveFrac = if (bookTotal > 0) (bookPos.toFloat() / bookTotal).coerceIn(0f, 1f) else 0f
                     val bookDisplayFrac = bookDragFrac ?: liveFrac
                     val bookDisplayPos = (bookDisplayFrac * bookTotal).toLong()
+                    Box(Modifier.resumeOrReveal(resume, ResumeChoreography.seekBar, expandProgress)) {
                     com.betteraudio.ui.components.VoyageScrubber(
                         fraction = bookDisplayFrac,
                         accent = accent,
@@ -588,7 +644,10 @@ fun PlayerContent(
                             bookDragFrac = null
                         }
                     )
-                    TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
+                    }
+                    Box(Modifier.resumeOrReveal(resume, ResumeChoreography.times, expandProgress)) {
+                        TimeRow(formatDuration(bookDisplayPos), formatDuration(bookTotal), onScrimMuted)
+                    }
                 }
                 } // end Column (scrubber reveal)
                 } // end else (unlocked scrubber)
@@ -612,13 +671,18 @@ fun PlayerContent(
                             onClick = { viewModel.prevChapter() },
                             enabled = enabled,
                             feel = Feel.Transport,
-                            modifier = Modifier.expandReveal(expandProgress)
+                            modifier = Modifier.resumeOrReveal(
+                                resume, ResumeChoreography.prevChapter, expandProgress,
+                                playRect = playRect
+                            )
                         ) {
                             Icon(Icons.Default.SkipPrevious, "Previous chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
                         }
                     }
-                    Box(Modifier.expandReveal(expandProgress)) {
+                    Box(Modifier.resumeOrReveal(
+                        resume, ResumeChoreography.skipBack, expandProgress, playRect = playRect
+                    )) {
                         SkipButton(seconds = (skipBackMs / 1000).toInt(), forward = false, tint = onScrim,
                             onLongPress = { skipEditForward = false }) { viewModel.skipBack() }
                     }
@@ -627,21 +691,81 @@ fun PlayerContent(
                     PressFeel(Feel.Transport) {
                     Box(
                         Modifier
-                            .morphFrom(expand.miniControls, expandProgress)
-                            .size(72.dp).clip(Pill).background(accent).clickable {
+                            // Above its siblings: on the resume leg the ground it paints is a
+                            // full-width pill for the first part of the travel, and it has to
+                            // cover the buttons it is about to deposit.
+                            .zIndex(1f)
+                            // Reported BEFORE any motion modifier, so this is the resting rect the
+                            // slide-out sources are measured against.
+                            .onGloballyPositioned {
+                                playRect.value = it.boundsInRoot()
+
+                                // "The player exists and has real bounds" — the sheet holds the
+                                // expand until this is true (see PlayerExpandTransition).
+                                if (!expand.playerReady.value) expand.playerReady.value = true
+                            }
+                            .then(
+                                if (resume) Modifier
+                                else Modifier.morphFrom(expand.miniControls, expandProgress)
+                            )
+                            // Replaces background(accent): the ground is redrawn at the
+                            // interpolated rect so the pill can become the circle without the
+                            // glyph inside it being scaled. Falls back to the plain circle
+                            // whenever there is no Resume button to grow out of.
+                            .resumePillMorph(expand.resumeButton, expandProgress, accent)
+                            .size(72.dp)
+                            // NOT clipped on the resume leg. clip(Pill) clips this box's CONTENT,
+                            // and on this leg the content is exactly what has to sit outside it:
+                            // the glyph and the word start over the page's Resume button, hundreds
+                            // of pixels left of a 72dp circle. Clipped, both were simply invisible
+                            // until the pill had shrunk far enough to contain them -- the label
+                            // never faded anywhere, it just vanished with the page, and the glyph
+                            // popped into existence at full size halfway through. The pill is
+                            // painted by resumePillMorph's drawBehind, which is unclipped anyway;
+                            // the clip is only here to shape the ripple, and resumeActive is false
+                            // again the moment the transition lands.
+                            .then(if (resume) Modifier else Modifier.clip(Pill))
+                            .clickable {
                                 if (!serviceHasBook) viewModel.play() else viewModel.togglePlayPause()
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (state.isPlaying) "Pause" else "Play",
-                            modifier = Modifier.size(40.dp),
+                            // Holds the PLAY triangle for the whole resume leg. Resume starts
+                            // playback, so by the second frame the player's own state is "playing"
+                            // and this would otherwise be a pause bar -- the page's triangle would
+                            // not morph into anything, it would be replaced by a different glyph
+                            // while still travelling. The swap belongs at the END, once the pill
+                            // has become the circle: resumeActive drops at p >= 0.995, so that is
+                            // exactly where it happens.
+                            imageVector = if (!resume && state.isPlaying) Icons.Default.Pause
+                                          else Icons.Default.PlayArrow,
+                            contentDescription = if (!resume && state.isPlaying) "Pause" else "Play",
+                            modifier = Modifier.size(40.dp).then(
+                                if (resume) Modifier.resumeIconMorph(expand.resumeIcon, expandProgress)
+                                else Modifier
+                            ),
                             tint = MaterialTheme.colorScheme.onPrimary
                         )
+                        if (resume) {
+                            // The page's own label is covered by the pill from the first frame, so
+                            // the player carries a copy and fades that instead. Unbounded, or the
+                            // 72dp button would clip a word it is only briefly wider than.
+                            Text(
+                                text = if (bookPos <= 0L) "Start" else "Resume",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .wrapContentSize(unbounded = true)
+                                    .resumeLabelMorph(expand.resumeLabel, expandProgress)
+                            )
+                        }
                     }
                     }
-                    Box(Modifier.expandReveal(expandProgress)) {
+                    Box(Modifier.resumeOrReveal(
+                        resume, ResumeChoreography.skipForward, expandProgress, playRect = playRect
+                    )) {
                         SkipButton(seconds = (skipForwardMs / 1000).toInt(), forward = true, tint = onScrim,
                             onLongPress = { skipEditForward = true }) { viewModel.skipForward() }
                     }
@@ -651,7 +775,10 @@ fun PlayerContent(
                             onClick = { viewModel.nextChapter() },
                             enabled = enabled,
                             feel = Feel.Transport,
-                            modifier = Modifier.expandReveal(expandProgress)
+                            modifier = Modifier.resumeOrReveal(
+                                resume, ResumeChoreography.nextChapter, expandProgress,
+                                playRect = playRect
+                            )
                         ) {
                             Icon(Icons.Default.SkipNext, "Next chapter", Modifier.size(26.dp),
                                 tint = if (enabled) onScrim else onScrimMuted.copy(alpha = 0.4f))
@@ -681,7 +808,7 @@ fun PlayerContent(
                         .fillMaxWidth()
                         .height(44.dp)
                         .padding(horizontal = 6.dp)
-                        .expandReveal(expandProgress),
+                        .resumeOrReveal(resume, ResumeChoreography.secondaryRow, expandProgress),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -994,86 +1121,6 @@ private fun CompactBookProgress(
         }
     }
 }
-
-/**
- * The whole book as one hairline: a tick per chapter, everything already listened dimmed, and the
- * chapter you are currently in lit. Tappable to seek anywhere in the book.
- *
- * This replaces [CompactBookProgress]'s labelled row + expandable second slider. The old control
- * asked for two taps to reveal a scrubber that duplicated the chapter slider directly above it;
- * this says the same thing — where you are, how much is left, how the book is divided — without
- * being a control that competes with the one your thumb is already on.
- */
-@Composable
-private fun BookTickTrack(
-    bookPos: Long,
-    bookTotal: Long,
-    timeline: com.betteraudio.playback.ChapterTimeline,
-    accent: Color,
-    trackColor: Color
-) {
-    if (bookTotal <= 0L) return
-    val inkTick = Color.Black.copy(alpha = 0.62f)
-    val cur = timeline.chapterAt(bookPos)
-    val curStart = cur?.startMs ?: 0L
-    val curEnd = cur?.endMs ?: bookTotal
-    // Deliberately NOT tappable. This is a picture of where you are in the book, not a second
-    // control — the chapter slider directly above it is the thing your thumb reaches for, and a
-    // 2.5dp line sitting right under it was far too easy to hit by accident and jump the book.
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(10.dp)
-    ) {
-        val h = 2.5.dp.toPx()
-        val y = (size.height - h) / 2f
-        fun x(ms: Long) = (ms.toFloat() / bookTotal).coerceIn(0f, 1f) * size.width
-
-        drawRoundRect(
-            color = trackColor,
-            topLeft = Offset(0f, y),
-            size = Size(size.width, h),
-            cornerRadius = CornerRadius(h / 2f, h / 2f)
-        )
-        // Everything already played, quietly.
-        drawRoundRect(
-            color = accent.copy(alpha = 0.38f),
-            topLeft = Offset(0f, y),
-            size = Size(x(bookPos), h),
-            cornerRadius = CornerRadius(h / 2f, h / 2f)
-        )
-        // The chapter you are in, at full strength — this is what makes position legible.
-        val litStart = x(curStart)
-        val litWidth = (x(curEnd) - litStart).coerceAtLeast(h)
-        drawRoundRect(
-            color = accent,
-            topLeft = Offset(litStart, y),
-            size = Size(litWidth, h),
-            cornerRadius = CornerRadius(h / 2f, h / 2f)
-        )
-        // Chapter boundaries, drawn 2px wide so a split actually reads as a split rather than a
-        // hairline artefact. A book with a lot of chapters counts in 2s, 3s or more instead of
-        // trying to draw every one: past a certain density the ticks stop being information and
-        // become a grey bar. The stride is chosen so roughly TARGET_TICKS marks survive, which
-        // keeps the divisions legible at any chapter count while still showing the book's shape.
-        val tickWidth = 2f
-        val stride = ((timeline.marks.size + TARGET_TICKS - 1) / TARGET_TICKS).coerceAtLeast(1)
-        // Even after striding, refuse to place two ticks closer than their own width plus a gap.
-        val minGap = tickWidth * 3f
-        var lastX = -minGap
-        timeline.marks.forEachIndexed { index, mark ->
-            if (mark.startMs <= 0L) return@forEachIndexed
-            if (index % stride != 0) return@forEachIndexed
-            val tx = x(mark.startMs)
-            if (tx - lastX < minGap) return@forEachIndexed
-            lastX = tx
-            drawRect(color = inkTick, topLeft = Offset(tx, y), size = Size(tickWidth, h))
-        }
-    }
-}
-
-/** How many chapter ticks the book track aims to show before it starts counting in 2s, 3s, … */
-private const val TARGET_TICKS = 24
 
 /** Elapsed, a dim whole-book figure, and time left — one row where there used to be two. */
 @Composable

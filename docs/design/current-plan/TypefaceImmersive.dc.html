@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Spectral:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; background: #0B0806; }
+    a { color: #FFA552; } a:hover { color: #FFB871; }
+  </style>
+</helmet>
+
+<div style="width:390px;height:1040px;position:relative;overflow:hidden;color:#FFEBD5;font-family:Poppins,system-ui,sans-serif">
+
+  <div style="position:absolute;inset:-40px;background:
+       radial-gradient(60% 45% at 22% 18%, #8A4A2E 0%, rgba(138,74,46,0) 70%),
+       radial-gradient(55% 40% at 78% 30%, #4A2E58 0%, rgba(74,46,88,0) 72%),
+       radial-gradient(70% 50% at 50% 88%, #2B3A46 0%, rgba(43,58,70,0) 74%),
+       linear-gradient(160deg,#3A2418,#160E0A);filter:blur(38px)"></div>
+  <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.22) 0%,rgba(0,0,0,.42) 100%)"></div>
+
+  <div style="position:relative;height:100%;display:flex;flex-direction:column">
+    <div style="height:44px;flex:0 0 auto"></div>
+
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 16px 12px 8px;flex:0 0 auto">
+      <div style="width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFEBD5" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      </div>
+      <div style="font-size:26px;line-height:30px;font-weight:700;letter-spacing:-0.5px">Theme</div>
+    </div>
+
+    <div style="flex:1 1 auto;min-height:0;overflow:hidden;padding:0 16px;display:flex;flex-direction:column;gap:12px">
+
+      <div style="border-radius:24px;background:rgba(25,23,21,.52);backdrop-filter:blur(16px);padding:16px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto">
+        <div style="font-size:14px;line-height:20px;font-weight:600">App theme</div>
+        <div style="display:flex;gap:10px">
+          <div style="flex:1;border-radius:14px;background:rgba(255,231,205,.08);padding:12px">
+            <div style="font-size:14px;line-height:20px;font-weight:600;color:rgba(255,231,205,.68)">Material You</div>
+          </div>
+          <div style="flex:1;border-radius:14px;background:#FFA552;padding:12px">
+            <div style="font-size:14px;line-height:20px;font-weight:600;color:#231405">Immersive</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-radius:24px;background:rgba(25,23,21,.52);backdrop-filter:blur(16px);padding:16px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto">
+        <div style="font-size:14px;line-height:20px;font-weight:600">Typeface</div>
+        <div style="font-size:12.5px;line-height:17px;color:rgba(255,231,205,.68)">
+          The font every screen is set in. A file you pick is copied into Voyage, so it keeps working
+          after the original is moved or deleted.
+        </div>
+
+        <div style="border-radius:14px;background:rgba(255,231,205,.06);padding:12px;display:flex;gap:4px;align-items:flex-start">
+          <div style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,231,205,.68);flex:0 0 auto;margin-top:2px"></div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding-left:8px">
+            <div style="font-size:14px;line-height:20px;font-weight:600">Poppins</div>
+            <div style="font-size:12.5px;line-height:17px;color:rgba(255,231,205,.68)">Voyage’s own type.</div>
+          </div>
+        </div>
+
+        <div style="border-radius:14px;background:rgba(255,165,82,.16);padding:12px;display:flex;gap:4px;align-items:flex-start">
+          <div style="width:20px;height:20px;border-radius:50%;border:2px solid #FFA552;flex:0 0 auto;margin-top:2px;display:flex;align-items:center;justify-content:center">
+            <div style="width:10px;height:10px;border-radius:50%;background:#FFA552"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:2px;padding-left:8px">
+            <div style="font-size:14px;line-height:20px;font-weight:600">From a font file</div>
+            <div style="font-size:12.5px;line-height:17px;color:rgba(255,231,205,.68)">A .ttf, .otf or .ttc from your phone.</div>
+          </div>
+        </div>
+
+        <div style="border-radius:14px;background:rgba(25,23,21,.64);padding:12px;display:flex;align-items:center;gap:10px">
+          <div style="width:44px;height:44px;border-radius:50%;background:rgba(255,165,82,.16);flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-family:Spectral,Georgia,serif;font-size:22px;font-weight:600;color:#FFA552">Aa</div>
+          <div style="display:flex;flex-direction:column;gap:2px;flex-grow:1;min-width:0">
+            <div style="font-size:14px;line-height:20px;font-weight:600">Spectral</div>
+            <div style="font-size:12.5px;line-height:17px;color:rgba(255,231,205,.68);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Spectral-Regular.ttf · 214 KB</div>
+          </div>
+          <div style="width:40px;height:40px;border-radius:50%;flex:0 0 auto;display:flex;align-items:center;justify-content:center">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#FF7A6B" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:4px;padding-top:2px">
+          <div style="padding:10px 12px;font-size:14px;line-height:18px;font-weight:600;letter-spacing:0.1px;color:#FFA552">Choose a file…</div>
+        </div>
+      </div>
+
+      <div style="border-radius:24px;background:rgba(25,23,21,.52);backdrop-filter:blur(16px);padding:16px;display:flex;flex-direction:column;gap:10px;flex:0 0 auto">
+        <div style="font-size:14px;line-height:20px;font-weight:600">Preview</div>
+        <div style="border-radius:14px;background:rgba(25,23,21,.64);padding:14px;display:flex;flex-direction:column;gap:8px;font-family:Spectral,Georgia,serif">
+          <div style="font-size:26px;line-height:30px;font-weight:700;letter-spacing:-0.5px">Shadow Slave</div>
+          <div style="font-size:16px;line-height:22px;font-weight:600">Book 3 · Sanctuary</div>
+          <div style="font-size:14px;line-height:20px;color:rgba(255,231,205,.68)">Sunny wakes in the Dream Realm with nothing but a nightmare spell and a debt he can’t name.</div>
+          <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;color:rgba(255,231,205,.68)">14 H 08 M LEFT · 62%</div>
+        </div>
+        <div style="font-size:12.5px;line-height:17px;color:rgba(255,231,205,.68)">
+          Weights the file doesn’t carry are drawn by the system instead — a single-weight font will
+          look flat where Voyage asks for bold.
+        </div>
+      </div>
+
+      <div style="border-radius:24px;background:rgba(25,23,21,.52);backdrop-filter:blur(16px);padding:16px;display:flex;flex-direction:column;gap:8px;flex:0 0 auto">
+        <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:1.4px;color:#FF7A6B;text-transform:uppercase">If the file won’t load</div>
+        <div style="border-radius:14px;background:rgba(255,122,107,.14);padding:12px;display:flex;gap:10px;align-items:flex-start">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FF7A6B" stroke-width="1.8" stroke-linecap="round" style="flex:0 0 auto;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+          <div style="font-size:12.5px;line-height:17px">Android couldn’t read that as a font. Voyage kept Poppins.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; background: #12100E; }
+    a { color: #FFA552; } a:hover { color: #FFB871; }
+  </style>
+</helmet>
+
+<div style="width:720px;background:#12100E;color:#F3EBE1;padding:32px;font-family:Poppins,system-ui,sans-serif;box-sizing:border-box">
+
+  <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:1.8px;color:#FFA552;text-transform:uppercase">Companion · destructive actions</div>
+  <div style="font-size:26px;line-height:30px;font-weight:700;letter-spacing:-0.5px;margin-top:10px">Every delete asks first</div>
+  <div style="font-size:14px;line-height:20px;color:#B6AB9C;margin-top:10px;max-width:60ch">
+    One dialog component, seven callers. The body always names what goes, what survives, and — where
+    it matters — that the picture or audio file on disk is untouched. The confirm button says the verb,
+    never “OK”.
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px;margin-top:26px">
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:14px 16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:1.4px;color:#B6AB9C;text-transform:uppercase">Action</div>
+      <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:1.4px;color:#B6AB9C;text-transform:uppercase">Title · body</div>
+      <div style="font-size:11px;line-height:14px;font-weight:600;letter-spacing:1.4px;color:#B6AB9C;text-transform:uppercase">Confirm</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Delete map</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Delete this map?</b><br>“{name}”, its {n} pins and all {v} of its versions go with it. The picture files stay on disk. This can’t be undone.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Delete map</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Remove pin</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Take {name} off the map?</b><br>Their recorded locations stay in the timeline — only the marker goes.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Remove pin</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Delete map version</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Delete this version?</b><br>From {time} on, the map goes back to the version before it.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Delete version</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Remove character</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Remove {name}?</b><br>Everything recorded about them — {n} entries, their portrait and any map pins — goes too.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Remove</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Delete entry</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Delete this entry?</b><br>“{field}: {value}” is removed from {name} and from the timeline.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Delete</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Delete note</div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Delete this note?</b><br>It hasn’t been turned into an entry yet, so nothing else changes.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Delete note</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:14px;padding:16px;border-radius:12px;background:#1B1815">
+      <div style="font-size:13px;line-height:18px;font-weight:600">Take theirs<div style="font-size:11px;line-height:15px;font-weight:400;color:#B6AB9C;margin-top:3px">drops one of your edits</div></div>
+      <div style="font-size:13px;line-height:19px;color:#B6AB9C"><b style="color:#F3EBE1;font-weight:600">Use their version?</b><br>Your own edit to “{item}” is dropped and the pack author’s value shows through.</div>
+      <div style="font-size:13px;line-height:18px;font-weight:600;color:#FF7A6B">Use theirs</div>
+    </div>
+
+  </div>
+
+  <div style="margin-top:24px;padding:16px;border-radius:12px;background:#1B1815;border-top:0">
+    <div style="font-size:13px;line-height:19px;color:#B6AB9C">
+      <b style="color:#F3EBE1;font-weight:600">Not confirmed:</b> adding, renaming and moving. A pin
+      dragged to the wrong place is fixed by dragging it again, and a rename is its own undo — a
+      dialog in front of those is friction with nothing to protect.
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

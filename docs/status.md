@@ -16,7 +16,7 @@ Update it in the same commit as the work it describes — a ledger that lags is 
 because it gets trusted. One line per item; if a line needs a paragraph, it belongs in `CLAUDE.md`
 and this line should link to it.
 
-Last updated: 2026-09-09 · beta `1.14.0b` (75) · DB v29
+Last updated: 2026-09-17 · beta `1.14.0b` (75) · DB v29
 
 ---
 
@@ -220,6 +220,255 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
   `PRAGMA foreign_keys` off**, so `ON DELETE CASCADE` does not fire in a migration and a bare
   `DELETE FROM books` leaves orphans. The `.epub` files and their `data/epub.<slug>.json` mirrors
   are untouched on disk. Verified on device.
+
+- **The player grows out of the page you opened it from.** Book Info's Resume used to shrink the
+  page back onto the grid card and then start the book under a collapsed mini bar — the cover
+  travelled away from the finger that tapped it, and you were left where you started. The full
+  player now morphs out of the info page's **own** cover, published through a third
+  `CoverBoundsRegistry` source (`publishInfoCover`, keyed `"book:<id>"` / `"series:<id>"`) that
+  outranks even a live mini bar. The Series page's Play is the same transition from the series
+  cover. No new motion code: in Material You the existing `coverCropMorph` re-crops 0.72 → square,
+  and in Immersive both screens already draw the cover full-width and top-anchored, so `morphFrom`
+  reduces to an identity transform and the cover stays put while the room changes around it.
+  Material You's background also grows out of that rect now instead of out of a `Rect.Zero` mini
+  bar (which `morphingContainer` read as "no morph" and painted full-screen on frame one). The
+  overlay stays mounted until the player has covered it (p ≥ 0.995, `MainActivity`) and the source
+  is dropped at that point so a later collapse still travels back to the mini bar. Spec in
+  `docs/motion-spec.md` §3b. Not yet verified on device.
+
+- **The companion map is redesigned per theme, and adding a pin works.** Three things:
+  - *The map is the pane.* The board chip strip, the four editor icons, the Versions strip and its
+    explanatory sentence all moved onto the artwork as floating chrome — a plate carrying the
+    board's name, pin count and switcher, a rail of authoring actions, and versions/zoom chips —
+    which is worth roughly 150dp of map on a phone. Versions and the map switcher became dialogs.
+  - *The two looks now differ in structure, not just fill* (`mapIsFullBleed`): Material You
+    contains the map in a `surfaceContainer` card at the app's own 28dp cover radius with the
+    artwork fitted inside it; Immersive lets the map **be** the deck's ground, edge to edge, with
+    the header, spine and dock floating on it (`PortraitDeck`/`LandscapeDeck`'s `overlaid` branch,
+    which measures the floating bands and hands their heights back as the pane's content padding).
+    The letterbox around a fitted map is filled by a blurred, dimmed copy of the map itself, and
+    the chrome is kept readable by two `mapVeil` gradients — eased with smootherstep rather than
+    linear, because a linear ramp's slope discontinuity at alpha 0 is visible as a line across the
+    artwork. Pins take theme fills instead of the hardcoded white-on-black they had.
+  - *Adding a pin did nothing at all.* `addPinFor` wrote a `PIN` element and no `location` fact,
+    and `PackBoardResolver.resolvePins` returns nothing for an element whose entity has no resolved
+    location — so the character was silently invisible, with no marker, no error and nothing in the
+    log. It also targeted `mapBoards.first()` rather than the map on screen, so on a multi-map pack
+    pins landed on the wrong board. A pin now lands at the centre of the current view with a
+    "drag into place" hint, unless the character already has a recorded location (in which case it
+    appears there instead, and asks for nothing).
+  Not yet verified on device.
+
+- **Every destructive companion action asks first.** One `ConfirmDialog` behind seven callers —
+  delete map, remove pin, delete map version, remove character, delete entry, delete note, and
+  "take theirs" (which drops one of your own edits). There is no undo anywhere in the pack model,
+  so none of them should have been one tap. Adding, renaming and dragging are deliberately *not*
+  confirmed: a pin dragged wrong is fixed by dragging it again. Not yet verified on device.
+
+- **The app's typeface is a setting.** Settings → Theme → Typeface: Poppins, or a `.ttf`/`.otf`/
+  `.ttc` from the phone. The file is copied into `<libraryRoot>/.voyage/fonts/` (falling back to
+  `filesDir/fonts/` before a library folder is chosen), because the picker hands back a
+  `content://` grant that stops resolving between launches — and because a font in `.voyage/`
+  survives a reinstall alongside the `custom_font_path` the settings mirror records. Validation is
+  a real `Typeface.createFromFile` on the written copy, with the previous font restored if Android
+  refuses the new one. `voyageTypography(family)` replaced the `Typography` constant so the ramp is
+  stated once and the face is the only thing a preference changes. Not yet verified on device.
+
+- **Resume becomes the play button.** The Book Info → player transition is a per-element
+  choreography rather than a cover morph with everything else cross-fading: the Resume pill is
+  redrawn into the 72dp play button while the transport slides out from under it and the utility
+  rail rises from the display edge; the title, author and whole-book track descend into their player
+  positions; the synopsis, status chip and percentage row fade out; the chapter scrubber and times
+  fade in. Values in `ResumeChoreography` (`ui/player/ElementMotion.kt`), modifiers in
+  `ui/player/ResumeMorph.kt`, page half in `ui/components/BookInfoPanel.kt`, table in
+  docs/motion-spec.md §3c. Both portrait players; landscape keeps the old behaviour. Not yet
+  verified on device.
+- **The whole-book track is one widget in three places.** `ui/components/BookSegmentTrack.kt` — the
+  Immersive player's old private `BookTickTrack`, promoted. Book Info drew a flat percentage line
+  and the two players drew different things; all three now draw the same divided track (a tick per
+  chapter, played dimmed, current chapter lit), which is both the better picture and the thing that
+  lets the bar travel between the page and the player. Material You's "Book … % ⌄" row keeps its
+  label and expander; only its bar changed. Not yet verified on device.
+- **Fixed: opening the player from Book Info re-navigated the player route at the end of the
+  morph.** `PlayerSheet`'s nested navigation was keyed on the whole `PlayerTarget`, and
+  `clearCoverSource()` (which runs at p ≥ 0.995) replaces that object — so landing the animation
+  cleared the back stack, built a fresh `PlayerViewModel` and re-applied `startPlaying`. Keyed on
+  the route string now. **A separate report — "sometimes Resume has to be pressed twice" — is not
+  yet reproduced**; `PlayerSheetController.open()` and the expand effect carry temporary
+  `VoyageMorph` log lines for it. Remove those once it is pinned down.
+
+- **Fixed: the resume leg flashed the un-scrimmed cover over the page.** The immersive player
+  draws a SHARP copy of the cover over its baked backdrop, opaque until p = 0.55, so the eye has a
+  solid object to follow out of the mini bar. It is top-anchored at the cover's own full aspect and
+  carries no scrim, while both Book Info and the finished player show the BAKED composite —
+  scrimmed, its sharp half a quarter of the way down. On the resume leg the cover morph is an
+  identity, so that sharp copy doesn't travel: it slammed over the page at full opacity the instant
+  Resume was pressed, the scrim disappeared and the artwork's lit extent jumped downward, then the
+  whole thing settled back as it faded out over 0.55–0.90. **That flash is what "the page expands
+  from the top-left corner" was.** It is now simply not drawn when `resumeActive` — the page and the
+  player already draw the same backdrop, so there is nothing to cross-fade. Found by driving the
+  phone over adb with `animator_duration_scale` at 40–100× and stepping the transition frame by
+  frame; the same trick is the fastest way to look at any of this motion work again.
+- **`ResumeChoreography.LEAVE_TO` 0.16 → 0.30.** The page's synopsis, chip and percentage row were
+  gone within two frames of the press, which read as a cut rather than a fade.
+- **Every NavHost passes `sizeTransform = { null }`.** Navigation's `AnimatedContent` otherwise
+  animates the container's size between destinations and clips to it. Every route in this app is
+  full-screen so it has nothing to express. This was investigated as the cause of the corner wipe
+  and was NOT it (see above) — kept because the animation is pure cost either way. It is also NOT
+  sufficient to stop a navigate from clipping its destination; see "a NavHost navigate clipped the
+  player" below, which is why the player's nested NavHost no longer navigates at all.
+- **Immersive has no bounce.** Its sheet spring was the shared `MotionTokens.floatSpatial`
+  (damping 0.82 — "slight overshoot"), and the info-page open/close were 0.85/0.9; all three are
+  critically damped now, with the stiffness raised so arrival stays as quick. Material You's
+  deliberate rebound is untouched.
+
+- **Fixed: the resume morph only ran when the player was ALREADY open.** `startPlaying` was part of
+  the nested player route (`player?bookId=X&startPlaying=Y`), which made "restore this book paused"
+  and "resume this book" two different destinations for the same player. Pressing Resume on a book
+  the sheet was already holding therefore tore the player down and rebuilt it -- fresh ViewModel,
+  fresh layout -- on exactly the frame the expand started. Every morph modifier then ran against a
+  player that did not exist yet: every `own` rect was `Rect.Zero`, so each took its "nothing to
+  travel from" branch, while the page had already handed its title, track and Resume button over at
+  p > 0.02. The button vanished into a gap and the finished player popped in halfway through. Open
+  the same book twice in a row and the route did not change, nothing was rebuilt, and the
+  choreography ran perfectly -- which is exactly the "works when the player is already open"
+  symptom. The route is now the book and only the book; `startPlaying` is an ACTION, delivered as a
+  parameter read live off the target, and both players key their auto-play effect on it so a
+  restore that is then resumed flips it in place. Belt and braces: `PlayerExpandTransition` carries
+  a `playerReady` flag the portrait players set once their play button has real bounds, and the
+  sheet holds an expand up to 250 ms waiting for it. NOT yet verified on device.
+- **Fixed: the play button clipped its own travelling contents.** `clip(Pill)` on the 72dp box
+  clips that box's CONTENT -- and on the resume leg the content is exactly what has to sit outside
+  it, since the glyph and the word start over the page's Resume button. Both were invisible until
+  the pill had shrunk enough to contain them: the label never faded anywhere and the glyph popped
+  in at full size halfway through. Not clipped on this leg. The glyph now also SCALES (22dp ->
+  40dp) rather than only translating, and holds the play triangle until the transition lands
+  instead of becoming a pause bar mid-flight.
+
+- **Fixed: the whole choreography ran against parked coordinates.** While the sheet is collapsed,
+  the full player is pushed one screen height down so the app below stays interactive. Every morph
+  modifier records its own rect with `onGloballyPositioned { positionInRoot() }`, and that offset is
+  part of what it records. A placement lambda that reads a new value re-runs the placement; it does
+  NOT reliably re-fire those callbacks. So while parked, every element believed it lived ~3168 px
+  below where it draws, and each one travelled from a screen height off the top: nothing was visible
+  for the first two thirds of the gesture, then everything arrived at once. The parked state is a
+  COMPOSITION state now (`forceUnpark`), because swapping the modifier chain forces the relayout
+  that a changed offset value does not. The expand effect unparks FIRST, lets two frames land, and
+  only then animates progress. Measured on the phone: `own=5059` at every sample before the fix,
+  `own=1891` from the first animated frame after it.
+
+- **Fixed: a NavHost navigate clipped the player to a window opening downward.** This was the second
+  half of "the icons disappear and then appear in a swipe, as if a rectangle is expanding", and it is
+  a DIFFERENT fault from the corner wipe above. A NavHost renders its destinations inside an
+  `AnimatedContent`. On the frame a navigate lands, that `AnimatedContent` clips the incoming
+  destination to a window that opens downward from the top, while the content inside it is already
+  laid out at full size. Measured on the emulator, Resume leg, the destination's own `boundsInRoot()`
+  against its measured height of 3168:
+
+  | progress | measured height | clipped to |
+  |---|---|---|
+  | 0.00 | 3168 | 0..791 |
+  | 0.31 | 3168 | 0..1683 |
+  | 0.73 | 3168 | 0..2546 |
+  | 1.00 | 3168 | 0..3168 |
+
+  The play button sits at 2652..2868, so it was cut away entirely until p ~ 0.77 and then appeared to
+  grow downward. The transport and the utility row were never late; they were clipped. The Box
+  wrapping that NavHost measured 0..3168 unclipped throughout, so the clip came from strictly between
+  the two. **`sizeTransform = { null }` and `EnterTransition.None` do not remove it** -- this is
+  structural, not another transition argument, which is why an earlier attempt from that direction
+  failed. The mini-bar leg never showed the fault because its NavHost settled on the player route
+  long before: there the same probe fires once, unclipped. Only the Resume leg navigates on the very
+  frame the sheet expands, which is exactly the "it only goes wrong when the mini player is closed"
+  report. **The nested NavHost now starts on the player route and never navigates.** `target != null`
+  already guards that block, so `playerRoute` is always real and the old `blank` start destination
+  existed only to navigate away from. `key(playerRoute)` gives a book switch what
+  `popUpTo(0) { inclusive = true }` used to give it -- a fresh controller, back stack and ViewModel --
+  by rebuilding the NavHost instead of animating between two destinations. Verified on the emulator:
+  after the fix the destination reports `b=0..3168` on every frame of both legs, and a book switch
+  with the player live still rebuilds cleanly.
+
+- **Settings collapses to its answers.** The reported problem was "too long, hard to navigate", and
+  the root was not the cause: it is nine rows and half a screen of empty space. "Look and feel" was
+  about **seven screens** of unbroken scroll, because every option was a full-width card carrying a
+  title AND a two-line description, drawn permanently expanded, for choices made once and never
+  revisited. `CollapsingGroup`/`CollapsingCard` (`ui/settings/SettingsComponents.kt`) collapse each
+  group to `title — current value`; the descriptions still exist and appear when the group opens,
+  which is the only moment they earn their space. Look and feel is now **one screen** in both
+  themes, with room to spare. Open/closed lives on the ViewModel (`openGroup`/`toggleGroup`) because
+  only one group may be open at a time — that is what stops a section growing back into the wall it
+  replaced — and `navigateTo` clears it so arriving anywhere starts from the summary.
+  - **Icons are unchanged, by instruction.** The nine root glyphs are the ones `RootSection.kt`
+    always had. The disclosure chevron is `ExpandMore`/`ExpandLess`, already used in three places
+    each, so no new glyph entered the app. Down means "opens here"; the existing sideways
+    `ArrowForwardIos` still means "opens another screen".
+  - **A switch keeps its control in the collapsed header** (`trailing` slot): for a toggle the
+    control IS the answer, so hiding it behind a disclosure would cost a tap to reach something that
+    was already one tap away. The paragraph is what goes inside.
+  - **The root states its settings instead of only forwarding to them** — `NavRow` gained an
+    optional `value` ("30s / 15s", "11 books", "1.14.0b"), and three bands label runs of the
+    existing order. Row order and icons are untouched; Diagnostics shows no value rather than an
+    invented one.
+  - **Hidden groups are left out of the list, not emitted and hidden.** An `item { }` holding an
+    invisible child still takes the LazyColumn's spacing; with every group one row tall, three such
+    slots read as a dead band above App icon in Material You. The theme conditions are hoisted to
+    `LazyListScope` (`if (appTheme == …) item { … }`). Nothing needed the cross-fade — a theme
+    switch rebuilds the screen anyway.
+  - Settings is deliberately NOT split per theme: `settingsCardColor()` already resolves per theme
+    and the two looks differ in fill/radius/type, not structure — splitting it would be splitting
+    ahead of need, which CLAUDE.md warns against.
+  - **Not yet done:** search over settings, and the same conversion for Library (11 groups) and
+    Playback (7). Verified on the emulator in both themes; not yet seen on the phone.
+
+- **Playback collapses too; Library gets bands instead, on purpose.** Playback's seven groups became
+  eight `CollapsingCard`s under three bands (the first card packed Skip forward, Skip back and the
+  preset link behind one heading — split, because a collapsed group states its own answer and one
+  heading cannot state three). Library did NOT get the same treatment: its rows are `SettingsCard`
+  **actions** — Grant, Browse, Rescan, Reset — not settings with values, and collapsing an action
+  costs a tap to reach something that was already one tap away. It gets three band headers and
+  nothing else.
+- **Settings search.** `ui/settings/SettingsSearch.kt` holds a hand-written index of every group and
+  section, each with the words someone would actually type ("vibration" finds Haptics, "brightness"
+  finds Backdrop darkening). Ranked so a title that starts with the query beats one that merely
+  contains it, which beats a keyword hit — otherwise "cover" puts Colour source above Cover accent
+  on declaration order alone. A result carries its path ("Look and feel › Seek bar") and opens that
+  section **with the group already open** (`openSearchResult`, which sets `openGroup` after
+  `navigateTo` because navigateTo deliberately clears it).
+  - **Results are filtered by what actually exists right now.** Each entry carries a `visible(theme,
+    colorSource)` predicate mirroring `themeSection`'s own conditions. Without it, searching "cover"
+    in Material You offered "Mini player cover" (Immersive-only) and "Cover accent" (needs the cover
+    colour source) — both dead ends that read as the setting having moved. Change the predicates and
+    the section conditions together.
+  - The index is hand-written because the sections are `LazyListScope` extensions whose groups exist
+    only while composing; there is nothing to enumerate at rest.
+- **Fixed: the player's preset menu could never be opened.** `PresetChip` in `AudioSettingsSheet`
+  has a DropdownMenu holding Load / Set as default / Delete, but nothing ever set `showMenu = true`
+  — the chip's tap loaded the preset and its long press overwrote it outright. So Delete and
+  Set-as-default were unreachable from the player. Long press now opens the menu, and Overwrite
+  moved into it: it is a destructive unconfirmed write, and a long press is far too easy to hit by
+  accident for that. **Note:** the reported "can't delete presets" could NOT be reproduced in
+  Settings → Audio presets on a clean install — deleting a plain preset and a starred global-default
+  one both worked — so this may or may not be the same fault.
+- **Aurora scrubber is thicker**: hairline 1dp → 1.8dp, played wash 2.5dp → 4dp (by request; at 1dp
+  the unplayed half vanished against a bright cover and the track looked like it began at the
+  playhead).
+
+- **Settings search moved into the app bar.** It was a permanent field above the list; it is now an
+  icon to the right of the title, and tapping it turns the title itself into the field (title slot +
+  `actions` slot, `SettingsTopBarTitle`/`SettingsSearchAction`, shared by both theme variants since
+  only the bar's colours differ). A field parked above the list cost a row of height on every visit
+  for something wanted occasionally and competed with the first band for the eye. Opening it focuses
+  the field, Back leaves search before it leaves the screen, and `navigateTo` closes it — a query is
+  a way of getting somewhere, so arriving ends it. Offered on the root only (and in Material You's
+  two-pane landscape, where the root list is always on screen).
+- **The mini player now leaves instead of blinking out.** A fling-down close called
+  `playerController.stop()` and `controller.clear()` on the same frame, so the bar was simply absent
+  on the next one. It now falls by its own height plus its bottom padding while fading, then stops
+  playback — `dismissAnim` driven through the `graphicsLayer` the bar already had, so it costs no
+  layout passes (C3-5, same reason `miniBarLift` translates rather than pads). The fade runs 1.6×
+  the travel so it is invisible before it reaches the bottom: still faintly visible at the edge
+  reads as sliding behind the display rather than being dismissed. `tween`, not a spring — a spring's
+  settle implies arriving somewhere, and this is leaving.
 
 ## Deliberately not done
 

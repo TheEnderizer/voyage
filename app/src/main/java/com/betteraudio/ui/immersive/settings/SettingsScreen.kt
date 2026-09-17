@@ -40,6 +40,8 @@ import com.betteraudio.ui.components.FolderBrowser
 import com.betteraudio.ui.immersive.ImmersiveStyle
 import com.betteraudio.ui.theme.rememberPredictiveBackProgress
 import com.betteraudio.ui.settings.SettingsSection
+import com.betteraudio.ui.settings.SettingsSearchAction
+import com.betteraudio.ui.settings.SettingsTopBarTitle
 import com.betteraudio.ui.settings.SettingsViewModel
 import com.betteraudio.ui.settings.aboutSection
 import com.betteraudio.ui.settings.aiSection
@@ -155,15 +157,19 @@ fun SettingsScreen(
         contentColor = MaterialTheme.colorScheme.onBackground,
         topBar = {
             TopAppBar(
-                title = { Text(sectionTitle, style = MaterialTheme.typography.titleLarge) },
+                title = { SettingsTopBarTitle(viewModel, sectionTitle) },
                 navigationIcon = {
                     HapticIconButton(onClick = {
-                        if (currentSection == SettingsSection.Root) onBack()
+                        // Back leaves search first when it is open, so the icon never skips a
+                        // state the user can see.
+                        if (viewModel.searchActive) viewModel.closeSearch()
+                        else if (currentSection == SettingsSection.Root) onBack()
                         else viewModel.navigateTo(SettingsSection.Root)
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
                     }
                 },
+                actions = { SettingsSearchAction(viewModel, currentSection) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = ImmersiveStyle.surfaceColor()
                 )

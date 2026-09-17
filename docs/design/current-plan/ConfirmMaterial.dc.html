@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; font-family: Poppins, system-ui, sans-serif; background: #12100E; }
+    a { color: #FFA552; } a:hover { color: #FFB871; }
+  </style>
+</helmet>
+
+<div style="width:390px;height:844px;background:#12100E;color:#F3EBE1;position:relative;overflow:hidden;font-family:Poppins,system-ui,sans-serif">
+
+  <!-- the deck behind, dimmed by the dialog scrim -->
+  <div style="position:absolute;inset:0;display:flex;flex-direction:column">
+    <div style="height:44px"></div>
+    <div style="display:flex;align-items:center;padding:10px 6px 0 18px">
+      <div style="display:flex;flex-direction:column;gap:1px;flex-grow:1">
+        <div style="font-size:14px;line-height:20px;font-weight:600">Shadow Slave</div>
+        <div style="font-size:11px;line-height:14px;font-weight:500;letter-spacing:0.4px;color:#B6AB9C">REV 3 · YOURS</div>
+      </div>
+    </div>
+    <div style="height:42px;margin:10px 14px;display:flex">
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#B6AB9C">Cast</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:#FFA552">Map</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#B6AB9C">Timeline</div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center;font-size:12px;color:#B6AB9C">Pack</div>
+    </div>
+    <div style="flex:1;margin:4px 16px 16px 16px;border-radius:28px;background:#1B1815;display:flex;align-items:center"><div style="width:100%;height:460px;background:linear-gradient(160deg,#B9C4B2,#9FAE9C)"></div></div>
+    <div style="height:60px;margin:0 10px 10px 10px;border-radius:18px;background:#272320"></div>
+  </div>
+  <div style="position:absolute;inset:0;background:rgba(0,0,0,.55)"></div>
+
+  <!-- M3 alert dialog: 28dp corners, stock container, text buttons -->
+  <div style="position:absolute;left:28px;right:28px;top:288px;border-radius:28px;background:#272320;padding:24px;display:flex;flex-direction:column;gap:16px;box-shadow:0 10px 40px rgba(0,0,0,.6)">
+    <div style="font-size:22px;line-height:27px;font-weight:700;letter-spacing:-0.2px">Delete this map?</div>
+    <div style="font-size:14px;line-height:20px;color:#B6AB9C">
+      “Sanctuary Coast”, its 6 pins and all 3 of its versions go with it. The picture files stay on disk. This can’t be undone.
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;padding-top:4px">
+      <div style="padding:10px 12px;border-radius:50px;font-size:14px;line-height:18px;font-weight:600;letter-spacing:0.1px;color:#FFA552">Cancel</div>
+      <div style="padding:10px 12px;border-radius:50px;font-size:14px;line-height:18px;font-weight:600;letter-spacing:0.1px;color:#FF7A6B">Delete map</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

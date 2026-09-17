@@ -19,7 +19,6 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -31,7 +30,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.betteraudio.data.db.entities.BookStatus
+import com.betteraudio.ui.components.BookSegmentTrack
 import com.betteraudio.ui.components.PartItem
+import com.betteraudio.ui.player.InfoSlot
+import com.betteraudio.ui.player.ResumeHandoff
+import com.betteraudio.ui.player.leavesOnResume
+import com.betteraudio.ui.player.publishSlot
+import com.betteraudio.ui.player.travellingSlot
 import com.betteraudio.ui.theme.Pill
 import java.util.concurrent.TimeUnit
 import com.betteraudio.ui.haptics.*
@@ -54,7 +59,9 @@ fun BookInfoPanel(
     onResume: () -> Unit,
     modifier: Modifier = Modifier,
     parts: List<PartItem>? = null,
-    onShowHistory: (() -> Unit)? = null
+    onShowHistory: (() -> Unit)? = null,
+    chapterStarts: List<Long> = emptyList(),
+    handoff: ResumeHandoff = com.betteraudio.ui.player.NoResumeHandoff
 ) {
     val accent      = MaterialTheme.colorScheme.primary
     val onScrim     = MaterialTheme.colorScheme.onSurface
@@ -66,7 +73,7 @@ fun BookInfoPanel(
                 it.uppercase(),
                 style = MaterialTheme.typography.labelMedium,
                 color = accent,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(bottom = 4.dp).leavesOnResume(handoff.progress)
             )
         }
 
@@ -77,18 +84,20 @@ fun BookInfoPanel(
             fontWeight = FontWeight.Bold,
             maxLines = 3,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().travellingSlot(handoff, InfoSlot.TITLE)
         )
 
         author?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(2.dp))
             Text(it, style = MaterialTheme.typography.titleSmall, color = onScrimMuted,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth().travellingSlot(handoff, InfoSlot.AUTHOR))
         }
 
         narrator?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(2.dp))
-            Text("Narrated by $it", style = MaterialTheme.typography.bodySmall, color = onScrimMuted)
+            Text("Narrated by $it", style = MaterialTheme.typography.bodySmall, color = onScrimMuted,
+                modifier = Modifier.leavesOnResume(handoff.progress))
         }
 
         Spacer(Modifier.height(12.dp))
@@ -99,12 +108,19 @@ fun BookInfoPanel(
             BookStatus.FINISHED    -> "Finished"
             null                   -> ""
         }
-        if (statusLabel.isNotEmpty()) SuggestionChip(onClick = {}, label = { Text(statusLabel) })
+        if (statusLabel.isNotEmpty()) SuggestionChip(
+            onClick = {},
+            label = { Text(statusLabel) },
+            modifier = Modifier.leavesOnResume(handoff.progress)
+        )
 
         if (totalMs > 0) {
             Spacer(Modifier.height(14.dp))
             val remainingMs = ((1f - progressFraction) * totalMs).toLong().coerceAtLeast(0L)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                Modifier.fillMaxWidth().leavesOnResume(handoff.progress),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     "${(progressFraction * 100).toInt()}% complete",
                     style = MaterialTheme.typography.labelMedium, color = onScrimMuted
@@ -115,11 +131,15 @@ fun BookInfoPanel(
                 )
             }
             Spacer(Modifier.height(6.dp))
-            LinearProgressIndicator(
-                progress = { progressFraction },
-                modifier = Modifier.fillMaxWidth().height(5.dp).clip(Pill),
-                color = accent,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            // The player's own whole-book track, not a second design of the same idea — which is
+            // also what lets it travel down into the player when Resume is pressed.
+            BookSegmentTrack(
+                positionMs = (progressFraction * totalMs).toLong(),
+                totalMs = totalMs,
+                chapterStarts = chapterStarts,
+                accent = accent,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().travellingSlot(handoff, InfoSlot.TRACK)
             )
         }
 
@@ -129,6 +149,7 @@ fun BookInfoPanel(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 140.dp)
+                    .leavesOnResume(handoff.progress)
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(about, style = MaterialTheme.typography.bodyMedium, color = onScrimMuted)
@@ -136,6 +157,7 @@ fun BookInfoPanel(
         }
 
         if (!parts.isNullOrEmpty()) {
+          Column(Modifier.leavesOnResume(handoff.progress)) {
             Spacer(Modifier.height(16.dp))
             Text("Parts", style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold, color = onScrim)
@@ -167,6 +189,7 @@ fun BookInfoPanel(
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
+          }
         }
 
         Spacer(Modifier.height(18.dp))
@@ -175,20 +198,30 @@ fun BookInfoPanel(
             progressFraction <= 0f -> "Start"
             else                   -> "Resume"
         }
+        // The button the player's play control grows out of: it publishes its own rect, its glyph's
+        // and its label's, then stands aside once the player is carrying all three.
         HapticButton(
             onClick = onResume,
-            modifier = Modifier.fillMaxWidth().height(56.dp),
+            modifier = Modifier.fillMaxWidth().height(56.dp).travellingSlot(handoff, InfoSlot.BUTTON),
             shape = Pill
         ) {
-            Icon(Icons.Default.PlayArrow, null, Modifier.size(22.dp))
+            Icon(
+                Icons.Default.PlayArrow, null,
+                Modifier.size(22.dp).publishSlot(handoff, InfoSlot.BUTTON_ICON)
+            )
             Spacer(Modifier.width(8.dp))
-            Text(resumeLabel, style = MaterialTheme.typography.titleMedium)
+            Text(
+                resumeLabel,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.publishSlot(handoff, InfoSlot.BUTTON_LABEL)
+            )
         }
 
         if (onShowHistory != null) {
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier
+                    .leavesOnResume(handoff.progress)
                     .clip(Pill)
                     .clickable(onClick = onShowHistory)
                     .padding(horizontal = 10.dp, vertical = 8.dp),

@@ -109,6 +109,8 @@ internal fun LazyListScope.librarySection(
     onBrowse: () -> Unit,
     viewModel: SettingsViewModel
 ) {
+    item { BandHeader("Access & folder") }
+
     item {
         SettingsCard(
             icon = if (storageGranted) Icons.Default.CheckCircle else Icons.Default.Warning,
@@ -135,6 +137,8 @@ internal fun LazyListScope.librarySection(
             onClick = onBrowse
         )
     }
+    item { BandHeader("Import & structure") }
+
     item {
         var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
         val importPackLauncher = rememberLauncherForActivityResult(
@@ -176,6 +180,8 @@ internal fun LazyListScope.librarySection(
             )
         }
     }
+    item { BandHeader("Maintenance") }
+
     item {
         SettingsCard(
             icon = Icons.Default.Refresh,

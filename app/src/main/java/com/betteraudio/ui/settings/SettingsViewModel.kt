@@ -1,5 +1,7 @@
 package com.betteraudio.ui.settings
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -74,7 +76,8 @@ class SettingsViewModel @Inject constructor(
     private val backupManager: com.betteraudio.data.backup.BackupManager,
     private val diskMirror: com.betteraudio.data.diskstore.DiskMirror,
     private val diskExportMigration: com.betteraudio.data.diskstore.DiskExportMigration,
-    private val playerController: com.betteraudio.playback.PlayerController
+    private val playerController: com.betteraudio.playback.PlayerController,
+    private val customFontStore: com.betteraudio.data.diskstore.CustomFontStore
 ) : ViewModel() {
 
     // ── App icon (see util/AppIconManager.kt) ──────────────────────────────
@@ -367,6 +370,37 @@ class SettingsViewModel @Inject constructor(
     val customThemeColor: StateFlow<String> =
         settings.customThemeColor.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "default")
 
+    // ── App font (see data/diskstore/CustomFontStore.kt) ───────────────────
+    /** Absolute path of the copy Voyage keeps; "" = the app's own Poppins. */
+    val customFontPath: StateFlow<String> =
+        settings.customFontPath.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val customFontName: StateFlow<String> =
+        settings.customFontName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+
+    /** Why the last import was refused, or null. Held rather than emitted as an event because the
+     *  answer belongs beside the control that asked the question — a font that will not load is a
+     *  state of the setting, not a passing notification. */
+    private val _fontError = MutableStateFlow<String?>(null)
+    val fontError: StateFlow<String?> = _fontError.asStateFlow()
+
+    fun importCustomFont(uri: android.net.Uri) = viewModelScope.launch {
+        _fontError.value = null
+        when (val result = customFontStore.import(uri)) {
+            is com.betteraudio.data.diskstore.CustomFontStore.Result.Success ->
+                settings.setCustomFont(result.path, result.displayName)
+            is com.betteraudio.data.diskstore.CustomFontStore.Result.Failure ->
+                _fontError.value = result.message
+        }
+    }
+
+    fun clearCustomFont() = viewModelScope.launch {
+        _fontError.value = null
+        settings.setCustomFont("", "")
+        customFontStore.clear()
+    }
+
+    fun dismissFontError() { _fontError.value = null }
+
     /** Pinned accents by cover path — see CoverAccentCodec. Empty = every cover is on Automatic. */
     val coverAccents: StateFlow<Map<String, Int>> =
         settings.coverAccents
@@ -516,7 +550,64 @@ class SettingsViewModel @Inject constructor(
 
     private val _section = MutableStateFlow<SettingsSection>(SettingsSection.Root)
     val currentSection: StateFlow<SettingsSection> = _section.asStateFlow()
-    fun navigateTo(s: SettingsSection) { _section.value = s }
+    fun navigateTo(s: SettingsSection) {
+        // ...and leaves search: a query is a way of getting somewhere, so once you have arrived
+        // it has done its job. Staying open would also leave the field covering the section title.
+        searchActive = false
+        searchQuery = ""
+        // Leaving a section closes whatever was open in it, so arriving somewhere always starts
+        // from the one-screen summary rather than from the middle of a group opened minutes ago.
+        openGroup = null
+        _section.value = s
+    }
+
+    // ── Which settings group is open ───────────────────────────────────────
+    // Held here rather than inside each group because only one may be open at a time: that is what
+    // keeps a section a single screen instead of letting it grow back into the wall of permanently
+    // expanded cards this replaced. Plain Compose state, not a StateFlow — nothing outside the
+    // Settings UI reads it and it must not survive process death.
+    var openGroup by androidx.compose.runtime.mutableStateOf<String?>(null)
+        private set
+
+    /** Toggle a group by id; opening one closes any other. */
+    fun toggleGroup(id: String) { openGroup = if (openGroup == id) null else id }
+
+    // ── Search ─────────────────────────────────────────────────────────────
+    // Public setter rather than a setSearchQuery() function: that name collides with the property's
+    // own generated setter on the JVM.
+    var searchQuery by androidx.compose.runtime.mutableStateOf("")
+
+    /**
+     * Whether the top bar is showing the search field in place of the title.
+     *
+     * Search lives in the app bar rather than as a permanent field above the list: a field sitting
+     * there costs a row of height on every visit for something wanted occasionally, and it competes
+     * with the first band for the eye. The icon is always visible, so it is still discoverable.
+     */
+    var searchActive by androidx.compose.runtime.mutableStateOf(false)
+        private set
+
+    fun openSearch() { searchActive = true }
+
+    /** Leave search: closes the field and drops the query, so the root returns to its normal list. */
+    fun closeSearch() {
+        searchActive = false
+        searchQuery = ""
+    }
+
+    /**
+     * Follow a search result: go to its section and open its group on arrival.
+     *
+     * The query is cleared so returning to the root shows the normal list rather than a stale
+     * result set. [navigateTo] clears [openGroup] on purpose, so the group is set *after* it —
+     * landing on a section with the setting already open is the whole point of a result being
+     * worth tapping.
+     */
+    fun openSearchResult(section: SettingsSection, group: String?) {
+        searchQuery = ""
+        navigateTo(section)
+        openGroup = group
+    }
 
     fun setLibraryFolder(path: String) = viewModelScope.launch { settings.setLibraryFolder(path) }
     fun setSkipForward(ms: Long) = viewModelScope.launch { settings.setSkipForwardMs(ms) }

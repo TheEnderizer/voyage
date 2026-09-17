@@ -32,6 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.unit.toSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +51,10 @@ import com.betteraudio.ui.player.containerReveal
 import com.betteraudio.ui.player.expandReveal
 import com.betteraudio.ui.player.morphFrom
 import java.io.File
+
+/** The cover card's corner radius — the same one the Material You player draws its own cover at,
+ *  which is what lets the two hand off to each other without the rounding changing mid-travel. */
+private val COVER_RADIUS = 28.dp
 
 /**
  * Material You variant of the shared info page frame — opaque tonal background with a rounded cover
@@ -66,6 +73,12 @@ internal fun MaterialInfoPageFrame(
     contentModifier: Modifier,
     overflowItems: @Composable ColumnScope.(dismiss: () -> Unit) -> Unit,
     belowPanel: @Composable ColumnScope.() -> Unit,
+    /** Reports this page's own cover, so the full player can grow out of it — see
+     *  [com.betteraudio.ui.components.InfoPageScaffold]. The radius is [COVER_RADIUS], which is
+     *  this frame's business rather than the scaffold's. */
+    onCoverBounds: (Rect, Dp) -> Unit,
+    /** How the panel below hands its own elements to an opening player. */
+    handoff: com.betteraudio.ui.player.ResumeHandoff,
 ) {
     var showOverflow by remember { mutableStateOf(false) }
     val onScrimMuted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -140,6 +153,8 @@ internal fun MaterialInfoPageFrame(
                 totalMs          = data.totalMs,
                 synopsis         = data.synopsis,
                 onResume         = onResume,
+                chapterStarts    = data.chapterStarts,
+                handoff          = handoff,
                 modifier         = Modifier.expandReveal(openProgress)
             )
         }
@@ -169,10 +184,13 @@ internal fun MaterialInfoPageFrame(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
+                            .onGloballyPositioned {
+                                onCoverBounds(Rect(it.positionInRoot(), it.size.toSize()), COVER_RADIUS)
+                            }
                             .morphFrom(
                                 coverSource, openProgress,
                                 anchorTopLeft = true, byWidth = true,
-                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                                sourceRadius = coverSourceRadius, destRadius = COVER_RADIUS
                             )
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     )
@@ -224,10 +242,13 @@ internal fun MaterialInfoPageFrame(
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .aspectRatio(0.72f)
+                            .onGloballyPositioned {
+                                onCoverBounds(Rect(it.positionInRoot(), it.size.toSize()), COVER_RADIUS)
+                            }
                             .morphFrom(
                                 coverSource, openProgress,
                                 anchorTopLeft = true, byWidth = true,
-                                sourceRadius = coverSourceRadius, destRadius = 28.dp
+                                sourceRadius = coverSourceRadius, destRadius = COVER_RADIUS
                             )
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     )

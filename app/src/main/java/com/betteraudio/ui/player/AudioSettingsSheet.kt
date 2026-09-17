@@ -452,17 +452,26 @@ private fun PresetChip(
             leadingIcon = if (preset.isDefault) {
                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
             } else null,
+            // Long press opens the menu. It used to overwrite the preset outright, which left
+            // NOTHING able to set `showMenu` — so this DropdownMenu, and with it the only Delete
+            // and Set-as-default in the player, could never be opened. Overwrite moved into the
+            // menu rather than staying on the gesture: it is a destructive, unconfirmed write, and
+            // a long press is far too easy to trigger by accident for that.
             modifier = Modifier.combinedClickable(
                 onClick = onLoad,
                 onLongClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onOverwrite()
+                    showMenu = true
                 }
             )
         )
         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
             HapticDropdownMenuItem(text = { Text("Load") }, onClick = { showMenu = false; onLoad() })
             HapticDropdownMenuItem(text = { Text("Set as default") }, onClick = { showMenu = false; onSetDefault() })
+            HapticDropdownMenuItem(
+                text = { Text("Overwrite with current") },
+                onClick = { showMenu = false; onOverwrite() }
+            )
             HapticDropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
