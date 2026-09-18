@@ -120,6 +120,14 @@ class CompanionImportService @Inject constructor(
         if (existingRow != null && !existingRow.isOwn) {
             return@withContext handleUpdate(existingRow, doc, media)
         }
+        // The same pack, already here and already ours — the round trip of exporting a pack and
+        // opening the file you just shared. Attaching it again registered a SECOND row for the
+        // same book, and because an imported row is by definition not authored here it came back
+        // marked "received": the author's own pack silently became a copy of itself, with edits
+        // routed through the op log instead of pack.json and no UI anywhere to notice the twin.
+        if (existingRow != null && existingRow.isOwn) {
+            return@withContext ImportResult.AlreadyUpToDate(doc.title)
+        }
 
         val members = manifest?.members?.takeIf { it.isNotEmpty() } ?: doc.members
         val member = members.firstOrNull()

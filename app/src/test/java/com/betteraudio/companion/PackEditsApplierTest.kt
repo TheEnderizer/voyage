@@ -85,6 +85,44 @@ class PackEditsApplierTest {
     }
 
     @Test
+    fun `editFact moves the fact along the story`() {
+        val base = CompanionPackDoc(
+            entities = listOf(entity("e1", "Kelsier")),
+            facts = listOf(fact("f1", "e1", "allegiance", "Survivors"))
+        )
+        val result = PackEditsApplier.apply(
+            base,
+            edits(
+                PackEditOp.EditFact(
+                    factId = "f1",
+                    fields = mapOf("anchorGlobalMs" to "3600000", "anchorRatio" to "0.25"),
+                    rev = 1
+                )
+            )
+        )
+        assertEquals(3_600_000L, result.facts[0].anchor.globalMs)
+        assertEquals(0.25f, result.facts[0].anchor.ratio!!, 0.0001f)
+        // The value is untouched: an anchor-only op says when, never what.
+        assertEquals("Survivors", result.facts[0].value)
+    }
+
+    @Test
+    fun `editFact accepts an anchor written as a number`() {
+        val base = CompanionPackDoc(
+            entities = listOf(entity("e1", "Kelsier")),
+            facts = listOf(fact("f1", "e1", "allegiance", "Survivors"))
+        )
+        val result = PackEditsApplier.apply(
+            base,
+            edits(PackEditOp.EditFact(factId = "f1", fields = mapOf("anchorGlobalMs" to 90_000L), rev = 1))
+        )
+        assertEquals(90_000L, result.facts[0].anchor.globalMs)
+        // No ratio in the op means no ratio on the result — a stale one would put the same fact in
+        // two different places depending on which tier resolved it.
+        assertNull(result.facts[0].anchor.ratio)
+    }
+
+    @Test
     fun `deleteFact tombstones without deleting the entity`() {
         val base = CompanionPackDoc(
             entities = listOf(entity("e1", "Kelsier")),

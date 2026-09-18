@@ -5,6 +5,51 @@ Format follows https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+## [1.14.1b] - 2026-09-19
+
+The companion can finally be told *when* things happen, and map pins can actually be dragged.
+
+Everything a companion pack knows is pinned to a point in the book — that is what keeps it from
+spoiling you. Until now that point was stamped wherever you happened to be listening when you
+typed the entry, and after that it was invisible and unchangeable. Now every fact, every pin
+placement and every map version says when it lands, and every one of them can be moved.
+
+Settings also collapsed: each group shows its current answer and opens on tap, and there is a
+search in the app bar.
+
+### Added
+
+- **Story schedule.** In the companion's edit mode, the Timeline pane lists everything the pack
+  has anchored in the book, in order, with its position. Tap any line to change it.
+- **A position on every new entry.** Add a fact now asks when in the book it happens, filled in
+  with where you are, with Now and Start to hand.
+- **Editing an entry, wherever you can see it** — a row on a character sheet, a stat badge, the
+  summary paragraph, a line of the schedule, or the card for a pin on the map. Change what it
+  says, how loud it is, and when it happens.
+- **Map versions can be moved in the book.** Tap a version in the Versions dialog to say when the
+  map changes to it.
+- **A pin's placement has a time you can set.** Tap a pin in edit mode and the card says when the
+  character is there, with a clock to change it.
+
+### Fixed
+
+- **Map pins were very hard to drag.** A pin only started moving after the drag passed the
+  system's slop threshold, and the map's own pan gesture could grab the same finger first — so you
+  pressed and dragged repeatedly to get anything to move. A pin now takes the touch immediately and
+  follows your finger from the first millimetre.
+- **Pressing a pin's name did nothing.** The caption under a pin was drawn outside the pin's own
+  touch area. The target is bigger now and covers the whole marker.
+- **Forking a pack lost every picture in it.** "Duplicate as my own" copied the pack's data into a
+  new folder and left the images behind, so every portrait fell back to a letter and the map read
+  "No image yet".
+- Eleven companion fixes from the previous test pass: adding a map, adding a pin, setting a pin's
+  position, re-importing your own pack, seeding a received pack, and more.
+
+### Changed
+
+- **Settings groups collapse to their answer** and open on tap, and **search moved into the app
+  bar** — tap the icon and the title becomes the field.
+
 ## [1.13.1b] - 2026-09-02
 
 Fixes 1.13.0b crashing on launch for anyone who'd had an early debug build of an unrelated,

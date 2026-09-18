@@ -65,6 +65,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.betteraudio.companion.PackBoardResolver
 import com.betteraudio.companion.model.BoardKind
 import com.betteraudio.companion.model.PackScrap
 import com.betteraudio.ui.haptics.Feel
@@ -194,6 +195,11 @@ fun CompanionDeck(
     var showCatchUp by remember { mutableStateOf(false) }
     var showAddPin by remember { mutableStateOf(false) }
     var addingFactFor by remember { mutableStateOf<String?>(null) }
+    // The entry whose value and position are being changed, and the map version whose position is.
+    // Both are held by id rather than by object so the dialog is always answered against the
+    // freshly-reloaded document rather than against a copy taken when it opened.
+    var editingFactId by remember { mutableStateOf<String?>(null) }
+    var editingArt by remember { mutableStateOf<Pair<String, String>?>(null) }
     var convertingScrap by remember { mutableStateOf<PackScrap?>(null) }
     var portraitFor by remember { mutableStateOf<String?>(null) }
     // Which map is showing, and which one an incoming image belongs to. Saveable so switching to
@@ -201,6 +207,7 @@ fun CompanionDeck(
     var selectedBoardId by rememberSaveable { mutableStateOf<String?>(null) }
     var mapImageFor by remember { mutableStateOf<String?>(null) }
     var renamingBoard by remember { mutableStateOf<String?>(null) }
+    var renamingEntity by remember { mutableStateOf<String?>(null) }
     var showAddMap by remember { mutableStateOf(false) }
     // Every destructive action in the deck parks itself here first. See [PendingDelete] and
     // [ConfirmDialog] — nothing in the pack model can be undone, so nothing in the pack should
@@ -211,6 +218,9 @@ fun CompanionDeck(
     // it has stopped being on screen by the time the dialog is answered.
     var pendingPinAt by remember { mutableStateOf<Pair<Float, Float>?>(null) }
     val pinHint by authorViewModel.pinHint.collectAsStateWithLifecycle()
+    // Where the listener is, for every dialog that offers a position. Refreshed as one opens —
+    // see CompanionAuthorViewModel.nowMs.
+    val nowMs by authorViewModel.nowMs.collectAsStateWithLifecycle()
 
     LaunchedEffect(visible, bookId) {
         if (visible && bookId != -1L) {
@@ -448,7 +458,15 @@ fun CompanionDeck(
                                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                     )
                                 },
-                                onAddFact = { addingFactFor = current.entity.entityId },
+                                onAddFact = {
+                                    authorViewModel.refreshNow()
+                                    addingFactFor = current.entity.entityId
+                                },
+                                onEditFact = {
+                                    authorViewModel.refreshNow()
+                                    editingFactId = it
+                                },
+                                onRenameEntity = { renamingEntity = current.entity.entityId },
                                 onDeleteFact = { factId ->
                                     val entry = current.entity.let { _ ->
                                         author.doc?.facts?.firstOrNull { it.factId == factId }
@@ -515,6 +533,10 @@ fun CompanionDeck(
                                 hintEntityId = pinHint,
                                 onSelectBoard = { selectedBoardId = it },
                                 onMovePin = { entityId, x, y -> authorViewModel.setPinLocation(entityId, x, y) },
+                                onEditPinTime = { pin ->
+                                    authorViewModel.refreshNow()
+                                    editingFactId = pin.locationFact.factId
+                                },
                                 onDeletePin = { elementId ->
                                     val name = mapPins.firstOrNull { it.elementId == elementId }?.entity?.name
                                     val board = mapBoardId
@@ -536,17 +558,28 @@ fun CompanionDeck(
                                         if (mapBoard?.artMedia != null) 1 else 0
                                     if (board != null) pendingDelete = PendingDelete(
                                         title = "Delete this map?",
+                                        // Built from what the map actually has, rather than one
+                                        // sentence with the numbers poured in: a board with no
+                                        // pins read "its 0 pins go with it", which is a clause
+                                        // about nothing.
                                         body = buildString {
-                                            append("“")
-                                            append(mapBoard?.title?.takeIf { it.isNotBlank() } ?: "This map")
-                                            append("”, its ")
-                                            append(mapPins.size)
-                                            append(if (mapPins.size == 1) " pin" else " pins")
-                                            if (versions > 0) {
-                                                append(" and ")
-                                                append(if (versions == 1) "its picture" else "all $versions of its versions")
+                                            val name = mapBoard?.title?.takeIf { it.isNotBlank() } ?: "This map"
+                                            val losses = buildList {
+                                                if (mapPins.isNotEmpty()) {
+                                                    add("its ${mapPins.size} ${if (mapPins.size == 1) "pin" else "pins"}")
+                                                }
+                                                if (versions > 0) {
+                                                    add(if (versions == 1) "its picture" else "all $versions of its versions")
+                                                }
                                             }
-                                            append(" go with it. The image files stay on disk. This can’t be undone.")
+                                            append("“").append(name).append("”")
+                                            when (losses.size) {
+                                                0 -> append(" is deleted.")
+                                                1 -> append(" and ${losses[0]} go with it.")
+                                                else -> append(", ${losses[0]} and ${losses[1]} go with it.")
+                                            }
+                                            if (versions > 0) append(" The image files stay on disk.")
+                                            append(" This can’t be undone.")
                                         },
                                         confirm = "Delete map"
                                     ) {
@@ -561,6 +594,10 @@ fun CompanionDeck(
                                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                         )
                                     }
+                                },
+                                onEditArtTime = { art ->
+                                    authorViewModel.refreshNow()
+                                    mapBoardId?.let { editingArt = it to art.artId }
                                 },
                                 onDeleteArt = { artId ->
                                     val board = mapBoardId
@@ -581,10 +618,19 @@ fun CompanionDeck(
                                 revealedMs = state.revealedMs,
                                 bookPositionMs = state.bookPositionMs,
                                 scraps = author.unconvertedScraps,
+                                storyTimeline = author.storyTimeline,
                                 editing = editing,
                                 contentPadding = pad,
                                 onCatchUp = { showCatchUp = true },
                                 onQuickCapture = { showQuickCapture = true },
+                                onEditEntry = { entry ->
+                                    authorViewModel.refreshNow()
+                                    when (entry.kind) {
+                                        CompanionAuthorViewModel.StoryEntry.Kind.ART ->
+                                            entry.boardId?.let { editingArt = it to entry.id }
+                                        else -> editingFactId = entry.id
+                                    }
+                                },
                                 onConvertScrap = { convertingScrap = it },
                                 onDeleteScrap = { scrapId ->
                                     pendingDelete = PendingDelete(
@@ -661,12 +707,62 @@ fun CompanionDeck(
             // Either list: the dialog can be opened from the author's cast or the revealed one.
             entityName = (author.entities + state.entities)
                 .firstOrNull { it.entity.entityId == entityId }?.entity?.name.orEmpty(),
-            onConfirm = { field, value, importance ->
-                authorViewModel.addFact(entityId, field, value, importance, useCurrentPosition = true)
+            nowMs = nowMs,
+            onConfirm = { field, value, importance, atMs ->
+                authorViewModel.addFact(entityId, field, value, importance, atMs)
                 addingFactFor = null
             },
             onDismiss = { addingFactFor = null }
         )
+    }
+    // One dialog for every entry in the pack, wherever it was opened from — a row on a character
+    // sheet, a line of the story schedule, or the pin card on the map. A pin's `location` entry is
+    // the one that hides its value: that value is canvas coordinates, and the position in the book
+    // is the only part of it an author has any use for.
+    editingFactId?.let { factId ->
+        val fact = author.doc?.facts?.firstOrNull { it.factId == factId }
+        if (fact == null) {
+            editingFactId = null
+        } else {
+            val name = author.doc?.entities
+                ?.firstOrNull { it.entityId == fact.entityId }?.name.orEmpty()
+            val isLocation = fact.field == PackBoardResolver.DEFAULT_LOCATION_FIELD
+            EditFactDialog(
+                title = if (isLocation) "When is $name here?" else "Edit entry",
+                subject = if (isLocation) name
+                    else "$name · ${fact.field.substringAfter(':')}",
+                initialValue = fact.value,
+                initialImportance = fact.importance,
+                initialAtMs = fact.anchor.globalMs ?: 0L,
+                nowMs = nowMs,
+                valueEditable = !isLocation,
+                onConfirm = { value, importance, atMs ->
+                    authorViewModel.editFact(factId, value, importance, atMs)
+                    editingFactId = null
+                },
+                onDismiss = { editingFactId = null }
+            )
+        }
+    }
+    editingArt?.let { (boardId, artId) ->
+        val entry = author.artTimelineByBoard[boardId].orEmpty()
+            .firstOrNull { it.first.artId == artId }
+        if (entry == null) {
+            editingArt = null
+        } else {
+            EditArtTimeDialog(
+                label = entry.first.label?.takeIf { it.isNotBlank() }
+                    ?: (author.mapBoards.firstOrNull { it.boardId == boardId }?.title
+                        ?.takeIf { it.isNotBlank() } ?: "Map"),
+                initialAtMs = entry.second,
+                nowMs = nowMs,
+                onConfirm = { atMs ->
+                    authorViewModel.setBoardArtTime(boardId, artId, atMs)
+                    editingArt = null
+                },
+                onDismiss = { editingArt = null }
+            )
+        }
     }
     if (showQuickCapture) {
         QuickCaptureDialog(
@@ -739,6 +835,18 @@ fun CompanionDeck(
             confirm = "Add",
             onConfirm = { authorViewModel.addMapBoard(it.ifBlank { null }); showAddMap = false },
             onDismiss = { showAddMap = false }
+        )
+    }
+    renamingEntity?.let { id ->
+        val name = (author.entities + state.entities)
+            .firstOrNull { it.entity.entityId == id }?.entity?.name.orEmpty()
+        NameDialog(
+            title = "Rename",
+            label = "Name",
+            initial = name,
+            confirm = "Save",
+            onConfirm = { authorViewModel.renameEntity(id, it); renamingEntity = null },
+            onDismiss = { renamingEntity = null }
         )
     }
     renamingBoard?.let { id ->

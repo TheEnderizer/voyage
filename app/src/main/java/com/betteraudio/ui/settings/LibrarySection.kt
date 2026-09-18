@@ -148,7 +148,9 @@ internal fun LazyListScope.librarySection(
             icon = Icons.Default.Groups,
             iconTint = MaterialTheme.colorScheme.primary,
             title = "Import companion pack…",
-            subtitle = "Attach a companion pack a friend sent you (docs/companion-packs.md §10.3)",
+            // No doc reference in a subtitle: this line is read by someone deciding whether to
+            // tap, not by whoever is maintaining the importer.
+            subtitle = "Attach a companion pack a friend sent you",
             // A real delivery is usually application/octet-stream (Gmail/Drive/Telegram strip the
             // extension), so this filters broadly rather than on a .voyagepack MIME type that
             // mostly doesn't exist in the wild — see CompanionImportService's own kdoc.
@@ -158,6 +160,63 @@ internal fun LazyListScope.librarySection(
             pendingUri = pendingImportUri,
             onConsumed = { pendingImportUri = null }
         )
+    }
+    item {
+        // The one companion preference that already existed in storage. Kept beside the pack
+        // import rather than given a section of its own: both are about packs somebody else wrote.
+        val threshold by viewModel.companionNotifyThreshold.collectAsStateWithLifecycle()
+        var showThresholdDialog by remember { mutableStateOf(false) }
+        SettingsCard(
+            icon = Icons.Default.NewReleases,
+            iconTint = MaterialTheme.colorScheme.primary,
+            title = "Companion alerts",
+            subtitle = when (threshold) {
+                "MAJOR" -> "Only major changes are badged"
+                "NEVER" -> "Never badge companion changes"
+                else -> "Notable and major changes are badged"
+            },
+            onClick = { showThresholdDialog = true }
+        )
+        if (showThresholdDialog) {
+            AlertDialog(
+                onDismissRequest = { showThresholdDialog = false },
+                containerColor = com.betteraudio.ui.components.appDialogColor(),
+                title = { Text("Companion alerts") },
+                text = {
+                    Column {
+                        Text(
+                            "How much has to change in a pack before the companion says so.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        listOf(
+                            "NOTABLE" to "Notable and major",
+                            "MAJOR" to "Major only",
+                            "NEVER" to "Never"
+                        ).forEach { (value, label) ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.setCompanionNotifyThreshold(value)
+                                        showThresholdDialog = false
+                                    }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(selected = threshold == value, onClick = null)
+                                Spacer(Modifier.width(10.dp))
+                                Text(label)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showThresholdDialog = false }) { Text("Close") }
+                }
+            )
+        }
     }
     item {
         var showStructureDialog by remember { mutableStateOf(false) }

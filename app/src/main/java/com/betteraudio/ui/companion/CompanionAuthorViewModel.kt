@@ -100,7 +100,9 @@ class CompanionAuthorViewModel @Inject constructor(
         val artTimelineByBoard: Map<String, List<Pair<com.betteraudio.companion.model.BoardArt, Long>>> = emptyMap(),
         /** Pins resolved at `revealedMs = Long.MAX_VALUE` — the author sees every pin ever placed
          *  regardless of the reveal cursor, same rationale as seeing every entity/fact (class kdoc). */
-        val pinsByBoard: Map<String, List<ResolvedPin>> = emptyMap()
+        val pinsByBoard: Map<String, List<ResolvedPin>> = emptyMap(),
+        /** Everything this pack has anchored in the book, oldest first — see [StoryEntry]. */
+        val storyTimeline: List<StoryEntry> = emptyList()
     ) {
         val hasPack: Boolean get() = packId != null
         val unconvertedScraps: List<PackScrap> get() = scraps.filterNot { it.converted }
@@ -110,6 +112,34 @@ class CompanionAuthorViewModel @Inject constructor(
         val mapBoards: List<com.betteraudio.companion.model.PackBoard>
             get() = doc?.boards.orEmpty().filter { it.kind == BoardKind.MAP }
         val mapBoard: com.betteraudio.companion.model.PackBoard? get() = mapBoards.firstOrNull()
+    }
+
+    /**
+     * One thing this pack says happens at one point in the book — the row an author taps to change
+     * *when* it happens.
+     *
+     * The deck could show *what* a pack knows from the day it shipped, on the Cast, and it could
+     * show what the reveal cursor had let through, on the Timeline. What it could not show was the
+     * pack's own schedule: every fact was stamped with wherever the author was standing when they
+     * typed it, and after that the position was invisible and unreachable. This list is that
+     * schedule, in book order, and every row on it is editable.
+     *
+     * Three kinds rather than one, because they are edited differently and read differently:
+     * a [FACT] has a value worth rewriting, a [LOCATION] is a pin's waypoint whose value is raw
+     * canvas units and must never be shown as text (see [PackBoardResolver]), and an [ART] is a
+     * map version, which belongs to a board rather than to an entity.
+     */
+    data class StoryEntry(
+        val kind: Kind,
+        /** `factId` for [Kind.FACT]/[Kind.LOCATION], `artId` for [Kind.ART]. */
+        val id: String,
+        val title: String,
+        val detail: String,
+        val atMs: Long,
+        /** Set for [Kind.ART] only — which board the revision belongs to. */
+        val boardId: String? = null
+    ) {
+        enum class Kind { FACT, LOCATION, ART }
     }
 
     private val _uiState = MutableStateFlow(UiState())
@@ -126,6 +156,23 @@ class CompanionAuthorViewModel @Inject constructor(
     private val _pinHint = MutableStateFlow<String?>(null)
     val pinHint: StateFlow<String?> = _pinHint.asStateFlow()
 
+    /**
+     * Where the listener is right now, for every dialog that offers "Now" as an answer.
+     *
+     * Published as its own value rather than read off [UiState] because the state is reloaded only
+     * after a mutation, while the position moves the whole time the deck is open — a "Now" button
+     * filled in from a state loaded twenty minutes ago is worse than no button. The deck calls
+     * [refreshNow] the moment it opens any dialog that shows a position.
+     */
+    private val _nowMs = MutableStateFlow(0L)
+    val nowMs: StateFlow<Long> = _nowMs.asStateFlow()
+
+    fun refreshNow() {
+        val bookId = boundBookId
+        if (bookId == -1L) return
+        viewModelScope.launch { _nowMs.value = currentAnchorMs(bookId) }
+    }
+
     private var boundBookId: Long = -1L
 
     fun bind(bookId: Long) {
@@ -141,7 +188,13 @@ class CompanionAuthorViewModel @Inject constructor(
         if (playback.bookId == bookId) {
             return playerController.positionState.value.bookPositionMs
         }
-        return audiobookRepository.getRevealedMs(bookId)
+        // The saved resume position, not the reveal cursor. Those are independent by design: the
+        // cursor only advances by listening, so on a book part-listened before packs existed it
+        // is 0 no matter how far in the listener is. Anchoring to it stamped everything authored
+        // from Book Info or the Series page at 0m while the dialog said "anchored at the current
+        // playback position", and made every new fact instantly revealed by construction.
+        val progress = audiobookRepository.getProgressForBookOnce(bookId) ?: return 0L
+        return progress.filesBeforeCurrentMs + progress.positionMs
     }
 
     private suspend fun reload(bookId: Long) {
@@ -204,8 +257,52 @@ class CompanionAuthorViewModel @Inject constructor(
             conflicts = conflicts,
             entities = entities,
             artTimelineByBoard = artTimelineByBoard,
-            pinsByBoard = pinsByBoard
+            pinsByBoard = pinsByBoard,
+            storyTimeline = buildStoryTimeline(doc, book)
         )
+        _nowMs.value = currentAnchorMs(bookId)
+    }
+
+    /** Flattens the pack's facts and every board's revisions into one book-ordered list. Anything
+     *  the resolver cannot place is dropped rather than shown at zero: a row whose time is a guess
+     *  is a row that lies about the one value it exists to display. */
+    private fun buildStoryTimeline(
+        doc: CompanionPackDoc?,
+        book: com.betteraudio.data.db.entities.Book
+    ): List<StoryEntry> {
+        if (doc == null) return emptyList()
+        val nameById = doc.entities.associate { it.entityId to it.name }
+        val entries = mutableListOf<StoryEntry>()
+        for (fact in doc.facts) {
+            val at = com.betteraudio.companion.AnchorResolver.resolve(fact.anchor, book)?.bookGlobalMs
+                ?: continue
+            val name = nameById[fact.entityId] ?: continue
+            val isLocation = fact.field == PackBoardResolver.DEFAULT_LOCATION_FIELD
+            entries += StoryEntry(
+                kind = if (isLocation) StoryEntry.Kind.LOCATION else StoryEntry.Kind.FACT,
+                id = fact.factId,
+                title = name,
+                // A location's value is "<x>,<y>" in canvas units. Saying so is the honest reading
+                // of a waypoint; printing the numbers would be the map's private bookkeeping.
+                detail = if (isLocation) "Moves on the map"
+                    else "${fact.field.substringAfter(':')} · ${fact.value}",
+                atMs = at
+            )
+        }
+        for (board in doc.boards) {
+            val boardName = board.title?.takeIf { it.isNotBlank() } ?: "Map"
+            for ((art, at) in PackBoardResolver.artTimeline(board, book)) {
+                entries += StoryEntry(
+                    kind = StoryEntry.Kind.ART,
+                    id = art.artId,
+                    title = boardName,
+                    detail = art.label?.takeIf { it.isNotBlank() } ?: "New picture",
+                    atMs = at,
+                    boardId = board.boardId
+                )
+            }
+        }
+        return entries.sortedBy { it.atMs }
     }
 
     private inline fun <T> MutableStateFlow<T>.update(block: (T) -> T) {
@@ -356,14 +453,29 @@ class CompanionAuthorViewModel @Inject constructor(
                 // and refusing here was the actual bug: seeding is most useful on exactly the
                 // packs someone else started.
                 var count = 0
+                // Match by name before adding, exactly as the owned path does
+                // ([CompanionAuthorRepository.addSeededEntities]): without it, seeding a pack that
+                // already names someone produced a second entity with the same name — every
+                // re-run doubled the cast instead of topping it up.
+                val known = _uiState.value.doc?.entities.orEmpty()
+                val existingFacts = _uiState.value.doc?.facts.orEmpty()
                 for (candidate in chosen) {
-                    val entityId = editsRepository.addEntity(
+                    val existing = known.firstOrNull { it.name.equals(candidate.name, ignoreCase = true) }
+                    val entityId = existing?.entityId ?: editsRepository.addEntity(
                         bookId, packId, EntityKind.CHARACTER, candidate.name
                     ) ?: continue
+                    // A face the author already chose outranks anything the wiki offers, so a
+                    // portrait only fills an empty slot — same rule as the owned path.
                     portraitPaths[candidate.name]?.let { rel ->
-                        editsRepository.editEntity(bookId, packId, entityId, media = rel)
+                        if (existing == null || existing.media.isNullOrBlank()) {
+                            editsRepository.editEntity(bookId, packId, entityId, media = rel)
+                        }
                     }
                     for (fact in candidate.facts) {
+                        val duplicate = existingFacts.any {
+                            it.entityId == entityId && it.field == fact.field && it.value == fact.value
+                        }
+                        if (duplicate) continue
                         val ok = editsRepository.addFact(
                             bookId, packId, entityId, fact.field, fact.value,
                             fact.globalMs, Importance.NOTABLE
@@ -554,17 +666,47 @@ class CompanionAuthorViewModel @Inject constructor(
         }
     }
 
-    fun addFact(entityId: String, field: String, value: String, importance: Importance, useCurrentPosition: Boolean) {
+    /**
+     * Records a fact, at [atMs] in the book.
+     *
+     * [atMs] used to be a boolean ("use the current position, or else zero"), which meant the one
+     * thing an author most often needs to say — *this happens at the start of chapter nine, not
+     * where I am standing* — could only be said by scrubbing the book to chapter nine first. The
+     * dialog now asks, defaulting to where they are.
+     */
+    fun addFact(entityId: String, field: String, value: String, importance: Importance, atMs: Long) {
         val bookId = boundBookId
         val packId = _uiState.value.packId ?: return
         val isOwn = _uiState.value.isOwn
         if (field.isBlank() || value.isBlank()) return
         viewModelScope.launch {
-            val anchorMs = if (useCurrentPosition) currentAnchorMs(bookId) else 0L
+            val anchorMs = atMs.coerceAtLeast(0L)
             if (isOwn) {
                 authorRepository.addFact(bookId, packId, entityId, field, value, anchorMs, importance)
             } else {
                 editsRepository.addFact(bookId, packId, entityId, field, value, anchorMs, importance)
+            }
+            reload(bookId)
+        }
+    }
+
+    /** Changes an existing entry: what it says, how loud it is, and when in the book it lands.
+     *  Any argument left null is left alone. */
+    fun editFact(
+        factId: String,
+        value: String? = null,
+        importance: Importance? = null,
+        atMs: Long? = null
+    ) {
+        val bookId = boundBookId
+        val packId = _uiState.value.packId ?: return
+        val isOwn = _uiState.value.isOwn
+        viewModelScope.launch {
+            val anchorMs = atMs?.coerceAtLeast(0L)
+            if (isOwn) {
+                authorRepository.editFact(bookId, packId, factId, value, importance, anchorMs)
+            } else {
+                editsRepository.editFact(bookId, packId, factId, value, importance, anchorMs)
             }
             reload(bookId)
         }
@@ -656,6 +798,18 @@ class CompanionAuthorViewModel @Inject constructor(
             } else {
                 authorRepository.setBoardArt(bookId, packId, boardId, rel)
             }
+            reload(bookId)
+        }
+    }
+
+    /** Moves a map version to a different point in the story. Owned packs only — the edits overlay
+     *  has no op for a board's revisions, so on a received pack the repository refuses and nothing
+     *  happens, which is the same answer every other board edit already gives there. */
+    fun setBoardArtTime(boardId: String, artId: String, atMs: Long) {
+        val bookId = boundBookId
+        val packId = _uiState.value.packId ?: return
+        viewModelScope.launch {
+            authorRepository.setBoardArtAnchor(bookId, packId, boardId, artId, atMs.coerceAtLeast(0L))
             reload(bookId)
         }
     }

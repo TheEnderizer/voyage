@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -23,7 +25,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.betteraudio.companion.RevealCursorRepository
 import com.betteraudio.companion.model.EntityKind
@@ -165,18 +169,21 @@ fun AddEntityDialog(onConfirm: (EntityKind, String) -> Unit, onDismiss: () -> Un
 @Composable
 fun AddFactDialog(
     entityName: String,
-    onConfirm: (String, String, Importance) -> Unit,
+    /** Where the listener is standing — the default answer to "when", and what "Now" resets to. */
+    nowMs: Long,
+    onConfirm: (field: String, value: String, importance: Importance, atMs: Long) -> Unit,
     onDismiss: () -> Unit
 ) {
     var field by remember { mutableStateOf("note") }
     var value by remember { mutableStateOf("") }
     var importance by remember { mutableStateOf(Importance.NOTABLE) }
+    var atMs by remember { mutableStateOf(nowMs) }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = appDialogColor(),
         title = { Text("Add fact — $entityName") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = field,
                     onValueChange = { field = it },
@@ -185,24 +192,208 @@ fun AddFactDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(value = value, onValueChange = { value = it }, label = { Text("Value") })
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Anchored at the current playback position.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(10.dp))
+                WhenInBookField(atMs = atMs, nowMs = nowMs, onChange = { atMs = it })
+                Spacer(Modifier.height(6.dp))
                 ImportancePicker(selected = importance, onSelect = { importance = it })
             }
         },
         confirmButton = {
             Button(
-                onClick = { if (field.isNotBlank() && value.isNotBlank()) onConfirm(field.trim(), value.trim(), importance) },
+                onClick = { if (field.isNotBlank() && value.isNotBlank()) onConfirm(field.trim(), value.trim(), importance, atMs) },
                 enabled = field.isNotBlank() && value.isNotBlank()
             ) { Text("Add") }
         },
         dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/**
+ * The same entry, afterwards.
+ *
+ * Every value in a pack could be added and removed, and nothing in between: correcting a typo, or
+ * moving a fact to the moment the story actually says it, meant deleting the entry and re-recording
+ * it — which, for a position, meant scrubbing the book to the right place first. This is the edit.
+ *
+ * [value] is hidden for a pin's `location` entry: its text is `"<x>,<y>"` in canvas units, which is
+ * the map's own bookkeeping and never something to hand an author as a text field (see
+ * [com.betteraudio.companion.PackBoardResolver]). For those, only the position is editable — which
+ * is exactly what "when is this character here" means.
+ */
+@Composable
+fun EditFactDialog(
+    title: String,
+    subject: String,
+    initialValue: String,
+    initialImportance: Importance,
+    initialAtMs: Long,
+    nowMs: Long,
+    /** False for a pin waypoint — see the kdoc. */
+    valueEditable: Boolean = true,
+    onConfirm: (value: String?, importance: Importance?, atMs: Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var value by remember { mutableStateOf(initialValue) }
+    var importance by remember { mutableStateOf(initialImportance) }
+    var atMs by remember { mutableStateOf(initialAtMs) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = appDialogColor(),
+        title = { Text(title) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    subject,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                if (valueEditable) {
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = { value = it },
+                        label = { Text("Value") }
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+                WhenInBookField(atMs = atMs, nowMs = nowMs, onChange = { atMs = it })
+                if (valueEditable) {
+                    Spacer(Modifier.height(6.dp))
+                    ImportancePicker(selected = importance, onSelect = { importance = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(
+                        if (valueEditable) value.trim().takeIf { it.isNotBlank() } else null,
+                        if (valueEditable) importance else null,
+                        atMs
+                    )
+                },
+                enabled = !valueEditable || value.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** When a map version becomes the map. Position only — a revision has no other editable part. */
+@Composable
+fun EditArtTimeDialog(
+    label: String,
+    initialAtMs: Long,
+    nowMs: Long,
+    onConfirm: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var atMs by remember { mutableStateOf(initialAtMs) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = appDialogColor(),
+        title = { Text("When does the map change?") },
+        text = {
+            Column {
+                Text(
+                    label,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                WhenInBookField(atMs = atMs, nowMs = nowMs, onChange = { atMs = it })
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "From this point on the map wears this picture. Before it, the version before.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = { Button(onClick = { onConfirm(atMs) }) { Text("Save") } },
+        dismissButton = { HapticTextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * One position in the book, as three numbers and two shortcuts.
+ *
+ * Not a slider: a slider across a twenty-hour audiobook moves about four minutes per pixel, which
+ * is useless for the thing this exists to do. Not a scrubber either — the author is not looking for
+ * a moment, they already know it, they are typing it in. Hours/minutes/seconds is what they have
+ * written down.
+ *
+ * The three fields hold **text**, not numbers, and only push a value up when the text parses. A
+ * field that normalised itself on every keystroke would delete the digit you just typed the moment
+ * you cleared it to type another one.
+ */
+@Composable
+fun WhenInBookField(
+    atMs: Long,
+    nowMs: Long,
+    onChange: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Keyed on the incoming value so a shortcut button ("Now") refills the boxes; ordinary typing
+    // does not re-key it, because the value it produces is the one already shown.
+    var hours by remember { mutableStateOf(twoDigits(atMs / 3_600_000L)) }
+    var minutes by remember { mutableStateOf(twoDigits((atMs / 60_000L) % 60)) }
+    var seconds by remember { mutableStateOf(twoDigits((atMs / 1_000L) % 60)) }
+
+    fun fill(ms: Long) {
+        hours = twoDigits(ms / 3_600_000L)
+        minutes = twoDigits((ms / 60_000L) % 60)
+        seconds = twoDigits((ms / 1_000L) % 60)
+        onChange(ms)
+    }
+
+    fun push() {
+        onChange(msFromParts(hours, minutes, seconds))
+    }
+
+    Column(modifier) {
+        Text(
+            "WHEN IN THE BOOK",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TimePart(hours, "h") { hours = it; push() }
+            Spacer(Modifier.width(6.dp))
+            TimePart(minutes, "m") { minutes = it; push() }
+            Spacer(Modifier.width(6.dp))
+            TimePart(seconds, "s") { seconds = it; push() }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HapticTextButton(onClick = { fill(nowMs) }) { Text("Now") }
+            HapticTextButton(onClick = { fill(0L) }) { Text("Start") }
+        }
+    }
+}
+
+/** One box of the position. Digits only, and short enough that three of them fit a dialog. */
+@Composable
+private fun TimePart(value: String, suffix: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { text -> onChange(text.filter { it.isDigit() }.take(3)) },
+        label = { Text(suffix) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = Modifier.width(78.dp)
+    )
+}
+
+private fun twoDigits(value: Long): String = value.coerceAtLeast(0L).toString()
+
+/** Blank parts read as zero — clearing the seconds box to type a new value must not make the whole
+ *  position unparseable while you are mid-keystroke. */
+internal fun msFromParts(hours: String, minutes: String, seconds: String): Long {
+    val h = hours.toLongOrNull() ?: 0L
+    val m = minutes.toLongOrNull() ?: 0L
+    val s = seconds.toLongOrNull() ?: 0L
+    return (h * 3_600_000L + m * 60_000L + s * 1_000L).coerceAtLeast(0L)
 }
 
 /** §9.1's "capture now, structure later" — two seconds, no typing required beyond the note. */

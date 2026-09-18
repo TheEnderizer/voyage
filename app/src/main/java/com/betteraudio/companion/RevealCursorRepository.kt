@@ -96,7 +96,14 @@ class RevealCursorRepository @Inject constructor(
         val packs = companionPackDao.getForTargetOnce(targetKey).filter { it.enabled }
         val positions = mutableListOf<Long>()
         for (pack in packs) {
-            val doc = companionDataStore.readBookPack(bookId, pack.packId) ?: continue
+            val base = companionDataStore.readBookPack(bookId, pack.packId) ?: continue
+            // Local edits count too. Reading only the base document made the confirm dialog
+            // under-report on a received pack: a fact the listener added themselves lives in
+            // `edits.json`, so "N will be revealed" said "nothing new" and then revealed it
+            // anyway — the digest, which does apply the overlay, immediately disagreed.
+            val doc = if (pack.isOwn) base else PackEditsApplier.apply(
+                base, companionDataStore.readBookPackEdits(bookId, pack.packId)
+            )
             for (fact in doc.facts) {
                 val resolved = AnchorResolver.resolve(fact.anchor, book) ?: continue
                 positions += resolved.bookGlobalMs

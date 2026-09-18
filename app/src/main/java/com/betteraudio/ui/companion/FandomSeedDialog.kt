@@ -1,5 +1,6 @@
 package com.betteraudio.ui.companion
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -173,12 +174,17 @@ private fun SetupBody(
         value = chapter,
         onValueChange = onChapter,
         label = { Text("I'm at chapter") },
+        // Fetch is disabled until this parses, and on a book with no chapter list it starts
+        // empty — so the field has to say it is the thing standing in the way. Without this the
+        // button simply did not respond and nothing on screen explained why. Said in the
+        // supporting line rather than as an error state: nothing is wrong yet on first open.
         supportingText = {
             Text(
-                when (detected?.positioning) {
-                    ChapterNumbering.Kind.NUMBERED ->
+                when {
+                    chapter.isBlank() -> "Needed before the wiki can be read — spoilers are cut off here."
+                    detected?.positioning == ChapterNumbering.Kind.NUMBERED ->
                         "Nothing the wiki cites after this chapter will be included."
-                    ChapterNumbering.Kind.ORDINAL ->
+                    detected?.positioning == ChapterNumbering.Kind.ORDINAL ->
                         "Chapters aren't numbered in this book's titles — counted in order instead."
                     else ->
                         "This book has no chapter list, so facts will be placed where you're listening now."
@@ -230,7 +236,12 @@ private fun PreviewBody(
     // make "Add 7" ambiguous about whether the seventh is a person.
     preview.map?.let { map ->
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            // The whole row toggles, not just the box. A 20dp checkbox is the smallest target in
+            // the dialog and the name beside it is the thing being judged.
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggleMap)
+                .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(checked = includeMap, onCheckedChange = { onToggleMap() })
@@ -253,7 +264,10 @@ private fun PreviewBody(
 
     preview.characters.forEach { candidate ->
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle(candidate.name) }
+                .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(

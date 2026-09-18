@@ -93,6 +93,15 @@ object PackEditsApplier {
         var result = f
         (fields["value"] as? String)?.let { result = result.copy(value = it) }
         (fields["importance"] as? String)?.let { i -> enumOrNull<Importance>(i)?.let { result = result.copy(importance = it) } }
+        // Moving a fact along the story (CompanionEditsRepository.editFact). Written as a string,
+        // read as either — a hand-edited or newer-schema edits.json may well carry a JSON number.
+        val globalMs = (fields["anchorGlobalMs"] as? String)?.toLongOrNull()
+            ?: (fields["anchorGlobalMs"] as? Number)?.toLong()
+        if (globalMs != null) {
+            val ratio = (fields["anchorRatio"] as? String)?.toFloatOrNull()
+                ?: (fields["anchorRatio"] as? Number)?.toFloat()
+            result = result.copy(anchor = result.anchor.copy(globalMs = globalMs, ratio = ratio))
+        }
         return result
     }
 

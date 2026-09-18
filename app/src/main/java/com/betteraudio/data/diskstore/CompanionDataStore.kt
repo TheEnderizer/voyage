@@ -112,6 +112,37 @@ class CompanionDataStore @Inject constructor(
         "$MEDIA_DIR_NAME/$safe"
     }
 
+    /**
+     * Copies every file in [fromPackId]'s `media/` directory into [toPackId]'s.
+     *
+     * A pack's `media` paths are pack-relative by design (see [writeBookPackMedia]), so a document
+     * copied into a new pack id keeps saying `media/nephis.png` and starts resolving against a
+     * directory that has no such file. Forking is the one place that copies a whole document
+     * sideways, and without this every portrait and every board backdrop in the new pack resolved
+     * to nothing — the cast fell back to letter tiles and the map to "No image yet".
+     *
+     * Best-effort: a pack whose art is already missing still forks, it just forks as it is.
+     *
+     * @return how many files were copied.
+     */
+    suspend fun copyBookPackMedia(bookId: Long, fromPackId: String, toPackId: String): Int =
+        withContext(Dispatchers.IO) {
+            val source = bookPackDirFor(bookId, fromPackId)?.let { File(it, MEDIA_DIR_NAME) }
+                ?.takeIf { it.isDirectory } ?: return@withContext 0
+            val destDir = bookPackDirFor(bookId, toPackId) ?: return@withContext 0
+            val dest = File(destDir, MEDIA_DIR_NAME)
+            if (!dest.isDirectory && !dest.mkdirs()) return@withContext 0
+            var copied = 0
+            for (file in source.listFiles().orEmpty()) {
+                if (!file.isFile) continue
+                val ok = runCatching { file.copyTo(File(dest, file.name), overwrite = true) }
+                    .isSuccess
+                if (ok) copied++
+            }
+            if (copied > 0) ensureNoMedia(destDir)
+            copied
+        }
+
     /** Deletes one media file by its pack-relative path. Guarded against a `..` path escaping the
      *  pack directory — media paths arrive from an imported document, which is untrusted input. */
     suspend fun deleteBookPackMedia(bookId: Long, packId: String, relPath: String): Boolean =

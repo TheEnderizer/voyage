@@ -2,7 +2,8 @@ package com.betteraudio.ui.companion
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ZoomOutMap
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -57,6 +59,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -147,6 +150,7 @@ fun MapPane(
     hintEntityId: String?,
     onSelectBoard: (String) -> Unit,
     onMovePin: (entityId: String, xUnits: Float, yUnits: Float) -> Unit,
+    onEditPinTime: (ResolvedPin) -> Unit,
     onDeletePin: (elementId: String) -> Unit,
     /** Coordinates, not a bare event: a pin has to land somewhere, and the only place that reads as
      *  "here" is the middle of what the author is currently looking at. Only the pane knows that. */
@@ -156,6 +160,7 @@ fun MapPane(
     onRenameBoard: () -> Unit,
     onDeleteBoard: () -> Unit,
     onSetImage: () -> Unit,
+    onEditArtTime: (BoardArt) -> Unit,
     onDeleteArt: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -185,9 +190,11 @@ fun MapPane(
                 board = board, boards = boards, pins = pins, art = art, artTimeline = artTimeline,
                 packDir = packDir, editing = editing, fullBleed = true,
                 chromePadding = contentPadding, hintEntityId = hintEntityId,
-                onSelectBoard = onSelectBoard, onMovePin = onMovePin, onDeletePin = onDeletePin,
+                onSelectBoard = onSelectBoard, onMovePin = onMovePin,
+                onEditPinTime = onEditPinTime, onDeletePin = onDeletePin,
                 onAddPin = onAddPin, onAddMap = onAddMap, onRenameBoard = onRenameBoard,
-                onDeleteBoard = onDeleteBoard, onSetImage = onSetImage, onDeleteArt = onDeleteArt
+                onDeleteBoard = onDeleteBoard, onSetImage = onSetImage,
+                onEditArtTime = onEditArtTime, onDeleteArt = onDeleteArt
             )
         }
     } else {
@@ -204,9 +211,11 @@ fun MapPane(
                 // Inside the card, and far enough in to clear a 28dp corner.
                 chromePadding = PaddingValues(CARD_CHROME_INSET),
                 hintEntityId = hintEntityId,
-                onSelectBoard = onSelectBoard, onMovePin = onMovePin, onDeletePin = onDeletePin,
+                onSelectBoard = onSelectBoard, onMovePin = onMovePin,
+                onEditPinTime = onEditPinTime, onDeletePin = onDeletePin,
                 onAddPin = onAddPin, onAddMap = onAddMap, onRenameBoard = onRenameBoard,
-                onDeleteBoard = onDeleteBoard, onSetImage = onSetImage, onDeleteArt = onDeleteArt
+                onDeleteBoard = onDeleteBoard, onSetImage = onSetImage,
+                onEditArtTime = onEditArtTime, onDeleteArt = onDeleteArt
             )
         }
     }
@@ -231,12 +240,14 @@ private fun MapStage(
     hintEntityId: String?,
     onSelectBoard: (String) -> Unit,
     onMovePin: (entityId: String, xUnits: Float, yUnits: Float) -> Unit,
+    onEditPinTime: (ResolvedPin) -> Unit,
     onDeletePin: (elementId: String) -> Unit,
     onAddPin: (xUnits: Float, yUnits: Float) -> Unit,
     onAddMap: () -> Unit,
     onRenameBoard: () -> Unit,
     onDeleteBoard: () -> Unit,
     onSetImage: () -> Unit,
+    onEditArtTime: (BoardArt) -> Unit,
     onDeleteArt: (String) -> Unit
 ) {
     var selected by remember(board.boardId) { mutableStateOf<ResolvedPin?>(null) }
@@ -383,6 +394,8 @@ private fun MapStage(
 
         var draggingId by remember { mutableStateOf<String?>(null) }
         var dragOffset by remember { mutableStateOf(Offset.Zero) }
+        val grabSlopPx = with(density) { PIN_GRAB_SLOP.toPx() }
+        val touchHalfPx = with(density) { PIN_TOUCH.toPx() } / 2f
 
         pins.forEach { pin ->
             val dragging = draggingId == pin.elementId
@@ -392,61 +405,97 @@ private fun MapStage(
             val base = mapToScreen(pin.xUnits, pin.yUnits, unitX, unitY, artOrigin, zoom, pan)
             val x = base.x + if (dragging) dragOffset.x else 0f
             val y = base.y + if (dragging) dragOffset.y else 0f
-            val halfPx = with(density) { PIN_SIZE.toPx() } / 2f
 
             Box(
                 Modifier
-                    .offset { IntOffset((x - halfPx).roundToInt(), (y - halfPx).roundToInt()) }
-                    .size(PIN_SIZE)
+                    .offset { IntOffset((x - touchHalfPx).roundToInt(), (y - touchHalfPx).roundToInt()) }
+                    // The tap target is bigger than the marker, and deliberately not the same
+                    // object as it. The face is 34dp; a finger is not, and the caption under the
+                    // face draws outside the pin bounds and so was never touchable at all, which is
+                    // where most of the misses went — you press the name and nothing happens.
+                    .size(PIN_TOUCH)
                     .then(
-                        if (editing) Modifier.pointerInput(pin.elementId, zoom, pan) {
-                            detectDragGestures(
-                                onDragStart = { draggingId = pin.elementId; dragOffset = Offset.Zero },
-                                onDragEnd = {
-                                    // A drag shorter than the slop is a tap that wobbled — treat it
-                                    // as selection, not as a move, or every inspect would silently
-                                    // re-anchor the pin.
-                                    val moved = dragOffset.getDistance() >
-                                        with(density) { 6.dp.toPx() }
-                                    if (moved) {
-                                        // Back out through the same transform the pin was drawn
-                                        // with, so a drag at 3x moves the pin by what it looks like
-                                        // it moved by, not by three times that.
-                                        val units = screenToMap(
-                                            base + dragOffset, unitX, unitY, artOrigin, zoom, pan
-                                        )
-                                        onMovePin(
-                                            pin.entity.entityId,
-                                            units.x.coerceIn(0f, CANVAS_UNITS),
-                                            units.y.coerceIn(0f, CANVAS_UNITS)
-                                        )
-                                    } else {
-                                        selected = pin
+                        if (editing) Modifier.pointerInput(pin.elementId, base, unitX, unitY, artOrigin, zoom, pan) {
+                            // One gesture handler, and it takes the pointer the instant it lands.
+                            //
+                            // This used to be `clickable` in front of `detectDragGestures`, and it
+                            // was genuinely hard to move a pin: a drag reports nothing at all until
+                            // it passes the system touch slop, so the first part of every drag went
+                            // nowhere, and the pan/zoom handler underneath — which sees the same
+                            // pointer — was free to read those same early moves as a map pan and
+                            // take the gesture away. The pin moved when you won that race and did
+                            // not when you lost it, which is what "press and drag several times to
+                            // get it moving" is.
+                            //
+                            // Consuming the down settles it: while a finger is on a pin in edit
+                            // mode, that finger belongs to the pin. `detectTransformGestures`
+                            // abandons a gesture whose changes are consumed, so the map holds
+                            // still. There is no slop to clear — the first millimetre of movement
+                            // already moves the marker — and [PIN_GRAB_SLOP] afterwards only
+                            // decides whether what happened was a move or a tap that wobbled.
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                down.consume()
+                                draggingId = pin.elementId
+                                dragOffset = Offset.Zero
+                                var travel = Offset.Zero
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null || !change.pressed) {
+                                        change?.consume()
+                                        break
                                     }
-                                    draggingId = null
-                                },
-                                onDragCancel = { draggingId = null }
-                            ) { change, amount -> change.consume(); dragOffset += amount }
+                                    val delta = change.positionChange()
+                                    if (delta != Offset.Zero) {
+                                        travel += delta
+                                        dragOffset = travel
+                                    }
+                                    change.consume()
+                                }
+                                if (travel.getDistance() > grabSlopPx) {
+                                    // Back out through the same transform the pin was drawn with,
+                                    // so a drag at 3x moves the pin by what it looks like it moved
+                                    // by, not by three times that.
+                                    val units = screenToMap(
+                                        base + travel, unitX, unitY, artOrigin, zoom, pan
+                                    )
+                                    onMovePin(
+                                        pin.entity.entityId,
+                                        units.x.coerceIn(0f, CANVAS_UNITS),
+                                        units.y.coerceIn(0f, CANVAS_UNITS)
+                                    )
+                                } else {
+                                    // A press that did not travel is an inspect, not a move — which
+                                    // is also the only way to reach the card carrying "Remove pin"
+                                    // and the placement position.
+                                    selected = pin
+                                }
+                                draggingId = null
+                                dragOffset = Offset.Zero
+                            }
                         } else Modifier.clickable { selected = pin }
                     )
             ) {
                 // The marker is TALLER than its tap target and must be allowed to say so.
                 //
-                // The Box above is PIN_SIZE square because that is the pin's hit area and the
-                // anchor the offset arithmetic is written against; the marker inside it is a
-                // portrait plus a caption plus (once) a placement hint, which is two or three times
-                // that. Measured against the 34dp box, the Column hands its first child the whole
-                // height and the rest nothing, and the result is a flattened smear where the face
-                // should be — which is exactly what it did on device. `unbounded` lets the column
-                // measure at its natural size, and TopCenter keeps its first child — the portrait —
-                // sitting precisely on the anchor, so the pin still points at the place it names.
-                Box(Modifier.wrapContentSize(align = Alignment.TopCenter, unbounded = true)) {
-                    PinMarker(
-                        entity = pin.entity,
-                        packDir = packDir,
-                        selected = selected?.elementId == pin.elementId,
-                        awaitingPlacement = pin.entity.entityId == hintEntityId
-                    )
+                // The inner Box is PIN_SIZE square because that is the anchor the offset arithmetic
+                // is written against; the marker inside it is a portrait plus a caption plus (once)
+                // a placement hint, which is two or three times that. Measured against the 34dp
+                // box, the Column hands its first child the whole height and the rest nothing, and
+                // the result is a flattened smear where the face should be — which is exactly what
+                // it did on device. `unbounded` lets the column measure at its natural size, and
+                // TopCenter keeps its first child — the portrait — sitting precisely on the anchor,
+                // so the pin still points at the place it names.
+                Box(Modifier.align(Alignment.Center).size(PIN_SIZE)) {
+                    Box(Modifier.wrapContentSize(align = Alignment.TopCenter, unbounded = true)) {
+                        PinMarker(
+                            entity = pin.entity,
+                            packDir = packDir,
+                            selected = selected?.elementId == pin.elementId,
+                            awaitingPlacement = pin.entity.entityId == hintEntityId
+                        )
+                    }
                 }
             }
         }
@@ -556,8 +605,21 @@ private fun MapStage(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        // The entity's kind, NOT `locationFact.value` — that value is the pin's
+                        // position in canvas units (see PackBoardResolver), so the card used to
+                        // read "at 464,228". Coordinates are how the pin is stored, never
+                        // something a listener has any use for.
+                        //
+                        // *When* they are there is a different matter, and it was the one thing an
+                        // author could not find out: a placement is a fact anchored wherever the
+                        // listener stood when the pin was dragged, and nothing ever showed it.
+                        val kindLabel = pin.entity.kind.name.lowercase()
+                            .replaceFirstChar { it.uppercase() }
+                        val placedAt = pin.locationFact.anchor.globalMs
                         Text(
-                            "at ${pin.locationFact.value}",
+                            if (editing && placedAt != null)
+                                "$kindLabel · here from ${formatDeckHm(placedAt)}"
+                            else kindLabel,
                             style = MaterialTheme.typography.labelSmall,
                             color = deckOnMuted(),
                             maxLines = 1,
@@ -565,6 +627,7 @@ private fun MapStage(
                         )
                     }
                     if (editing) {
+                        DeckIconAction(Icons.Default.Schedule, "Change when") { onEditPinTime(pin) }
                         DeckIconAction(Icons.Default.Delete, "Remove pin") {
                             onDeletePin(pin.elementId)
                             selected = null
@@ -590,6 +653,7 @@ private fun MapStage(
         MapVersionsDialog(
             hasBaseArt = board.artMedia != null,
             timeline = artTimeline,
+            onEditTime = { showVersions = false; onEditArtTime(it) },
             onDelete = { onDeleteArt(it) },
             onDismiss = { showVersions = false }
         )
@@ -852,6 +916,15 @@ private fun groundFor(tone: ArtTone?): Color = when (tone) {
 
 /** Pins are portraits now, so they are sized like the smallest legible face rather than like a dot. */
 private val PIN_SIZE = 34.dp
+
+/** The pin touch area, which is not the pin size. Comfortably past the 48dp minimum target while
+ *  staying small enough that two pins a face apart are still separately hittable. */
+private val PIN_TOUCH = 52.dp
+
+/** How far a press has to travel before it counts as having moved the pin rather than inspected
+ *  it. Small, because the gesture is captured on touch-down and nothing else is competing for it —
+ *  this only has to survive the wobble of a finger lifting. */
+private val PIN_GRAB_SLOP = 5.dp
 private val CAPTION_WIDTH = 110.dp
 private val HINT_WIDTH = 150.dp
 
@@ -944,6 +1017,7 @@ private fun MapBoardsDialog(
 private fun MapVersionsDialog(
     hasBaseArt: Boolean,
     timeline: List<Pair<BoardArt, Long>>,
+    onEditTime: (BoardArt) -> Unit,
     onDelete: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -954,7 +1028,8 @@ private fun MapVersionsDialog(
         text = {
             Column {
                 Text(
-                    "Set an image while listening to add a version from that point on.",
+                    "Set an image while listening to add a version from that point on. " +
+                        "Tap a version to move it somewhere else in the book.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -973,17 +1048,31 @@ private fun MapVersionsDialog(
                 }
                 timeline.forEach { (revision, atMs) ->
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onEditTime(revision) }
+                            .padding(vertical = 4.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            revision.label?.takeIf { it.isNotBlank() }
-                                ?: "From ${formatDeckHm(atMs)}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                revision.label?.takeIf { it.isNotBlank() }
+                                    ?: "From ${formatDeckHm(atMs)}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            // A labelled version says what it is and nothing about where it is, so
+                            // the position goes underneath rather than replacing the label.
+                            if (!revision.label.isNullOrBlank()) {
+                                Text(
+                                    "From ${formatDeckHm(atMs)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
                         DeckIconAction(Icons.Default.Delete, "Delete version") { onDelete(revision.artId) }
                     }
                 }

@@ -225,6 +225,17 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** "MAJOR" | "NOTABLE" | "NEVER" — how much a companion pack has to have changed before the
+     *  deck badges it. Stored since packs shipped, but nothing ever offered it, so every listener
+     *  was stuck on the NOTABLE default. */
+    val companionNotifyThreshold: StateFlow<String> =
+        settings.companionNotifyThreshold
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "NOTABLE")
+
+    fun setCompanionNotifyThreshold(threshold: String) {
+        viewModelScope.launch { settings.setCompanionNotifyThreshold(threshold) }
+    }
+
     private val _rescanRunning = MutableStateFlow(false)
     val rescanRunning: StateFlow<Boolean> = _rescanRunning.asStateFlow()
 

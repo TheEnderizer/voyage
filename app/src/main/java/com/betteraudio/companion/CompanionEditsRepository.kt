@@ -109,11 +109,30 @@ class CompanionEditsRepository @Inject constructor(
         return addFact(bookId, packId, entityId, field, value, anchorGlobalMs, importance) != null
     }
 
-    suspend fun editFact(bookId: Long, packId: String, factId: String, value: String? = null, importance: Importance? = null): Boolean =
+    /** [anchorGlobalMs] moves the fact along the story — see [CompanionAuthorRepository.editFact]
+     *  for why an author needs that. Carried as a string in the op's `fields` map, alongside the
+     *  ratio computed here, because `edits.json` is plain JSON and a bare number would come back
+     *  from the decoder as whatever type the parser felt like ([PackEditsApplier.patchFact] reads
+     *  both, but only one of them is written). */
+    suspend fun editFact(
+        bookId: Long,
+        packId: String,
+        factId: String,
+        value: String? = null,
+        importance: Importance? = null,
+        anchorGlobalMs: Long? = null
+    ): Boolean =
         appendOp(bookId, packId) { base ->
             val fields = buildMap {
                 value?.let { put("value", it) }
                 importance?.let { put("importance", it.name) }
+                anchorGlobalMs?.let { ms ->
+                    put("anchorGlobalMs", ms.toString())
+                    val book = bookDao.getBookOnce(bookId)
+                    val ratio = book?.takeIf { it.totalDurationMs > 0L }
+                        ?.let { (ms.toDouble() / it.totalDurationMs).toFloat().coerceIn(0f, 1f) }
+                    if (ratio != null) put("anchorRatio", ratio.toString())
+                }
             }
             if (fields.isEmpty()) return@appendOp null
             val baseRev = base.facts.firstOrNull { it.factId == factId }?.rev ?: base.revision
@@ -192,6 +211,10 @@ class CompanionEditsRepository @Inject constructor(
             )
         )
         diskMirror.flushBookPack(bookId, forked)
+        // The document's media paths are pack-relative, so they only mean anything next to a
+        // `media/` directory of their own — copy the originals across before the new pack goes
+        // live, or every portrait and board backdrop in it points at a file that isn't there.
+        companionDataStore.copyBookPackMedia(bookId, packId, forked.packId)
         companionPackDao.upsert(
             com.betteraudio.data.db.entities.CompanionPack(
                 packId = forked.packId,

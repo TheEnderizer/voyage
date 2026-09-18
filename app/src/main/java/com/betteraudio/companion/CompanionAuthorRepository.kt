@@ -180,19 +180,41 @@ class CompanionAuthorRepository @Inject constructor(
         }
     }
 
+    /**
+     * Changes what a fact says, how loud it is, or **when it happens**.
+     *
+     * [anchorGlobalMs] is the one that matters for authoring: a fact is captured wherever the
+     * author happened to be standing when they typed it, which is rarely the moment the story
+     * actually says it. Without this the only repair was to delete the entry and re-record it from
+     * the right position, which meant scrubbing the book to get there.
+     *
+     * Both exact tiers are rewritten together (§5): [FactAnchor.globalMs] and [FactAnchor.ratio]
+     * describe the same instant, so moving one and leaving the other would make the fact land in
+     * two different places depending on whose library resolved it.
+     */
     suspend fun editFact(
         bookId: Long,
         packId: String,
         factId: String,
         value: String? = null,
-        importance: Importance? = null
-    ): Boolean = mutate(bookId, packId) { doc, newRevision ->
-        doc.copy(facts = doc.facts.map {
-            if (it.factId == factId) {
-                it.copy(value = value ?: it.value, importance = importance ?: it.importance, rev = newRevision)
-            } else it
-        }) to true
-    } ?: false
+        importance: Importance? = null,
+        anchorGlobalMs: Long? = null
+    ): Boolean {
+        val ratio = anchorGlobalMs?.let { ratioFor(bookId, it) }
+        return mutate(bookId, packId) { doc, newRevision ->
+            doc.copy(facts = doc.facts.map {
+                if (it.factId == factId) {
+                    it.copy(
+                        value = value ?: it.value,
+                        importance = importance ?: it.importance,
+                        anchor = if (anchorGlobalMs == null) it.anchor
+                            else it.anchor.copy(globalMs = anchorGlobalMs, ratio = ratio),
+                        rev = newRevision
+                    )
+                } else it
+            }) to true
+        } ?: false
+    }
 
     suspend fun deleteFact(bookId: Long, packId: String, factId: String): Boolean =
         mutate(bookId, packId) { doc, _ ->
@@ -367,6 +389,39 @@ class CompanionAuthorRepository @Inject constructor(
                 }
             ) to art.artId
         }
+    }
+
+    /**
+     * Moves an existing backdrop to a different point in the story.
+     *
+     * Same need as [editFact]'s anchor: a version is added from wherever the author is standing
+     * when they pick the picture, and "the map after the siege" is almost never the same instant as
+     * "the minute I got round to scanning the map". Both exact tiers move together, for the reason
+     * given there.
+     */
+    suspend fun setBoardArtAnchor(
+        bookId: Long,
+        packId: String,
+        boardId: String,
+        artId: String,
+        anchorGlobalMs: Long
+    ): Boolean {
+        val ratio = ratioFor(bookId, anchorGlobalMs)
+        return mutate(bookId, packId) { doc, _ ->
+            doc.copy(
+                boards = doc.boards.map { board ->
+                    if (board.boardId != boardId) board
+                    else board.copy(
+                        artRevisions = board.artRevisions.map { art ->
+                            if (art.artId != artId) art
+                            else art.copy(
+                                anchor = art.anchor.copy(globalMs = anchorGlobalMs, ratio = ratio)
+                            )
+                        }
+                    )
+                }
+            ) to true
+        } ?: false
     }
 
     suspend fun deleteBoardArt(bookId: Long, packId: String, boardId: String, artId: String): Boolean =

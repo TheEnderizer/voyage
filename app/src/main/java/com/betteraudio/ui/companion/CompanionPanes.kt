@@ -27,8 +27,10 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Map
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -117,7 +119,13 @@ fun CastPane(
         gridItems(entities, key = { it.entity.entityId }) { state ->
             CastTile(
                 state = state,
-                subtitle = sheets[state.entity.entityId]?.subtitle
+                // An entity with no facts is, by the model's own rule, nobody yet — it is carried
+                // in the author's list but the reveal cursor can never surface it, so a character
+                // added and left empty silently never appears to a reader. Saying so on the tile
+                // is the cheap half of that; the alternative is inventing an introduction anchor
+                // the pack format does not have.
+                subtitle = if (editing && state.fields.isEmpty()) "Nothing known yet"
+                    else sheets[state.entity.entityId]?.subtitle
                     ?: state.entity.kind.name.lowercase().replaceFirstChar { it.uppercase() },
                 packDir = packDir,
                 isNew = state.entity.entityId in fresh,
@@ -229,8 +237,10 @@ fun CharacterPane(
     onSelectEntity: (String) -> Unit,
     onPickPortrait: () -> Unit,
     onAddFact: () -> Unit,
+    onEditFact: (String) -> Unit,
     onDeleteFact: (String) -> Unit,
     onDeleteEntity: () -> Unit,
+    onRenameEntity: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = entityAccent(sheet.name)
@@ -275,6 +285,11 @@ fun CharacterPane(
                     )
                 }
                 if (editing) {
+                    // A name was the one thing on the sheet with no way to correct it: the
+                    // ViewModel could rename an entity from the day it was written, but nothing
+                    // called it, so a typo in the Add dialog could only be fixed by deleting the
+                    // character and every fact recorded about them.
+                    DeckIconAction(Icons.Default.DriveFileRenameOutline, "Rename character", onRenameEntity)
                     DeckIconAction(Icons.Default.Delete, "Remove character", onDeleteEntity)
                 }
             }
@@ -294,6 +309,12 @@ fun CharacterPane(
                         StatPill(
                             label = badge.label,
                             value = badge.value,
+                            // Tapping a badge in edit mode edits the fact behind it — the same
+                            // rule every other value on the sheet follows: you change a thing
+                            // where you can see it.
+                            onClick = badge.factId
+                                ?.takeIf { editing }
+                                ?.let { id -> { onEditFact(id) } },
                             onDelete = badge.factId
                                 ?.takeIf { editing }
                                 ?.let { id -> { onDeleteFact(id) } }
@@ -306,7 +327,18 @@ fun CharacterPane(
         sheet.summary?.let { summary ->
             item(key = "summary") {
                 Spacer(Modifier.height(12.dp))
-                Text(summary, style = MaterialTheme.typography.bodyMedium, color = deckOnMuted())
+                val factId = sheet.summaryFactId?.takeIf { editing }
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = deckOnMuted(),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .then(
+                            if (factId != null) Modifier.clickable { onEditFact(factId) }
+                            else Modifier
+                        )
+                )
             }
         }
 
@@ -322,7 +354,7 @@ fun CharacterPane(
                 Spacer(Modifier.height(6.dp))
             }
             items(section.entries, key = { "${section.title}-${it.label}" }) { entry ->
-                EntryRow(entry, editing, onSelectEntity, onDeleteFact)
+                EntryRow(entry, editing, onSelectEntity, onEditFact, onDeleteFact)
             }
         }
 
@@ -340,6 +372,7 @@ private fun EntryRow(
     entry: EntitySheetModel.Entry,
     editing: Boolean,
     onSelectEntity: (String) -> Unit,
+    onEditFact: (String) -> Unit,
     onDeleteFact: (String) -> Unit
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -395,6 +428,10 @@ private fun EntryRow(
             }
         }
         if (editing && entry.factId != null) {
+            // Edit before delete, and both of them here rather than behind a long-press: an entry's
+            // value and the point in the book it lands at were both unreachable once written, so
+            // the only correction the sheet offered was to remove the entry and start again.
+            DeckIconAction(Icons.Default.Schedule, "Edit ${entry.label}") { onEditFact(entry.factId!!) }
             DeckIconAction(Icons.Default.Delete, "Delete ${entry.label}") { onDeleteFact(entry.factId!!) }
         }
     }
@@ -418,10 +455,14 @@ fun TimelinePane(
     revealedMs: Long,
     bookPositionMs: Long,
     scraps: List<PackScrap>,
+    /** Everything the pack has anchored in the book, oldest first. Edit mode only — see the
+     *  "Story schedule" block below. */
+    storyTimeline: List<CompanionAuthorViewModel.StoryEntry>,
     editing: Boolean,
     contentPadding: PaddingValues,
     onCatchUp: () -> Unit,
     onQuickCapture: () -> Unit,
+    onEditEntry: (CompanionAuthorViewModel.StoryEntry) -> Unit,
     onConvertScrap: (PackScrap) -> Unit,
     onDeleteScrap: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -451,6 +492,36 @@ fun TimelinePane(
                 items(scraps, key = { it.scrapId }) { scrap ->
                     ScrapRow(scrap, onConvert = { onConvertScrap(scrap) }, onDelete = { onDeleteScrap(scrap.scrapId) })
                 }
+            }
+        }
+        // The pack's own schedule, and the only place it has ever been visible.
+        //
+        // Everything a pack says is anchored at a point in the book, and until now that point was
+        // written once — wherever the author happened to be standing — and then hidden. The Cast
+        // shows what is known, the digest shows what was let through; neither shows *when* any of
+        // it happens, and nothing offered to change it. This is that list, in book order, and
+        // every row on it opens the entry that made it.
+        if (editing) {
+            item(key = "scheduleLabel") {
+                Spacer(Modifier.height(16.dp))
+                DeckLabel(
+                    if (storyTimeline.isEmpty()) "Story schedule"
+                    else "Story schedule · ${storyTimeline.size}"
+                )
+            }
+            if (storyTimeline.isEmpty()) {
+                item(key = "scheduleEmpty") {
+                    Text(
+                        "Nothing is anchored in the book yet. Facts, pin placements and map " +
+                            "versions all appear here, and each one can be moved.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = deckOnMuted(),
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+                }
+            }
+            items(storyTimeline, key = { "${it.kind}-${it.id}" }) { entry ->
+                ScheduleRow(entry) { onEditEntry(entry) }
             }
         }
         item(key = "digestLabel") {
@@ -498,6 +569,64 @@ fun TimelinePane(
                 )
             }
         }
+    }
+}
+
+/**
+ * One line of the pack's schedule: when it happens, and what happens.
+ *
+ * The position leads the row rather than trailing it, unlike the digest above — the digest is a
+ * list of *changes* with a timestamp attached, this is a list of *timestamps* with a change
+ * attached, and the column you scan is the one that goes first.
+ */
+@Composable
+private fun ScheduleRow(entry: CompanionAuthorViewModel.StoryEntry, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(deckPanelShape())
+            .background(deckCardColor())
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            formatDeckHm(entry.atMs),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = deckOn(),
+            modifier = Modifier.width(56.dp)
+        )
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = deckOn(),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                entry.detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = deckOnMuted(),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            when (entry.kind) {
+                CompanionAuthorViewModel.StoryEntry.Kind.ART -> Icons.Default.Image
+                CompanionAuthorViewModel.StoryEntry.Kind.LOCATION -> Icons.Default.Map
+                CompanionAuthorViewModel.StoryEntry.Kind.FACT -> Icons.Default.Schedule
+            },
+            null,
+            Modifier.size(16.dp),
+            tint = deckOnMuted()
+        )
     }
 }
 
@@ -717,11 +846,17 @@ fun DeckChip(text: String) {
 }
 
 @Composable
-fun StatPill(label: String, value: String, onDelete: (() -> Unit)? = null) {
+fun StatPill(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null
+) {
     Row(
         Modifier
             .clip(deckChipShape())
             .background(deckCardHighColor())
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(start = 10.dp, end = if (onDelete != null) 4.dp else 10.dp)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically

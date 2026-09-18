@@ -33,6 +33,59 @@ online cover search · haptics vocabulary · in-app updates from GitHub releases
 
 - **Companion packs** — pack registry, reveal cursor, companion deck UI, pack import/export.
   Merged 2026-09-03. Working but unreviewed WIP; more changes expected.
+- **Companion: the fixes from the first end-to-end pass on device.** Driving every companion
+  action on an emulator turned up eleven faults; all are fixed, none of them changed the pack
+  format. The ones worth knowing about: a pin could not be *tapped* while editing, because
+  `detectDragGestures` never reports a gesture that stays inside touch slop — so the selected-pin
+  card, and the only "Remove pin" control that exists, were unreachable (selection is a plain
+  `clickable` in both modes now). Anything authored while the book was not playing anchored at the
+  **reveal cursor** rather than the saved resume position, so a pack edited from Book Info stamped
+  everything at 0m and revealed it instantly. The catch-up confirm dialog counted only the base
+  document, so on a received pack it said "nothing new" and then revealed the listener's own
+  edits anyway. Re-importing a pack you exported yourself attached a second copy of it and
+  flipped the original to "received". Seeding a received pack duplicated every character it
+  already had (the owned path had always merged by name). Also: the pin card printed raw canvas
+  coordinates ("at 464,228"), renaming a character had no affordance at all, the wiki seed's rows
+  were only tappable on the checkbox and its chapter field never said it was required, the
+  delete-map sentence read "its 0 pins", a fact-less character now says so on its tile, and
+  `companion_notify_threshold` — stored since packs landed, never offered — is a row in
+  Settings → Library. Verified on an emulator.
+- **Forking a pack brings its pictures with it.** "Duplicate as my own" flattened base + edits into
+  a new pack id and wrote `pack.json` there, but a pack's `media` paths are pack-relative, so the
+  copy kept saying `media/nephis.png` while its own directory held nothing at all — every portrait
+  fell back to a letter tile and the map read "No image yet" while still counting its versions.
+  `CompanionDataStore.copyBookPackMedia` copies the directory across before the new pack goes live.
+  Found by a second end-to-end pass on the emulator; that pass re-confirmed the eleven fixes above.
+- **A pack's schedule is visible and editable, and a map pin can be dragged.** Two reports, one
+  root: everything a companion pack says is anchored at a point in the book, and that point was
+  written once — wherever the listener happened to be standing — and then never shown again.
+  - **Every anchor can be moved.** `CompanionAuthorRepository.editFact` and the matching
+    `CompanionEditsRepository` op now take an `anchorGlobalMs`, rewriting **both** exact tiers
+    (`globalMs` and `ratio`) together so the same entry cannot land in two places depending on
+    whose library resolves it; `setBoardArtAnchor` does the same for a map version. Add-fact asks
+    for the position instead of assuming the current one.
+  - **The Timeline pane grew a "Story schedule"** in edit mode: every fact, every pin placement and
+    every map version in one book-ordered list, each row opening the entry behind it. The Cast
+    showed what a pack knows and the digest showed what was let through; neither showed *when*, and
+    nothing offered to change it. Consumption is untouched — the reader's Timeline is exactly what
+    it was.
+  - **One editor, reached from wherever the value is** (`EditFactDialog`): a sheet row's new clock
+    icon, a stat badge, the summary paragraph, a schedule row, or the pin card. A pin's `location`
+    entry hides its value — that value is canvas units, and only its position in the book is of any
+    use — so for a pin the dialog is just "when is this character here".
+  - **The pin drag was a race, and the pin usually lost it.** It was `Modifier.clickable` in front
+    of `detectDragGestures`, which reports nothing until the system touch slop is cleared — so the
+    start of every drag went nowhere while the map's own `detectTransformGestures`, which sees the
+    same pointer, was free to read those early moves as a pan and take the gesture away. It now
+    consumes the pointer on touch-down (`awaitEachGesture`): in edit mode a finger on a pin belongs
+    to the pin, the transform handler abandons a consumed gesture, and the marker moves from the
+    first millimetre. The tap target also grew to 52dp and is no longer the marker itself — the
+    face is 34dp and the caption under it drew outside the pin's bounds, so pressing the name did
+    nothing at all. Measured: a plain `adb input swipe` now moves a pin, which before needed eleven
+    hand-stepped motion events.
+  - Verified end to end on the emulator: an entry moved to 1h25m, a pin's placement moved to 2h10m
+    with its coordinates unchanged, and a map version moved to the start — each confirmed in
+    `pack.json` on disk.
 - **Seek bar is a choice in both themes** — the four painted scrubber designs moved out of
   Immersive into `ui/components/ScrubberArt.kt`, joined by `CLASSIC` (the M3 slider Material You
   always drew). One `VoyageScrubber` owns the gesture for all five. Each theme stores its own pick
